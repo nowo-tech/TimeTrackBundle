@@ -1,0 +1,3 @@
+nowo_task_board:
+    user_class: App\Entity\User
+    dashboard_route: nowo_time_track_index

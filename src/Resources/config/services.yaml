@@ -1,0 +1,45 @@
+# Bundle service definitions.
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    Nowo\TimeTrackBundle\:
+        resource: '../../'
+        exclude:
+            - '../../DependencyInjection/'
+            - '../../TimeTrackBundle.php'
+            - '../../Repository/'
+            - '../../Doctrine/'
+            - '../../Client/ClientLoginRateLimiter.php'
+            - '../../Client/ClientResponseFactory.php'
+            - '../../Client/DefaultClientAuthenticator.php'
+            - '../../Service/TeamAccessGuard.php'
+
+    Nowo\TimeTrackBundle\Controller\:
+        resource: '../../Controller/'
+        public: true
+
+    Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader:
+        arguments:
+            $clientsEnabled: '%nowo_time_track.clients.enabled%'
+            $clientRoutes: '%nowo_time_track.clients.routes%'
+            $manageRoutes: '%nowo_time_track.routes%'
+            $routePrefix: '%nowo_time_track.route_prefix%'
+        tags:
+            - { name: routing.loader }
+
+    Nowo\TimeTrackBundle\Service\ClientAuthService:
+        arguments:
+            $tokenTtlSeconds: '%nowo_time_track.clients.token_ttl%'
+
+    Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController:
+        public: true
+        arguments:
+            $idleThresholdSeconds: '%nowo_time_track.clients.idle_threshold_seconds%'
+
+    Nowo\TimeTrackBundle\Controller\TimeTrackManageController:
+        public: true
+        arguments:
+            $templates: '%nowo_time_track.templates%'

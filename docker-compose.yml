@@ -1,0 +1,14 @@
+name: time-track-bundle
+
+services:
+  php:
+    build: .
+    volumes:
+      - .:/app
+      - coverage-data:/app/coverage
+    working_dir: /app
+    stdin_open: true
+    tty: true
+
+volumes:
+  coverage-data:

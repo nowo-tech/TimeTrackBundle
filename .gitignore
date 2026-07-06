@@ -1,0 +1,19 @@
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+/vendor/
+/coverage/
+/coverage.xml
+/.phpunit.cache/
+/.php-cs-fixer.cache
+/.php-cs-fixer.cache/
+
+# Node / Tauri
+/desktop/node_modules/
+/desktop/src-tauri/target/
+/extension/node_modules/

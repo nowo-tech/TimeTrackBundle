@@ -1,0 +1,133 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method Nowo\\TimeTrackBundle\\Doctrine\\TimeTrackMetadataListener\:\:remapUserAssociation\(\) has parameter \$metadata with generic class Doctrine\\ORM\\Mapping\\ClassMetadata but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/Doctrine/TimeTrackMetadataListener.php
+
+		-
+			message: '#^Parameter \$targetEntity of attribute class Doctrine\\ORM\\Mapping\\ManyToOne constructor expects class\-string\|null, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Entity/ActiveTimer.php
+
+		-
+			message: '#^Parameter \$targetEntity of attribute class Doctrine\\ORM\\Mapping\\ManyToOne constructor expects class\-string\|null, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Entity/ClientToken.php
+
+		-
+			message: '#^Property Nowo\\TimeTrackBundle\\Entity\\ClientToken\:\:\$createdAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/ClientToken.php
+
+		-
+			message: '#^Parameter \$targetEntity of attribute class Doctrine\\ORM\\Mapping\\ManyToOne constructor expects class\-string\|null, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Entity/TimeEntry.php
+
+		-
+			message: '#^Method Nowo\\TimeTrackBundle\\Routing\\TimeTrackRouteLoader\:\:createRoute\(\) has parameter \$requirements with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Routing/TimeTrackRouteLoader.php
+
+		-
+			message: '#^Parameter \#1 \$user of method Nowo\\TimeTrackBundle\\Service\\ClientAuthService\:\:issueToken\(\) expects Symfony\\Component\\Security\\Core\\User\\UserInterface, Symfony\\Component\\Security\\Core\\User\\UserInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Service/ClientAuthService.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''nowo_time_track'' and ''nowo_time_track'' will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Integration/TimeTrackBundleIntegrationTest.php
+
+		-
+			message: '#^Method Nowo\\TimeTrackBundle\\Tests\\Stub\\TestPasswordUser\:\:getUserIdentifier\(\) should return non\-empty\-string but returns string\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Stub/TestPasswordUser.php
+
+		-
+			message: '#^Method Nowo\\TimeTrackBundle\\Tests\\Stub\\TestUser\:\:getUserIdentifier\(\) should return non\-empty\-string but returns string\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Stub/TestUser.php
+
+		-
+			message: '#^Call to an undefined method object\:\:getId\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Support/InMemoryActiveTimerRepository.php
+
+		-
+			message: '#^Call to an undefined method object\:\:getId\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Support/InMemoryTimeEntryRepository.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertInstanceOf\(\) with ''DateTimeImmutable'' and DateTimeImmutable will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 3
+			path: tests/Unit/Entity/EntityTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertInstanceOf\(\) with ''DateTimeImmutable'' and null will always evaluate to false\.$#'
+			identifier: staticMethod.impossibleType
+			count: 1
+			path: tests/Unit/Entity/EntityTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertTrue\(\) with false will always evaluate to false\.$#'
+			identifier: staticMethod.impossibleType
+			count: 1
+			path: tests/Unit/Entity/EntityTest.php
+
+		-
+			message: '#^Offset ''isIdle'' on array\{foo\: ''bar''\} on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: tests/Unit/Entity/EntityTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''desktop'' and ''desktop'' will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/Enum/EnumTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''extension'' and ''extension'' will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/Enum/EnumTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''web'' and ''web'' will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/Enum/EnumTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''nowo_time_track…'' and ''nowo_time_track…'' will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 4
+			path: tests/Unit/Event/TimeTrackEventsTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertInstanceOf\(\) with ''Symfony\\\\Component\\\\DependencyInjection\\\\Extension\\\\ExtensionInterface'' and Symfony\\Component\\DependencyInjection\\Extension\\ExtensionInterface will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/TimeTrackBundleTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''NowoTimeTrackBundle'' and ''NowoTimeTrackBundle'' will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/TimeTrackBundleTest.php
