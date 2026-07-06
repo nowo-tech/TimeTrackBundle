@@ -2,6 +2,16 @@
 
 This document describes how to upgrade between versions of TimeTrack Bundle.
 
+## 1.0.x patch releases
+
+### 1.0.1 (2026-07-06)
+
+Repository-only: CI Code Style job fix and demo `reference.php` strict-types. No bundle API, config key, or migration changes for consumers.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
 ## 1.0.0 (2026-07-06)
 
 First stable release. No upgrade steps required.

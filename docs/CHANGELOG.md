@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-06
+
+### Fixed
+
+- **CI** — Code Style job scopes auto-commit to CS Fixer paths (`src`, `tests`, `.php-cs-fixer.dist.php`, `demo`) and skips empty commits when only transient files (e.g. `composer.json`) are dirty.
+- **demo/Makefile** — `release-check` reads `PORT` from `.env` (falls back to `.env.example`) so the healthcheck matches the running container.
+
+### Changed
+
+- **demo/symfony8** — `config/reference.php` adds `declare(strict_types=1)` (demo only; no Composer package API change).
+
 ## [1.0.0] - 2026-07-06
 
 ### Added
@@ -38,4 +49,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
+[1.0.1]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.1
 [1.0.0]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.0
