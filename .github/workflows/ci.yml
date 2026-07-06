@@ -132,7 +132,7 @@ jobs:
       - name: Check for changes
         id: verify-changed-files
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
+          if [ -n "$(git status --porcelain -- src tests .php-cs-fixer.dist.php demo)" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -143,8 +143,8 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add -A
-          git commit -m "Apply PHP CS Fixer fixes [skip ci]"
+          git add src tests .php-cs-fixer.dist.php demo
+          git diff --staged --quiet || git commit -m "Apply PHP CS Fixer fixes [skip ci]"
           git push
 
   code-style-check:
