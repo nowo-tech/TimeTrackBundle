@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nowo TimeTrack Desktop</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.25rem; max-width: 360px; }
+    label { display: block; margin: 0.5rem 0; }
+    input, select, button { width: 100%; margin-top: 0.25rem; padding: 0.5rem; box-sizing: border-box; }
+    button { cursor: pointer; margin-top: 0.75rem; }
+    #timer { font-weight: 600; margin: 1rem 0; }
+    #status { color: #64748b; font-size: 0.9rem; min-height: 1.25rem; }
+  </style>
+</head>
+<body>
+  <h1>TimeTrack Desktop</h1>
+  <p>System-tray agent. Close the window to hide; use the tray icon to reopen.</p>
+  <label>Server <input id="server" type="url" value="http://localhost:8024" /></label>
+  <label>Email <input id="email" type="email" autocomplete="username" /></label>
+  <label>Password <input id="password" type="password" autocomplete="current-password" /></label>
+  <button id="login" type="button">Login</button>
+  <hr />
+  <p id="timer">No active timer</p>
+  <label>Task
+    <select id="tasks"></select>
+  </label>
+  <button id="start" type="button">Start timer</button>
+  <button id="stop" type="button">Stop timer</button>
+  <p id="status"></p>
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

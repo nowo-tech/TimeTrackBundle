@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Nowo TimeTrack",
+  "version": "0.1.0",
+  "description": "Track time on TaskBoard tasks",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost/*", "https://*/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TimeTrack"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

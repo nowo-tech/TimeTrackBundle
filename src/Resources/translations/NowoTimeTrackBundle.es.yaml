@@ -1,0 +1,23 @@
+nav:
+  timer: Temporizador
+  reports: Informes
+  board: Tablero
+page:
+  timer: Control de tiempo
+  reports: Informes de tiempo
+timer:
+  active: Tarea activa
+  started_at: Iniciado a las
+  none: Sin temporizador activo
+tasks:
+  title: Tareas registrables
+  empty: No hay tareas. Instala TaskBoardBundle o configura task_provider.
+action:
+  start: Iniciar
+  stop: Detener
+reports:
+  empty: Sin entradas en este periodo.
+  task: Tarea
+  started: Inicio
+  duration: Duración
+  source: Origen

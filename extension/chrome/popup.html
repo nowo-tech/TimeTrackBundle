@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TimeTrack</title>
+  <style>
+    body { font-family: system-ui, sans-serif; width: 280px; margin: 0; padding: 12px; }
+    input, button, select { width: 100%; margin: 4px 0; box-sizing: border-box; }
+    #status { font-size: 12px; color: #555; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <div id="login-view">
+    <label>Server URL<input id="server" type="url" value="http://localhost:8024" /></label>
+    <label>Email<input id="email" type="email" /></label>
+    <label>Password<input id="password" type="password" /></label>
+    <button id="login-btn">Login</button>
+  </div>
+  <div id="timer-view" hidden>
+    <p id="active-task">No active timer</p>
+    <select id="tasks"></select>
+    <button id="start-btn">Start</button>
+    <button id="stop-btn">Stop</button>
+    <button id="logout-btn">Logout</button>
+  </div>
+  <p id="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>

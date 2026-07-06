@@ -1,0 +1,6 @@
+
+  * Run database migrations for time_track_* tables
+  * Configure security access_control for ^/api/time-track (PUBLIC_ACCESS) and ^/tools/time-track (ROLE_USER)
+  * Optional: install nowo-tech/task-board-bundle and wire task_provider / team_context_provider
+  * Browser extension: see extension/README.md
+  * Desktop agent (Tauri): see desktop/README.md

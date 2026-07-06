@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Time Track{% endblock %}</title>
+    <style>
+        :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+        body { margin: 0; padding: 1.5rem; background: #0f172a; color: #e2e8f0; }
+        a { color: #38bdf8; }
+        .card { background: #1e293b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+        .btn { display: inline-block; padding: .5rem 1rem; border-radius: 6px; border: none; cursor: pointer; text-decoration: none; }
+        .btn-primary { background: #2563eb; color: #fff; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .flash { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+        .flash-success { background: #14532d; }
+        .flash-warning { background: #713f12; }
+        .flash-danger { background: #7f1d1d; }
+        nav a { margin-right: 1rem; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="{{ path('nowo_task_board_index') }}">{{ 'nav.board'|trans({}, 'NowoTaskBoardBundle') }}</a>
+        <a href="{{ path('nowo_time_track_index') }}">{{ 'nav.timer'|trans({}, 'NowoTimeTrackBundle') }}</a>
+        <a href="{{ path('nowo_time_track_reports') }}">{{ 'nav.reports'|trans({}, 'NowoTimeTrackBundle') }}</a>
+    </nav>
+
+    {% for label, messages in app.flashes %}
+        {% for message in messages %}
+            <div class="flash flash-{{ label }}">{{ message }}</div>
+        {% endfor %}
+    {% endfor %}
+
+    {% block body %}{% endblock %}
+</body>
+</html>

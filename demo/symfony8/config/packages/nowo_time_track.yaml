@@ -1,0 +1,7 @@
+nowo_time_track:
+    user_class: App\Entity\User
+    task_provider: nowo_task_board.task_provider
+    team_context_provider: nowo_task_board.team_context_provider
+    clients:
+        enabled: true
+        cors_allowed_origins: ['*']

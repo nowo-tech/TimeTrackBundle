@@ -1,0 +1,4 @@
+nowo_time_track:
+    user_class: App\Entity\User
+    clients:
+        enabled: true

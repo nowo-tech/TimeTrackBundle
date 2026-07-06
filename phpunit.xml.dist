@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+>
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="test"/>
+    </php>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+        <exclude>
+            <directory>src/Resources</directory>
+            <directory>src/Controller</directory>
+            <directory>src/Repository</directory>
+            <directory>src/Doctrine</directory>
+            <file>src/Integration/TaskProviderInterface.php</file>
+            <file>src/Integration/TeamContextProviderInterface.php</file>
+            <file>src/Client/ClientAuthenticatorInterface.php</file>
+            <file>src/Repository/TimeEntryRepositoryInterface.php</file>
+            <file>src/Repository/ActiveTimerRepositoryInterface.php</file>
+            <file>src/Repository/ClientTokenRepositoryInterface.php</file>
+        </exclude>
+    </source>
+</phpunit>

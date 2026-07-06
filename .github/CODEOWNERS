@@ -1,0 +1,8 @@
+# CODEOWNERS for TimeTrackBundle
+* @HecFranco
+
+/.github/ @HecFranco
+/src/ @HecFranco
+/tests/ @HecFranco
+/.scripts/ @HecFranco
+/bin/ @HecFranco

@@ -1,0 +1,42 @@
+{% extends '@NowoTimeTrackBundle/layout.html.twig' %}
+
+{% block title %}{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}
+
+{% block body %}
+<h1>{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}</h1>
+
+<div class="card">
+    {% if active_timer %}
+        <p><strong>{{ 'timer.active'|trans({}, 'NowoTimeTrackBundle') }}:</strong> {{ active_timer.taskTitleSnapshot }}</p>
+        <p>{{ 'timer.started_at'|trans({}, 'NowoTimeTrackBundle') }}: {{ active_timer.startedAt|date('Y-m-d H:i') }}</p>
+        <form method="post">
+            <input type="hidden" name="action" value="stop">
+            <button class="btn btn-danger" type="submit">{{ 'action.stop'|trans({}, 'NowoTimeTrackBundle') }}</button>
+        </form>
+    {% else %}
+        <p>{{ 'timer.none'|trans({}, 'NowoTimeTrackBundle') }}</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>{{ 'tasks.title'|trans({}, 'NowoTimeTrackBundle') }}</h2>
+    {% if tasks is empty %}
+        <p>{{ 'tasks.empty'|trans({}, 'NowoTimeTrackBundle') }}</p>
+    {% else %}
+        <ul>
+            {% for task in tasks %}
+                <li>
+                    {{ task.title }}
+                    {% if not active_timer %}
+                        <form method="post" style="display:inline">
+                            <input type="hidden" name="action" value="start">
+                            <input type="hidden" name="task_id" value="{{ task.id }}">
+                            <button class="btn btn-primary" type="submit">{{ 'action.start'|trans({}, 'NowoTimeTrackBundle') }}</button>
+                        </form>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,3 @@
+nowo_task_board:
+    resource: .
+    type: nowo_task_board

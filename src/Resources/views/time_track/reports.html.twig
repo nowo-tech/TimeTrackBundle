@@ -1,0 +1,34 @@
+{% extends '@NowoTimeTrackBundle/layout.html.twig' %}
+
+{% block title %}{{ 'page.reports'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}
+
+{% block body %}
+<h1>{{ 'page.reports'|trans({}, 'NowoTimeTrackBundle') }}</h1>
+
+<div class="card">
+    {% if entries is empty %}
+        <p>{{ 'reports.empty'|trans({}, 'NowoTimeTrackBundle') }}</p>
+    {% else %}
+        <table style="width:100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th align="left">{{ 'reports.task'|trans({}, 'NowoTimeTrackBundle') }}</th>
+                    <th align="left">{{ 'reports.started'|trans({}, 'NowoTimeTrackBundle') }}</th>
+                    <th align="left">{{ 'reports.duration'|trans({}, 'NowoTimeTrackBundle') }}</th>
+                    <th align="left">{{ 'reports.source'|trans({}, 'NowoTimeTrackBundle') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                    <tr>
+                        <td>{{ entry.taskTitleSnapshot }}</td>
+                        <td>{{ entry.startedAt|date('Y-m-d H:i') }}</td>
+                        <td>{{ (entry.durationSeconds / 60)|round(1) }} min</td>
+                        <td>{{ entry.source.value }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</div>
+{% endblock %}

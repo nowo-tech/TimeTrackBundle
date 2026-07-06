@@ -1,0 +1,23 @@
+nav:
+  timer: Timer
+  reports: Reports
+  board: Task board
+page:
+  timer: Time tracker
+  reports: Time reports
+timer:
+  active: Active task
+  started_at: Started at
+  none: No active timer
+tasks:
+  title: Trackable tasks
+  empty: No tasks available. Install TaskBoardBundle or configure task_provider.
+action:
+  start: Start
+  stop: Stop
+reports:
+  empty: No time entries in this period.
+  task: Task
+  started: Started
+  duration: Duration
+  source: Source
