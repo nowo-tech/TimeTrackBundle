@@ -62,6 +62,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Engram](docs/ENGRAM.md)
 - [Spec-driven development](docs/SPEC-DRIVEN-DEVELOPMENT.md)
 - [GitHub Spec Kit](docs/SPEC-KIT.md)
+
 ## Tests and coverage
 
 ```bash
