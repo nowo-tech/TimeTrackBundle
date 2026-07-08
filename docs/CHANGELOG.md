@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-07-08
+
+### Added
+
+- **GitHub Spec Kit** scaffolding — `.specify/` templates and scripts, Cursor `/speckit-*` skills, baseline feature `specs/001-baseline/` (spec + code inventory).
+- **docs/SPEC-KIT.md** — installation, folder layout, Cursor Agent usage, and maintainer checklist.
+
+### Changed
+
+- **docs/SPEC-DRIVEN-DEVELOPMENT.md** — expanded workflow aligned with Spec Kit and baseline traceability.
+- **README** — link to [GitHub Spec Kit](docs/SPEC-KIT.md) documentation.
+- **composer.lock** / **demo/symfony8/composer.lock** — PHP CS Fixer 3.95.12 and aligned PHPUnit dev dependencies.
+
+### Documentation
+
+- Baseline specification documents current bundle scope under `specs/001-baseline/` (repository only; excluded from integrator runtime).
+
 ## [1.0.2] - 2026-07-07
 
 ### Changed
@@ -51,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
+[1.0.3]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.3
 [1.0.2]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.2
 [1.0.1]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.1
 [1.0.0]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.0

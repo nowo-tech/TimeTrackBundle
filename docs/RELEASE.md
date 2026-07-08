@@ -11,6 +11,6 @@
 Use an annotated tag with a short summary; the release workflow merges it with the CHANGELOG section:
 
 ```bash
-git tag -a v1.0.2 -m "Release 1.0.2: demo reference.php strict types"
-git push origin v1.0.2
+git tag -a v1.0.3 -m "Release 1.0.3: GitHub Spec Kit scaffolding and docs"
+git push origin v1.0.3
 ```
