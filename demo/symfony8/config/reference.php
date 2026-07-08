@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 // This file is auto-generated and is for apps only. Bundles SHOULD NOT rely on its content.
 
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
@@ -1425,6 +1423,10 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             path?: scalar|Param|null, // Default: "/tools/task-board/board/{boardId}/columns/reorder"
  *             name?: scalar|Param|null, // Default: "nowo_task_board_column_reorder"
  *         },
+ *         board_import?: array{
+ *             path?: scalar|Param|null, // Default: "/tools/task-board/board/{boardId}/import"
+ *             name?: scalar|Param|null, // Default: "nowo_task_board_board_import"
+ *         },
  *     },
  *     templates?: array{
  *         layout?: scalar|Param|null, // Default: "@NowoTaskBoardBundle/layout.html.twig"
@@ -1433,6 +1435,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         list?: scalar|Param|null, // Default: "@NowoTaskBoardBundle/manage/list.html.twig"
  *         gantt?: scalar|Param|null, // Default: "@NowoTaskBoardBundle/manage/gantt.html.twig"
  *         task?: scalar|Param|null, // Default: "@NowoTaskBoardBundle/manage/task.html.twig"
+ *         import?: scalar|Param|null, // Default: "@NowoTaskBoardBundle/manage/import.html.twig"
  *     },
  *     database?: array{
  *         entity_manager?: scalar|Param|null, // Default: "default"

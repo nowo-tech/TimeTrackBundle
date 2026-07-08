@@ -1298,7 +1298,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/tag-input-bundle",
-                "reference": "f9449d9fbc8da5650c22621ee987106c3816ecaf"
+                "reference": "a2cfaa6fff9f38de7a484b3c255a3b134dc5b416"
             },
             "require": {
                 "php": ">=8.1 <8.6",
@@ -1403,16 +1403,15 @@
         },
         {
             "name": "nowo-tech/task-board-bundle",
-            "version": "1.0.0",
+            "version": "dev-main",
             "dist": {
                 "type": "path",
                 "url": "/var/task-board-bundle",
-                "reference": "d47a04577384e68d59a0399ec77f421b41332876"
+                "reference": "9981f0ea879a82b7c232d5bbdf7bbc536b0288d8"
             },
             "require": {
                 "doctrine/doctrine-bundle": "^2.10 || ^3.0",
                 "doctrine/orm": "^2.15 || ^3.0",
-                "nowo-tech/time-track-bundle": "^1.0",
                 "php": ">=8.2 <8.6",
                 "symfony/config": "^7.4 || ^8.0",
                 "symfony/dependency-injection": "^7.4 || ^8.0",
@@ -1428,6 +1427,7 @@
             },
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.0",
+                "nowo-tech/time-track-bundle": "^1.0",
                 "phpstan/extension-installer": "^1.0",
                 "phpstan/phpstan": "^2.0",
                 "phpstan/phpstan-phpunit": "^2.0",
@@ -1436,7 +1436,7 @@
                 "rector/rector": "^2.0"
             },
             "suggest": {
-                "nowo-tech/time-track-bundle": "Already required; wire task_provider in nowo_time_track config."
+                "nowo-tech/time-track-bundle": "Optional time tracking: task provider, team context, and automatic total_time_seconds aggregation."
             },
             "type": "symfony-bundle",
             "extra": {
@@ -1480,6 +1480,12 @@
                 "phpstan": [
                     "@php vendor/bin/phpstan analyse --memory-limit=512M"
                 ],
+                "rector": [
+                    "@php vendor/bin/rector process"
+                ],
+                "rector-dry": [
+                    "@php vendor/bin/rector process --dry-run --no-progress-bar"
+                ],
                 "qa": [
                     "@cs-check",
                     "@test"
@@ -1499,7 +1505,7 @@
                     "homepage": "https://nowo.tech"
                 }
             ],
-            "description": "Symfony bundle for task boards, teams, and TimeTrackBundle integration",
+            "description": "Symfony bundle for task boards, teams, and optional TimeTrackBundle integration",
             "homepage": "https://github.com/nowo-tech/TaskBoardBundle",
             "keywords": [
                 "kanban",
@@ -1519,11 +1525,11 @@
         },
         {
             "name": "nowo-tech/time-track-bundle",
-            "version": "1.0.0",
+            "version": "dev-main",
             "dist": {
                 "type": "path",
                 "url": "/var/time-track-bundle",
-                "reference": "dff4db581a656ecd946aebd88573d0b855d96596"
+                "reference": "ec748ca6f5a9562c949b589cff551de023a0d9d7"
             },
             "require": {
                 "doctrine/doctrine-bundle": "^2.10 || ^3.0",
@@ -1650,7 +1656,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/tiptap-editor-bundle",
-                "reference": "3f3934a63bbf5f9146db5fa23ab4e6671458d960"
+                "reference": "91b5fad9905719d0e5609174e2823ae7e7716950"
             },
             "require": {
                 "php": ">=8.2 <8.6",
@@ -6454,16 +6460,16 @@
         },
         {
             "name": "nowo-tech/twig-inspector-bundle",
-            "version": "v1.0.33",
+            "version": "v1.0.34",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nowo-tech/TwigInspectorBundle.git",
-                "reference": "4c681ef6f8d17e50cd1b6417b63f6a6bbbf7032b"
+                "reference": "e926c092b6df59edaded71ec011075e67190c783"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nowo-tech/TwigInspectorBundle/zipball/4c681ef6f8d17e50cd1b6417b63f6a6bbbf7032b",
-                "reference": "4c681ef6f8d17e50cd1b6417b63f6a6bbbf7032b",
+                "url": "https://api.github.com/repos/nowo-tech/TwigInspectorBundle/zipball/e926c092b6df59edaded71ec011075e67190c783",
+                "reference": "e926c092b6df59edaded71ec011075e67190c783",
                 "shasum": ""
             },
             "require": {
@@ -6552,7 +6558,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-06-30T09:51:13+00:00"
+            "time": "2026-07-07T14:45:27+00:00"
         },
         {
             "name": "phar-io/manifest",
@@ -7021,24 +7027,24 @@
         },
         {
             "name": "phpunit/phpunit",
-            "version": "11.5.55",
+            "version": "11.5.56",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/phpunit.git",
-                "reference": "adc7262fccc12de2b30f12a8aa0b33775d814f00"
+                "reference": "5f83edffa6967c3db468d48a695ec7bcb02e9256"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/adc7262fccc12de2b30f12a8aa0b33775d814f00",
-                "reference": "adc7262fccc12de2b30f12a8aa0b33775d814f00",
+                "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/5f83edffa6967c3db468d48a695ec7bcb02e9256",
+                "reference": "5f83edffa6967c3db468d48a695ec7bcb02e9256",
                 "shasum": ""
             },
             "require": {
                 "ext-dom": "*",
+                "ext-filter": "*",
                 "ext-json": "*",
                 "ext-libxml": "*",
                 "ext-mbstring": "*",
-                "ext-xml": "*",
                 "ext-xmlwriter": "*",
                 "myclabs/deep-copy": "^1.13.4",
                 "phar-io/manifest": "^2.0.4",
@@ -7103,31 +7109,15 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/phpunit/issues",
                 "security": "https://github.com/sebastianbergmann/phpunit/security/policy",
-                "source": "https://github.com/sebastianbergmann/phpunit/tree/11.5.55"
+                "source": "https://github.com/sebastianbergmann/phpunit/tree/11.5.56"
             },
             "funding": [
                 {
-                    "url": "https://phpunit.de/sponsors.html",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/sebastianbergmann",
-                    "type": "github"
-                },
-                {
-                    "url": "https://liberapay.com/sebastianbergmann",
-                    "type": "liberapay"
-                },
-                {
-                    "url": "https://thanks.dev/u/gh/sebastianbergmann",
-                    "type": "thanks_dev"
-                },
-                {
-                    "url": "https://tidelift.com/funding/github/packagist/phpunit/phpunit",
-                    "type": "tidelift"
+                    "url": "https://phpunit.de/sponsoring.html",
+                    "type": "other"
                 }
             ],
-            "time": "2026-02-18T12:37:06+00:00"
+            "time": "2026-07-06T14:52:39+00:00"
         },
         {
             "name": "sebastian/cli-parser",
