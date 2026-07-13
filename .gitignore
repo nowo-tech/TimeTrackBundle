@@ -17,3 +17,7 @@
 /desktop/node_modules/
 /desktop/src-tauri/target/
 /extension/node_modules/
+# Cursor local sandbox (machine-specific; REQ-IDE-005)
+.cursor/sandbox.json
+
+/coverage-php.txt
