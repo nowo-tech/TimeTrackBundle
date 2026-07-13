@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-07-13
+
+### Added
+
+- **`.scripts/php-coverage-percent.sh`** — prints colored PHP line-coverage percentage after `make test-coverage` (REQ-TEST-008).
+- **`.cursor/rules/`** — Cursor agent rules for PHP/Symfony bundle, tests, docs, and release workflow.
+- **`.cursorignore`** — reduces indexer noise (vendor, caches, locks, secrets).
+
+### Changed
+
+- **Makefile** — `test-coverage` pipes PHPUnit output to `coverage-php.txt` and runs the coverage-percent script.
+- **docs/SECURITY.md** — scope, attack surface, threat model, release security checklist (12.4.1), and private reporting contact.
+- **`.gitignore`** — ignores `.cursor/sandbox.json` and `/coverage-php.txt`.
+- **composer.lock** / **demo/symfony8/composer.lock** — PHP CS Fixer 3.95.13.
+
+### Fixed
+
+- **demo/symfony8** — `config/reference.php` keeps `declare(strict_types=1)` (post-release CS Fixer alignment).
+
 ## [1.0.3] - 2026-07-08
 
 ### Added
@@ -68,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
+[1.0.4]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.4
 [1.0.3]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.3
 [1.0.2]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.2
 [1.0.1]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.1

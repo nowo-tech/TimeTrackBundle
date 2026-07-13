@@ -1298,7 +1298,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/tag-input-bundle",
-                "reference": "a2cfaa6fff9f38de7a484b3c255a3b134dc5b416"
+                "reference": "85ed01ba678018a038c2a7cd76f51323c6ce21aa"
             },
             "require": {
                 "php": ">=8.1 <8.6",
@@ -1407,7 +1407,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/task-board-bundle",
-                "reference": "9981f0ea879a82b7c232d5bbdf7bbc536b0288d8"
+                "reference": "6913d331202656ed5253f11f765327336b741fd7"
             },
             "require": {
                 "doctrine/doctrine-bundle": "^2.10 || ^3.0",
@@ -1529,7 +1529,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/time-track-bundle",
-                "reference": "ec748ca6f5a9562c949b589cff551de023a0d9d7"
+                "reference": "97f4f0960c1acfc9c5e534ff8258a99acd92cffc"
             },
             "require": {
                 "doctrine/doctrine-bundle": "^2.10 || ^3.0",
@@ -1656,7 +1656,7 @@
             "dist": {
                 "type": "path",
                 "url": "/var/tiptap-editor-bundle",
-                "reference": "91b5fad9905719d0e5609174e2823ae7e7716950"
+                "reference": "451febf7debfc608cca41f22b848f78be20f4c46"
             },
             "require": {
                 "php": ">=8.2 <8.6",
@@ -6460,16 +6460,16 @@
         },
         {
             "name": "nowo-tech/twig-inspector-bundle",
-            "version": "v1.0.34",
+            "version": "v1.0.35",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nowo-tech/TwigInspectorBundle.git",
-                "reference": "e926c092b6df59edaded71ec011075e67190c783"
+                "reference": "08e29d6f4e226440c2125e0b9a3f896ce58aa07b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nowo-tech/TwigInspectorBundle/zipball/e926c092b6df59edaded71ec011075e67190c783",
-                "reference": "e926c092b6df59edaded71ec011075e67190c783",
+                "url": "https://api.github.com/repos/nowo-tech/TwigInspectorBundle/zipball/08e29d6f4e226440c2125e0b9a3f896ce58aa07b",
+                "reference": "08e29d6f4e226440c2125e0b9a3f896ce58aa07b",
                 "shasum": ""
             },
             "require": {
@@ -6558,7 +6558,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-07-07T14:45:27+00:00"
+            "time": "2026-07-13T11:13:24+00:00"
         },
         {
             "name": "phar-io/manifest",

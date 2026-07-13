@@ -45,11 +45,8 @@ test: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/phpunit
 
 test-coverage: ensure-up
-	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/phpunit --coverage-html coverage --coverage-clover coverage.xml --coverage-text
-	@$(MAKE) coverage-php-percent
-
-coverage-php-percent:
-	@php scripts/check-coverage.php coverage.xml --min-percent=0 2>/dev/null || true
+	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/phpunit --coverage-html coverage --coverage-clover coverage.xml --coverage-text | tee coverage-php.txt
+	./.scripts/php-coverage-percent.sh coverage-php.txt
 
 test-coverage-100: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) composer test-coverage-100
