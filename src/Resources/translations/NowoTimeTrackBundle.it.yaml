@@ -1,0 +1,23 @@
+nav:
+  timer: Tracciamento tempo
+  reports: Report tempo
+  board: Bacheca attività
+page:
+  timer: Tracciamento tempo
+  reports: Report tempo
+timer:
+  active: Attività attiva
+  started_at: Avviato alle
+  none: Nessun timer attivo
+tasks:
+  title: Attività tracciabili
+  empty: Nessuna voce in questo periodo.
+action:
+  start: Avvia
+  stop: Ferma
+reports:
+  empty: Nessuna voce in questo periodo.
+  task: Attività
+  started: Inizio
+  duration: Durata
+  source: Origine

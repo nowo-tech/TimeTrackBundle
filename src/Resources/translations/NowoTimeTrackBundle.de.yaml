@@ -1,0 +1,23 @@
+nav:
+  timer: Zeiterfassung
+  reports: Zeitberichte
+  board: Aufgabenboard
+page:
+  timer: Zeiterfassung
+  reports: Zeitberichte
+timer:
+  active: Aktive Aufgabe
+  started_at: Gestartet um
+  none: Kein aktiver Timer
+tasks:
+  title: Erfassbare Aufgaben
+  empty: Keine Zeiteinträge in diesem Zeitraum.
+action:
+  start: Starten
+  stop: Stoppen
+reports:
+  empty: Keine Zeiteinträge in diesem Zeitraum.
+  task: Aufgabe
+  started: Gestartet
+  duration: Dauer
+  source: Quelle

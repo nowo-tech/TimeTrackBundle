@@ -1,5 +1,5 @@
 # TimeTrack Bundle - Development
-.PHONY: help up down build shell install test test-coverage coverage-php-percent cs-check cs-fix qa clean ensure-up rector rector-dry phpstan release-check release-check-demos composer-sync update validate time-track-purge-tokens
+.PHONY: help up down build shell install test test-coverage coverage-php-percent cs-check cs-fix qa clean ensure-up rector rector-dry phpstan release-check release-check-demos composer-sync update validate time-track-purge-tokens check-no-cursor-coauthor strip-cursor-coauthor-from-history
 
 COMPOSE_FILE ?= docker-compose.yml
 COMPOSE     ?= /usr/bin/docker compose -f $(COMPOSE_FILE)
@@ -68,7 +68,7 @@ phpstan: ensure-up
 
 qa: cs-check test
 
-release-check: ensure-up composer-sync cs-check rector-dry phpstan test-coverage-100 release-check-demos
+release-check: check-no-cursor-coauthor ensure-up composer-sync cs-check rector-dry phpstan test-coverage-100 release-check-demos
 
 release-check-demos:
 	$(MAKE) -C demo release-check
@@ -89,3 +89,15 @@ time-track-purge-tokens: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) php bin/console nowo:time-track:client-tokens:purge --no-interaction 2>/dev/null || echo "Run inside a Symfony app with the bundle installed."
 
 include $(BUNDLE_ROOT)/../.scripts/Makefile.update-deps.mk
+check-no-cursor-coauthor:
+	@chmod +x .scripts/check-no-cursor-coauthor.sh
+	@./.scripts/check-no-cursor-coauthor.sh HEAD
+setup-hooks:
+	@chmod +x .githooks/pre-commit 2>/dev/null || true
+	@chmod +x .githooks/commit-msg 2>/dev/null || true
+	@git config core.hooksPath .githooks
+	@echo "✅ Git hooks installed (.githooks — includes commit-msg for REQ-GIT-001)."
+
+strip-cursor-coauthor-from-history:
+	@chmod +x .scripts/strip-cursor-coauthor-from-history.sh
+	@./.scripts/strip-cursor-coauthor-from-history.sh main

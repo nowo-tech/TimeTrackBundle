@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-07-16
+
+### Added
+
+- **Translations** — UI locales **de**, **fr**, **it**, **nl**, **pt** (in addition to **en** / **es**).
+- **CODE_OF_CONDUCT.md** — Contributor Covenant; linked from README and CONTRIBUTING.
+- **docs/GITHUB_CI.md** — GitHub Actions CI requirements, including REQ-GIT-001 (no Cursor co-author trailers).
+- **Git hygiene** — `.githooks/commit-msg`, `.scripts/check-no-cursor-coauthor.sh`, `.scripts/strip-cursor-coauthor-from-history.sh`, Cursor rule `01-git-commits.mdc`, and CI job `git-hygiene`.
+- **Makefile** — `check-no-cursor-coauthor`, `setup-hooks`, `strip-cursor-coauthor-from-history`; `release-check` runs the co-author check first.
+
+### Changed
+
+- **docs/CONTRIBUTING.md** — Code of Conduct and git-hook setup for REQ-GIT-001.
+- **docs/RELEASE.md** — Reminder to re-run `make check-no-cursor-coauthor` before pushing the release commit/tag.
+- **es** translations — nav/page strings fully localized.
+
 ## [1.0.4] - 2026-07-13
 
 ### Added
@@ -87,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
+[1.0.5]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.5
 [1.0.4]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.4
 [1.0.3]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.3
 [1.0.2]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.2

@@ -1,0 +1,23 @@
+nav:
+  timer: Controlo de tempo
+  reports: Relatórios de tempo
+  board: Quadro de tarefas
+page:
+  timer: Controlo de tempo
+  reports: Relatórios de tempo
+timer:
+  active: Tarefa ativa
+  started_at: Iniciado às
+  none: Nenhum temporizador ativo
+tasks:
+  title: Tarefas registáveis
+  empty: Sem entradas neste período.
+action:
+  start: Iniciar
+  stop: Parar
+reports:
+  empty: Sem entradas neste período.
+  task: Tarefa
+  started: Início
+  duration: Duração
+  source: Origem

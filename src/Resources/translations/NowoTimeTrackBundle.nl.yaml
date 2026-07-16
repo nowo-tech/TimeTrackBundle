@@ -1,0 +1,23 @@
+nav:
+  timer: Tijdregistratie
+  reports: Tijdrapporten
+  board: Takenbord
+page:
+  timer: Tijdregistratie
+  reports: Tijdrapporten
+timer:
+  active: Actieve taak
+  started_at: Gestart om
+  none: Geen actieve timer
+tasks:
+  title: Registreerbare taken
+  empty: Geen tijdregistraties in deze periode.
+action:
+  start: Start
+  stop: Stop
+reports:
+  empty: Geen tijdregistraties in deze periode.
+  task: Taak
+  started: Gestart
+  duration: Duur
+  source: Bron

@@ -1,0 +1,23 @@
+nav:
+  timer: Suivi du temps
+  reports: Rapports de temps
+  board: Tableau des tâches
+page:
+  timer: Suivi du temps
+  reports: Rapports de temps
+timer:
+  active: Tâche active
+  started_at: Démarré à
+  none: Aucun minuteur actif
+tasks:
+  title: Tâches chronométrables
+  empty: Aucune entrée sur cette période.
+action:
+  start: Démarrer
+  stop: Arrêter
+reports:
+  empty: Aucune entrée sur cette période.
+  task: Tâche
+  started: Début
+  duration: Durée
+  source: Source

@@ -1,6 +1,6 @@
 nav:
-  timer: Temporizador
-  reports: Informes
+  timer: Control de tiempo
+  reports: Informes de tiempo
   board: Tablero
 page:
   timer: Control de tiempo
@@ -11,7 +11,7 @@ timer:
   none: Sin temporizador activo
 tasks:
   title: Tareas registrables
-  empty: No hay tareas. Instala TaskBoardBundle o configura task_provider.
+  empty: Sin entradas en este periodo.
 action:
   start: Iniciar
   stop: Detener

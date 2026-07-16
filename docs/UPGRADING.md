@@ -4,6 +4,15 @@ This document describes how to upgrade between versions of TimeTrack Bundle.
 
 ## 1.0.x patch releases
 
+### 1.0.5 (2026-07-16)
+
+- **Translations** — New locale files for **de**, **fr**, **it**, **nl**, **pt**. No config changes required; Symfony picks them up when the app locale matches.
+- **Repository-only** — Code of Conduct, GitHub CI docs, and git hygiene tooling (REQ-GIT-001). No bundle API, config key, or migration changes.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
 ### 1.0.4 (2026-07-13)
 
 Repository-only: security documentation, coverage reporting script, Cursor rules, and dev lockfile updates. No bundle API, config key, or migration changes for consumers.
