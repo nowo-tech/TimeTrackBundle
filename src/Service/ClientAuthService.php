@@ -42,7 +42,7 @@ final readonly class ClientAuthService
             return null;
         }
 
-        return $this->issueToken($result->getUser(), $clientType);
+        return $this->issueToken($result->requireUser(), $clientType);
     }
 
     public function resolveUser(string $plainToken): ?UserInterface

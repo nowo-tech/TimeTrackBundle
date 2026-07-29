@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\DependencyInjection;
 
+use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
+use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -34,11 +36,11 @@ final class Configuration implements ConfigurationInterface
                 ->end()
                 ->scalarNode('task_provider')
                     ->info('Service id implementing TaskProviderInterface. Defaults to StubTaskProvider for demos.')
-                    ->defaultValue(\Nowo\TimeTrackBundle\Bridge\StubTaskProvider::class)
+                    ->defaultValue(StubTaskProvider::class)
                 ->end()
                 ->scalarNode('team_context_provider')
                     ->info('Service id implementing TeamContextProviderInterface.')
-                    ->defaultValue(\Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider::class)
+                    ->defaultValue(NullTeamContextProvider::class)
                 ->end()
                 ->scalarNode('route_prefix')
                     ->defaultValue('')

@@ -7,12 +7,14 @@ namespace Nowo\TimeTrackBundle\Controller;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 final class TimeTrackManageController extends AbstractController
@@ -30,10 +32,14 @@ final class TimeTrackManageController extends AbstractController
     public function index(Request $request): Response
     {
         $user   = $this->getUser();
-        $active = $user instanceof \Symfony\Component\Security\Core\User\UserInterface ? $this->timerService->getActive($user) : null;
-        $tasks  = $user instanceof \Symfony\Component\Security\Core\User\UserInterface ? $this->timerService->listTasks($user, new TaskListQuery(limit: 20)) : [];
+        $active = $user instanceof UserInterface ? $this->timerService->getActive($user) : null;
+        $tasks  = $user instanceof UserInterface ? $this->timerService->listTasks($user, new TaskListQuery(limit: 20)) : [];
 
-        if ($request->isMethod('POST') && $user instanceof \Symfony\Component\Security\Core\User\UserInterface) {
+        if ($request->isMethod('POST') && $user instanceof UserInterface) {
+            if (!$this->isCsrfTokenValid('nowo_time_track_manage', (string) $request->request->get('_token', ''))) {
+                throw $this->createAccessDeniedException('Invalid CSRF token.');
+            }
+
             $action = (string) $request->request->get('action', '');
             $taskId = (string) $request->request->get('task_id', '');
 
@@ -49,7 +55,7 @@ final class TimeTrackManageController extends AbstractController
             }
 
             if ($action === 'stop') {
-                if ($this->timerService->stop($user) instanceof \Nowo\TimeTrackBundle\Entity\TimeEntry) {
+                if ($this->timerService->stop($user) instanceof TimeEntry) {
                     $this->addFlash('success', 'Timer stopped.');
                 } else {
                     $this->addFlash('warning', 'No active timer.');
@@ -69,7 +75,7 @@ final class TimeTrackManageController extends AbstractController
     public function reports(Request $request): Response
     {
         $user = $this->getUser();
-        if (!$user instanceof \Symfony\Component\Security\Core\User\UserInterface) {
+        if (!$user instanceof UserInterface) {
             return $this->redirectToRoute('nowo_time_track_index');
         }
 

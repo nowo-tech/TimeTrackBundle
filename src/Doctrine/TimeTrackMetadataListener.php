@@ -51,6 +51,7 @@ final readonly class TimeTrackMetadataListener
         }
     }
 
+    /** @param ClassMetadata<object> $metadata */
     private function remapUserAssociation(ClassMetadata $metadata, string $fieldName): void
     {
         $mapping = $metadata->associationMappings[$fieldName] ?? null;

@@ -5,6 +5,10 @@
          colors="true"
          cacheDirectory=".phpunit.cache"
 >
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <env name="SYMFONY_DEPRECATIONS_HELPER" value="max[direct]=0"/>
+    </php>
     <testsuites>
         <testsuite name="unit">
             <directory>tests/Unit</directory>
@@ -13,9 +17,6 @@
             <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
-    <php>
-        <env name="APP_ENV" value="test"/>
-    </php>
     <source>
         <include>
             <directory>src</directory>

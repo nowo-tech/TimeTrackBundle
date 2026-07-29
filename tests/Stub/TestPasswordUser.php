@@ -11,6 +11,7 @@ final readonly class TestPasswordUser implements UserInterface, PasswordAuthenti
 {
     public function __construct(
         private string $id,
+        /** @var non-empty-string */
         private string $identifier,
         private string $password = 'secret',
         /** @var list<string> */
@@ -37,6 +38,7 @@ final readonly class TestPasswordUser implements UserInterface, PasswordAuthenti
     {
     }
 
+    /** @return non-empty-string */
     public function getUserIdentifier(): string
     {
         return $this->identifier;

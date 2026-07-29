@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\Client;
 
+use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +18,7 @@ final class ClientAuthResultTest extends TestCase
 
         self::assertTrue($result->isSuccess());
         self::assertSame($user, $result->getUser());
+        self::assertSame($user, $result->requireUser());
     }
 
     public function testFailureResult(): void
@@ -25,5 +27,11 @@ final class ClientAuthResultTest extends TestCase
 
         self::assertFalse($result->isSuccess());
         self::assertNull($result->getUser());
+    }
+
+    public function testRequireUserThrowsOnFailure(): void
+    {
+        $this->expectException(LogicException::class);
+        ClientAuthResult::failure()->requireUser();
     }
 }

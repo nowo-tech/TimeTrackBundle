@@ -1,8 +1,14 @@
 includes:
-    - phpstan-baseline.neon
+    - vendor/nowo-tech/phpstan-frankenphp/ruleset-classic.neon
+    - vendor/nowo-tech/phpstan-frankenphp/ruleset-worker.neon
 
 parameters:
     level: 8
     paths:
         - src
         - tests
+    scanFiles:
+        - tests/phpstan-stubs/App/Entity/User.php
+    ignoreErrors: []
+    reportUnmatchedIgnoredErrors: false
+    treatPhpDocTypesAsCertain: false

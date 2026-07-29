@@ -10,6 +10,7 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
@@ -100,7 +101,7 @@ final class TimerServiceTest extends TestCase
 
     public function testStartWhenTaskNotFoundThrows(): void
     {
-        $provider = $this->createMock(\Nowo\TimeTrackBundle\Integration\TaskProviderInterface::class);
+        $provider = $this->createMock(TaskProviderInterface::class);
         $provider->method('canUserTrack')->willReturn(true);
         $provider->method('findForUser')->willReturn(null);
 
@@ -117,7 +118,7 @@ final class TimerServiceTest extends TestCase
 
     public function testStartWhenUserCannotTrackThrows(): void
     {
-        $provider = $this->createMock(\Nowo\TimeTrackBundle\Integration\TaskProviderInterface::class);
+        $provider = $this->createMock(TaskProviderInterface::class);
         $provider->method('canUserTrack')->willReturn(false);
 
         $service = new TimerService(

@@ -39,7 +39,7 @@ final class TimeTrackRouteLoader extends Loader
         $manageController = TimeTrackManageController::class;
         /** @var array<string, array{0: string, 1: list<string>}> $manageMap */
         $manageMap = [
-            'index'   => ['index', ['GET']],
+            'index'   => ['index', ['GET', 'POST']],
             'reports' => ['reports', ['GET']],
         ];
 
@@ -100,6 +100,7 @@ final class TimeTrackRouteLoader extends Loader
     /**
      * @param list<string> $methods
      * @param array<string, mixed> $defaults
+     * @param array<string, string> $requirements
      */
     private function createRoute(string $path, array $defaults, array $methods, array $requirements = []): Route
     {

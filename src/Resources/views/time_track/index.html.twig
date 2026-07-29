@@ -10,6 +10,7 @@
         <p><strong>{{ 'timer.active'|trans({}, 'NowoTimeTrackBundle') }}:</strong> {{ active_timer.taskTitleSnapshot }}</p>
         <p>{{ 'timer.started_at'|trans({}, 'NowoTimeTrackBundle') }}: {{ active_timer.startedAt|date('Y-m-d H:i') }}</p>
         <form method="post">
+            <input type="hidden" name="_token" value="{{ csrf_token('nowo_time_track_manage') }}">
             <input type="hidden" name="action" value="stop">
             <button class="btn btn-danger" type="submit">{{ 'action.stop'|trans({}, 'NowoTimeTrackBundle') }}</button>
         </form>
@@ -29,6 +30,7 @@
                     {{ task.title }}
                     {% if not active_timer %}
                         <form method="post" style="display:inline">
+                            <input type="hidden" name="_token" value="{{ csrf_token('nowo_time_track_manage') }}">
                             <input type="hidden" name="action" value="start">
                             <input type="hidden" name="task_id" value="{{ task.id }}">
                             <button class="btn btn-primary" type="submit">{{ 'action.start'|trans({}, 'NowoTimeTrackBundle') }}</button>

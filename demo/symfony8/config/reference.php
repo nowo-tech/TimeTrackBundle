@@ -1486,8 +1486,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     form_theme?: scalar|Param|null, // Default: "form_div_layout.html.twig"
  * }
  * @psalm-type NowoTiptapEditorConfig = array{
- *     default_config?: scalar|Param|null, // Profile name used when the form field omits the "config" option. // Default: "default"
- *     configs?: array<string, array{ // Default: []
+ *     default_profile?: scalar|Param|null, // Profile name used when the form field omits the "config" option (form option key remains "config" for BC). // Default: "default"
+ *     profiles?: array<string, array{ // Default: []
  *         toolbar?: bool|Param, // When true, the frontend shows a compact formatting toolbar (bold, lists, undo, etc.). // Default: true
  *         min_height?: scalar|Param|null, // Default CSS min-height for the editor surface (e.g. 240px, 12rem). // Default: "240px"
  *         form_theme?: scalar|Param|null, // Base Symfony form layout (must match twig.form_themes in your app). // Default: "form_div_layout.html.twig"

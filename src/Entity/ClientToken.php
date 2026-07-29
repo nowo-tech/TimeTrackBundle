@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Entity;
 
+use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Enum\ClientType;
@@ -30,7 +31,7 @@ class ClientToken
         private string $tokenHash,
         #[ORM\Column(name: 'expires_at', type: 'datetime_immutable')]
         private DateTimeImmutable $expiresAt,
-        #[ORM\ManyToOne(targetEntity: 'App\Entity\User')]
+        #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
         private object $user,
         #[ORM\Column(name: 'client_type', type: 'string', length: 16, enumType: ClientType::class)]
@@ -63,6 +64,11 @@ class ClientToken
     public function getExpiresAt(): DateTimeImmutable
     {
         return $this->expiresAt;
+    }
+
+    public function getCreatedAt(): DateTimeImmutable
+    {
+        return $this->createdAt;
     }
 
     public function getLastUsedAt(): ?DateTimeImmutable

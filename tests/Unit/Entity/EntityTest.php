@@ -30,13 +30,16 @@ final class EntityTest extends TestCase
         self::assertSame(['foo' => 'bar'], $timer->getMetadata());
 
         $timer->heartbeat(true);
-        self::assertTrue($timer->getMetadata()['isIdle'] ?? false);
-        self::assertInstanceOf(DateTimeImmutable::class, $timer->getStartedAt());
-        self::assertInstanceOf(DateTimeImmutable::class, $timer->getLastHeartbeatAt());
+        $metadata = $timer->getMetadata();
+        self::assertIsArray($metadata);
+        self::assertTrue($metadata['isIdle']);
+        self::assertGreaterThanOrEqual($timer->getStartedAt(), $timer->getLastHeartbeatAt());
 
         $idleTimer = new ActiveTimer($user, 'task-2', 'Other', null, ClientType::Desktop);
         $idleTimer->heartbeat(false);
-        self::assertFalse($idleTimer->getMetadata()['isIdle'] ?? true);
+        $idleMetadata = $idleTimer->getMetadata();
+        self::assertIsArray($idleMetadata);
+        self::assertFalse($idleMetadata['isIdle']);
 
         $array = $timer->toArray();
         self::assertSame('task-1', $array['taskId']);
@@ -54,7 +57,8 @@ final class EntityTest extends TestCase
         self::assertSame($user, $entry->getUser());
         self::assertSame(3600, $entry->getDurationSeconds());
         self::assertSame(TimeEntrySource::Extension, $entry->getSource());
-        self::assertInstanceOf(DateTimeImmutable::class, $entry->getCreatedAt());
+        self::assertSame($started, $entry->getStartedAt());
+        self::assertSame($ended, $entry->getEndedAt());
 
         $array = $entry->toArray();
         self::assertSame('task-1', $array['taskId']);
@@ -63,6 +67,7 @@ final class EntityTest extends TestCase
         self::assertNull($entry->getBoardIdSnapshot());
         self::assertNull($entry->getMetadata());
         self::assertSame($ended, $entry->getEndedAt());
+        self::assertGreaterThanOrEqual($started->getTimestamp(), $entry->getCreatedAt()->getTimestamp());
     }
 
     public function testClientTokenLifecycle(): void
@@ -79,7 +84,8 @@ final class EntityTest extends TestCase
         self::assertSame($user, $token->getUser());
 
         $token->touch();
-        self::assertInstanceOf(DateTimeImmutable::class, $token->getLastUsedAt());
+        self::assertNotNull($token->getLastUsedAt());
+        self::assertLessThanOrEqual($expires, $token->getCreatedAt());
         self::assertSame(ClientType::Desktop, $token->getClientType());
     }
 

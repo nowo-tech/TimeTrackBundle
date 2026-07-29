@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Entity;
 
+use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
@@ -26,7 +27,7 @@ class TimeEntry
     private DateTimeImmutable $createdAt;
 
     public function __construct(
-        #[ORM\ManyToOne(targetEntity: 'App\Entity\User')]
+        #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(name: 'user_id', nullable: false, onDelete: 'CASCADE')]
         private object $user,
         #[ORM\Column(name: 'task_id', type: 'string', length: 36)]

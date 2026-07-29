@@ -11,8 +11,9 @@
 Use an annotated tag with a short summary; the release workflow merges it with the CHANGELOG section:
 
 ```bash
-git tag -a v1.0.5 -m "Release 1.0.5: translations, CoC, and git hygiene"
-git push origin v1.0.5
+git tag -a v1.0.6 -m "Release 1.0.6: CSRF on manage UI, FrankenPHP banner, demo PHP 8.5"
+git push origin main
+git push origin v1.0.6
 ```
 
 After creating the release commit and tag, run `make check-no-cursor-coauthor` again **before** `git push` (REQ-GIT-001). The release commit itself is not covered by an earlier `release-check` run.

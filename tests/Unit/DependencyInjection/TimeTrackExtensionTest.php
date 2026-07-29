@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 use Doctrine\Bundle\DoctrineBundle\DependencyInjection\DoctrineExtension;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
+use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
@@ -114,7 +115,7 @@ final class TimeTrackExtensionTest extends TestCase
             'clients'    => ['enabled' => true],
         ]], $container);
 
-        self::assertTrue($container->getDefinition(\Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator::class)->isAutowired());
+        self::assertTrue($container->getDefinition(DefaultClientAuthenticator::class)->isAutowired());
     }
 
     public function testLoadRegistersDefaultAuthenticatorWithUserProvider(): void
@@ -130,7 +131,7 @@ final class TimeTrackExtensionTest extends TestCase
             ],
         ]], $container);
 
-        $definition = $container->getDefinition(\Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator::class);
+        $definition = $container->getDefinition(DefaultClientAuthenticator::class);
         self::assertFalse($definition->isAutowired());
         self::assertArrayHasKey('$userProvider', $definition->getArguments());
     }

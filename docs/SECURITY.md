@@ -30,6 +30,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 | Brute force login | Rate limit per IP + username (`cache.app`) |
 | IDOR on entries | `TimeEntryAccessCheckEvent` and team context provider |
 | CORS abuse | Restrict `clients.cors_allowed_origins` in production |
+| CSRF on manage UI | Manage POST start/stop require Symfony CSRF token `nowo_time_track_manage` |
 
 ## Client API
 
@@ -56,6 +57,8 @@ Before tagging a release, confirm:
 | **Logging** | No raw tokens in logs |
 | **Permissions** | Firewall + roles on manage routes; CORS restricted in prod |
 | **Limits** | Rate limits on client login; token purge documented |
+| **CSRF** | Manage UI mutations use CSRF tokens |
+| **AI security audit (REQ-SEC-004)** | Pass (conditional) recorded in monorepo `BUNDLES_SECURITY_ANALYSIS.md` |
 
 Record confirmation in the release PR or tag notes.
 

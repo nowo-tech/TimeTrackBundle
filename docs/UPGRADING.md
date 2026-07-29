@@ -4,6 +4,17 @@ This document describes how to upgrade between versions of TimeTrack Bundle.
 
 ## 1.0.x patch releases
 
+### 1.0.6 (2026-07-29)
+
+- **Security** — Manage UI start/stop POSTs require CSRF token `nowo_time_track_manage`. Update custom Twig overrides of the timer UI to include the token (see demo/`index.html.twig`).
+- FrankenPHP banner / demo PHP **8.5**; CI matrix Symfony **7.4 / 8.0 / 8.1** (Symfony **7.0** dropped from CI — package constraints unchanged unless you relied on CI-only coverage).
+- Contributors: PHPStan baseline removed; `phpstan-frankenphp` rulesets after `composer install`.
+
+```bash
+composer update nowo-tech/time-track-bundle
+php bin/console cache:clear
+```
+
 ### 1.0.5 (2026-07-16)
 
 - **Translations** — New locale files for **de**, **fr**, **it**, **nl**, **pt**. No config changes required; Symfony picks them up when the app locale matches.

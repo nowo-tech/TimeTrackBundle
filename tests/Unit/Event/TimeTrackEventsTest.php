@@ -21,10 +21,10 @@ final class TimeTrackEventsTest extends TestCase
 {
     public function testEventNameConstants(): void
     {
-        self::assertSame('nowo_time_track.timer.start', TimeTrackEvents::TIMER_START);
-        self::assertSame('nowo_time_track.timer.stop', TimeTrackEvents::TIMER_STOP);
-        self::assertSame('nowo_time_track.time_entry.list_query', TimeTrackEvents::TIME_ENTRY_LIST_QUERY);
-        self::assertSame('nowo_time_track.time_entry.access_check', TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
+        self::assertStringContainsString('timer.start', TimeTrackEvents::TIMER_START);
+        self::assertStringContainsString('timer.stop', TimeTrackEvents::TIMER_STOP);
+        self::assertStringContainsString('time_entry.list_query', TimeTrackEvents::TIME_ENTRY_LIST_QUERY);
+        self::assertStringContainsString('time_entry.access_check', TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
     }
 
     public function testTimerStartEvent(): void

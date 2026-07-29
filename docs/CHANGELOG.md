@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-07-29
+
+### Security
+
+- Manage UI POST start/stop require CSRF (`nowo_time_track_manage`); index route accepts GET+POST.
+- `docs/SECURITY.md` — 12.4.1 checklist + SEC-004 row; CSRF control documented.
+
+### Added
+
+- `make check-open-prs`, `coverage-check`, `demo-smoke`, `validate-translations`, `down-dev`.
+- `SYMFONY_DEPRECATIONS_HELPER=max[direct]=0` (REQ-SF-005).
+- FrankenPHP Friendly banner + `docs/DEMO-FRANKENPHP.md` (REQ-DOCS-017 / DEMO-002).
+- Spec inventory locales de/fr/it/nl/pt; PHPStan `ignoreErrors: []` (baseline removed).
+- **REQ-CS-005:** `nowo-tech/phpstan-frankenphp` in `require-dev` with classic + worker rulesets.
+- GitHub automation: `dependabot.yml`, `pr-lint.yml`, `stale.yml`, `copilot-instructions.md`.
+- `ClientAuthResult::requireUser()` for typed success path.
+
+### Changed
+
+- Demo image `frankenphp:1-php8.5`; CI matrix Symfony **7.4 / 8.0 / 8.1** (dropped 7.0).
+
 ## [1.0.5] - 2026-07-16
 
 ### Added
@@ -103,6 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.6
 [1.0.5]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.5
 [1.0.4]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.4
 [1.0.3]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.3

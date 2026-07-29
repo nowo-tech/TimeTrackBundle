@@ -71,6 +71,11 @@
 | --- | --- | --- |
 | `Resources/translations/NowoTimeTrackBundle.en.yaml` | English | FR-I18N-001 |
 | `Resources/translations/NowoTimeTrackBundle.es.yaml` | Spanish | FR-I18N-001 |
+| `Resources/translations/NowoTimeTrackBundle.de.yaml` | German | FR-I18N-001 |
+| `Resources/translations/NowoTimeTrackBundle.fr.yaml` | French | FR-I18N-001 |
+| `Resources/translations/NowoTimeTrackBundle.it.yaml` | Italian | FR-I18N-001 |
+| `Resources/translations/NowoTimeTrackBundle.nl.yaml` | Dutch | FR-I18N-001 |
+| `Resources/translations/NowoTimeTrackBundle.pt.yaml` | Portuguese | FR-I18N-001 |
 
 ## Coverage summary
 
@@ -79,5 +84,5 @@
 | PHP classes | 42 | 42 |
 | YAML config | 1 | 1 |
 | Twig views | 3 | 3 |
-| Translations | 2 | 2 |
-| **Total production sources** | **48** | **48** |
+| Translations | 7 | 7 |
+| **Total production sources** | **53** | **53** |

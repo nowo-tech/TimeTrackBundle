@@ -7,6 +7,8 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 final class InMemoryTimeEntryRepository implements TimeEntryRepositoryInterface
 {
@@ -24,8 +26,11 @@ final class InMemoryTimeEntryRepository implements TimeEntryRepositoryInterface
             $this->entries,
             static function (TimeEntry $entry) use ($userId, $from, $to): bool {
                 $user = $entry->getUser();
+                if (!$user instanceof UserInterface) {
+                    return false;
+                }
 
-                return (string) $user->getId() === $userId
+                return UserIdResolver::getId($user) === $userId
                     && $entry->getStartedAt() >= $from
                     && $entry->getStartedAt() <= $to;
             },

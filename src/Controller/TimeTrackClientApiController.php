@@ -9,6 +9,9 @@ use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
+use Nowo\TimeTrackBundle\Dto\TaskReference;
+use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -122,7 +125,7 @@ final readonly class TimeTrackClientApiController
         $tasks = $this->timerService->listTasks($user, $query);
 
         return $this->responseFactory->json([
-            'tasks' => array_map(static fn (\Nowo\TimeTrackBundle\Dto\TaskReference $task): array => $task->toArray(), $tasks),
+            'tasks' => array_map(static fn (TaskReference $task): array => $task->toArray(), $tasks),
         ], Response::HTTP_OK, $request);
     }
 
@@ -138,7 +141,7 @@ final readonly class TimeTrackClientApiController
         }
 
         $active = $this->timerService->getActive($user);
-        if (!$active instanceof \Nowo\TimeTrackBundle\Entity\ActiveTimer) {
+        if (!$active instanceof ActiveTimer) {
             return $this->responseFactory->empty(Response::HTTP_NO_CONTENT, $request);
         }
 
@@ -190,7 +193,7 @@ final readonly class TimeTrackClientApiController
         }
 
         $entry = $this->timerService->stop($user);
-        if (!$entry instanceof \Nowo\TimeTrackBundle\Entity\TimeEntry) {
+        if (!$entry instanceof TimeEntry) {
             return $this->responseFactory->json(['error' => 'No active timer.'], Response::HTTP_NOT_FOUND, $request);
         }
 
@@ -213,7 +216,7 @@ final readonly class TimeTrackClientApiController
         $isIdle  = is_array($payload) && (bool) ($payload['isIdle'] ?? false);
 
         $timer = $this->timerService->heartbeat($user, $isIdle);
-        if (!$timer instanceof \Nowo\TimeTrackBundle\Entity\ActiveTimer) {
+        if (!$timer instanceof ActiveTimer) {
             return $this->responseFactory->json(['error' => 'No active timer.'], Response::HTTP_NOT_FOUND, $request);
         }
 
@@ -245,7 +248,7 @@ final readonly class TimeTrackClientApiController
         $entries = $this->timerService->listEntries($user, $from, $to, $targetUserId);
 
         return $this->responseFactory->json([
-            'entries' => array_map(static fn (\Nowo\TimeTrackBundle\Entity\TimeEntry $entry): array => $entry->toArray(), $entries),
+            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(), $entries),
         ], Response::HTTP_OK, $request);
     }
 

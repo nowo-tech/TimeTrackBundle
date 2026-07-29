@@ -10,6 +10,7 @@ final readonly class TestUser implements UserInterface
 {
     public function __construct(
         private string $id,
+        /** @var non-empty-string */
         private string $identifier,
         /** @var list<string> */
         private array $roles = ['ROLE_USER'],
@@ -30,6 +31,7 @@ final readonly class TestUser implements UserInterface
     {
     }
 
+    /** @return non-empty-string */
     public function getUserIdentifier(): string
     {
         return $this->identifier;

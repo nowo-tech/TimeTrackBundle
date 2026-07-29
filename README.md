@@ -6,6 +6,10 @@
 
 Symfony bundle for **personal and team time tracking**: one active timer per user, task references via `TaskBoardBundle`, browser extension API, and Tauri desktop agent API.
 
+![FrankenPHP Friendly Worker Mode](docs/images/frankenphp-friendly.png)
+
+This bundle is **FrankenPHP worker mode friendly**.
+
 ## Features
 
 - Web UI at `/tools/time-track` (timer + reports)
@@ -48,6 +52,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 
 ## Documentation
 
+- [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md) (includes worker mode)
 - [GitHub Actions CI requirements](docs/GITHUB_CI.md)
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)

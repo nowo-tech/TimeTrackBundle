@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Entity;
 
+use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Enum\ClientType;
@@ -27,7 +28,7 @@ class ActiveTimer
     private DateTimeImmutable $lastHeartbeatAt;
 
     public function __construct(
-        #[ORM\ManyToOne(targetEntity: 'App\Entity\User')]
+        #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(name: 'user_id', nullable: false, onDelete: 'CASCADE')]
         private object $user,
         #[ORM\Column(name: 'task_id', type: 'string', length: 36)]
@@ -90,12 +91,15 @@ class ActiveTimer
 
     /**
      * @return array<string, mixed>|null
+     *
+     * @phpstan-impure
      */
     public function getMetadata(): ?array
     {
         return $this->metadata;
     }
 
+    /** @phpstan-impure */
     public function heartbeat(bool $isIdle = false): self
     {
         $this->lastHeartbeatAt = new DateTimeImmutable();

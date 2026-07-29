@@ -1,16 +1,19 @@
 # TimeTrack Bundle - Development
-.PHONY: help up down build shell install test test-coverage coverage-php-percent cs-check cs-fix qa clean ensure-up rector rector-dry phpstan release-check release-check-demos composer-sync update validate time-track-purge-tokens check-no-cursor-coauthor strip-cursor-coauthor-from-history
+.PHONY: help up down down-dev build shell install test test-coverage test-coverage-100 coverage-check coverage-php-percent cs-check cs-fix qa clean ensure-up rector rector-dry phpstan release-check release-check-demos demo-smoke composer-sync update validate validate-translations time-track-purge-tokens check-no-cursor-coauthor check-open-prs strip-cursor-coauthor-from-history setup-hooks
 
 COMPOSE_FILE ?= docker-compose.yml
-COMPOSE     ?= /usr/bin/docker compose -f $(COMPOSE_FILE)
+# Prefer Compose V2 plugin (GitHub Actions / modern Docker Desktop); fall back to docker-compose V1 (REQ-MAKE-010).
+COMPOSE_BIN ?= $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+COMPOSE     ?= $(COMPOSE_BIN) -f $(COMPOSE_FILE)
 SERVICE_PHP ?= php
 BUNDLE_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 help:
 	@echo "TimeTrack Bundle - Development Commands"
 	@echo ""
-	@echo "  up / down / build / shell / install"
-	@echo "  test / test-coverage / cs-check / cs-fix / phpstan / qa"
+	@echo "  up / down / down-dev / build / shell / install"
+	@echo "  test / test-coverage / coverage-check / cs-check / cs-fix / phpstan / qa"
+	@echo "  validate-translations / check-open-prs / demo-smoke"
 	@echo "  release-check / release-check-demos"
 	@echo "  time-track-purge-tokens"
 	@echo ""
@@ -28,6 +31,9 @@ up:
 
 down:
 	$(COMPOSE) down
+
+down-dev:
+	$(COMPOSE) down --remove-orphans
 
 ensure-up:
 	@if ! $(COMPOSE) exec -T $(SERVICE_PHP) true 2>/dev/null; then \
@@ -51,6 +57,8 @@ test-coverage: ensure-up
 test-coverage-100: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) composer test-coverage-100
 
+coverage-check: test-coverage-100
+
 cs-check: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/php-cs-fixer fix --dry-run --diff
 
@@ -68,7 +76,17 @@ phpstan: ensure-up
 
 qa: cs-check test
 
-release-check: check-no-cursor-coauthor ensure-up composer-sync cs-check rector-dry phpstan test-coverage-100 release-check-demos
+validate-translations: ensure-up
+	$(COMPOSE) exec -T $(SERVICE_PHP) php .scripts/validate-translations.php
+
+check-open-prs:
+	@chmod +x .scripts/check-open-prs.sh
+	@GH_REPO=nowo-tech/TimeTrackBundle ./.scripts/check-open-prs.sh
+
+demo-smoke:
+	@if [ -f demo/Makefile ]; then $(MAKE) -C demo release-check; else echo "No demo/Makefile — skip demo-smoke"; fi
+
+release-check: check-no-cursor-coauthor check-open-prs ensure-up composer-sync cs-check rector-dry phpstan validate-translations coverage-check release-check-demos
 
 release-check-demos:
 	$(MAKE) -C demo release-check
@@ -88,10 +106,13 @@ clean:
 time-track-purge-tokens: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) php bin/console nowo:time-track:client-tokens:purge --no-interaction 2>/dev/null || echo "Run inside a Symfony app with the bundle installed."
 
-include $(BUNDLE_ROOT)/../.scripts/Makefile.update-deps.mk
+# Optional: monorepo helper absent on standalone GitHub Actions checkout (REQ-MAKE-009).
+-include $(BUNDLE_ROOT)/../.scripts/Makefile.update-deps.mk
+
 check-no-cursor-coauthor:
 	@chmod +x .scripts/check-no-cursor-coauthor.sh
 	@./.scripts/check-no-cursor-coauthor.sh HEAD
+
 setup-hooks:
 	@chmod +x .githooks/pre-commit 2>/dev/null || true
 	@chmod +x .githooks/commit-msg 2>/dev/null || true
