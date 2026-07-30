@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-30
+
+### Added
+
+- **REQ-UI-001 `templates.css_framework`** — default `tabler`; Twig global `nowo_time_track_css_framework`. Validated enum (`bootstrap` / `bootstrap4` / `bootstrap5` / `tabler` / `tailwind` / `foundation` / `custom` / `none`). Documented in CONFIGURATION.md / USAGE.md / UPGRADING.md.
+- **REQ-UI-001 layout wiring** — `templates.layout` → Twig global `nowo_time_track_layout` via `TimeTrackTwigExtension`; pages `{% extends %}` config and stack assets with `{{ parent() }}`.
+
+### Changed
+
+- Dev / CI dependency bumps (Dependabot): php-cs-fixer, Rector, PHPStan group, `nowo-tech/phpstan-frankenphp`, `actions/checkout` v7, `actions/stale` v11.
+- Demo Symfony 8 `reference.php` refresh for new config keys.
+
 ## [1.0.6] - 2026-07-29
 
 ### Security
@@ -124,8 +136,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.6...HEAD
-[1.0.6]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.6
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.6...v1.1.0
+[1.0.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.5
 [1.0.4]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.4
 [1.0.3]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.3

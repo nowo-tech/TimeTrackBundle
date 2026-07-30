@@ -2,7 +2,17 @@
 
 - **Web timer:** `/tools/time-track` — start/stop timer on trackable tasks
 - **Reports:** `/tools/time-track/reports` — last 7 days of entries
-- **Override Twig:** `templates/bundles/NowoTimeTrackBundle/`
+- **Layout without forking pages:** set `nowo_time_track.templates.layout` to your project layout (Twig global `nowo_time_track_layout`). The vendor `layout.html.twig` is the demo fallback only — see [CONFIGURATION.md](CONFIGURATION.md#templates-req-ui-001).
+- **CSS stack:** set `nowo_time_track.templates.css_framework` (default `tabler`) to match the host. Twig global: `nowo_time_track_css_framework`. Markup already uses Tabler/Bootstrap 5-compatible classes; with `custom`, style those classes (or `nowo-ui-*`) in the host — no page Twig fork required.
+- **Override Twig (escape hatch):** `templates/bundles/NowoTimeTrackBundle/` — prefer config/`layout` + `css_framework` + `{{ parent() }}` asset stacking for upgrades.
+
+```yaml
+nowo_time_track:
+    user_class: App\Entity\User
+    templates:
+        layout: base.html.twig
+        css_framework: tabler   # bootstrap5 | custom | …
+```
 
 ## API (clients)
 

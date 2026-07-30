@@ -1278,7 +1278,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         },
  *     },
  *     templates?: array{
- *         layout?: scalar|Param|null, // Default: "@NowoTimeTrackBundle/layout.html.twig"
+ *         layout?: scalar|Param|null, // Twig layout extended by timer/report pages (global nowo_time_track_layout). Host apps should set this to the project layout; the default is for demos only. // Default: "@NowoTimeTrackBundle/layout.html.twig"
  *         index?: scalar|Param|null, // Default: "@NowoTimeTrackBundle/time_track/index.html.twig"
  *         reports?: scalar|Param|null, // Default: "@NowoTimeTrackBundle/time_track/reports.html.twig"
  *     },

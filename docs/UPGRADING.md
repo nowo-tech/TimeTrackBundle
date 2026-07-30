@@ -2,6 +2,35 @@
 
 This document describes how to upgrade between versions of TimeTrack Bundle.
 
+## 1.1.0 (2026-07-30)
+
+Host layout / CSS stack integration without forking timer pages (REQ-UI-001). Aligned with TaskBoardBundle **1.3.0**.
+
+```bash
+composer require nowo-tech/time-track-bundle:^1.1.0
+php bin/console cache:clear
+```
+
+### Layout integration (REQ-UI-001)
+
+- Timer/report pages now `{% extends nowo_time_track_layout %}` (Twig global from `nowo_time_track.templates.layout`).
+- **Hosts:** set `templates.layout` to the project layout (or a one-file bridge). Do not fork `index.html.twig` / `reports.html.twig` only to change chrome.
+- Custom Twig overrides that still hard-code `@NowoTimeTrackBundle/layout.html.twig` should switch to the global so config takes effect.
+- Styles/scripts blocks on pages call `{{ parent() }}` so host assets remain when using the project layout.
+
+### CSS framework (REQ-UI-001)
+
+- New config `templates.css_framework` (default **`tabler`**) exposed as Twig global `nowo_time_track_css_framework`.
+- Accepted values: `bootstrap`, `bootstrap4`, `bootstrap5`, `tabler`, `tailwind`, `foundation`, `custom`, `none`.
+- Align with TaskBoardBundle (`templates.css_framework`). Set the same value as your host admin stack; with `custom`, keep Bootstrap/Tabler-compatible class names styled by the host.
+
+```yaml
+nowo_time_track:
+    templates:
+        layout: 'base.html.twig'
+        css_framework: tabler   # or bootstrap5 | custom
+```
+
 ## 1.0.x patch releases
 
 ### 1.0.6 (2026-07-29)

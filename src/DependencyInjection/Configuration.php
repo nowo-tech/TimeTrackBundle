@@ -16,6 +16,18 @@ final class Configuration implements ConfigurationInterface
 {
     public const ALIAS = 'nowo_time_track';
 
+    /** @var list<string> Host CSS stacks accepted by templates.css_framework (REQ-UI-001). */
+    public const CSS_FRAMEWORKS = [
+        'bootstrap',
+        'bootstrap4',
+        'bootstrap5',
+        'tailwind',
+        'foundation',
+        'custom',
+        'tabler',
+        'none',
+    ];
+
     public function getConfigTreeBuilder(): TreeBuilder
     {
         $treeBuilder = new TreeBuilder(self::ALIAS);
@@ -96,6 +108,13 @@ final class Configuration implements ConfigurationInterface
                     ->children()
                         ->scalarNode('layout')
                             ->defaultValue('@NowoTimeTrackBundle/layout.html.twig')
+                            ->cannotBeEmpty()
+                            ->info('Twig layout extended by timer/report pages via global nowo_time_track_layout (REQ-UI-001). Host apps set this to the project layout or a one-file bridge. Default is the bundle demo layout.')
+                        ->end()
+                        ->enumNode('css_framework')
+                            ->values(self::CSS_FRAMEWORKS)
+                            ->defaultValue('tabler')
+                            ->info('Host-chosen CSS stack (REQ-UI-001). Twig global nowo_time_track_css_framework. Default tabler matches the shared demo Tabler CDN. Values: bootstrap (alias of bootstrap5), bootstrap4, bootstrap5, tabler (Bootstrap-compatible), tailwind, foundation, custom, none. Pages ship Tabler/Bootstrap 5-compatible classes; custom relies on host CSS / semantic nowo-ui-* classes.')
                         ->end()
                         ->scalarNode('index')
                             ->defaultValue('@NowoTimeTrackBundle/time_track/index.html.twig')

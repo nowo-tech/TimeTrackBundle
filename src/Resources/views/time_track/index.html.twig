@@ -1,6 +1,14 @@
-{% extends '@NowoTimeTrackBundle/layout.html.twig' %}
+{% extends nowo_time_track_layout %}
 
 {% block title %}{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}
+
+{% block stylesheets %}
+    {{ parent() }}
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+{% endblock %}
 
 {% block body %}
 <h1>{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}</h1>

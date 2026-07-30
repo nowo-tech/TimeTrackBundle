@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\TestCase;
 use stdClass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -31,9 +32,59 @@ final class TimeTrackExtensionTest extends TestCase
 
         self::assertSame('App\\Entity\\User', $container->getParameter('nowo_time_track.user_class'));
         self::assertTrue($container->getParameter('nowo_time_track.clients.enabled'));
+        self::assertSame(
+            '@NowoTimeTrackBundle/layout.html.twig',
+            $container->getParameter('nowo_time_track.templates.layout'),
+        );
         self::assertTrue($container->hasAlias(TaskProviderInterface::class));
         self::assertTrue($container->hasAlias(TeamContextProviderInterface::class));
         self::assertTrue($container->hasDefinition(StubTaskProvider::class));
+        self::assertTrue($container->hasDefinition(TimeTrackTwigExtension::class));
+        self::assertSame(
+            '@NowoTimeTrackBundle/layout.html.twig',
+            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$layoutTemplate'),
+        );
+        self::assertSame('tabler', $container->getParameter('nowo_time_track.templates.css_framework'));
+        self::assertSame(
+            'tabler',
+            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
+        );
+    }
+
+    public function testLoadWiresCustomLayoutIntoTwigGlobalArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+
+        (new TimeTrackExtension())->load([[
+            'user_class' => 'App\\Entity\\User',
+            'templates'  => ['layout' => 'base.html.twig'],
+        ]], $container);
+
+        self::assertSame('base.html.twig', $container->getParameter('nowo_time_track.templates.layout'));
+        self::assertSame(
+            'base.html.twig',
+            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$layoutTemplate'),
+        );
+        self::assertSame('base.html.twig', $container->getParameter('nowo_time_track.templates')['layout']);
+    }
+
+    public function testLoadWiresCustomCssFrameworkIntoTwigGlobalArgument(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+
+        (new TimeTrackExtension())->load([[
+            'user_class' => 'App\\Entity\\User',
+            'templates'  => ['css_framework' => 'custom'],
+        ]], $container);
+
+        self::assertSame('custom', $container->getParameter('nowo_time_track.templates.css_framework'));
+        self::assertSame(
+            'custom',
+            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
+        );
+        self::assertSame('custom', $container->getParameter('nowo_time_track.templates')['css_framework']);
     }
 
     public function testPrependRegistersDoctrineMapping(): void

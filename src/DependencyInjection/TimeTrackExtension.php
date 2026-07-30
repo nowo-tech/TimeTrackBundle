@@ -20,6 +20,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
+use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -58,6 +59,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.clients.cors_allowed_origins', $clients['cors_allowed_origins']);
         $container->setParameter('nowo_time_track.routes', $config['routes']);
         $container->setParameter('nowo_time_track.templates', $config['templates']);
+        $container->setParameter('nowo_time_track.templates.layout', $config['templates']['layout']);
+        $container->setParameter('nowo_time_track.templates.css_framework', $config['templates']['css_framework']);
         $container->setParameter('nowo_time_track.route_prefix', $config['route_prefix']);
         $container->setParameter('nowo_time_track.security.admin_roles', $security['admin_roles']);
 
@@ -138,6 +141,12 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');
+
+        if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
+            $container->getDefinition(TimeTrackTwigExtension::class)
+                ->setArgument('$layoutTemplate', $config['templates']['layout'])
+                ->setArgument('$cssFramework', $config['templates']['css_framework']);
+        }
     }
 
     public function getAlias(): string
