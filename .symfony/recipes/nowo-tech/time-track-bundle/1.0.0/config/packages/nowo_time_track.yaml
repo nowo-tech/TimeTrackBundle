@@ -1,4 +1,8 @@
 nowo_time_track:
     user_class: App\Entity\User
+    # security:
+    #     access_roles: [ROLE_USER]
+    #     access_checker: null
+    #     allow_unauthenticated: false   # default; never true in production
     clients:
         enabled: true

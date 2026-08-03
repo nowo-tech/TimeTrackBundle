@@ -10,12 +10,13 @@ use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 final class TimeTrackManageController extends AbstractController
 {
@@ -24,13 +25,16 @@ final class TimeTrackManageController extends AbstractController
      */
     public function __construct(
         private readonly TimerService $timerService,
+        private readonly TimeTrackAccessCheckerInterface $accessChecker,
         private readonly array $templates,
+        private readonly bool $allowUnauthenticated = false,
     ) {
     }
 
-    #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
+        $this->denyUnlessGrantedAccess();
+
         $user   = $this->getUser();
         $active = $user instanceof UserInterface ? $this->timerService->getActive($user) : null;
         $tasks  = $user instanceof UserInterface ? $this->timerService->listTasks($user, new TaskListQuery(limit: 20)) : [];
@@ -71,9 +75,10 @@ final class TimeTrackManageController extends AbstractController
         ]);
     }
 
-    #[IsGranted('ROLE_USER')]
     public function reports(Request $request): Response
     {
+        $this->denyUnlessGrantedAccess();
+
         $user = $this->getUser();
         if (!$user instanceof UserInterface) {
             return $this->redirectToRoute('nowo_time_track_index');
@@ -89,5 +94,16 @@ final class TimeTrackManageController extends AbstractController
             'from'    => $from,
             'to'      => $to,
         ]);
+    }
+
+    private function denyUnlessGrantedAccess(): void
+    {
+        if ($this->allowUnauthenticated) {
+            return;
+        }
+
+        if (!$this->accessChecker->canAccess($this->getUser())) {
+            throw new AccessDeniedException('Access to TimeTrack manage UI is denied.');
+        }
     }
 }

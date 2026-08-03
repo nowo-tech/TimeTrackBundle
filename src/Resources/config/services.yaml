@@ -16,6 +16,9 @@ services:
             - '../../Client/ClientResponseFactory.php'
             - '../../Client/DefaultClientAuthenticator.php'
             - '../../Service/TeamAccessGuard.php'
+            - '../../Security/TimeTrackAccessCheckerInterface.php'
+            - '../../Security/ConfigurableTimeTrackAccessChecker.php'
+            - '../../Security/AllowAllTimeTrackAccessChecker.php'
 
     Nowo\TimeTrackBundle\Controller\:
         resource: '../../Controller/'
@@ -43,3 +46,4 @@ services:
         public: true
         arguments:
             $templates: '%nowo_time_track.templates%'
+            $allowUnauthenticated: '%nowo_time_track.security.allow_unauthenticated%'

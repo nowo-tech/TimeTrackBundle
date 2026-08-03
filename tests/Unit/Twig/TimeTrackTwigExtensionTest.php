@@ -20,8 +20,8 @@ final class TimeTrackTwigExtensionTest extends TestCase
             ],
             $extension->getGlobals(),
         );
-        self::assertSame('nowo_time_track_layout', TimeTrackTwigExtension::GLOBAL_LAYOUT);
-        self::assertSame('nowo_time_track_css_framework', TimeTrackTwigExtension::GLOBAL_CSS_FRAMEWORK);
+        self::assertArrayHasKey('nowo_time_track_layout', $extension->getGlobals());
+        self::assertArrayHasKey('nowo_time_track_css_framework', $extension->getGlobals());
     }
 
     public function testDefaultGlobalsMatchBundleDemo(): void

@@ -10,33 +10,6 @@
             "options": {
                 "symlink": true
             }
-        },
-        {
-            "type": "path",
-            "url": "/var/task-board-bundle",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "path",
-            "url": "/var/tag-input-bundle",
-            "options": {
-                "symlink": true,
-                "versions": {
-                    "nowo-tech/tag-input-bundle": "1.0.1"
-                }
-            }
-        },
-        {
-            "type": "path",
-            "url": "/var/tiptap-editor-bundle",
-            "options": {
-                "symlink": true,
-                "versions": {
-                    "nowo-tech/tiptap-editor-bundle": "1.0.6"
-                }
-            }
         }
     ],
     "require": {
@@ -47,7 +20,7 @@
         "doctrine/migrations": "^3.8",
         "doctrine/orm": "^3.0",
         "nowo-tech/tag-input-bundle": "^1.0",
-        "nowo-tech/task-board-bundle": "*",
+        "nowo-tech/task-board-bundle": "^1.0",
         "nowo-tech/time-track-bundle": "*",
         "nowo-tech/tiptap-editor-bundle": "^1.0",
         "symfony/asset": "8.1.*",
@@ -65,7 +38,7 @@
         "symfony/yaml": "8.1.*"
     },
     "require-dev": {
-        "nowo-tech/twig-inspector-bundle": "*",
+        "nowo-tech/twig-inspector-bundle": "^1.0",
         "phpunit/phpunit": "^11.0",
         "symfony/browser-kit": "8.1.*",
         "symfony/css-selector": "8.1.*",

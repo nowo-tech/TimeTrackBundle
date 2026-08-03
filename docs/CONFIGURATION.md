@@ -68,8 +68,20 @@ Pages call `{{ parent() }}` in `stylesheets` / `javascripts` so host assets keep
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `security.admin_roles` | `[ROLE_ADMIN]` | Full report access |
+| `security.access_checker` | `null` | Custom `TimeTrackAccessCheckerInterface` service id |
+| `security.access_roles` | `[ROLE_USER]` | Open manage UI (hosts may set `ROLE_ADMIN` for admin-only) |
+| `security.allow_unauthenticated` | `false` | DEV/DEMO only — wires AllowAll checker; production MUST keep `false` |
+| `security.admin_roles` | `[ROLE_ADMIN]` | Full report access via `TeamAccessGuard` |
 | `security.manager_can_view_entries` | `true` | Managers see team entries |
 | `security.manager_can_edit_entries` | `true` | Managers edit team entries |
+
+Manage UI requires `symfony/security-bundle` when `allow_unauthenticated` is `false` (compile-time `LogicException` otherwise).
+
+```yaml
+# config/packages/security.yaml (example)
+security:
+    access_control:
+        - { path: ^/tools/time-track, roles: ROLE_USER }
+```
 
 See [BROWSER-EXTENSION.md](BROWSER-EXTENSION.md) and [DESKTOP-AGENT.md](DESKTOP-AGENT.md) for client setup.

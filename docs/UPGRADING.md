@@ -2,6 +2,48 @@
 
 This document describes how to upgrade between versions of TimeTrack Bundle.
 
+## 1.2.0 (2026-08-03)
+
+Minor release: REQ-UI-002 manage-UI access checker (`access_roles` / `access_checker` / `allow_unauthenticated`) plus SecurityBundle compile-time guard. Demo no longer path-mounts sibling optional bundles.
+
+### Install / update
+
+```bash
+composer require nowo-tech/time-track-bundle:^1.2
+php bin/console cache:clear
+```
+
+### Behaviour change (manage roles)
+
+| Topic | Before | 1.2.0 |
+| --- | --- | --- |
+| Default manage gate | `#[IsGranted('ROLE_USER')]` on controller | `TimeTrackAccessCheckerInterface` driven by `security.access_roles` (default `[ROLE_USER]`) |
+| Apps without SecurityBundle | Could boot | Boot fails with `LogicException` unless `allow_unauthenticated: true` |
+
+**Demos / trusted local kernels** without SecurityBundle:
+
+```yaml
+nowo_time_track:
+    security:
+        allow_unauthenticated: true   # never in production
+```
+
+**Production** (recommended): keep `allow_unauthenticated: false`, ensure SecurityBundle is installed, and grant at least one of `access_roles` (or provide a custom `access_checker`).
+
+### New optional config
+
+```yaml
+nowo_time_track:
+    security:
+        access_roles: [ROLE_USER]
+        access_checker: null
+        allow_unauthenticated: false
+```
+
+### Breaking changes
+
+Apps that load the manage UI without SecurityBundle must either install/configure SecurityBundle or set `allow_unauthenticated: true` for non-production use. Hosts that relied only on firewall `access_control` without matching `access_roles` should align roles.
+
 ## 1.1.0 (2026-07-30)
 
 Host layout / CSS stack integration without forking timer pages (REQ-UI-001). Aligned with TaskBoardBundle **1.3.0**.

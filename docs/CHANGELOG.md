@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-03
+
+### Added
+
+- **REQ-UI-002** — `security.access_checker`, `security.allow_unauthenticated` (default `false`), and `TimeTrackAccessCheckerInterface` (`ConfigurableTimeTrackAccessChecker` / `AllowAllTimeTrackAccessChecker`).
+- Compile-time guard: when `allow_unauthenticated` is `false`, `symfony/security-bundle` is required (`LogicException` otherwise).
+- Manage controller enforces the access checker instead of a hard-coded `#[IsGranted('ROLE_USER')]`.
+
+### Changed
+
+- Demo Composer: TaskBoard / TipTap / TagInput / TwigInspector from Packagist (no sibling path mounts).
+- Docs: CONFIGURATION / SECURITY document the dual-layer manage ACL.
+- Dev deps: `friendsofphp/php-cs-fixer` 3.95.18, `rector/rector` 2.5.9.
+
+### Compatibility
+
+- PHP `>=8.2`, `<8.6`; Symfony `^7.4 || ^8.0`.
+- Manage UI with default security settings requires **SecurityBundle** (or set `allow_unauthenticated: true` for trusted local demos).
+
 ## [1.1.0] - 2026-07-30
 
 ### Added
@@ -136,7 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.6...v1.1.0
 [1.0.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.0.5

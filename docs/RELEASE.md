@@ -3,19 +3,27 @@
 1. Update [CHANGELOG.md](CHANGELOG.md): move entries from `[Unreleased]` to a new `[X.Y.Z] - YYYY-MM-DD` section and add the version link at the bottom. (This project does not store version in `composer.json`; Packagist uses the git tag.)
 2. Update [UPGRADING.md](UPGRADING.md) if the release introduces breaking changes or new migration steps.
 3. Run `make release-check` (CS, Rector dry-run, PHPStan, 100% coverage, demo healthcheck).
-4. Commit, tag (e.g. `v1.1.0`), and push. The [release workflow](../.github/workflows/release.yml) creates the GitHub Release with the changelog entry.
+4. Commit, tag (e.g. `v1.2.0`), and push. The [release workflow](../.github/workflows/release.yml) creates the GitHub Release with the changelog entry.
 5. Publish or auto-update on [Packagist](https://packagist.org/packages/nowo-tech/time-track-bundle) if applicable.
 
-Current stable target: **v1.1.0**.
+Current stable target: **v1.2.0**.
 
 ### Tag message
 
 Use an annotated tag with a short summary; the release workflow merges it with the CHANGELOG section:
 
 ```bash
+git tag -a v1.2.0 -m "Release v1.2.0 - REQ-UI-002 access_checker / allow_unauthenticated"
+git push origin main
+git push origin v1.2.0
+```
+
+After creating the release commit and tag, run `make check-no-cursor-coauthor` again **before** `git push` (REQ-GIT-001). The release commit itself is not covered by an earlier `release-check` run.
+
+### Example for v1.1.0
+
+```bash
 git tag -a v1.1.0 -m "Release 1.1.0: templates.layout / css_framework (REQ-UI-001)"
 git push origin main
 git push origin v1.1.0
 ```
-
-After creating the release commit and tag, run `make check-no-cursor-coauthor` again **before** `git push` (REQ-GIT-001). The release commit itself is not covered by an earlier `release-check` run.

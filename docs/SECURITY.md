@@ -18,7 +18,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 
 | Surface | Description |
 | ------- | ----------- |
-| Manage UI | Authenticated CRUD for time entries and reports |
+| Manage UI | Authenticated CRUD for time entries and reports (`TimeTrackAccessCheckerInterface` + `security.access_roles`) |
 | Client API | Bearer tokens for extension clients |
 | Configuration | CORS origins, token TTL, table prefix |
 
@@ -31,6 +31,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 | IDOR on entries | `TimeEntryAccessCheckEvent` and team context provider |
 | CORS abuse | Restrict `clients.cors_allowed_origins` in production |
 | CSRF on manage UI | Manage POST start/stop require Symfony CSRF token `nowo_time_track_manage` |
+| Unauthenticated manage UI | Keep `security.allow_unauthenticated: false` in production; demo-only bypass wires AllowAll checker |
 
 ## Client API
 

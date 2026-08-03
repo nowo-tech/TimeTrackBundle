@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\DependencyInjection;
 
+use LogicException;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
@@ -19,6 +20,9 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
+use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
+use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Symfony\Component\Config\FileLocator;
@@ -63,6 +67,18 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.templates.css_framework', $config['templates']['css_framework']);
         $container->setParameter('nowo_time_track.route_prefix', $config['route_prefix']);
         $container->setParameter('nowo_time_track.security.admin_roles', $security['admin_roles']);
+        $container->setParameter('nowo_time_track.security.access_roles', $security['access_roles']);
+        $container->setParameter('nowo_time_track.security.access_checker', $security['access_checker']);
+        $container->setParameter('nowo_time_track.security.allow_unauthenticated', $security['allow_unauthenticated']);
+
+        if (
+            !$security['allow_unauthenticated']
+            && !$this->isSecurityBundleAvailable($container)
+        ) {
+            throw new LogicException('TimeTrackBundle manage UI requires symfony/security-bundle when security.allow_unauthenticated is false.');
+        }
+
+        $this->registerAccessChecker($container, $security);
 
         $taskProviderId = $config['task_provider'] ?? StubTaskProvider::class;
         if (!is_string($taskProviderId) || $taskProviderId === '') {
@@ -152,6 +168,48 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     public function getAlias(): string
     {
         return Configuration::ALIAS;
+    }
+
+    /** @param array<string, mixed> $security */
+    private function registerAccessChecker(ContainerBuilder $container, array $security): void
+    {
+        if ($security['allow_unauthenticated']) {
+            $accessCheckerId = 'nowo_time_track.access_checker.allow_all';
+            $container->setDefinition($accessCheckerId, new Definition(AllowAllTimeTrackAccessChecker::class));
+            $container->setAlias(TimeTrackAccessCheckerInterface::class, $accessCheckerId);
+
+            return;
+        }
+
+        $accessCheckerId = $security['access_checker'] ?? null;
+        if (!is_string($accessCheckerId) || $accessCheckerId === '') {
+            $accessCheckerId = 'nowo_time_track.access_checker.default';
+            $container->setDefinition($accessCheckerId, (new Definition(ConfigurableTimeTrackAccessChecker::class))
+                ->setAutowired(true)
+                ->setArgument('$accessRoles', $security['access_roles']));
+        }
+
+        $container->setAlias(TimeTrackAccessCheckerInterface::class, $accessCheckerId);
+    }
+
+    /**
+     * Prefer kernel.bundles: ContainerBuilder::hasExtension() can be false while SecurityBundle
+     * is already registered (e.g. during early Flex cache:clear boots).
+     */
+    private function isSecurityBundleAvailable(ContainerBuilder $container): bool
+    {
+        if ($container->hasExtension('security')) {
+            return true;
+        }
+
+        if (!$container->hasParameter('kernel.bundles')) {
+            return false;
+        }
+
+        /** @var array<string, class-string> $bundles */
+        $bundles = $container->getParameter('kernel.bundles');
+
+        return isset($bundles['SecurityBundle']);
     }
 
     public function prepend(ContainerBuilder $container): void

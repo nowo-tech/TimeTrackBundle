@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 
+use App\Entity\User;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
@@ -14,7 +15,7 @@ final class ConfigurationTest extends TestCase
     public function testDefaultConfiguration(): void
     {
         $config = (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => 'App\\Entity\\User',
+            'user_class' => User::class,
         ]]);
 
         self::assertSame('time_track_', $config['table_prefix']);
@@ -28,7 +29,7 @@ final class ConfigurationTest extends TestCase
     public function testCustomLayoutAndCssFramework(): void
     {
         $config = (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => 'App\\Entity\\User',
+            'user_class' => User::class,
             'templates'  => [
                 'layout'        => 'base.html.twig',
                 'css_framework' => 'bootstrap5',
@@ -45,7 +46,7 @@ final class ConfigurationTest extends TestCase
     public function testAcceptsCssFrameworkValues(string $value): void
     {
         $config = (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => 'App\\Entity\\User',
+            'user_class' => User::class,
             'templates'  => ['css_framework' => $value],
         ]]);
 
@@ -67,7 +68,7 @@ final class ConfigurationTest extends TestCase
         $this->expectException(InvalidConfigurationException::class);
 
         (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => 'App\\Entity\\User',
+            'user_class' => User::class,
             'templates'  => ['css_framework' => 'bulma'],
         ]]);
     }
