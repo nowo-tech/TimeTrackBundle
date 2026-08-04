@@ -265,11 +265,11 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $defaults  = [];
 
         if (!$hostHasCssFramework) {
-            $fw = (string) ($templates['css_framework'] ?? 'tabler');
+            $fw                        = (string) ($templates['css_framework'] ?? 'tabler');
             $defaults['css_framework'] = $fw === 'bootstrap' ? 'bootstrap5' : $fw;
         }
         if (!$hostHasIconSet) {
-            $fwForIcons = (string) ($defaults['css_framework'] ?? $templates['css_framework'] ?? 'tabler');
+            $fwForIcons           = (string) ($defaults['css_framework'] ?? $templates['css_framework'] ?? 'tabler');
             $defaults['icon_set'] = $fwForIcons === 'tabler' ? 'tabler-icons' : 'bootstrap-icons';
         }
 
