@@ -3,7 +3,9 @@
   Host apps: set nowo_time_track.templates.layout to the project layout (or a one-file bridge).
   Pages extend Twig global nowo_time_track_layout and fill body / nowo_ui_content.
   CSS stack hint: nowo_time_track.templates.css_framework (Twig global nowo_time_track_css_framework; default tabler).
+  UiKit CSS: asset('css/nowo-ui.css', 'nowo_ui_kit') (REQ-UI-001-kit).
 #}
+{% import '@NowoUiKitBundle/macros/ui.html.twig' as ui %}
 <!DOCTYPE html>
 <html lang="{{ app.request.locale|default('en') }}">
 <head>
@@ -13,6 +15,7 @@
     {% block stylesheets %}
         {% block nowo_ui_styles %}
             {# Demo layout styles — skipped when host sets templates.layout to the project layout. #}
+            <link rel="stylesheet" href="{{ asset('css/nowo-ui.css', 'nowo_ui_kit') }}">
             <style>
                 :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
                 body { margin: 0; padding: 1.5rem; background: #0f172a; color: #e2e8f0; }

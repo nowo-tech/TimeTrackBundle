@@ -62,6 +62,9 @@
     "nowo-tech/twig-inspector-bundle": {
         "version": "v1.0.33"
     },
+    "nowo-tech/ui-kit-bundle": {
+        "version": "v1.4.0"
+    },
     "nowo-tech/yopass-bundle": {
         "version": "dev-main"
     },
@@ -237,5 +240,8 @@
             "config/packages/web_profiler.yaml",
             "config/routes/web_profiler.yaml"
         ]
+    },
+    "twig/extra-bundle": {
+        "version": "v3.24.0"
     }
 }
