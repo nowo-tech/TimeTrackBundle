@@ -18,6 +18,7 @@ This bundle is **FrankenPHP worker mode friendly**.
 - Teams and managers v1 via `TeamContextProviderInterface`
 - Task integration via `TaskProviderInterface` (designed for `nowo-tech/task-board-bundle`)
 - Symfony events for timer start/stop and entry ACL
+- **Ops:** `nowo:time-track:client-tokens:purge` for expired browser/desktop tokens
 
 ## Installation
 
