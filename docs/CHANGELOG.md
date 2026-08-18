@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-18
+
+### Changed
+
+- **Demos:** pin `nowo-tech/hot-reload-bundle` to `^1.4` with FrankenPHP Mercure/`hot_reload` (`dev`/`test` only).
+
+[1.3.1]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.3.1
+
 ## [1.3.0] - 2026-08-04
 
 ### Added
@@ -167,7 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.1...HEAD
 [1.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.6...v1.1.0
 [1.0.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.5...v1.0.6
