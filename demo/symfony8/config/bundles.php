@@ -9,6 +9,7 @@ use Nowo\TagInputBundle\NowoTagInputBundle;
 use Nowo\TaskBoardBundle\TaskBoardBundle;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TiptapEditorBundle\NowoTiptapEditorBundle;
+use Nowo\HotReloadBundle\NowoHotReloadBundle;
 use Nowo\TwigInspectorBundle\NowoTwigInspectorBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
 use Symfony\Bundle\DebugBundle\DebugBundle;
@@ -28,6 +29,7 @@ return [
     TimeTrackBundle::class          => ['all' => true],
     TaskBoardBundle::class          => ['all' => true],
     NowoUiKitBundle::class          => ['all' => true],
+    NowoHotReloadBundle::class  => ['dev' => true, 'test' => true],
     NowoTwigInspectorBundle::class  => ['dev' => true, 'test' => true],
     WebProfilerBundle::class        => ['dev' => true, 'test' => true],
     DebugBundle::class              => ['dev' => true],
