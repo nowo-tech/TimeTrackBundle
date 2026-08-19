@@ -178,6 +178,15 @@ Neither client is part of the Packagist archive (`demo/` and client folders are 
 
 ## Unreleased
 
+## To 1.3.2
+
+No application upgrade steps.
+
+```bash
+composer update nowo-tech/time-track-bundle
+php bin/console cache:clear
+```
+
 ## To 1.3.1
 
 No application upgrade steps. **Demos only:** Hot Reload Bundle `^1.4` (FrankenPHP Mercure/`hot_reload`, `dev`/`test`).
