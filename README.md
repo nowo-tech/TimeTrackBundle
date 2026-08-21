@@ -57,6 +57,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [GitHub Actions CI requirements](docs/GITHUB_CI.md)
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)
+- [PSR evaluation (REQ-CS-007)](docs/PSR.md)
 - [Usage](docs/USAGE.md)
 - [Browser extension](docs/BROWSER-EXTENSION.md)
 - [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
