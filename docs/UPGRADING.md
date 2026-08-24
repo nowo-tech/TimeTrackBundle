@@ -1,5 +1,27 @@
 # Upgrading
 
+## Table of contents
+
+- [From 1.3.2 to 1.3.3](#from-132-to-133)
+
+## From 1.3.2 to 1.3.3
+
+No breaking changes. **No application upgrade steps.**
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+## From 1.3.2 to 1.3.3
+
+No breaking changes. **No application upgrade steps.**
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+# Upgrading
+
 This document describes how to upgrade between versions of TimeTrack Bundle.
 
 ## 1.2.0 (2026-08-03)
