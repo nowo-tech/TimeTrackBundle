@@ -159,16 +159,22 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->json(['error' => 'Unauthorized.'], Response::HTTP_UNAUTHORIZED, $request);
         }
 
-        /** @var mixed $payload */
-        $payload = json_decode($request->getContent(), true);
-        $taskId  = is_array($payload) ? (string) ($payload['taskId'] ?? '') : '';
+        /** @var mixed $decoded */
+        $decoded = json_decode($request->getContent(), true);
+        if (!is_array($decoded)) {
+            return $this->responseFactory->json(['error' => 'taskId is required.'], Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        /** @var array<string, mixed> $payload */
+        $payload = $decoded;
+        $taskId  = (string) ($payload['taskId'] ?? '');
         if ($taskId === '') {
             return $this->responseFactory->json(['error' => 'taskId is required.'], Response::HTTP_BAD_REQUEST, $request);
         }
 
-        $clientType = $this->resolveClientType(is_array($payload) ? (string) ($payload['clientType'] ?? 'extension') : 'extension');
+        $clientType = $this->resolveClientType((string) ($payload['clientType'] ?? 'extension'));
         /** @var array<string, mixed> $metadata */
-        $metadata = is_array($payload) && isset($payload['metadata']) && is_array($payload['metadata']) ? $payload['metadata'] : [];
+        $metadata = isset($payload['metadata']) && is_array($payload['metadata']) ? $payload['metadata'] : [];
 
         try {
             $timer = $this->timerService->start($user, $taskId, $clientType, $metadata);
