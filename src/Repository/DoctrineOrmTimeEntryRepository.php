@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use SortDirection;
 
 final readonly class DoctrineOrmTimeEntryRepository implements TimeEntryRepositoryInterface
 {
@@ -37,7 +38,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements TimeEntryReposito
             ->setParameter('userId', $userId)
             ->setParameter('from', $from)
             ->setParameter('to', $to)
-            ->orderBy('e.startedAt', 'DESC')
+            ->orderBy('e.startedAt', SortDirection::Descending)
             ->getQuery()
             ->getResult();
 
