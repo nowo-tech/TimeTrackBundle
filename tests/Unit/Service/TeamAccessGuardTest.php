@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Service;
 
 use DateTimeImmutable;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
+use Nowo\TimeTrackBundle\Tests\Stub\MutableRoleUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTeamContextProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use PHPUnit\Framework\TestCase;
@@ -202,5 +205,63 @@ final class TeamAccessGuardTest extends TestCase
         );
 
         self::assertFalse($guard->canEditEntry(new TestUser('1', 'u@example.com'), $entry));
+    }
+
+    public function testSecondRequestWithoutResetSeesAdminRoleRevokedByAnotherWorker(): void
+    {
+        $admin         = new MutableRoleUser('1', ['ROLE_ADMIN']);
+        $databaseRoles = ['ROLE_ADMIN'];
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('isOpen')->willReturn(true);
+        $entityManager->method('contains')->with($admin)->willReturn(true);
+        $entityManager->expects(self::exactly(2))->method('refresh')->with($admin)->willReturnCallback(
+            static function (MutableRoleUser $user) use (&$databaseRoles): void {
+                $user->roles = $databaseRoles;
+            },
+        );
+
+        $registry = $this->createMock(ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturn($entityManager);
+
+        $guard = new TeamAccessGuard(new StubTeamContextProvider(), new EventDispatcher(), ['ROLE_ADMIN'], false, false, $registry);
+
+        self::assertTrue($guard->canViewUserEntries($admin, '99'));
+
+        $databaseRoles = ['ROLE_USER'];
+
+        self::assertFalse($guard->canViewUserEntries($admin, '99'));
+    }
+
+    public function testDoesNotRefreshUnmanagedUserOrWhenManagerClosed(): void
+    {
+        $admin = new MutableRoleUser('1', ['ROLE_ADMIN']);
+
+        $closed = $this->createMock(EntityManagerInterface::class);
+        $closed->method('isOpen')->willReturn(false);
+        $closed->expects(self::never())->method('refresh');
+
+        $unmanaged = $this->createMock(EntityManagerInterface::class);
+        $unmanaged->method('isOpen')->willReturn(true);
+        $unmanaged->method('contains')->willReturn(false);
+        $unmanaged->expects(self::never())->method('refresh');
+
+        $registry = $this->createMock(ManagerRegistry::class);
+        $registry->method('getManagerForClass')->willReturnOnConsecutiveCalls($closed, $unmanaged, null);
+
+        $guard = new TeamAccessGuard(new StubTeamContextProvider(), new EventDispatcher(), ['ROLE_ADMIN'], false, false, $registry);
+
+        self::assertTrue($guard->canViewUserEntries($admin, '99'));
+        self::assertTrue($guard->canViewUserEntries($admin, '99'));
+        self::assertTrue($guard->canViewUserEntries($admin, '99'));
+    }
+
+    public function testSkipsRefreshWhenNoAdminRolesConfigured(): void
+    {
+        $registry = $this->createMock(ManagerRegistry::class);
+        $registry->expects(self::never())->method('getManagerForClass');
+
+        $guard = new TeamAccessGuard(new StubTeamContextProvider(), new EventDispatcher(), [], false, false, $registry);
+
+        self::assertFalse($guard->canViewUserEntries(new MutableRoleUser('1', ['ROLE_ADMIN']), '99'));
     }
 }

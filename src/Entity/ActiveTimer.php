@@ -102,10 +102,12 @@ class ActiveTimer
     /** @phpstan-impure */
     public function heartbeat(bool $isIdle = false): self
     {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastHeartbeatAt = new DateTimeImmutable();
         $metadata              = $this->metadata ?? [];
         $metadata['isIdle']    = $isIdle;
-        $this->metadata        = $metadata;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->metadata = $metadata;
 
         return $this;
     }

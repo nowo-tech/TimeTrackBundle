@@ -6,7 +6,6 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Routing;
 
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
 use Symfony\Component\Routing\Route;
 
 final class TimeTrackRouteLoaderTest extends TestCase
@@ -54,12 +53,14 @@ final class TimeTrackRouteLoaderTest extends TestCase
         self::assertNull($collection->get('nowo_time_track_api_login'));
     }
 
-    public function testCannotLoadRoutesTwice(): void
+    public function testCanLoadRoutesAgainInTheSameProcess(): void
     {
         $loader = new TimeTrackRouteLoader(false, [], ['index' => ['path' => '/tools/time-track', 'name' => 'nowo_time_track_index']], '');
-        $loader->load('.');
+        $first  = $loader->load('.');
 
-        $this->expectException(RuntimeException::class);
-        $loader->load('.');
+        $second = $loader->load('.');
+
+        self::assertNotSame($first, $second);
+        self::assertSame('/tools/time-track', $second->get('nowo_time_track_index')?->getPath());
     }
 }

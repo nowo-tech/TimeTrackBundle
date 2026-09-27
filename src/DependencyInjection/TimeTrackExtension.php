@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
@@ -109,7 +110,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         ] as $repoClass => $interface) {
             $container->setDefinition($repoClass, (new Definition($repoClass))
                 ->setAutowired(false)
-                ->setArgument('$entityManager', $emRef));
+                ->setArgument('$entityManager', $emRef)
+                ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)));
             $container->setAlias($interface, $repoClass);
         }
 
@@ -155,7 +157,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$eventDispatcher', new Reference('event_dispatcher'))
             ->setArgument('$adminRoles', $security['admin_roles'])
             ->setArgument('$managerCanViewEntries', (bool) $security['manager_can_view_entries'])
-            ->setArgument('$managerCanEditEntries', (bool) $security['manager_can_edit_entries']));
+            ->setArgument('$managerCanEditEntries', (bool) $security['manager_can_edit_entries'])
+            ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)));
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');

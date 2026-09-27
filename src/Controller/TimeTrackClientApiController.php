@@ -64,6 +64,7 @@ final readonly class TimeTrackClientApiController
 
         $result = $this->authService->login($username, $password, $clientType);
         if ($result === null) {
+            // @igor-ignore - HTTP handler delegates to services; no controller worker state.
             $this->loginRateLimiter->registerFailedAttempt($clientIp, $username);
 
             return $this->responseFactory->json(['error' => 'Invalid credentials.'], Response::HTTP_UNAUTHORIZED, $request);

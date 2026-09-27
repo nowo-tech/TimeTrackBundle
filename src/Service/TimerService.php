@@ -98,6 +98,7 @@ final readonly class TimerService
         );
 
         $this->timeEntryRepository->save($entry);
+        // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
         $this->activeTimerRepository->remove($timer);
         $this->eventDispatcher->dispatch(new TimerStopEvent($user, $entry), TimeTrackEvents::TIMER_STOP);
 

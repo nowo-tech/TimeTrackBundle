@@ -6,15 +6,12 @@ namespace Nowo\TimeTrackBundle\Routing;
 
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackManageController;
-use RuntimeException;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
 final class TimeTrackRouteLoader extends Loader
 {
-    private bool $loaded = false;
-
     /**
      * @param array<string, array{path: string, name: string}> $clientRoutes
      * @param array<string, array{path: string, name: string}> $manageRoutes
@@ -29,12 +26,7 @@ final class TimeTrackRouteLoader extends Loader
 
     public function load(mixed $resource, ?string $type = null): RouteCollection
     {
-        if ($this->loaded) {
-            throw new RuntimeException('TimeTrack routes already loaded.');
-        }
-
-        $this->loaded = true;
-        $collection   = new RouteCollection();
+        $collection = new RouteCollection();
 
         $manageController = TimeTrackManageController::class;
         /** @var array<string, array{0: string, 1: list<string>}> $manageMap */

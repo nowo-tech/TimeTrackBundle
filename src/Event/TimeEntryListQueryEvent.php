@@ -48,6 +48,7 @@ final class TimeEntryListQueryEvent extends Event
      */
     public function setUserIds(array $userIds): void
     {
+        // @igor-ignore - Request-scoped Event DTO; not a shared worker service.
         $this->userIds = $userIds;
     }
 }

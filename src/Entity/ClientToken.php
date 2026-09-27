@@ -83,6 +83,7 @@ class ClientToken
 
     public function touch(): self
     {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastUsedAt = new DateTimeImmutable();
 
         return $this;

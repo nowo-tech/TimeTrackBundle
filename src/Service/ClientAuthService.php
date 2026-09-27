@@ -6,8 +6,10 @@ namespace Nowo\TimeTrackBundle\Service;
 
 use DateInterval;
 use DateTimeImmutable;
+use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
@@ -29,6 +31,7 @@ final readonly class ClientAuthService
         private ClientAuthenticatorInterface $authenticator,
         private ClientTokenRepositoryInterface $tokenRepository,
         private int $tokenTtlSeconds,
+        private ?ManagerRegistry $managerRegistry = null,
     ) {
     }
 
@@ -55,14 +58,20 @@ final readonly class ClientAuthService
         $this->touchIfStale($entity);
 
         $user = $entity->getUser();
+        if (!$user instanceof UserInterface) {
+            return null;
+        }
 
-        return $user instanceof UserInterface ? $user : null;
+        ManagedEntityRefresher::refresh($this->managerRegistry, $user);
+
+        return $user;
     }
 
     public function logout(string $plainToken): void
     {
         $entity = $this->tokenRepository->findValidByTokenHash(self::hashToken($plainToken));
         if ($entity instanceof ClientToken) {
+            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
             $this->tokenRepository->remove($entity);
         }
     }

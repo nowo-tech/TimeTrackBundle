@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Service;
 
+use Doctrine\Persistence\ManagerRegistry;
+use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
@@ -25,6 +27,7 @@ final readonly class TeamAccessGuard
         private array $adminRoles,
         private bool $managerCanViewEntries,
         private bool $managerCanEditEntries,
+        private ?ManagerRegistry $managerRegistry = null,
     ) {
     }
 
@@ -68,6 +71,12 @@ final readonly class TeamAccessGuard
 
     private function hasAdminRole(UserInterface $user): bool
     {
+        if ($this->adminRoles === []) {
+            return false;
+        }
+
+        ManagedEntityRefresher::refresh($this->managerRegistry, $user);
+
         return (bool) array_intersect($this->adminRoles, $user->getRoles());
     }
 }

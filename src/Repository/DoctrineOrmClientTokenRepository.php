@@ -6,25 +6,28 @@ namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
+use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 
 final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepositoryInterface
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private ?ManagerRegistry $managerRegistry = null,
     ) {
     }
 
     public function save(ClientToken $token): void
     {
         $this->entityManager->persist($token);
-        $this->entityManager->flush();
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     public function remove(ClientToken $token): void
     {
         $this->entityManager->remove($token);
-        $this->entityManager->flush();
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     public function findValidByTokenHash(string $tokenHash): ?ClientToken

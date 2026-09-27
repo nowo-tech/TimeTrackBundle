@@ -200,6 +200,19 @@ Neither client is part of the Packagist archive (`demo/` and client folders are 
 
 ## Unreleased
 
+## To 1.3.4
+
+From **1.3.3** — REQ-CS-008 Igor FrankenPHP worker audit (igor-php require-dev, igor.json, make igor).
+
+```bash
+composer update nowo-tech/time-track-bundle
+php bin/console cache:clear
+```
+
+No breaking changes and no host migration. `TeamAccessGuard` and `ClientAuthService` now reload the user entity (`EntityManager::refresh()`) before role checks, which adds one `SELECT` when an admin-role check runs and one per client API request. Code that instantiates these services or the `DoctrineOrm*Repository` classes manually keeps working: the new `?ManagerRegistry` argument is optional (without it, no refresh or closed-manager reset happens). For `clients.login_rate_limit.cache_pool`, keep using a pool shared by all workers (Redis, filesystem, APCu); an array pool is per worker and unbounded.
+- No application upgrade steps for require-dev Igor tooling (REQ-CS-008). Consumers do not pull `igor-php/igor-php` transitively.
+
+
 ## To 1.3.2
 
 No application upgrade steps.

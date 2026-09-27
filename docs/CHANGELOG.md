@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-09-27
+
+### Added
+
+- **REQ-CS-008:** `igor-php/igor-php` (require-dev only), root `igor.json`, Composer/`Makefile` `igor` target, and `release-check` wiring for FrankenPHP worker-state audit.
+
+### Changed
+
+- **Worker safety (Igor):** justified `// @igor-ignore` annotations and/or `ResetInterface` / request-scoped fixes so `make igor` passes on package `src/`.
+
+### Fixed
+
+- **FrankenPHP worker mode (no kernel reset):** `TeamAccessGuard` refreshes the user from the database before checking `admin_roles`, and `ClientAuthService::resolveUser()` refreshes the token owner, so a role revoked in another worker is honoured on the next request even when the identity map was not cleared (`Doctrine\ManagedEntityRefresher`).
+- Repositories reset a closed EntityManager through `ManagerRegistry` when `flush()` fails (e.g. two concurrent `timer/start` calls hitting the unique active-timer index) before rethrowing, so the worker does not stay on a closed manager (`Doctrine\RecoveringFlusher`).
+- `TimeTrackRouteLoader` can be loaded more than once per process (removed the "routes already loaded" guard).
+- **Docs:** `docs/FRANKENPHP-WORKER-AUDIT.md` updated with the remediation.
+
+### Notes
+
+- New optional `?ManagerRegistry` constructor argument on `TeamAccessGuard`, `ClientAuthService` and the three Doctrine repositories; wired automatically. No configuration changes.
+
+[1.3.4]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.3.4
 
 ## [1.3.3] - 2026-08-24
 

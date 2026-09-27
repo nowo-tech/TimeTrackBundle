@@ -6,19 +6,22 @@ namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
+use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 
 final readonly class DoctrineOrmTimeEntryRepository implements TimeEntryRepositoryInterface
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private ?ManagerRegistry $managerRegistry = null,
     ) {
     }
 
     public function save(TimeEntry $entry): void
     {
         $this->entityManager->persist($entry);
-        $this->entityManager->flush();
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array

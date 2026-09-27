@@ -13,14 +13,20 @@ use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\TestCase;
 use stdClass;
 use Symfony\Bundle\SecurityBundle\DependencyInjection\SecurityExtension;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 final class TimeTrackExtensionTest extends TestCase
 {
@@ -55,6 +61,22 @@ final class TimeTrackExtensionTest extends TestCase
             'tabler',
             $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
         );
+    }
+
+    public function testLoadInjectsManagerRegistryForWorkerSafeDoctrineAccess(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
+
+        foreach ([DoctrineOrmActiveTimerRepository::class, DoctrineOrmClientTokenRepository::class, DoctrineOrmTimeEntryRepository::class, TeamAccessGuard::class] as $serviceId) {
+            $argument = $container->getDefinition($serviceId)->getArgument('$managerRegistry');
+            self::assertInstanceOf(Reference::class, $argument);
+            self::assertSame('doctrine', (string) $argument);
+            self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $argument->getInvalidBehavior());
+        }
     }
 
     public function testLoadWiresCustomLayoutIntoTwigGlobalArgument(): void
