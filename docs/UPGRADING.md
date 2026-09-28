@@ -2,15 +2,20 @@
 
 ## Table of contents
 
+- [From 1.3.4 to 1.3.5](#from-134-to-135)
 - [From 1.3.2 to 1.3.3](#from-132-to-133)
 
-## From 1.3.2 to 1.3.3
+## From 1.3.4 to 1.3.5
 
-No breaking changes. **No application upgrade steps.**
+From **1.3.4** — `access_roles` fail-closed; Doctrine `SortDirection`.
 
 ```bash
 composer update nowo-tech/time-track-bundle
+php bin/console cache:clear
 ```
+
+- Empty `security.access_roles` denies the manage UI. Set roles / custom checker, or demo-only `allow_unauthenticated`.
+- Ensure `doctrine/orm` is `^3.7` (SortDirection).
 
 ## From 1.3.2 to 1.3.3
 
@@ -199,6 +204,18 @@ First stable release. No upgrade steps required.
 Neither client is part of the Packagist archive (`demo/` and client folders are for development and integration testing).
 
 ## Unreleased
+
+## To 1.3.5
+
+From **1.3.4** — `access_roles` fail-closed; Doctrine `SortDirection`.
+
+```bash
+composer update nowo-tech/time-track-bundle
+php bin/console cache:clear
+```
+
+- Empty `security.access_roles` denies the manage UI. Set roles / custom checker, or demo-only `allow_unauthenticated`.
+- Ensure `doctrine/orm` is `^3.7` (SortDirection).
 
 ## To 1.3.4
 

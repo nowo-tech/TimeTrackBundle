@@ -7,10 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-09-28
+
+### Security
+
+- Empty `security.access_roles` is fail-closed (deny) unless `allow_unauthenticated` or a custom `access_checker` is set.
+
 ### Changed
 
 - **Doctrine ORM SortDirection:** replace string `'ASC'`/`'DESC'` in `#[ORM\OrderBy]` and QueryBuilder `orderBy`/`addOrderBy` with `SortDirection::Ascending`/`Descending` (doctrine/orm deprecation, https://github.com/doctrine/orm/issues/11313); require `doctrine/orm` `^3.7` where applicable.
-
 
 ## [1.3.4] - 2026-09-27
 
@@ -33,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New optional `?ManagerRegistry` constructor argument on `TeamAccessGuard`, `ClientAuthService` and the three Doctrine repositories; wired automatically. No configuration changes.
 
+[1.3.5]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.3.5
 [1.3.4]: https://github.com/nowo-tech/TimeTrackBundle/releases/tag/v1.3.4
 
 ## [1.3.3] - 2026-08-24
