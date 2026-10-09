@@ -2,8 +2,17 @@
 
 ## Table of contents
 
+- [From 1.3.5 to 1.3.6](#from-135-to-136)
 - [From 1.3.4 to 1.3.5](#from-134-to-135)
 - [From 1.3.2 to 1.3.3](#from-132-to-133)
+
+## From 1.3.5 to 1.3.6
+
+Dependency refresh only. No breaking changes. No application upgrade steps.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 ## From 1.3.4 to 1.3.5
 

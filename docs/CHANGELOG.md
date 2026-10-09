@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-10-09
+
+### Dependencies
+
+- Dependabot: `doctrine/orm` 3.7.3, `nowo-tech/ui-kit-bundle` 1.8.5, `igor-php/igor-php` `^0.10.0` (dev), `friendsofphp/php-cs-fixer` 3.95.27, phpstan group, `nowo-tech/phpstan-frankenphp`.
+- Composer refresh: `nowo-tech/ui-kit-bundle` 1.9.2, `doctrine/orm` 3.7.4, Symfony 7.4.20 components (lockfile); dev tooling `phpstan/phpstan` 2.3.1, `phpstan/phpstan-symfony` 2.1.0, `rector/rector` 2.7.0.
+- Demo: Symfony 8.1.8, `doctrine/orm` 3.7.4, `doctrine/dbal` 4.5.0, `nowo-tech/task-board-bundle` 1.5.8, `twig/twig` 3.30.0; regenerated `config/reference.php`.
+
 ## [1.3.5] - 2026-09-28
 
 ### Security
@@ -231,7 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.6...HEAD
+[1.3.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.5...v1.3.6
 [1.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.6...v1.1.0
 [1.0.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.0.5...v1.0.6
