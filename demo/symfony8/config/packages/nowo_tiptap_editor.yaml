@@ -1,6 +1,6 @@
 nowo_tiptap_editor:
-    default_config: task
-    configs:
+    default_profile: task
+    profiles:
         task:
             variant: simple
             toolbar: true
