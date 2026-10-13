@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-13
+
 ### Security
 
 - Client login throttle: new IP-only bucket (`clients.login_rate_limit.max_attempts_per_ip`, default 5 × `max_attempts`, like Symfony's `DefaultLoginRateLimiter`) blocks an IP that rotates usernames; a successful login no longer clears that budget. Usernames are trimmed + lower-cased. Both counters are read with one `getItems()` and committed together (PSR-6 has no atomic increment; documented).
@@ -278,7 +280,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.7...v1.4.0
 [1.3.7]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.6...v1.3.7
 [1.3.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.5...v1.3.6

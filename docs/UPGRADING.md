@@ -2,6 +2,7 @@
 
 ## Table of contents
 
+- [From 1.4.0 to 1.5.0](#from-140-to-150)
 - [From 1.3.7 to 1.4.0](#from-137-to-140)
 - [From 1.3.6 to 1.3.7](#from-136-to-137)
 - [From 1.3.5 to 1.3.6](#from-135-to-136)
@@ -9,6 +10,14 @@
 - [From 1.3.2 to 1.3.3](#from-132-to-133)
 
 ## Unreleased
+
+## From 1.4.0 to 1.5.0
+
+From **1.4.0** — security - per-IP login throttle, credential-less CORS with explicit extension origins; full coverage.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 - **CORS for browser extensions:** any `chrome-extension://` / `moz-extension://` origin is no longer accepted by default. The bundled Chrome extension calls the API from extension pages with `host_permissions`, which Chrome exempts from CORS, so it keeps working. If another client depends on CORS, add its exact origin (e.g. `chrome-extension://<id>`) to `clients.cors_allowed_origins`, or set `clients.cors_allow_any_extension_origin: true` to restore the previous behaviour.
 - `Access-Control-Allow-Credentials` is no longer sent. Clients must authenticate with the `Authorization: Bearer` header (as the bundled clients do), not cookies.
