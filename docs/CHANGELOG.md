@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-13
+
 ### Security
 
 - Manage `reports` page: invalid `from` / `to` query values no longer reach the lenient `DateTimeImmutable` parser (HTTP 500); only ATOM or `Y-m-d` are accepted, anything else falls back to the defaults.
@@ -263,7 +265,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.7...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.7...v1.4.0
 [1.3.7]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.6...v1.3.7
 [1.3.6]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.3.5...v1.3.6
 [1.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.1.0...v1.2.0

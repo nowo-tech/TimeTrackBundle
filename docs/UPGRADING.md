@@ -2,10 +2,23 @@
 
 ## Table of contents
 
+- [From 1.3.7 to 1.4.0](#from-137-to-140)
 - [From 1.3.6 to 1.3.7](#from-136-to-137)
 - [From 1.3.5 to 1.3.6](#from-135-to-136)
 - [From 1.3.4 to 1.3.5](#from-134-to-135)
 - [From 1.3.2 to 1.3.3](#from-132-to-133)
+
+## From 1.3.7 to 1.4.0
+
+From **1.3.7** — security - strict report dates, bounded API queries, 409 on concurrent timer start, login timing.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- Report and entries dates must be ATOM or `Y-m-d`; other formats (e.g. "yesterday") fall back to the defaults instead of causing HTTP 500.
+- API `limit` above 100 is capped, and date ranges are limited to 366 days.
+- A concurrent timer start now returns 409 instead of 500.
 
 ## From 1.3.6 to 1.3.7
 
