@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [From 1.5.0 to 1.5.1](#from-150-to-151)
 - [From 1.4.0 to 1.5.0](#from-140-to-150)
 - [From 1.3.7 to 1.4.0](#from-137-to-140)
 - [From 1.3.6 to 1.3.7](#from-136-to-137)
@@ -38,6 +39,16 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## From 1.5.0 to 1.5.1
+
+From **1.5.0** — Bridge defaults no longer re-registered by the resource scan
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- No breaking changes. No application upgrade steps.
 
 ## From 1.4.0 to 1.5.0
 
