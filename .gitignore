@@ -11,6 +11,7 @@
 /coverage.xml
 /.phpunit.cache/
 /.php-cs-fixer.cache
+/.twig-cs-fixer.cache
 /.php-cs-fixer.cache/
 
 # Node / Tauri
