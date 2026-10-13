@@ -21,3 +21,8 @@ reports:
   started: Gestart
   duration: Duur
   source: Bron
+flash:
+  timer_started: Timer gestart.
+  timer_already_active: Je hebt al een actieve timer.
+  timer_stopped: Timer gestopt.
+  no_active_timer: Geen actieve timer.

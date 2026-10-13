@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Service;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Driver\Exception as DriverException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
@@ -211,6 +214,29 @@ final class TimerServiceTest extends TestCase
             $this->service->start($this->user, 'task-1', $clientType);
             $entry = $this->service->stop($this->user);
             self::assertNotNull($entry);
+        }
+    }
+
+    public function testConcurrentStartUniqueViolationBecomesConflict(): void
+    {
+        $repository = $this->createMock(ActiveTimerRepositoryInterface::class);
+        $repository->method('findByUserId')->willReturn(null);
+        $repository->method('save')->willThrowException(
+            new UniqueConstraintViolationException($this->createMock(DriverException::class), null),
+        );
+
+        $service = new TimerService(
+            new StubTaskProvider(),
+            $repository,
+            new InMemoryTimeEntryRepository(),
+            new EventDispatcher(),
+        );
+
+        try {
+            $service->start($this->user, 'task-1', ClientType::Web);
+            self::fail('Expected ActiveTimerConflictException.');
+        } catch (ActiveTimerConflictException $e) {
+            self::assertInstanceOf(UniqueConstraintViolationException::class, $e->getPrevious());
         }
     }
 }

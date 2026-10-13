@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Service;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
@@ -69,7 +70,13 @@ final readonly class TimerService
             $metadata,
         );
 
-        $this->activeTimerRepository->save($timer);
+        try {
+            $this->activeTimerRepository->save($timer);
+        } catch (UniqueConstraintViolationException $e) {
+            // Two concurrent starts both passed the getActive() check; the unique user_id index wins.
+            throw ActiveTimerConflictException::concurrentStart($e);
+        }
+
         $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
 
         return $timer;

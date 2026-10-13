@@ -10,11 +10,19 @@ use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
 
+use function password_verify;
+
 /**
  * Default client login: load user by identifier and verify password hash.
  */
 final readonly class DefaultClientAuthenticator implements ClientAuthenticatorInterface
 {
+    /**
+     * Bcrypt hash (cost 13, Symfony's `auto` default) verified when the account is unknown so the
+     * response time does not reveal whether the username exists.
+     */
+    private const DUMMY_PASSWORD_HASH = '$2y$13$Qk4VtvdgiABDW3J86AfhyOxz.VzmFh25IEiTDiS6ILwvwHEo.AMgS';
+
     /**
      * @param UserProviderInterface<UserInterface> $userProvider
      */
@@ -29,10 +37,14 @@ final readonly class DefaultClientAuthenticator implements ClientAuthenticatorIn
         try {
             $user = $this->userProvider->loadUserByIdentifier($username);
         } catch (UserNotFoundException) {
+            self::verifyDummyPassword($password);
+
             return null;
         }
 
         if (!$user instanceof PasswordAuthenticatedUserInterface) {
+            self::verifyDummyPassword($password);
+
             return null;
         }
 
@@ -41,5 +53,10 @@ final readonly class DefaultClientAuthenticator implements ClientAuthenticatorIn
         }
 
         return ClientAuthResult::success($user);
+    }
+
+    private static function verifyDummyPassword(string $password): void
+    {
+        password_verify($password, self::DUMMY_PASSWORD_HASH);
     }
 }

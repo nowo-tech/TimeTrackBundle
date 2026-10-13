@@ -21,3 +21,8 @@ reports:
   started: Início
   duration: Duração
   source: Origem
+flash:
+  timer_started: Temporizador iniciado.
+  timer_already_active: Já tem um temporizador ativo.
+  timer_stopped: Temporizador parado.
+  no_active_timer: Nenhum temporizador ativo.

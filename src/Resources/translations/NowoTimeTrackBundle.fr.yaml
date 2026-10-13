@@ -21,3 +21,8 @@ reports:
   started: Début
   duration: Durée
   source: Source
+flash:
+  timer_started: Minuteur démarré.
+  timer_already_active: Vous avez déjà un minuteur actif.
+  timer_stopped: Minuteur arrêté.
+  no_active_timer: Aucun minuteur actif.

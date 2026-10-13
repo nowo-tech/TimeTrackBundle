@@ -70,4 +70,21 @@ final class DefaultClientAuthenticatorTest extends TestCase
 
         self::assertNull($authenticator->authenticate('demo@example.com', 'secret'));
     }
+
+    public function testUnknownUserStillSpendsHashingTime(): void
+    {
+        $userProvider = $this->createMock(UserProviderInterface::class);
+        $userProvider->method('loadUserByIdentifier')->willThrowException(new UserNotFoundException());
+        $passwordHasher = $this->createMock(UserPasswordHasherInterface::class);
+        $passwordHasher->expects(self::never())->method('isPasswordValid');
+
+        $authenticator = new DefaultClientAuthenticator($userProvider, $passwordHasher);
+
+        $start = hrtime(true);
+        self::assertNull($authenticator->authenticate('missing', 'secret'));
+        $elapsedMs = (hrtime(true) - $start) / 1_000_000;
+
+        // A bcrypt cost-13 verification takes well over 20 ms; an early return takes microseconds.
+        self::assertGreaterThan(20, $elapsedMs);
+    }
 }

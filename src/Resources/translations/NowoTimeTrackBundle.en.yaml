@@ -21,3 +21,8 @@ reports:
   started: Started
   duration: Duration
   source: Source
+flash:
+  timer_started: Timer started.
+  timer_already_active: You already have an active timer.
+  timer_stopped: Timer stopped.
+  no_active_timer: No active timer.

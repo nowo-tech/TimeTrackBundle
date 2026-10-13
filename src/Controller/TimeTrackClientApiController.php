@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Controller;
 
-use DateTimeImmutable;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
@@ -17,14 +16,13 @@ use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function is_array;
-
-use const DATE_ATOM;
 
 /**
  * Browser extension and Tauri desktop API (Bearer token auth, CORS).
@@ -117,10 +115,10 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->json(['error' => 'Unauthorized.'], Response::HTTP_UNAUTHORIZED, $request);
         }
 
-        $query = new TaskListQuery(
-            search: $request->query->getString('search') ?: null,
-            limit: max(1, $request->query->getInt('limit', 50)),
-            offset: max(0, $request->query->getInt('offset', 0)),
+        $query = TaskListQuery::bounded(
+            $request->query->getString('search') ?: null,
+            $request->query->getInt('limit', 50),
+            $request->query->getInt('offset', 0),
         );
 
         $tasks = $this->timerService->listTasks($user, $query);
@@ -244,15 +242,14 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->json(['error' => 'Unauthorized.'], Response::HTTP_UNAUTHORIZED, $request);
         }
 
-        $from         = $this->parseDate($request->query->getString('from'), '-7 days');
-        $to           = $this->parseDate($request->query->getString('to'), 'now');
+        $period       = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'));
         $targetUserId = $request->query->getString('userId') ?: null;
 
         if ($targetUserId !== null && !$this->teamAccessGuard->canViewUserEntries($user, $targetUserId)) {
             return $this->responseFactory->json(['error' => 'Forbidden.'], Response::HTTP_FORBIDDEN, $request);
         }
 
-        $entries = $this->timerService->listEntries($user, $from, $to, $targetUserId);
+        $entries = $this->timerService->listEntries($user, $period['from'], $period['to'], $targetUserId);
 
         return $this->responseFactory->json([
             'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(), $entries),
@@ -284,17 +281,5 @@ final readonly class TimeTrackClientApiController
     private function resolveClientType(string $value): ClientType
     {
         return ClientType::tryFrom($value) ?? ClientType::Extension;
-    }
-
-    private function parseDate(string $value, string $fallback): DateTimeImmutable
-    {
-        if ($value !== '') {
-            $parsed = DateTimeImmutable::createFromFormat(DATE_ATOM, $value);
-            if ($parsed instanceof DateTimeImmutable) {
-                return $parsed;
-            }
-        }
-
-        return new DateTimeImmutable($fallback);
     }
 }

@@ -20,12 +20,14 @@ nowo_time_track:
 |--------|------|-------------|
 | POST | `/api/time-track/login` | Issue Bearer token |
 | GET | `/api/time-track/me` | Current user |
-| GET | `/api/time-track/tasks` | Trackable tasks |
+| GET | `/api/time-track/tasks` | Trackable tasks; `?search=&limit=&offset=` (`limit` 1–100, default 50) |
 | GET | `/api/time-track/timer` | Active timer (204 if none) |
 | POST | `/api/time-track/timer/start` | `{ "taskId", "clientType" }` |
 | POST | `/api/time-track/timer/stop` | Close active timer |
 | POST | `/api/time-track/heartbeat` | `{ "isIdle": true/false }` |
-| GET | `/api/time-track/entries` | `?from=&to=&userId=` |
+| GET | `/api/time-track/entries` | `?from=&to=&userId=` (see below) |
+
+`from` / `to` (client `entries` API and the manage `reports` page) accept ATOM / RFC 3339 (`2026-05-01T10:30:00+02:00`) or `Y-m-d` (midnight). Any other value falls back to the default (`from` = 7 days ago, `to` = now). The span is capped at 366 days: an earlier `from` is moved to `to - 366 days`.
 
 ## Events
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Manage `reports` page: invalid `from` / `to` query values no longer reach the lenient `DateTimeImmutable` parser (HTTP 500); only ATOM or `Y-m-d` are accepted, anything else falls back to the defaults.
+- Client API: `tasks` `limit` is clamped to 1–100 (`TaskListQuery::MAX_LIMIT`, new `TaskListQuery::bounded()`), and the `from`/`to` span of `entries` and `reports` is capped at 366 days.
+- `DefaultClientAuthenticator` verifies a dummy bcrypt hash when the username is unknown, so login response time no longer reveals whether an account exists.
+
+### Fixed
+
+- Two concurrent timer starts for the same user now return `ActiveTimerConflictException` (HTTP 409 in the client API) instead of a unique-constraint error (new `ActiveTimerConflictException::concurrentStart()`).
+- Null bytes in `from` / `to` no longer raise a `ValueError` in the client `entries` API.
+- Manage UI flash messages are translated (`flash.*` keys in the `NowoTimeTrackBundle` domain, 7 locales).
+
 ## [1.3.7] - 2026-10-13
 
 ### Changed

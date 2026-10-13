@@ -27,7 +27,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 | Threat | Mitigation |
 | ------ | ---------- |
 | Token theft | Tokens stored hashed (SHA-256); HTTPS in production |
-| Brute force login | Rate limit per IP + username (`cache.app`) |
+| Brute force login | Rate limit per IP + username (`cache.app`); unknown usernames still run a password hash check (no timing oracle) |
 | IDOR on entries | `TimeEntryAccessCheckEvent` and team context provider |
 | CORS abuse | Restrict `clients.cors_allowed_origins` in production |
 | CSRF on manage UI | Manage POST start/stop require Symfony CSRF token `nowo_time_track_manage` |
@@ -38,6 +38,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 - Bearer tokens stored hashed (SHA-256) in `{prefix}_client_tokens`
 - Rate limit login attempts per IP + username (`cache.app`)
 - CORS: `chrome-extension://`, `moz-extension://`, `tauri://` by default; no `*` in production
+- Unbounded queries: `tasks` `limit` capped at 100; `entries` `from`/`to` parsed strictly and capped at 366 days
 - Purge expired tokens: `php bin/console nowo:time-track:client-tokens:purge`
 
 ## Reports
