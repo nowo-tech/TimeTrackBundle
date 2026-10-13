@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 // This file is auto-generated and is for apps only. Bundles SHOULD NOT rely on its content.
 
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
@@ -657,7 +655,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         uuid47_secret?: scalar|Param|null, // A high-entropy secret used by the "uuid47_transformer" service. Defaults to "kernel.secret". // Default: null
  *     },
  *     html_sanitizer?: bool|array{ // HtmlSanitizer configuration
- *         enabled?: bool|Param, // Default: false
+ *         enabled?: bool|Param, // Default: true
  *         sanitizers?: array<string, array{ // Default: []
  *             default_action?: "drop"|"block"|"allow"|Param, // Defines how the sanitizer must behave by default.
  *             allow_safe_elements?: bool|Param, // Allows "safe" elements and attributes. // Default: false
@@ -1274,7 +1272,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         access_roles?: list<scalar|Param|null>,
  *         allow_unauthenticated?: bool|Param, // Default: false
  *         manager_can_view_entries?: bool|Param, // Default: true
- *         manager_can_edit_entries?: bool|Param, // Default: true
+ *         manager_can_edit_entries?: bool|Param, // Deprecated: The "nowo_time_track.security.manager_can_edit_entries.manager_can_edit_entries" option is deprecated: the bundle ships no time-entry edit route. Decide edit access in a "nowo_time_track.time_entry.access_check" listener (TimeEntryAccessCheckEvent) instead. // Deprecated: only read by TeamAccessGuard::canEditEntry() for host code; the bundle ships no entry edit route. // Default: true
  *     },
  *     routes?: array{
  *         index?: array{
@@ -1299,11 +1297,13 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         authenticator?: scalar|Param|null, // Service id implementing ClientAuthenticatorInterface. // Default: null
  *         user_provider?: scalar|Param|null, // Symfony user provider for default password authenticator. // Default: null
  *         cors_allowed_origins?: list<scalar|Param|null>,
+ *         cors_allow_any_extension_origin?: bool|Param, // Opt-in: allow every chrome-extension:// and moz-extension:// origin (any installed extension). Prefer listing your extension id in cors_allowed_origins. // Default: false
  *         login_rate_limit?: array{
  *             enabled?: bool|Param, // Default: true
  *             cache_pool?: scalar|Param|null, // Default: "cache.app"
  *             max_attempts?: int|Param, // Default: 10
  *             interval_seconds?: int|Param, // Default: 900
+ *             max_attempts_per_ip?: int|Param, // Failed logins per client IP (any username) within interval_seconds. null = 5 × max_attempts. // Default: null
  *         },
  *         routes?: array{
  *             login?: array{
@@ -1351,13 +1351,15 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     team_membership_resolver?: scalar|Param|null, // Default: null
  *     route_prefix?: scalar|Param|null, // Default: ""
  *     dashboard_route?: scalar|Param|null, // Default: null
- *     firewall?: scalar|Param|null, // Default: "main"
+ *     firewall?: scalar|Param|null, // Deprecated: The "firewall" option at path "nowo_task_board.firewall" is deprecated and has no effect; configure the firewall and access_control in your security.yaml instead. // Deprecated: never read by the bundle. Protect the manage routes with your own security.yaml firewall/access_control. // Default: "main"
  *     security?: array{
  *         access_checker?: scalar|Param|null, // Default: null
  *         access_roles?: list<scalar|Param|null>,
  *         create_roles?: list<scalar|Param|null>,
  *         list_roles?: list<scalar|Param|null>,
  *         allow_unauthenticated?: bool|Param, // Default: false
+ *         resource_scoping?: bool|Param, // Restrict boards/tasks to their creator, team members, task members and manage_roles (IDOR protection). // Default: true
+ *         manage_roles?: list<scalar|Param|null>,
  *     },
  *     routes?: array{
  *         index?: array{
@@ -1460,6 +1462,138 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     icon_set?: "bootstrap-icons"|"tabler-icons"|"ux_icon"|"svg_inline"|"none"|Param, // Icon rendering: bootstrap-icons|tabler-icons|ux_icon|svg_inline|none. // Default: "bootstrap-icons"
  *     row_actions_display?: "icon"|"text"|"icon_text"|Param, // Table/list row actions: icon (glyph only) | text (label only) | icon_text (both). // Default: "icon"
  *     panel_path_rewrites?: array<string, scalar|Param|null>,
+ *     release_check?: array{ // Optional GitHub release-version checker (footer dialog + JSON endpoint). Off by default.
+ *         enabled?: bool|Param, // Register the checker service + controller. Also import @NowoUiKitBundle/Resources/config/routes/release_check.yaml. // Default: false
+ *         github_repo?: scalar|Param|null, // Public GitHub repository "owner/name" whose releases are compared (e.g. nowo-tech/my-app). // Default: ""
+ *         current_version?: scalar|Param|null, // Installed version label, clean semver x.y.z with optional "v" (e.g. "%app.version%"). Non-semver values skip the check. // Default: ""
+ *         cache_ttl?: int|Param, // Seconds to cache the GitHub answer (cache.app). Default 12h. // Default: 43200
+ *         default_branch?: scalar|Param|null, // Branch used as compare target when the installed version is already the latest. // Default: "main"
+ *         user_agent?: scalar|Param|null, // User-Agent sent to api.github.com. // Default: "nowo-ui-kit-release-check"
+ *     },
+ * }
+ * @psalm-type NowoFormKitConfig = array{
+ *     type_map?: array<string, scalar|Param|null>,
+ *     default_profile?: scalar|Param|null, // Name of the profile to use when no profile is specified (key in profiles) // Default: "default"
+ *     css_framework?: scalar|Param|null, // CSS framework for CssClassUtilities (column merge + class ordering): bootstrap, tailwind, foundation, none. // Default: "bootstrap"
+ *     stateless_csrf?: array{ // Give selected (usually anonymous/public) form types a stateless CSRF token id so rendering them does not start a session. Off by default.
+ *         enabled?: bool|Param, // Default: false
+ *         token_id?: scalar|Param|null, // csrf_token_id default applied to the listed form types. Must be listed in framework.csrf_protection.stateless_token_ids. // Default: "submit"
+ *         form_types?: list<scalar|Param|null>,
+ *         register_stateless_token_id?: bool|Param, // Prepend token_id to framework.csrf_protection.stateless_token_ids (enables framework CSRF protection if it was not configured). // Default: true
+ *     },
+ *     accessibility?: array{ // Accessibility helpers applied by kit form type extensions.
+ *         unlabelled_choice_aria_label?: bool|Param, // When true (default), non-expanded ChoiceType fields (and subtypes such as EntityType) rendered with label: false and no aria-label/aria-labelledby get aria-label from their translated help, else their placeholder. // Default: true
+ *     },
+ *     profiles?: array<string, array{ // Default: []
+ *         alias?: scalar|Param|null, // Alias for this profile (e.g. for reference in form types)
+ *         translation_domain?: scalar|Param|null, // Default: "messages"
+ *         auto_placeholder?: bool|Param, // When true (default), unset placeholders become {form}.{field}.placeholder translation keys. Set false for kits that only set explicit labels. // Default: true
+ *         auto_help?: bool|Param, // When true (default), unset help becomes {form}.{field}.help translation keys. Set false to avoid raw missing-help keys in the UI. // Default: true
+ *         required_label_suffix?: scalar|Param|null, // Appended to the label when the field is required (e.g. " *"). Empty or null to disable. // Default: null
+ *         help_modal?: array{ // Default help modal configuration (used when the field option "help_modal" is enabled).
+ *             framework?: scalar|Param|null, // Modal framework to use when opening from frontend. // Default: "bootstrap5"
+ *             icon_html?: scalar|Param|null, // HTML snippet inserted next to the label to trigger the help modal (fallback when ux_icon is not used or UX Icons is unavailable). // Default: "<span class=\"nowo-help-modal-icon\" aria-hidden=\"true\">?</span>"
+ *             ux_icon?: scalar|Param|null, // Optional. Symfony UX Icons name (e.g. lucide:circle-help). Requires symfony/ux-icons; when set and IconRendererInterface is available, overrides icon_html. // Default: null
+ *             ux_icon_attributes?: array<string, scalar|Param|null>,
+ *             trigger_class?: scalar|Param|null, // CSS classes for the clickable trigger wrapper (after label text and required suffix). Default: circle button style. // Default: "nowo-help-modal-trigger nowo-help-modal-trigger--circle"
+ *         },
+ *         defaults?: array{
+ *             attr?: array<string, scalar|Param|null>,
+ *             row_attr?: array<string, scalar|Param|null>,
+ *             help_attr?: array<string, scalar|Param|null>,
+ *             label?: scalar|Param|null, // Default label for every field (e.g. false to suppress). When set, overrides the {form}.{field}.label convention.
+ *             placeholder?: scalar|Param|null, // Default placeholder for every field (e.g. false to suppress). When set, overrides auto_placeholder convention.
+ *             help?: scalar|Param|null, // Default help for every field (e.g. false to suppress). When set, overrides auto_help convention.
+ *             required?: bool|Param, // Default required flag for every field. Overridable via field_types, by_form, or PHP options.
+ *         },
+ *         field_types?: array<string, array{ // Default: []
+ *             attr?: array<string, scalar|Param|null>,
+ *             row_attr?: array<string, scalar|Param|null>,
+ *             help_attr?: array<string, scalar|Param|null>,
+ *             label?: scalar|Param|null,
+ *             placeholder?: scalar|Param|null,
+ *             help?: scalar|Param|null,
+ *             required?: bool|Param, // Default required flag for this field type / field. Overridable by later cascade layers or PHP options.
+ *             translation_domain?: scalar|Param|null,
+ *             constraints?: list<mixed>,
+ *         }>,
+ *         constraint_message_convention?: bool|Param, // When true, constraints without an explicit "message" get key {form_snake}.{field_snake}.constraints.{ConstraintName} (put translations in the validators catalog). Default: false. // Default: false
+ *         by_form?: array<string, array{ // Default: []
+ *             defaults?: array{
+ *                 attr?: array<string, scalar|Param|null>,
+ *                 row_attr?: array<string, scalar|Param|null>,
+ *                 help_attr?: array<string, scalar|Param|null>,
+ *                 label?: scalar|Param|null, // Default label for every field (e.g. false to suppress). When set, overrides the {form}.{field}.label convention.
+ *                 placeholder?: scalar|Param|null, // Default placeholder for every field (e.g. false to suppress). When set, overrides auto_placeholder convention.
+ *                 help?: scalar|Param|null, // Default help for every field (e.g. false to suppress). When set, overrides auto_help convention.
+ *                 required?: bool|Param, // Default required flag for every field. Overridable via field_types, by_form, or PHP options.
+ *             },
+ *             fields?: array<string, array{ // Default: []
+ *                 attr?: array<string, scalar|Param|null>,
+ *                 row_attr?: array<string, scalar|Param|null>,
+ *                 help_attr?: array<string, scalar|Param|null>,
+ *                 label?: scalar|Param|null,
+ *                 placeholder?: scalar|Param|null,
+ *                 help?: scalar|Param|null,
+ *                 required?: bool|Param, // Default required flag for this field type / field. Overridable by later cascade layers or PHP options.
+ *                 translation_domain?: scalar|Param|null,
+ *                 constraints?: list<mixed>,
+ *             }>,
+ *         }>,
+ *     }>,
+ *     translation_domain?: scalar|Param|null, // (Legacy) Used when profiles is not set // Default: "messages"
+ *     required_label_suffix?: scalar|Param|null, // (Legacy) Suffix for required field labels when profiles is not set // Default: null
+ *     help_modal?: array{ // (Legacy) Default help modal configuration when profiles is not used.
+ *         framework?: scalar|Param|null, // Default: "bootstrap5"
+ *         icon_html?: scalar|Param|null, // Default: "<span class=\"nowo-help-modal-icon\" aria-hidden=\"true\">?</span>"
+ *         ux_icon?: scalar|Param|null, // Default: null
+ *         ux_icon_attributes?: array<string, scalar|Param|null>,
+ *         trigger_class?: scalar|Param|null, // Default: "nowo-help-modal-trigger nowo-help-modal-trigger--circle"
+ *     },
+ *     defaults?: array{
+ *         attr?: array<string, scalar|Param|null>,
+ *         row_attr?: array<string, scalar|Param|null>,
+ *         help_attr?: array<string, scalar|Param|null>,
+ *         label?: scalar|Param|null, // Default label for every field (e.g. false to suppress). When set, overrides the {form}.{field}.label convention.
+ *         placeholder?: scalar|Param|null, // Default placeholder for every field (e.g. false to suppress). When set, overrides auto_placeholder convention.
+ *         help?: scalar|Param|null, // Default help for every field (e.g. false to suppress). When set, overrides auto_help convention.
+ *         required?: bool|Param, // Default required flag for every field. Overridable via field_types, by_form, or PHP options.
+ *     },
+ *     field_types?: array<string, array{ // Default: []
+ *         attr?: array<string, scalar|Param|null>,
+ *         row_attr?: array<string, scalar|Param|null>,
+ *         help_attr?: array<string, scalar|Param|null>,
+ *         label?: scalar|Param|null,
+ *         placeholder?: scalar|Param|null,
+ *         help?: scalar|Param|null,
+ *         required?: bool|Param, // Default required flag for this field type / field. Overridable by later cascade layers or PHP options.
+ *         translation_domain?: scalar|Param|null,
+ *         constraints?: list<mixed>,
+ *     }>,
+ *     constraint_message_convention?: bool|Param, // (Legacy) Used when profiles is not set // Default: false
+ *     by_form?: array<string, array{ // Default: []
+ *         defaults?: array{
+ *             attr?: array<string, scalar|Param|null>,
+ *             row_attr?: array<string, scalar|Param|null>,
+ *             help_attr?: array<string, scalar|Param|null>,
+ *             label?: scalar|Param|null, // Default label for every field (e.g. false to suppress). When set, overrides the {form}.{field}.label convention.
+ *             placeholder?: scalar|Param|null, // Default placeholder for every field (e.g. false to suppress). When set, overrides auto_placeholder convention.
+ *             help?: scalar|Param|null, // Default help for every field (e.g. false to suppress). When set, overrides auto_help convention.
+ *             required?: bool|Param, // Default required flag for every field. Overridable via field_types, by_form, or PHP options.
+ *         },
+ *         fields?: array<string, array{ // Default: []
+ *             attr?: array<string, scalar|Param|null>,
+ *             row_attr?: array<string, scalar|Param|null>,
+ *             help_attr?: array<string, scalar|Param|null>,
+ *             label?: scalar|Param|null,
+ *             placeholder?: scalar|Param|null,
+ *             help?: scalar|Param|null,
+ *             required?: bool|Param, // Default required flag for this field type / field. Overridable by later cascade layers or PHP options.
+ *             translation_domain?: scalar|Param|null,
+ *             constraints?: list<mixed>,
+ *         }>,
+ *     }>,
+ *     ...<string, mixed>
  * }
  * @psalm-type NowoHotReloadConfig = array{
  *     enabled?: bool|Param, // Master switch. When false, nothing is injected even if FRANKENPHP_HOT_RELOAD is set. // Default: true
@@ -1512,13 +1646,13 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  * @psalm-type NowoTagInputConfig = array{
  *     value_format?: "array"|"string"|Param, // Default: "array"
  *     trim?: bool|Param, // Default: true
- *     pattern?: scalar|Param|null, // Default: null
+ *     pattern?: scalar|Param|null, // Regex source without delimiters (shared with the Tagify client); must compile. // Default: null
  *     whitelist?: list<scalar|Param|null>,
  *     duplicates?: bool|Param, // Default: false
  *     max_tags?: int|Param, // Maximum tags accepted from the client (fail-closed on overflow). // Default: 50
  *     dropdown_enabled?: bool|Param, // Default: true
  *     placeholder?: scalar|Param|null, // Default: ""
- *     form_theme?: scalar|Param|null, // Default: "form_div_layout.html.twig"
+ *     form_theme?: "form_div_layout.html.twig"|"form_table_layout.html.twig"|"bootstrap_5_layout.html.twig"|"bootstrap_5_horizontal_layout.html.twig"|"bootstrap_4_layout.html.twig"|"bootstrap_4_horizontal_layout.html.twig"|"bootstrap_3_layout.html.twig"|"bootstrap_3_horizontal_layout.html.twig"|"foundation_5_layout.html.twig"|"foundation_6_layout.html.twig"|"tailwind_2_layout.html.twig"|Param, // Default: "form_div_layout.html.twig"
  * }
  * @psalm-type NowoTiptapEditorConfig = array{
  *     default_profile?: scalar|Param|null, // Profile name used when the form field omits the "config" option (form option key remains "config" for BC). // Default: "default"
@@ -1592,6 +1726,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     nowo_time_track?: NowoTimeTrackConfig,
  *     nowo_task_board?: NowoTaskBoardConfig,
  *     nowo_ui_kit?: NowoUiKitConfig,
+ *     nowo_form_kit?: NowoFormKitConfig,
  *     nowo_tag_input?: NowoTagInputConfig,
  *     nowo_tiptap_editor?: NowoTiptapEditorConfig,
  *     twig_extra?: TwigExtraConfig,
@@ -1607,6 +1742,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         nowo_time_track?: NowoTimeTrackConfig,
  *         nowo_task_board?: NowoTaskBoardConfig,
  *         nowo_ui_kit?: NowoUiKitConfig,
+ *         nowo_form_kit?: NowoFormKitConfig,
  *         nowo_hot_reload?: NowoHotReloadConfig,
  *         nowo_twig_inspector?: NowoTwigInspectorConfig,
  *         web_profiler?: WebProfilerConfig,
@@ -1627,6 +1763,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         nowo_time_track?: NowoTimeTrackConfig,
  *         nowo_task_board?: NowoTaskBoardConfig,
  *         nowo_ui_kit?: NowoUiKitConfig,
+ *         nowo_form_kit?: NowoFormKitConfig,
  *         nowo_tag_input?: NowoTagInputConfig,
  *         nowo_tiptap_editor?: NowoTiptapEditorConfig,
  *         twig_extra?: TwigExtraConfig,
@@ -1643,6 +1780,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         nowo_time_track?: NowoTimeTrackConfig,
  *         nowo_task_board?: NowoTaskBoardConfig,
  *         nowo_ui_kit?: NowoUiKitConfig,
+ *         nowo_form_kit?: NowoFormKitConfig,
  *         nowo_hot_reload?: NowoHotReloadConfig,
  *         nowo_twig_inspector?: NowoTwigInspectorConfig,
  *         web_profiler?: WebProfilerConfig,

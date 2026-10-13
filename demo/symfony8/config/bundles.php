@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Doctrine\Bundle\FixturesBundle\DoctrineFixturesBundle;
 use Doctrine\Bundle\MigrationsBundle\DoctrineMigrationsBundle;
+use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\HotReloadBundle\NowoHotReloadBundle;
 use Nowo\TagInputBundle\NowoTagInputBundle;
 use Nowo\TaskBoardBundle\TaskBoardBundle;
@@ -29,6 +30,7 @@ return [
     TimeTrackBundle::class          => ['all' => true],
     TaskBoardBundle::class          => ['all' => true],
     NowoUiKitBundle::class          => ['all' => true],
+    NowoFormKitBundle::class        => ['all' => true],
     NowoHotReloadBundle::class      => ['dev' => true, 'test' => true],
     NowoTwigInspectorBundle::class  => ['dev' => true, 'test' => true],
     WebProfilerBundle::class        => ['dev' => true, 'test' => true],
