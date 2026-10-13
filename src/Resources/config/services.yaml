@@ -10,6 +10,9 @@ services:
         exclude:
             - '../../DependencyInjection/'
             - '../../TimeTrackBundle.php'
+            # Bridge defaults are registered by TimeTrackExtension only when selected (task_provider /
+            # team_context_provider); the scan must not overwrite those explicit definitions.
+            - '../../Bridge/'
             - '../../Repository/'
             - '../../Doctrine/'
             - '../../Client/ClientLoginRateLimiter.php'

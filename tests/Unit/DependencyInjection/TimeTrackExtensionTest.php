@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\DependencyInjection\DoctrineExtension;
 use LogicException;
+use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
@@ -262,6 +263,48 @@ final class TimeTrackExtensionTest extends TestCase
             array_keys($container->getDefinitions()),
             static fn (string $id): bool => $id === StubTaskProvider::class,
         ));
+    }
+
+    /**
+     * services.yaml must not re-register Bridge/ defaults over the explicit definitions from load().
+     */
+    public function testBridgeDefaultsKeepExplicitDefinitionsAfterLoad(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
+
+        foreach ([
+            StubTaskProvider::class        => TaskProviderInterface::class,
+            NullTeamContextProvider::class => TeamContextProviderInterface::class,
+        ] as $class => $interface) {
+            $definition = $container->getDefinition($class);
+            self::assertSame($class, $definition->getClass());
+            self::assertSame([], $definition->getArguments());
+            self::assertFalse($definition->isAutowired());
+            self::assertFalse($definition->isAutoconfigured());
+            self::assertSame($class, (string) $container->getAlias($interface));
+        }
+    }
+
+    public function testBridgeDefaultsAreNotRegisteredWhenCustomProvidersConfigured(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([[
+            'user_class'            => User::class,
+            'task_provider'         => 'app.task_provider',
+            'team_context_provider' => 'app.team_context',
+        ]], $container);
+
+        self::assertFalse($container->hasDefinition(StubTaskProvider::class));
+        self::assertFalse($container->hasDefinition(NullTeamContextProvider::class));
+        self::assertSame('app.task_provider', (string) $container->getAlias(TaskProviderInterface::class));
+        self::assertSame('app.team_context', (string) $container->getAlias(TeamContextProviderInterface::class));
     }
 
     public function testLoadWithCustomTeamContextProvider(): void

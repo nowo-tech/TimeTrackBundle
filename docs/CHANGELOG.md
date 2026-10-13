@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `services.yaml` no longer scans `Bridge/`: `StubTaskProvider` and `NullTeamContextProvider` are registered only by `TimeTrackExtension` when selected as `task_provider` / `team_context_provider`, instead of having the explicit definitions overwritten by the resource scan. With custom providers configured, the unused Bridge defaults are no longer registered as (removed) private services. A DI test asserts the final definitions and aliases.
+
 ## [1.5.0] - 2026-10-13
 
 ### Security
