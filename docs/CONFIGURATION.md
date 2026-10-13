@@ -62,7 +62,13 @@ Pages call `{{ parent() }}` in `stylesheets` / `javascripts` so host assets keep
 | `clients.enabled` | `false` | Enable REST API routes |
 | `clients.token_ttl` | `86400` | Bearer token lifetime (seconds) |
 | `clients.idle_threshold_seconds` | `300` | Desktop idle threshold |
-| `clients.cors_allowed_origins` | `[]` | Extra CORS origins (`chrome-extension://`, `tauri://` always allowed) |
+| `clients.cors_allowed_origins` | `[]` | Exact CORS origins, e.g. `chrome-extension://<extension-id>` (`tauri://` always allowed; `*` only outside `prod`). No `Access-Control-Allow-Credentials` is sent (Bearer auth) |
+| `clients.cors_allow_any_extension_origin` | `false` | Opt-in wildcard: allow every `chrome-extension://` / `moz-extension://` origin (any installed extension). Prefer listing your extension id |
+| `clients.login_rate_limit.enabled` | `true` | Throttle failed `POST` logins |
+| `clients.login_rate_limit.cache_pool` | `cache.app` | PSR-6 pool shared by all workers (no atomic increment: put a proxy/firewall limit in front for hard guarantees) |
+| `clients.login_rate_limit.max_attempts` | `10` | Failed logins per IP + username within the interval |
+| `clients.login_rate_limit.max_attempts_per_ip` | `null` | Failed logins per IP (any username) within the interval; `null` = 5 × `max_attempts`. Not cleared by a successful login |
+| `clients.login_rate_limit.interval_seconds` | `900` | Window (min. 60) |
 
 ## Security
 
@@ -73,7 +79,7 @@ Pages call `{{ parent() }}` in `stylesheets` / `javascripts` so host assets keep
 | `security.allow_unauthenticated` | `false` | DEV/DEMO only — wires AllowAll checker; production MUST keep `false` |
 | `security.admin_roles` | `[ROLE_ADMIN]` | Full report access via `TeamAccessGuard` |
 | `security.manager_can_view_entries` | `true` | Managers see team entries |
-| `security.manager_can_edit_entries` | `true` | Managers edit team entries |
+| `security.manager_can_edit_entries` | `true` | **Deprecated since 1.5** — the bundle ships no entry edit route; only `TeamAccessGuard::canEditEntry()` (host code) reads it. Decide edit access in a `nowo_time_track.time_entry.access_check` listener instead |
 
 Manage UI requires `symfony/security-bundle` when `allow_unauthenticated` is `false` (compile-time `LogicException` otherwise).
 

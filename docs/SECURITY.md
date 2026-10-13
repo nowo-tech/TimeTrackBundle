@@ -37,7 +37,8 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 
 - Bearer tokens stored hashed (SHA-256) in `{prefix}_client_tokens`
 - Rate limit login attempts per IP + username (`cache.app`)
-- CORS: `chrome-extension://`, `moz-extension://`, `tauri://` by default; no `*` in production
+- CORS: only `tauri://` plus the exact `clients.cors_allowed_origins` by default; any `chrome-extension://` / `moz-extension://` only with `clients.cors_allow_any_extension_origin: true`; no `*` in production; never `Access-Control-Allow-Credentials` (Bearer tokens)
+- Login throttle: per IP + username and per IP (`max_attempts_per_ip`, default 5 × `max_attempts`)
 - Unbounded queries: `tasks` `limit` capped at 100; `entries` `from`/`to` parsed strictly and capped at 366 days
 - Purge expired tokens: `php bin/console nowo:time-track:client-tokens:purge`
 

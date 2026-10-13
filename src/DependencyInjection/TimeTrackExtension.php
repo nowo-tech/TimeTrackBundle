@@ -128,7 +128,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$cache', new Reference((string) $loginRateLimit['cache_pool']))
             ->setArgument('$maxAttempts', (int) $loginRateLimit['max_attempts'])
             ->setArgument('$intervalSeconds', (int) $loginRateLimit['interval_seconds'])
-            ->setArgument('$enabled', (bool) $loginRateLimit['enabled']));
+            ->setArgument('$enabled', (bool) $loginRateLimit['enabled'])
+            ->setArgument('$maxAttemptsPerIp', $loginRateLimit['max_attempts_per_ip'] !== null ? (int) $loginRateLimit['max_attempts_per_ip'] : null));
 
         $authenticatorId = $clients['authenticator'] ?? null;
         if (!is_string($authenticatorId) || $authenticatorId === '') {
@@ -149,7 +150,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(ClientResponseFactory::class, (new Definition(ClientResponseFactory::class))
             ->setAutowired(false)
             ->setArgument('$allowedOrigins', $clients['cors_allowed_origins'])
-            ->setArgument('$kernelEnvironment', '%kernel.environment%'));
+            ->setArgument('$kernelEnvironment', '%kernel.environment%')
+            ->setArgument('$allowAnyExtensionOrigin', (bool) $clients['cors_allow_any_extension_origin']));
 
         $container->setDefinition(TeamAccessGuard::class, (new Definition(TeamAccessGuard::class))
             ->setAutowired(false)

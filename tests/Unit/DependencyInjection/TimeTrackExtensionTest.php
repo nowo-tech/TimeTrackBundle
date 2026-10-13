@@ -9,6 +9,8 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\DoctrineExtension;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
+use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
@@ -62,6 +64,30 @@ final class TimeTrackExtensionTest extends TestCase
             'tabler',
             $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
         );
+    }
+
+    public function testLoadWiresClientRateLimitAndCorsOptions(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
+        self::assertNull($container->getDefinition(ClientLoginRateLimiter::class)->getArgument('$maxAttemptsPerIp'));
+        self::assertFalse($container->getDefinition(ClientResponseFactory::class)->getArgument('$allowAnyExtensionOrigin'));
+
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+        (new TimeTrackExtension())->load([[
+            'user_class' => User::class,
+            'clients'    => [
+                'cors_allow_any_extension_origin' => true,
+                'login_rate_limit'                => ['max_attempts_per_ip' => 25],
+            ],
+        ]], $container);
+        self::assertSame(25, $container->getDefinition(ClientLoginRateLimiter::class)->getArgument('$maxAttemptsPerIp'));
+        self::assertTrue($container->getDefinition(ClientResponseFactory::class)->getArgument('$allowAnyExtensionOrigin'));
     }
 
     public function testLoadInjectsManagerRegistryForWorkerSafeDoctrineAccess(): void

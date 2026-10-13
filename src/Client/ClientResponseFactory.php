@@ -14,11 +14,13 @@ use function str_starts_with;
 final readonly class ClientResponseFactory
 {
     /**
-     * @param list<string> $allowedOrigins use '*' to allow any origin (development only)
+     * @param list<string> $allowedOrigins exact origins (e.g. chrome-extension://<id>); '*' allows any origin outside prod
+     * @param bool $allowAnyExtensionOrigin opt-in: accept every chrome-extension:// and moz-extension:// origin
      */
     public function __construct(
         private array $allowedOrigins,
         private string $kernelEnvironment = 'prod',
+        private bool $allowAnyExtensionOrigin = false,
     ) {
     }
 
@@ -56,8 +58,8 @@ final readonly class ClientResponseFactory
             return;
         }
 
+        // Bearer-token API: no cookies, so no Access-Control-Allow-Credentials.
         $response->headers->set('Access-Control-Allow-Origin', $origin);
-        $response->headers->set('Access-Control-Allow-Credentials', 'true');
         $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         $response->headers->set('Vary', 'Origin');
@@ -79,8 +81,12 @@ final readonly class ClientResponseFactory
             return true;
         }
 
-        return str_starts_with($origin, 'chrome-extension://')
-            || str_starts_with($origin, 'moz-extension://')
-            || str_starts_with($origin, 'tauri://');
+        // tauri:// is only produced by the desktop agent webview, never by a web page.
+        if (str_starts_with($origin, 'tauri://')) {
+            return true;
+        }
+
+        return $this->allowAnyExtensionOrigin
+            && (str_starts_with($origin, 'chrome-extension://') || str_starts_with($origin, 'moz-extension://'));
     }
 }

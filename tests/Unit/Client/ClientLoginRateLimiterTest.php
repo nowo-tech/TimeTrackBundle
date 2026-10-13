@@ -76,4 +76,52 @@ final class ClientLoginRateLimiterTest extends TestCase
 
         self::assertFalse($limiter->isLimited('1.1.1.1', 'user'));
     }
+
+    public function testIpBucketBlocksUsernameRotation(): void
+    {
+        $limiter = new ClientLoginRateLimiter(new ArrayAdapter(), 2, 300, true);
+
+        for ($i = 0; $i < 10; ++$i) {
+            self::assertFalse($limiter->isLimited('1.1.1.1', 'user' . $i));
+            $limiter->registerFailedAttempt('1.1.1.1', 'user' . $i);
+        }
+
+        // Default per-IP budget is 5 × max_attempts = 10: every username on this IP is blocked now.
+        self::assertTrue($limiter->isLimited('1.1.1.1', 'fresh-user'));
+        self::assertFalse($limiter->isLimited('2.2.2.2', 'fresh-user'));
+    }
+
+    public function testCustomPerIpBudget(): void
+    {
+        $limiter = new ClientLoginRateLimiter(new ArrayAdapter(), 5, 300, true, 3);
+
+        $limiter->registerFailedAttempt('1.1.1.1', 'a');
+        $limiter->registerFailedAttempt('1.1.1.1', 'b');
+        self::assertFalse($limiter->isLimited('1.1.1.1', 'c'));
+
+        $limiter->registerFailedAttempt('1.1.1.1', 'c');
+        self::assertTrue($limiter->isLimited('1.1.1.1', 'd'));
+    }
+
+    public function testSuccessfulLoginDoesNotResetIpBucket(): void
+    {
+        $limiter = new ClientLoginRateLimiter(new ArrayAdapter(), 5, 300, true, 2);
+
+        $limiter->registerFailedAttempt('1.1.1.1', 'victim');
+        $limiter->registerFailedAttempt('1.1.1.1', 'victim');
+        $limiter->reset('1.1.1.1', 'attacker');
+
+        self::assertTrue($limiter->isLimited('1.1.1.1', 'victim'));
+        self::assertTrue($limiter->isLimited('1.1.1.1', 'attacker'));
+    }
+
+    public function testUsernameIsNormalized(): void
+    {
+        $limiter = new ClientLoginRateLimiter(new ArrayAdapter(), 2, 300, true);
+
+        $limiter->registerFailedAttempt('1.1.1.1', 'Admin');
+        $limiter->registerFailedAttempt('1.1.1.1', ' admin ');
+
+        self::assertTrue($limiter->isLimited('1.1.1.1', 'admin'));
+    }
 }

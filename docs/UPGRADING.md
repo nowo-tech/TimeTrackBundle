@@ -8,6 +8,13 @@
 - [From 1.3.4 to 1.3.5](#from-134-to-135)
 - [From 1.3.2 to 1.3.3](#from-132-to-133)
 
+## Unreleased
+
+- **CORS for browser extensions:** any `chrome-extension://` / `moz-extension://` origin is no longer accepted by default. The bundled Chrome extension calls the API from extension pages with `host_permissions`, which Chrome exempts from CORS, so it keeps working. If another client depends on CORS, add its exact origin (e.g. `chrome-extension://<id>`) to `clients.cors_allowed_origins`, or set `clients.cors_allow_any_extension_origin: true` to restore the previous behaviour.
+- `Access-Control-Allow-Credentials` is no longer sent. Clients must authenticate with the `Authorization: Bearer` header (as the bundled clients do), not cookies.
+- **Login throttle:** an IP is now also blocked after `max_attempts_per_ip` failed logins across all usernames (default 5 × `max_attempts` = 50 per 15 min). Raise `clients.login_rate_limit.max_attempts_per_ip` for many users behind one NAT.
+- `security.manager_can_edit_entries` is deprecated (no bundle route uses it). Remove it from your config; if your own code calls `TeamAccessGuard::canEditEntry()`, move the manager rule to a `nowo_time_track.time_entry.access_check` listener.
+
 ## From 1.3.7 to 1.4.0
 
 From **1.3.7** — security - strict report dates, bounded API queries, 409 on concurrent timer start, login timing.

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Client login throttle: new IP-only bucket (`clients.login_rate_limit.max_attempts_per_ip`, default 5 × `max_attempts`, like Symfony's `DefaultLoginRateLimiter`) blocks an IP that rotates usernames; a successful login no longer clears that budget. Usernames are trimmed + lower-cased. Both counters are read with one `getItems()` and committed together (PSR-6 has no atomic increment; documented).
+- Client API CORS: `Access-Control-Allow-Credentials: true` is no longer sent (the API uses Bearer tokens, not cookies), and arbitrary `chrome-extension://` / `moz-extension://` origins are no longer allowed by default. List your extension in `clients.cors_allowed_origins` or opt in with `clients.cors_allow_any_extension_origin: true`. `tauri://` stays allowed.
+
+### Deprecated
+
+- `security.manager_can_edit_entries`: the bundle ships no time-entry edit route, so the option only affects `TeamAccessGuard::canEditEntry()` called from host code. Setting it triggers a deprecation; use a `nowo_time_track.time_entry.access_check` listener.
+
+### Fixed
+
+- 100% coverage gate: `TimeTrackExtension::prepend()` UiKit defaults are now tested (unreachable `is_array()` guard removed).
+
 ## [1.4.0] - 2026-10-13
 
 ### Security

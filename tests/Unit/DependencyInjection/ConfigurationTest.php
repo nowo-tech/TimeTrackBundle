@@ -7,6 +7,8 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 use App\Entity\User;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Definition\ArrayNode;
+use Symfony\Component\Config\Definition\BaseNode;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\Definition\Processor;
 
@@ -24,6 +26,30 @@ final class ConfigurationTest extends TestCase
         self::assertSame('/api/time-track/login', $config['clients']['routes']['login']['path']);
         self::assertSame('@NowoTimeTrackBundle/layout.html.twig', $config['templates']['layout']);
         self::assertSame('tabler', $config['templates']['css_framework']);
+        self::assertFalse($config['clients']['cors_allow_any_extension_origin']);
+        self::assertNull($config['clients']['login_rate_limit']['max_attempts_per_ip']);
+    }
+
+    public function testManagerCanEditEntriesIsDeprecated(): void
+    {
+        $root = (new Configuration())->getConfigTreeBuilder()->buildTree();
+        self::assertInstanceOf(ArrayNode::class, $root);
+        $security = $root->getChildren()['security'];
+        self::assertInstanceOf(ArrayNode::class, $security);
+        $node = $security->getChildren()['manager_can_edit_entries'];
+        self::assertInstanceOf(BaseNode::class, $node);
+
+        self::assertTrue($node->isDeprecated());
+        $deprecation = $node->getDeprecation('manager_can_edit_entries', 'nowo_time_track.security');
+        self::assertSame('nowo-tech/time-track-bundle', $deprecation['package']);
+        self::assertSame('1.5', $deprecation['version']);
+        self::assertStringContainsString('"nowo_time_track.security.manager_can_edit_entries" option is deprecated', $deprecation['message']);
+
+        $config = (new Processor())->processConfiguration(new Configuration(), [[
+            'user_class' => User::class,
+            'security'   => ['manager_can_edit_entries' => false],
+        ]]);
+        self::assertFalse($config['security']['manager_can_edit_entries']);
     }
 
     public function testCustomLayoutAndCssFramework(): void
