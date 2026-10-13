@@ -26,6 +26,7 @@ use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Reference;
 
 final class TimeTrackExtensionTest extends TestCase
@@ -141,6 +142,65 @@ final class TimeTrackExtensionTest extends TestCase
         (new TimeTrackExtension())->prepend($container);
 
         self::assertSame([], $container->getExtensionConfig('doctrine'));
+    }
+
+    public function testPrependUiKitDefaultsFromDefaultTemplates(): void
+    {
+        $container = $this->containerWithUiKit();
+
+        (new TimeTrackExtension())->prepend($container);
+
+        self::assertSame([['css_framework' => 'tabler', 'icon_set' => 'tabler-icons']], $container->getExtensionConfig('nowo_ui_kit'));
+    }
+
+    public function testPrependUiKitDefaultsMapsBootstrapAlias(): void
+    {
+        $container = $this->containerWithUiKit();
+        $container->loadFromExtension('nowo_time_track', ['templates' => ['css_framework' => 'bootstrap']]);
+
+        (new TimeTrackExtension())->prepend($container);
+
+        self::assertSame(
+            ['css_framework' => 'bootstrap5', 'icon_set' => 'bootstrap-icons'],
+            $container->getExtensionConfig('nowo_ui_kit')[0],
+        );
+    }
+
+    public function testPrependUiKitKeepsHostCssFrameworkAndDerivesIconsFromTemplates(): void
+    {
+        $container = $this->containerWithUiKit();
+        $container->loadFromExtension('nowo_ui_kit', ['css_framework' => 'tailwind']);
+        $container->loadFromExtension('nowo_time_track', ['templates' => ['css_framework' => 'tabler']]);
+
+        (new TimeTrackExtension())->prepend($container);
+
+        $configs = $container->getExtensionConfig('nowo_ui_kit');
+        self::assertSame(['icon_set' => 'tabler-icons'], $configs[0]);
+        self::assertSame(['css_framework' => 'tailwind'], $configs[1]);
+    }
+
+    public function testPrependUiKitOnlyFillsMissingCssFramework(): void
+    {
+        $container = $this->containerWithUiKit();
+        $container->loadFromExtension('nowo_ui_kit', ['icon_set' => 'svg_inline']);
+        $container->loadFromExtension('nowo_time_track', ['templates' => ['css_framework' => 'custom']]);
+
+        (new TimeTrackExtension())->prepend($container);
+
+        $configs = $container->getExtensionConfig('nowo_ui_kit');
+        self::assertSame(['css_framework' => 'custom'], $configs[0]);
+        self::assertSame(['icon_set' => 'svg_inline'], $configs[1]);
+    }
+
+    public function testPrependUiKitLeavesHostChoicesUntouched(): void
+    {
+        $container = $this->containerWithUiKit();
+        $container->loadFromExtension('nowo_ui_kit', ['css_framework' => 'bootstrap5']);
+        $container->loadFromExtension('nowo_ui_kit', ['icon_set' => 'bootstrap-icons']);
+
+        (new TimeTrackExtension())->prepend($container);
+
+        self::assertSame([['css_framework' => 'bootstrap5'], ['icon_set' => 'bootstrap-icons']], $container->getExtensionConfig('nowo_ui_kit'));
     }
 
     public function testGetAlias(): void
@@ -328,5 +388,24 @@ final class TimeTrackExtensionTest extends TestCase
             (string) $container->getAlias(TimeTrackAccessCheckerInterface::class),
         );
         self::assertFalse($container->hasDefinition('nowo_time_track.access_checker.default'));
+    }
+
+    private function containerWithUiKit(): ContainerBuilder
+    {
+        $container = new ContainerBuilder();
+        $container->registerExtension(new TimeTrackExtension());
+        $container->registerExtension(new class extends Extension {
+            public function load(array $configs, ContainerBuilder $container): void
+            {
+            }
+
+            public function getAlias(): string
+            {
+                return 'nowo_ui_kit';
+            }
+        });
+        $container->loadFromExtension('nowo_time_track', ['user_class' => User::class]);
+
+        return $container;
     }
 }

@@ -248,9 +248,6 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $hostHasCssFramework = false;
         $hostHasIconSet      = false;
         foreach ($container->getExtensionConfig('nowo_ui_kit') as $cfg) {
-            if (!is_array($cfg)) {
-                continue;
-            }
             if (array_key_exists('css_framework', $cfg)) {
                 $hostHasCssFramework = true;
             }
