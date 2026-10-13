@@ -2,9 +2,20 @@
 
 ## Table of contents
 
+- [From 1.3.6 to 1.3.7](#from-136-to-137)
 - [From 1.3.5 to 1.3.6](#from-135-to-136)
 - [From 1.3.4 to 1.3.5](#from-134-to-135)
 - [From 1.3.2 to 1.3.3](#from-132-to-133)
+
+## From 1.3.6 to 1.3.7
+
+From **1.3.6** — dependency refresh and repository maintenance.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- No breaking changes. No application upgrade steps.
 
 ## From 1.3.5 to 1.3.6
 
@@ -237,7 +248,6 @@ php bin/console cache:clear
 
 No breaking changes and no host migration. `TeamAccessGuard` and `ClientAuthService` now reload the user entity (`EntityManager::refresh()`) before role checks, which adds one `SELECT` when an admin-role check runs and one per client API request. Code that instantiates these services or the `DoctrineOrm*Repository` classes manually keeps working: the new `?ManagerRegistry` argument is optional (without it, no refresh or closed-manager reset happens). For `clients.login_rate_limit.cache_pool`, keep using a pool shared by all workers (Redis, filesystem, APCu); an array pool is per worker and unbounded.
 - No application upgrade steps for require-dev Igor tooling (REQ-CS-008). Consumers do not pull `igor-php/igor-php` transitively.
-
 
 ## To 1.3.2
 
