@@ -8,24 +8,33 @@ assignees: ''
 ---
 
 <!--
+- Please do not report an issue for a version of `time-track-bundle` that is no longer supported. Currently supported versions are listed here: https://github.com/nowo-tech/TimeTrackBundle#version-information
 - Please fill in this template according to your issue.
-- You can retrieve bundle version: composer show nowo-tech/time-track-bundle
-- PHP version: php -v
-- Post code as text, not screenshots.
+- Please keep the table shown below at the top of your issue.
+- You can retrieve `time-track-bundle` version by running `composer info | grep "time-track-bundle"`.
+- You can retrieve PHP version by running `php -v`.
+- Please post code as text (using proper markup). Do not post screenshots of code.
+- Please remove this comment before submitting your issue.
 -->
 
-| Q | A
-| --- | ---
-| `time-track-bundle` version | x.y.z
-| PHP version | x.y.z
-| Symfony version | x.y.z
+| Q                           | A
+| ----------------------------| -----------------------
+| `TimeTrackBundle` version        | x.y.z
+| PHP version                 | x.y.z
+| Database                    | MySQL / PostgreSQL / SQLite / Other
 
 #### Summary
 
+<!-- Provide a summary describing the problem you are experiencing. -->
+
 #### Current behavior
+
+<!-- What is the current (buggy) behavior? -->
+
+#### How to reproduce
+
+<!-- Provide steps to reproduce the bug. -->
 
 #### Expected behavior
 
-#### Steps to reproduce
-
-#### Possible fix
+<!-- What was the expected (correct) behavior? -->

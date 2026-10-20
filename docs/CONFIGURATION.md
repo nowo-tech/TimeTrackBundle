@@ -2,6 +2,14 @@
 
 All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 
+## Table of contents
+
+- [Required](#required)
+- [Integration](#integration)
+- [Templates (REQ-UI-001)](#templates-req-ui-001)
+- [Clients (extension + desktop)](#clients-extension--desktop)
+- [Security](#security)
+
 ## Required
 
 | Option | Description |

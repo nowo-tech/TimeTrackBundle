@@ -4,6 +4,15 @@
 
 The Symfony 8 demo runs as a **single FrankenPHP container** (no separate Nginx).
 
+## Table of contents
+
+- [Quick start](#quick-start)
+- [`FRANKENPHP_MODE` (classic vs worker)](#frankenphp_mode-classic-vs-worker)
+- [PHP version (Symfony 8)](#php-version-symfony-8)
+- [Development tips](#development-tips)
+- [Healthcheck](#healthcheck)
+- [Worker mode note](#worker-mode-note)
+
 ## Quick start
 
 ```bash

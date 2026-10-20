@@ -53,24 +53,27 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 
 ## Documentation
 
-- [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md) (includes worker mode)
-- [GitHub Actions CI requirements](docs/GITHUB_CI.md)
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)
-- [PSR evaluation (REQ-CS-007)](docs/PSR.md)
 - [Usage](docs/USAGE.md)
-- [Browser extension](docs/BROWSER-EXTENSION.md)
-- [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
-- [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Changelog](docs/CHANGELOG.md)
 - [Upgrading](docs/UPGRADING.md)
-- [Release process](docs/RELEASE.md)
+- [Release](docs/RELEASE.md)
 - [Security](docs/SECURITY.md)
 - [Engram](docs/ENGRAM.md)
 - [Spec-driven development](docs/SPEC-DRIVEN-DEVELOPMENT.md)
 - [GitHub Spec Kit](docs/SPEC-KIT.md)
+
+### Additional documentation
+
+- [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md) (includes worker mode)
+- [GitHub Actions CI requirements](docs/GITHUB_CI.md)
+- [PSR evaluation (REQ-CS-007)](docs/PSR.md)
+- [Browser extension](docs/BROWSER-EXTENSION.md)
+- [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
+- [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)
 
 ## Tests and coverage
 

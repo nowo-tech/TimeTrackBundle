@@ -6,6 +6,13 @@ composer require nowo-tech/time-track-bundle
 
 The Flex recipe copies `config/packages/nowo_time_track.yaml` and `config/routes/nowo_time_track.yaml`.
 
+## Table of contents
+
+- [Database](#database)
+- [Security](#security)
+- [TaskBoardBundle](#taskboardbundle)
+- [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
+
 ## Database
 
 Create tables via Doctrine migrations. See demo migration `demo/symfony8/migrations/Version20250706120000.php` for reference SQL.

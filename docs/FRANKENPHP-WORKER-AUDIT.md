@@ -9,6 +9,18 @@
 | Remediation (2026-09-23) | W-01 resolved (user refreshed before role checks, closed EntityManager reset after failed flushes via `Doctrine\ManagedEntityRefresher` / `Doctrine\RecoveringFlusher`); W-02 accepted (host-chosen pool, documented); W-03 resolved (route loader guard removed); regression tests simulate consecutive requests without `reset()` |
 | **Verdict** | ✅ **Viable under scenario B** — no bundle service keeps per-request state, role decisions reload the user from the database, and a failed flush no longer leaves the worker on a closed EntityManager. Clearing the identity map between requests (memory, freshness of rendered data) remains the application's responsibility |
 
+## Table of contents
+
+- [Execution model assumed](#execution-model-assumed)
+- [Summary](#summary)
+- [Services reviewed](#services-reviewed)
+- [Findings](#findings)
+  - [W-01 — Relies on Doctrine's reset to clear the EntityManager between requests (Medium, scenario B only)](#w-01--relies-on-doctrines-reset-to-clear-the-entitymanager-between-requests-medium-scenario-b-only)
+  - [W-02 — Login rate limiter depends on a shared, bounded cache pool (Low)](#w-02--login-rate-limiter-depends-on-a-shared-bounded-cache-pool-low)
+  - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
+- [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
+- [Re-audit triggers](#re-audit-triggers)
+
 ## Execution model assumed
 
 FrankenPHP worker mode boots the Symfony kernel once per worker and serves many requests with the same container. This audit assumes the **strict** variant: the kernel is **not** rebooted between requests, so every shared service, static property and PHP global survives from one request to the next. Two scenarios are evaluated:

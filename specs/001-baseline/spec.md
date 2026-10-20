@@ -78,6 +78,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-CFG-002**: `TimeTrackExtension` loads services and conditional client routes.
 - **FR-DI-001**: `services.yaml` wires repositories, services, controllers, commands, and bridge defaults.
 - **FR-TWIG-001**: `TwigPathsPass` registers bundle views namespace.
+- **FR-TWIG-002**: `TimeTrackTwigExtension` exposes the Web UI globals (`templates.layout`, `templates.css_framework`) to the bundle templates (REQ-UI-001).
 - **FR-ROUTE-001**: `TimeTrackRouteLoader` (`type: nowo_time_track`) MUST expose configurable manage and API routes.
 
 ### Persistence
@@ -104,6 +105,9 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-SVC-002**: `ClientAuthService` — login, token validation, revocation.
 - **FR-SVC-003**: `TeamAccessGuard` — manager view/edit gates using team context and config roles.
 - **FR-SUP-001**: `UserIdResolver` extracts stable user id from `UserInterface`.
+- **FR-SUP-002**: `QueryPeriodResolver` parses the `from` / `to` query parameters of the reports page and the client entries API; only strict formats (ATOM / RFC 3339 or `Y-m-d`) are accepted, anything else falls back to the default period.
+- **FR-SEC-001**: Manage UI access goes through `TimeTrackAccessCheckerInterface`: `ConfigurableTimeTrackAccessChecker` (default, `security.access_roles`) or `AllowAllTimeTrackAccessChecker` only when `security.allow_unauthenticated` is true (demo/dev).
+- **FR-WORKER-001**: Safe without kernel reset (FrankenPHP worker): `RecoveringFlusher` reopens a closed EntityManager after a failed flush, `ManagedEntityRefresher` reloads managed entities before security decisions so a stale identity map is never trusted.
 
 ### Client layer
 
@@ -134,7 +138,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 ## Success Criteria
 
-- **SC-001**: 48/48 production files mapped in [`code-inventory.md`](code-inventory.md).
+- **SC-001**: 60/60 production files mapped in [`code-inventory.md`](code-inventory.md).
 - **SC-002**: Documented routes match `Configuration` defaults and route loader.
 - **SC-003**: PHPUnit + PHPStan pass; demo timer flow works with TaskBoard.
 - **SC-004**: Client API returns 409 on double-start and 401 on invalid token.

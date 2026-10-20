@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-07-07
+**Last audited**: 2026-10-20 (worker recovery, access checkers, query period, Twig globals)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -50,6 +50,13 @@
 | `Event/TimeEntryAccessCheckEvent.php` | Entry ACL event | FR-EVT-003 |
 | `Event/TimeEntryListQueryEvent.php` | Entry list filter | FR-EVT-003 |
 | `Exception/ActiveTimerConflictException.php` | Conflict exception | FR-EXC-001 |
+| `Doctrine/ManagedEntityRefresher.php` | Worker-safe entity reload before security checks | FR-WORKER-001 |
+| `Doctrine/RecoveringFlusher.php` | Flush with closed-EntityManager recovery | FR-WORKER-001 |
+| `Security/AllowAllTimeTrackAccessChecker.php` | Permissive checker (allow_unauthenticated) | FR-SEC-001 |
+| `Security/ConfigurableTimeTrackAccessChecker.php` | Role-based default checker | FR-SEC-001 |
+| `Security/TimeTrackAccessCheckerInterface.php` | Access checker contract | FR-SEC-001 |
+| `Support/QueryPeriodResolver.php` | from/to query parsing | FR-SUP-002 |
+| `Twig/TimeTrackTwigExtension.php` | Web UI Twig globals | FR-TWIG-002 |
 
 ## Symfony config
 
@@ -81,8 +88,8 @@
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes | 42 | 42 |
-| YAML config | 1 | 1 |
+| PHP classes (`src/**/*.php`) | 49 | 49 |
+| Symfony config | 1 | 1 |
 | Twig views | 3 | 3 |
 | Translations | 7 | 7 |
-| **Total production sources** | **53** | **53** |
+| **Total production sources** | **60** | **60** |

@@ -10,6 +10,16 @@ There is no separate executable spec language (for example Gherkin); Spec Kit sp
 
 ---
 
+## Table of contents
+
+- [User stories](#user-stories)
+- [Bundle functional scope](#bundle-functional-scope)
+- [Validating the functional spec](#validating-the-functional-spec)
+- [Requirement identifiers (`REQ-*`)](#requirement-identifiers-req-)
+- [Suggested workflow for contributors](#suggested-workflow-for-contributors)
+- [Relationship to Engram](#relationship-to-engram)
+- [GitHub Spec Kit (summary)](#github-spec-kit-summary)
+
 ## User stories
 
 | ID | Story |
@@ -77,6 +87,10 @@ When you change scripted behavior, **update the existing `REQ-*` comment** if th
    - For **new features**, use Cursor Agent skills (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`) as documented in SPEC-KIT.
 
 ---
+
+## Relationship to Engram
+
+[ENGRAM.md](ENGRAM.md) covers the developer's **local, cross-session memory** (MCP) and the org-wide checklist pointers. This document and `specs/` are the **committed, reviewable** source of truth for product behavior and `REQ-*` traceability. Never store product decisions only in Engram; summarize them here or in the baseline spec.
 
 ## GitHub Spec Kit (summary)
 

@@ -2,6 +2,12 @@
 
 `TimeTrackBundle` stores **references** to tasks (`task_id` + snapshots). Task definitions live in `nowo-tech/task-board-bundle`.
 
+## Table of contents
+
+- [Interfaces (implemented by TaskBoard)](#interfaces-implemented-by-taskboard)
+- [Wiring](#wiring)
+- [Recommended TaskBoard features](#recommended-taskboard-features)
+
 ## Interfaces (implemented by TaskBoard)
 
 | Interface | Purpose |
