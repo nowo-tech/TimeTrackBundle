@@ -37,13 +37,13 @@ final readonly class DefaultClientAuthenticator implements ClientAuthenticatorIn
         try {
             $user = $this->userProvider->loadUserByIdentifier($username);
         } catch (UserNotFoundException) {
-            self::verifyDummyPassword($password);
+            $this->verifyDummyPassword($password);
 
             return null;
         }
 
         if (!$user instanceof PasswordAuthenticatedUserInterface) {
-            self::verifyDummyPassword($password);
+            $this->verifyDummyPassword($password);
 
             return null;
         }
@@ -55,7 +55,7 @@ final readonly class DefaultClientAuthenticator implements ClientAuthenticatorIn
         return ClientAuthResult::success($user);
     }
 
-    private static function verifyDummyPassword(string $password): void
+    private function verifyDummyPassword(string $password): void
     {
         password_verify($password, self::DUMMY_PASSWORD_HASH);
     }

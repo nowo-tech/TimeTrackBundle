@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependencies refreshed (Composer and pnpm/npm lock files of the bundle and its demos, campaign 2026-10-19).
 - `.php-cs-fixer.dist.php`: `new ParallelConfig(2)` (REQ-CS-001).
 - Documentation: wave-1 REQ compliance — README documentation list order (extra docs under Additional documentation), CONTRIBUTING Cursor Agent settings and post-release-commit trailer check, canonical issue templates, `demo/README.md`, demo `.env.test` / `.gitignore` cleanup, SPEC-DRIVEN-DEVELOPMENT relationship to Engram, doc TOCs, Spec Kit inventory refresh (60/60).
+- Internal: applied the pending Rector suggestions (`DefaultClientAuthenticator` private static helper made non-static, `RecoveringFlusher` null check as `instanceof`); no behaviour change. `make rector-dry` is clean again.
 
 ## [1.5.2] - 2026-10-18
 

@@ -29,7 +29,7 @@ final class RecoveringFlusher
 
     public static function resetIfClosed(EntityManagerInterface $entityManager, ?ManagerRegistry $managerRegistry): void
     {
-        if ($managerRegistry === null || $entityManager->isOpen()) {
+        if (!$managerRegistry instanceof ManagerRegistry || $entityManager->isOpen()) {
             return;
         }
 
