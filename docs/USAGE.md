@@ -5,6 +5,18 @@
 - **Layout without forking pages:** set `nowo_time_track.templates.layout` to your project layout (Twig global `nowo_time_track_layout`). The vendor `layout.html.twig` is the demo fallback only — see [CONFIGURATION.md](CONFIGURATION.md#templates-req-ui-001).
 - **CSS stack:** set `nowo_time_track.templates.css_framework` (default `tabler`) to match the host. Twig global: `nowo_time_track_css_framework`. Markup already uses Tabler/Bootstrap 5-compatible classes; with `custom`, style those classes (or `nowo-ui-*`) in the host — no page Twig fork required.
 - **Override Twig (escape hatch):** `templates/bundles/NowoTimeTrackBundle/` — prefer config/`layout` + `css_framework` + `{{ parent() }}` asset stacking for upgrades.
+- **Forms (REQ-TWIG-005):** the start/stop buttons are Symfony Forms (`Nowo\TimeTrackBundle\Form\TimerActionType`, flat field names `_token` / `action` / `task_id`, CSRF id `nowo_time_track_manage`). The controller always passes `stop_form` and `start_forms` (keyed by task id) to `time_track/index.html.twig`. Render them with `form_start`, the child loop and `form_end`; hosts that override the page and demos must not reintroduce raw `<form>` / `<input>` markup:
+
+```twig
+{{ form_start(stop_form) }}
+    {% for child in stop_form %}
+        {% if not child.rendered %}
+            {{ form_row(child) }}
+        {% endif %}
+    {% endfor %}
+    <button class="btn btn-danger" type="submit">{{ 'action.stop'|trans({}, 'NowoTimeTrackBundle') }}</button>
+{{ form_end(stop_form) }}
+```
 
 ```yaml
 nowo_time_track:

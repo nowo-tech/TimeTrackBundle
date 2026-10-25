@@ -9,10 +9,14 @@ use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\Form\FormFactoryInterface;
+use Symfony\Component\Form\FormInterface;
+use Symfony\Component\Form\FormView;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
@@ -42,12 +46,16 @@ final class TimeTrackManageController extends AbstractController
         $tasks  = $user instanceof UserInterface ? $this->timerService->listTasks($user, new TaskListQuery(limit: 20)) : [];
 
         if ($request->isMethod('POST') && $user instanceof UserInterface) {
-            if (!$this->isCsrfTokenValid('nowo_time_track_manage', (string) $request->request->get('_token', ''))) {
+            $form = $this->createTimerActionForm([]);
+            $form->handleRequest($request);
+            if (!$form->isSubmitted() || !$form->isValid()) {
                 throw $this->createAccessDeniedException('Invalid CSRF token.');
             }
 
-            $action = (string) $request->request->get('action', '');
-            $taskId = (string) $request->request->get('task_id', '');
+            /** @var array{action?: string|null, task_id?: string|null} $data */
+            $data   = $form->getData();
+            $action = (string) ($data['action'] ?? '');
+            $taskId = (string) ($data['task_id'] ?? '');
 
             if ($action === 'start' && $taskId !== '') {
                 try {
@@ -71,9 +79,17 @@ final class TimeTrackManageController extends AbstractController
             return $this->redirectToRoute('nowo_time_track_index');
         }
 
+        /** @var array<string, FormView> $startForms */
+        $startForms = [];
+        foreach ($tasks as $task) {
+            $startForms[$task->id] = $this->createTimerActionForm(['action' => 'start', 'task_id' => $task->id], 'start_' . $task->id)->createView();
+        }
+
         return $this->render($this->templates['index'], [
             'active_timer' => $active,
             'tasks'        => $tasks,
+            'stop_form'    => $this->createTimerActionForm(['action' => 'stop'], 'stop')->createView(),
+            'start_forms'  => $startForms,
         ]);
     }
 
@@ -97,6 +113,21 @@ final class TimeTrackManageController extends AbstractController
             'from'    => $from,
             'to'      => $to,
         ]);
+    }
+
+    /**
+     * Flat-named form (`_token`, `action`, `task_id`) so the posted contract is unchanged (REQ-TWIG-005).
+     *
+     * @param array{action?: string, task_id?: string} $data
+     *
+     * @return FormInterface<mixed>
+     */
+    private function createTimerActionForm(array $data, string $idSuffix = ''): FormInterface
+    {
+        /** @var FormFactoryInterface $factory */
+        $factory = $this->container->get('form.factory');
+
+        return $factory->createNamed('', TimerActionType::class, $data, ['id_suffix' => $idSuffix]);
     }
 
     private function trans(string $key): string

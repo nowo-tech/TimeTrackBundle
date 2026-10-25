@@ -32,9 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `make check-no-raw-html-form` (`.scripts/check-no-raw-html-form.sh`) fails on raw `<form>` / `<input>` / `<textarea>` / `<select>` in bundle views and demo templates, and runs in `release-check` (REQ-TWIG-005).
+
 ### Changed
 
-- Developer tooling: `make release-check` runs the full REQ-MAKE-002 chain with `ensure-up` first, then the Cursor co-author, open-PR and Twig `extra` gates, composer-sync, the new `cs-fix` step, cs-check, rector-dry, phpstan, igor, translations, coverage-check and the demo release-check. `check-no-raw-html-form` (REQ-TWIG-005) is wired once the remaining raw form markup is migrated.
+- Manage timer page: start/stop buttons are rendered through the new `TimerActionType` Symfony Form (`form_start` / child loop / `form_end`) instead of a raw `<form>` with hand-rolled `_token` / `action` / `task_id` inputs; the controller validates with `handleRequest` + `isSubmitted()` / `isValid()` and always passes `stop_form` / `start_forms`. Same URL, field names and CSRF id (REQ-TWIG-005). Requires `symfony/form`.
+
+- Developer tooling: `make release-check` runs the full REQ-MAKE-002 chain with `ensure-up` first, then the Cursor co-author, open-PR and Twig `extra` gates, composer-sync, the new `cs-fix` step, cs-check, rector-dry, phpstan, igor, translations, coverage-check and the demo release-check.
 - Dependencies refreshed (Composer and pnpm/npm lock files of the bundle and its demos, campaign 2026-10-19).
 - `.php-cs-fixer.dist.php`: `new ParallelConfig(2)` (REQ-CS-001).
 - Documentation: wave-1 REQ compliance — README documentation list order (extra docs under Additional documentation), CONTRIBUTING Cursor Agent settings and post-release-commit trailer check, canonical issue templates, `demo/README.md`, demo `.env.test` / `.gitignore` cleanup, SPEC-DRIVEN-DEVELOPMENT relationship to Engram, doc TOCs, Spec Kit inventory refresh (60/60).

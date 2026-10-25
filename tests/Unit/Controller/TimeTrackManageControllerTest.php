@@ -16,6 +16,10 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Form\Extension\Csrf\CsrfExtension;
+use Symfony\Component\Form\Extension\HttpFoundation\HttpFoundationExtension;
+use Symfony\Component\Form\Forms;
+use Symfony\Component\Form\FormView;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -23,6 +27,8 @@ use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
+use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Twig\Environment;
@@ -74,7 +80,55 @@ final class TimeTrackManageControllerTest extends TestCase
         self::assertSame(['NowoTimeTrackBundle:flash.no_active_timer'], $session->getFlashBag()->get('warning'));
     }
 
-    private function createController(?TranslatorInterface $translator = null, ?Session $session = null): TimeTrackManageController
+    public function testIndexPassesStopAndPerTaskStartForms(): void
+    {
+        $controller = $this->createController();
+
+        $response = $controller->index(Request::create('/'));
+
+        self::assertSame(200, $response->getStatusCode());
+        $stopForm = $this->renderedContext['stop_form'];
+        self::assertInstanceOf(FormView::class, $stopForm);
+        self::assertSame('stop', $stopForm->children['action']->vars['value']);
+        self::assertSame('action_stop', $stopForm->children['action']->vars['id']);
+        self::assertSame('action', $stopForm->children['action']->vars['full_name']);
+        self::assertArrayHasKey('_token', $stopForm->children);
+
+        $startForms = $this->renderedContext['start_forms'];
+        self::assertIsArray($startForms);
+        self::assertNotSame([], $startForms);
+        foreach ($startForms as $taskId => $view) {
+            self::assertInstanceOf(FormView::class, $view);
+            self::assertSame('start', $view->children['action']->vars['value']);
+            self::assertSame((string) $taskId, $view->children['task_id']->vars['value']);
+            self::assertSame('task_id', $view->children['task_id']->vars['full_name']);
+        }
+    }
+
+    public function testStartActionStartsTimer(): void
+    {
+        $session    = new Session(new MockArraySessionStorage());
+        $controller = $this->createController(null, $session);
+        $controller->index(Request::create('/'));
+        $startForms = $this->renderedContext['start_forms'];
+        self::assertIsArray($startForms);
+        $taskId = (string) array_key_first($startForms);
+
+        $response = $controller->index(Request::create('/', 'POST', ['_token' => 't', 'action' => 'start', 'task_id' => $taskId]));
+
+        self::assertSame(302, $response->getStatusCode());
+        self::assertSame(['flash.timer_started'], $session->getFlashBag()->get('success'));
+    }
+
+    public function testInvalidCsrfTokenIsDenied(): void
+    {
+        $controller = $this->createController(null, null, false);
+
+        $this->expectException(AccessDeniedException::class);
+        $controller->index(Request::create('/', 'POST', ['_token' => 'bad', 'action' => 'stop']));
+    }
+
+    private function createController(?TranslatorInterface $translator = null, ?Session $session = null, bool $csrfValid = true): TimeTrackManageController
     {
         $tokenStorage = new TokenStorage();
         $tokenStorage->setToken(new UsernamePasswordToken(new TestUser('user-1', 'demo@example.com'), 'main', ['ROLE_USER']));
@@ -87,7 +141,13 @@ final class TimeTrackManageControllerTest extends TestCase
         });
 
         $csrf = $this->createStub(CsrfTokenManagerInterface::class);
-        $csrf->method('isTokenValid')->willReturn(true);
+        $csrf->method('isTokenValid')->willReturn($csrfValid);
+        $csrf->method('getToken')->willReturnCallback(static fn (string $id): CsrfToken => new CsrfToken($id, 't'));
+
+        $formFactory = Forms::createFormFactoryBuilder()
+            ->addExtension(new HttpFoundationExtension())
+            ->addExtension(new CsrfExtension($csrf))
+            ->getFormFactory();
 
         $router = $this->createStub(UrlGeneratorInterface::class);
         $router->method('generate')->willReturn('/');
@@ -103,6 +163,7 @@ final class TimeTrackManageControllerTest extends TestCase
         $container->set('security.csrf.token_manager', $csrf);
         $container->set('router', $router);
         $container->set('request_stack', $requestStack);
+        $container->set('form.factory', $formFactory);
 
         $controller = new TimeTrackManageController(
             new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), new InMemoryTimeEntryRepository(), new EventDispatcher()),
