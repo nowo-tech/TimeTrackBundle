@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.6.0](#to-160)
 - [To 1.5.2](#to-152)
 - [From 1.5.0 to 1.5.1](#from-150-to-151)
 - [From 1.4.0 to 1.5.0](#from-140-to-150)
@@ -40,6 +41,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.6.0
+
+From **1.5.2**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 - **Template override (REQ-TWIG-005):** `time_track/index.html.twig` no longer emits a hand-rolled `<form>` with `_token` / `action` / `task_id` hidden inputs. `TimeTrackManageController::index()` now always passes `stop_form` (FormView) and `start_forms` (FormView per task id). If you override `@NowoTimeTrackBundle/time_track/index.html.twig`, render those with `form_start` / child loop / `form_end` (see [USAGE](USAGE.md)). The posted field names and CSRF id are unchanged, so old overrides keep working, but they should be migrated.
 - **Dependency:** the bundle now requires `symfony/form` (`^7.4 || ^8.0`); FrameworkBundle enables `framework.form` automatically when it is installed.
