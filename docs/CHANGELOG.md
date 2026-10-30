@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.7.0] - 2026-10-30](#170---2026-10-30)
 - [[1.6.0] - 2026-10-26](#160---2026-10-26)
 - [[1.5.2] - 2026-10-18](#152---2026-10-18)
 - [[1.5.1] - 2026-10-13](#151---2026-10-13)
@@ -32,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.7.0] - 2026-10-30
+
+The manage UI form is a FormKit Type (REQ-TWIG-005 rule 11). See [UPGRADING](UPGRADING.md#to-170).
+
+### Changed
+
+- **FormKit is a required dependency** (`nowo-tech/form-kit-bundle` `^2.14`). `TimerActionType` carries
+  `#[FormKitConfig('time_track')]` + `FormOptionsTrait` and adds its fields through FormKit's option merger.
+- **FormKit profile `nowo_form_kit.profiles.time_track`** (REQ-UI-003 "Form theme" row), prepended by the extension when
+  FormKitBundle is registered and the host does not define it: translation domain `NowoTimeTrackBundle`, no classes, no
+  convention label / placeholder / help keys — the form renders exactly as in 1.6 (same flat `_token` / `action` /
+  `task_id` names and ids). When the host has no `nowo_form_kit` config at all, FormKit's implicit `default` profile
+  stays the default one. Without FormKitBundle in the kernel the form keeps its explicit options.
 
 ## [1.6.0] - 2026-10-26
 
@@ -338,7 +353,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.0...v1.5.1

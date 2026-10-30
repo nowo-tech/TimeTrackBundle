@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.7.0](#to-170)
 - [To 1.6.0](#to-160)
 - [To 1.5.2](#to-152)
 - [From 1.5.0 to 1.5.1](#from-150-to-151)
@@ -41,6 +42,13 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.7.0
+
+`nowo-tech/form-kit-bundle` (`^2.14`) is now required. Register `Nowo\FormKitBundle\NowoFormKitBundle` in
+`config/bundles.php` if Flex did not (the form still renders without it, but the profile is only applied with it).
+Templates, field names and ids are unchanged: no override needs an update. To theme the bundle forms, configure
+`nowo_form_kit.profiles.time_track` (see [CONFIGURATION](CONFIGURATION.md#formkit-profile-req-twig-005)).
 
 ## To 1.6.0
 

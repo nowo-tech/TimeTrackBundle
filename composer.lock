@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "85ca1e3aed113f7c56233ba661162d85",
+    "content-hash": "da9d2e53c87164cba8cab0c661db9f5b",
     "packages": [
         {
             "name": "doctrine/collections",
@@ -934,6 +934,120 @@
                 "source": "https://github.com/doctrine/sql-formatter/tree/1.5.4"
             },
             "time": "2026-02-08T16:21:46+00:00"
+        },
+        {
+            "name": "nowo-tech/form-kit-bundle",
+            "version": "v2.16.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/nowo-tech/FormKitBundle.git",
+                "reference": "0e9a4c9b41661dbd622e03b9b2a227da82f2b194"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/nowo-tech/FormKitBundle/zipball/0e9a4c9b41661dbd622e03b9b2a227da82f2b194",
+                "reference": "0e9a4c9b41661dbd622e03b9b2a227da82f2b194",
+                "shasum": ""
+            },
+            "require": {
+                "doctrine/collections": "^2.2",
+                "php": ">=8.2 <8.6",
+                "symfony/asset": "^7.4 || ^8.0",
+                "symfony/config": "^7.4 || ^8.0",
+                "symfony/dependency-injection": "^7.4 || ^8.0",
+                "symfony/form": "^7.4 || ^8.0",
+                "symfony/http-kernel": "^7.4 || ^8.0",
+                "symfony/translation": "^7.4 || ^8.0",
+                "symfony/validator": "^7.4 || ^8.0",
+                "symfony/yaml": "^7.4 || ^8.0",
+                "twig/extra-bundle": "^3.12",
+                "twig/string-extra": "^3.12"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.95.11",
+                "igor-php/igor-php": "^0.10.0",
+                "nowo-tech/phpstan-frankenphp": "^1.0",
+                "nowo-tech/ui-kit-bundle": "^2.5.3",
+                "phpstan/extension-installer": "^1.2",
+                "phpstan/phpstan": "^2.0",
+                "phpstan/phpstan-phpunit": "^2.0",
+                "phpstan/phpstan-symfony": "^2.0",
+                "phpunit/phpunit": "^10.0",
+                "rector/rector": "^2.0",
+                "symfony/css-selector": "^7.4 || ^8.0",
+                "symfony/dom-crawler": "^7.4 || ^8.0",
+                "symfony/framework-bundle": "^7.4 || ^8.0",
+                "symfony/security-csrf": "^7.4 || ^8.0",
+                "vincentlanglet/twig-cs-fixer": "^4.0"
+            },
+            "suggest": {
+                "a2lix/translation-form-bundle": "For the optional \"translations\" type in FormTypeMap (^3.2 on PHP 8.2/Symfony 7.4, ^4.0 on PHP 8.4+/Symfony 7.4|8)",
+                "friendsofsymfony/ckeditor-bundle": "For addCKEditorField() / addCKEditorFieldType() (CKEditor 4 in forms)",
+                "nowo-tech/ckeditor5-editor-bundle": "For addCkeditor5Editor() / addCkeditor5EditorField() / addCkeditor5EditorFieldType() (CKEditor 5)",
+                "nowo-tech/icon-selector-bundle": "For addIconSelector() / addIconSelectorField() / addIconSelectorFieldType()",
+                "nowo-tech/otp-input-bundle": "For addOtp() / addOtpField() / addOtpFieldType()",
+                "nowo-tech/password-strength-bundle": "For addPasswordStrength() / addPasswordStrengthField() / addPasswordStrengthFieldType()",
+                "nowo-tech/password-toggle-bundle": "For addPasswordToggle() / addPasswordToggleField() / addPasswordToggleFieldType()",
+                "nowo-tech/phone-input-bundle": "For addPhone() / addPhoneField() / addPhoneFieldType()",
+                "nowo-tech/select-all-choice-bundle": "For addMultiSelectSelectAll() / addMultiSelectSelectAllType() (\"Select all\" on ChoiceType multiple)",
+                "nowo-tech/slide-to-confirm-bundle": "For addSlideToConfirm() / addSlideToConfirmField() / addSlideToConfirmFieldType()",
+                "nowo-tech/tag-input-bundle": "For addTagInput() / addTagInputField() / addTagInputFieldType()",
+                "nowo-tech/tiptap-editor-bundle": "For addTiptapEditor() / addTiptapEditorField() / addTiptapEditorFieldType()",
+                "nowo-tech/ui-kit-bundle": "^2.5.3: locale tabs (locale_tabs option, TranslatableMapType, _locale_tabs include) render through the UiKit locale_tabs partial (WAI-ARIA tabs, no-JS fieldsets, keyboard, browser validation, Live Component safe); without it FormKit keeps its neutral markup",
+                "symfony/security-csrf": "Required by CsrfOnlyType / HiddenFieldsCsrfType / CsrfOnlyFormFactory / csrf_action_form(): without the form CSRF extension they throw (fail closed)",
+                "symfony/ux-autocomplete": "Entity autocomplete fields; use addAutocompleteField() / addAutocompleteFieldType() with your autocomplete FormType FQCN",
+                "symfony/ux-cropperjs": "For addCropper() / addCropperField() / addCropperFieldType() (image crop widget)",
+                "symfony/ux-dropzone": "For addDropzone() / addDropzoneField() / addDropzoneFieldType() (drag-and-drop file upload)",
+                "symfony/ux-icons": "For help_modal.ux_icon (IconRendererInterface) instead of icon_html only",
+                "symfony/ux-live-component": "Optional Live Component forms; see the demo /conditional-fields-live page and USAGE conditional-fields section"
+            },
+            "type": "symfony-bundle",
+            "autoload": {
+                "psr-4": {
+                    "Nowo\\FormKitBundle\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Héctor Franco Aceituno",
+                    "email": "hectorfranco@nowo.tech",
+                    "homepage": "https://github.com/HecFranco",
+                    "role": "Developer"
+                },
+                {
+                    "name": "Nowo.tech",
+                    "homepage": "https://nowo.tech"
+                }
+            ],
+            "description": "Symfony bundle to reduce repetitive form field options: convention-based labels/placeholder/help (form_snake.field_snake.*), configurable attr/row_attr/translation_domain, and cascading option merge (global → field type → form → field). Symfony 7.4|8.",
+            "homepage": "https://github.com/nowo-tech/FormKitBundle",
+            "keywords": [
+                "bundle",
+                "convention",
+                "form",
+                "form-type",
+                "help",
+                "label",
+                "options",
+                "placeholder",
+                "symfony",
+                "translation"
+            ],
+            "support": {
+                "issues": "https://github.com/nowo-tech/FormKitBundle/issues",
+                "source": "https://github.com/nowo-tech/FormKitBundle"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/HecFranco",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-10-30T07:27:21+00:00"
         },
         {
             "name": "nowo-tech/ui-kit-bundle",
