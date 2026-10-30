@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Form;
 
+use Nowo\FormKitBundle\Attribute\FormKitConfig;
+use Nowo\FormKitBundle\Form\FormOptionsTrait;
 use Override;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\HiddenType;
@@ -19,10 +21,19 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
  * (empty block prefix, created with an empty name). `id_suffix` keeps HTML ids unique when one
  * form is rendered per task row.
  *
+ * A FormKit Type (REQ-TWIG-005 rule 11) on the `time_track` profile (`nowo_form_kit.profiles.time_track`, prepended by
+ * the bundle extension; hosts override it there).
+ *
  * @extends AbstractType<array{action?: string|null, task_id?: string|null}>
  */
+#[FormKitConfig(self::FORM_KIT_PROFILE)]
 final class TimerActionType extends AbstractType
 {
+    use FormOptionsTrait;
+
+    /** FormKit profile of the bundle forms (key in `nowo_form_kit.profiles`). */
+    public const FORM_KIT_PROFILE = 'time_track';
+
     public const CSRF_TOKEN_ID = 'nowo_time_track_manage';
 
     /**
@@ -32,9 +43,16 @@ final class TimerActionType extends AbstractType
     #[Override]
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
-        $builder
-            ->add('action', HiddenType::class)
-            ->add('task_id', HiddenType::class);
+        foreach (['action', 'task_id'] as $name) {
+            if (!isset($this->formOptionsMerger)) {
+                // FormKitBundle not registered in the kernel (or a plain form factory): explicit options as is.
+                $builder->add($name, HiddenType::class);
+
+                continue;
+            }
+
+            $this->addWithDefaults($builder, $name, HiddenType::class, ['label' => null]); // hidden: no FormKit convention label key
+        }
     }
 
     /**

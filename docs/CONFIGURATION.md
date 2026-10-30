@@ -7,6 +7,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Required](#required)
 - [Integration](#integration)
 - [Templates (REQ-UI-001)](#templates-req-ui-001)
+- [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Security](#security)
 
@@ -62,6 +63,26 @@ Pages call `{{ parent() }}` in `stylesheets` / `javascripts` so host assets keep
 |-------------|--------|
 | `nowo_time_track_layout` | `templates.layout` |
 | `nowo_time_track_css_framework` | `templates.css_framework` |
+
+## FormKit profile (REQ-TWIG-005)
+
+The manage UI start / stop actions are a Symfony Form Type built with FormKit (`TimerActionType`,
+`#[FormKitConfig('time_track')]`), rendered with `form_start` / `form_widget` / `form_end` — never raw `<form>` /
+`<input>` (keep it that way in overrides). Its field options come from the FormKit profile
+`nowo_form_kit.profiles.time_track`, which the bundle prepends when FormKitBundle is registered:
+
+```yaml
+nowo_form_kit:
+    profiles:
+        time_track:
+            alias: time_track
+            translation_domain: NowoTimeTrackBundle
+            auto_placeholder: false
+            auto_help: false
+```
+
+Define `profiles.time_track` in your own `nowo_form_kit` config to theme the bundle forms; the bundle then does not
+prepend its default. The stock profile adds no classes.
 
 ## Clients (extension + desktop)
 

@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
+use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
@@ -24,6 +25,7 @@ use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
+use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -235,6 +237,52 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         }
 
         $this->prependUiKitDefaults($container);
+        $this->prependFormKitDefaults($container);
+    }
+
+    /**
+     * Registers the `time_track` FormKit profile of the manage UI forms (REQ-TWIG-005 rule 11) unless the host defines
+     * `nowo_form_kit.profiles.time_track` itself. The profile adds no classes and no convention label / placeholder /
+     * help keys: the forms render exactly their explicit options until a host themes the profile.
+     */
+    private function prependFormKitDefaults(ContainerBuilder $container): void
+    {
+        if (!$container->hasExtension('nowo_form_kit')) {
+            return;
+        }
+
+        $configs = $container->getExtensionConfig('nowo_form_kit');
+        foreach ($configs as $cfg) {
+            $profiles = $cfg['profiles'] ?? null;
+            if (is_array($profiles) && array_key_exists(TimerActionType::FORM_KIT_PROFILE, $profiles)) {
+                return;
+            }
+        }
+
+        $seed = ['profiles' => [TimerActionType::FORM_KIT_PROFILE => self::formKitProfile()]];
+        if ($configs === []) {
+            // No FormKit config in the host: keep FormKit's implicit `default` profile as the default one (a config
+            // that only lists this profile would otherwise make it the default of every host form).
+            $seed['default_profile']     = 'default';
+            $seed['profiles']['default'] = ['alias' => 'default'];
+        }
+
+        $container->prependExtensionConfig('nowo_form_kit', $seed);
+    }
+
+    /**
+     * Default `nowo_form_kit.profiles.time_track` (REQ-UI-003 "Form theme" row).
+     *
+     * @return array<string, mixed>
+     */
+    public static function formKitProfile(): array
+    {
+        return [
+            'alias'              => TimerActionType::FORM_KIT_PROFILE,
+            'translation_domain' => TimeTrackBundle::TRANSLATION_DOMAIN,
+            'auto_placeholder'   => false,
+            'auto_help'          => false,
+        ];
     }
 
     /**
