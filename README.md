@@ -74,6 +74,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Browser extension](docs/BROWSER-EXTENSION.md)
 - [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)
+- [Roadmap](docs/ROADMAP.md)
 
 ## Tests and coverage
 
