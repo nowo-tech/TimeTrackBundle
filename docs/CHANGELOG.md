@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- [ROADMAP](ROADMAP.md): planned browser extension (MV3) and Tauri desktop app with a scoped token API, compliant by
+  design with RGPD / LOPDGDD (working-time records, not monitoring); target 1.8 / 2.0.
+
 ## [1.7.0] - 2026-10-30
 
 The manage UI form is a FormKit Type (REQ-TWIG-005 rule 11). See [UPGRADING](UPGRADING.md#to-170).
