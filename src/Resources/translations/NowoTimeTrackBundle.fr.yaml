@@ -21,6 +21,10 @@ reports:
   started: Début
   duration: Durée
   source: Source
+  pagination: Pagination
+  page_of: "Page %page% sur %pages% (%total% entrées)"
+  previous: Précédent
+  next: Suivant
 flash:
   timer_started: Minuteur démarré.
   timer_already_active: Vous avez déjà un minuteur actif.

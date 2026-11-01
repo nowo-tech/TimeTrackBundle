@@ -12,6 +12,9 @@ final readonly class TaskListQuery
     /** Upper bound applied to client-supplied page sizes (see {@see self::bounded()}). */
     public const MAX_LIMIT = 100;
 
+    /**
+     * Creates a query (use bounded() for untrusted input).
+     */
     public function __construct(
         public ?string $search = null,
         public int $limit = 50,

@@ -17,11 +17,17 @@ final class TimeTrackBundle extends Bundle
 {
     public const TRANSLATION_DOMAIN = 'NowoTimeTrackBundle';
 
+    /**
+     * Registers the Twig paths compiler pass.
+     */
     public function build(ContainerBuilder $container): void
     {
         $container->addCompilerPass(new TwigPathsPass());
     }
 
+    /**
+     * Bundle extension (`nowo_time_track`).
+     */
     public function getContainerExtension(): ExtensionInterface
     {
         if (!$this->extension instanceof ExtensionInterface) {

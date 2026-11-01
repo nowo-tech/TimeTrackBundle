@@ -1,5 +1,5 @@
 # TimeTrack Bundle - Development
-.PHONY: help up down down-dev build shell install test test-coverage test-coverage-100 coverage-check coverage-php-percent cs-check cs-fix qa clean ensure-up rector rector-dry phpstan igor release-check release-check-demos demo-smoke composer-sync update validate validate-translations time-track-purge-tokens check-no-cursor-coauthor check-open-prs strip-cursor-coauthor-from-history setup-hooks check-twig-extra check-no-raw-html-form
+.PHONY: help up down down-dev build shell install assets validate-phpdoc twig-lint test test-coverage test-coverage-100 coverage-check coverage-php-percent cs-check cs-fix qa clean ensure-up rector rector-dry phpstan igor release-check release-check-demos demo-smoke composer-sync update validate validate-translations time-track-purge-tokens check-no-cursor-coauthor check-open-prs strip-cursor-coauthor-from-history setup-hooks check-twig-extra check-no-raw-html-form
 
 COMPOSE_FILE ?= docker-compose.yml
 # Prefer Compose V2 plugin (GitHub Actions / modern Docker Desktop); fall back to docker-compose V1 (REQ-MAKE-010).
@@ -11,14 +11,67 @@ BUNDLE_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 help:
 	@echo "TimeTrack Bundle - Development Commands"
 	@echo ""
-	@echo "  up / down / down-dev / build / shell / install"
-	@echo "  test / test-coverage / coverage-check / cs-check / cs-fix / phpstan / qa"
-	@echo "  validate-translations / check-open-prs / demo-smoke"
-	@echo "  check-no-raw-html-form   Fail on raw <form>/<input>/<textarea>/<select> in Twig (REQ-TWIG-005)"
-	@echo "  release-check / release-check-demos"
-	@echo "  time-track-purge-tokens"
+	@echo "Usage: make <target>"
 	@echo ""
-	@echo "Demo: make -C demo up-symfony8"
+	@echo "Container:"
+	@echo "  up             Start Docker container (builds the image, installs Composer deps)"
+	@echo "  down           Stop Docker container"
+	@echo "  build          Rebuild Docker image (no cache)"
+	@echo "  shell          Open shell in container"
+	@echo ""
+	@echo "Dependencies:"
+	@echo "  install        Install Composer dependencies (starts container if needed)"
+	@echo ""
+	@echo "Assets:"
+	@echo "  assets         No-op: the bundle ships no frontend build (UiKit CSS comes from nowo_ui_kit)"
+	@echo ""
+	@echo "Tests:"
+	@echo "  test           Run PHPUnit tests"
+	@echo "  test-coverage  Run tests with code coverage (HTML + Clover + text)"
+	@echo ""
+	@echo "Quality:"
+	@echo "  cs-check       Check code style"
+	@echo "  cs-fix         Fix code style"
+	@echo "  rector         Apply Rector refactoring"
+	@echo "  rector-dry     Run Rector in dry-run mode"
+	@echo "  phpstan        Run PHPStan static analysis"
+	@echo "  igor           Run Igor worker-state audit (REQ-CS-008)"
+	@echo "  qa             Run cs-check, twig-lint and test"
+	@echo ""
+	@echo "Release:"
+	@echo "  release-check  Pre-release chain (REQ-MAKE-002): hygiene, CS, Rector, PHPStan, Igor,"
+	@echo "                 translations, coverage gate, demos"
+	@echo "  composer-sync  Validate composer.json and install from composer.lock"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  clean          Remove vendor, caches and coverage reports"
+	@echo ""
+	@echo "Composer:"
+	@echo "  update         Update composer.lock (composer update, bundle only)"
+	@echo "  update-deps    Update bundle and demo dependencies (REQ-MAKE-008, monorepo helper)"
+	@echo "  validate       Run composer validate --strict"
+	@echo ""
+	@echo "Bundle-specific:"
+	@echo "  down-dev       Stop root container and remove orphans"
+	@echo "  ensure-up      Start the container if needed (+ composer install)"
+	@echo "  coverage-check Enforce 100% PHP line coverage (alias of test-coverage-100)"
+	@echo "  test-coverage-100  Enforce 100% PHP line coverage (REQ-TEST-006)"
+	@echo "  twig-lint      Lint bundle Twig templates (twig-cs-fixer)"
+	@echo "  validate-translations  Check translation key parity (7 locales) + YAML parse"
+	@echo "  validate-phpdoc        Check that every class and public method in src/ has PHPDoc (REQ-CS-001)"
+	@echo "  check-no-cursor-coauthor  Fail on AI co-author trailers (REQ-GIT-001)"
+	@echo "  check-open-prs Fail if unresolved open GitHub PRs remain (REQ-REL-003)"
+	@echo "  check-twig-extra        Twig Extra installed/configured (REQ-TWIG-004)"
+	@echo "  check-no-raw-html-form  Fail on raw <form>/<input>/<textarea>/<select> in Twig (REQ-TWIG-005)"
+	@echo "  setup-hooks    Install git hooks from .githooks/ (REQ-MAKE-006)"
+	@echo "  time-track-purge-tokens  Purge expired client Bearer tokens (inside a host app)"
+	@echo ""
+	@echo "Demos:"
+	@echo "  demo-smoke     Demo release-check: up, update-bundle, tests, HTTP 200, down (REQ-TEST-011)"
+	@echo "  release-check-demos  Same as demo-smoke (called by release-check)"
+	@echo "  (or: make -C demo up-symfony8 | down-symfony8 | release-check"
+	@echo "   or: make -C demo/symfony8 up | down | restart | verify | test | test-coverage | update-bundle)"
+	@echo ""
 
 build:
 	$(COMPOSE) build --no-cache
@@ -32,6 +85,10 @@ up:
 
 down:
 	$(COMPOSE) down
+
+# REQ-MAKE-001: the bundle has no frontend build; UiKit ships its own CSS (asset package nowo_ui_kit).
+assets:
+	@echo "No frontend assets in this bundle."
 
 down-dev:
 	$(COMPOSE) down --remove-orphans
@@ -76,6 +133,10 @@ phpstan: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) vendor/bin/phpstan analyse --memory-limit=512M
 
 qa: cs-check twig-lint test
+
+# REQ-CS-001: read-only check that every class-like and public method in src/ has a PHPDoc block.
+validate-phpdoc: ensure-up
+	$(COMPOSE) exec -T $(SERVICE_PHP) php .scripts/complete-public-phpdoc.php
 
 validate-translations: ensure-up
 	$(COMPOSE) exec -T $(SERVICE_PHP) php .scripts/validate-translations.php

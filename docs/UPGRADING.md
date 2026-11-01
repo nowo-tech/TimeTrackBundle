@@ -43,6 +43,19 @@
 
 ## Unreleased
 
+No action required. Route names, paths, templates, field names and the client API are unchanged.
+
+- **Reports pagination:** the reports page now shows `reports.page_size` entries (default **50**) per page with
+  previous / next links; set `nowo_time_track.reports.page_size` (max 500) to change it. A host override of
+  `time_track/reports.html.twig` keeps receiving `entries` (now the entries of the current page) and can render
+  `entry_page` (`Nowo\TimeTrackBundle\Dto\TimeEntryPage`) for the links.
+- **Custom repositories:** a host `TimeEntryRepositoryInterface` implementation keeps working (the page is sliced in
+  memory); implement `PaginatedTimeEntryRepositoryInterface` to page in the database.
+- **Logging:** records go to the Monolog channel `time_track`; exclude it in your handlers (`channels: ['!time_track']`)
+  if you do not want them.
+- **Subclasses / manual construction:** the new constructor arguments (clock, logger, reports page size) are optional
+  and trailing; code that builds `TimerService`, `ClientAuthService` or the controllers by hand needs no change.
+
 ## To 1.7.0
 
 `nowo-tech/form-kit-bundle` (`^2.14`) is now required. Register `Nowo\FormKitBundle\NowoFormKitBundle` in

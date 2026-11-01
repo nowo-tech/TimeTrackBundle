@@ -19,6 +19,9 @@ final class TimeTrackTwigExtension extends AbstractExtension implements GlobalsI
 
     public const GLOBAL_CSS_FRAMEWORK = 'nowo_time_track_css_framework';
 
+    /**
+     * Receives the configured layout and CSS framework.
+     */
     public function __construct(
         private readonly string $layoutTemplate = '@NowoTimeTrackBundle/layout.html.twig',
         private readonly string $cssFramework = 'tabler',

@@ -9,6 +9,9 @@ namespace Nowo\TimeTrackBundle\Dto;
  */
 final readonly class TaskReference
 {
+    /**
+     * Creates a task reference.
+     */
     public function __construct(
         public string $id,
         public string $title,

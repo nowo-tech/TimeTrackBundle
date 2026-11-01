@@ -12,16 +12,25 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 final class NullTeamContextProvider implements TeamContextProviderInterface
 {
+    /**
+     * No teams.
+     */
     public function getTeamIdsForUser(UserInterface $user): array
     {
         return [];
     }
 
+    /**
+     * Nobody manages anybody.
+     */
     public function isManagerOf(UserInterface $manager, UserInterface $member): bool
     {
         return false;
     }
 
+    /**
+     * No managed users.
+     */
     public function getManagedUserIds(UserInterface $manager): array
     {
         return [];

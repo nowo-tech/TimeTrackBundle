@@ -39,6 +39,21 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% set _page = entry_page|default(null) %}
+        {% if _page and _page.totalPages > 1 %}
+            {% set _query = app.request.query.all %}
+            <nav class="nowo-ui-pagination" aria-label="{{ 'reports.pagination'|trans({}, 'NowoTimeTrackBundle') }}">
+                <span class="nowo-ui-pagination__info">{{ 'reports.page_of'|trans({'%page%': _page.page, '%pages%': _page.totalPages, '%total%': _page.total}, 'NowoTimeTrackBundle') }}</span>
+                <span class="nowo-ui-pagination__nav">
+                    {% if _page.hasPrevious %}
+                        <a class="nowo-ui-pagination__link" rel="prev" href="{{ path(app.request.attributes.get('_route'), _query|merge({page: _page.page - 1})) }}">{{ 'reports.previous'|trans({}, 'NowoTimeTrackBundle') }}</a>
+                    {% endif %}
+                    {% if _page.hasNext %}
+                        <a class="nowo-ui-pagination__link" rel="next" href="{{ path(app.request.attributes.get('_route'), _query|merge({page: _page.page + 1})) }}">{{ 'reports.next'|trans({}, 'NowoTimeTrackBundle') }}</a>
+                    {% endif %}
+                </span>
+            </nav>
+        {% endif %}
     {% endif %}
 </div>
 {% endblock %}

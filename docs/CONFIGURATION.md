@@ -6,6 +6,8 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 
 - [Required](#required)
 - [Integration](#integration)
+- [Routes (REQ-SF-004 exemption)](#routes-req-sf-004-exemption)
+- [Reports (REQ-PERF-001)](#reports-req-perf-001)
 - [Templates (REQ-UI-001)](#templates-req-ui-001)
 - [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
@@ -24,6 +26,51 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | `task_provider` | `StubTaskProvider` | `TaskProviderInterface` service id |
 | `team_context_provider` | `NullTeamContextProvider` | `TeamContextProviderInterface` service id |
 | `table_prefix` | `time_track_` | DB table prefix |
+
+## Routes (REQ-SF-004 exemption)
+
+The routes are opt-in: the host imports them once (the Flex recipe writes `config/routes/nowo_time_track.yaml`):
+
+```yaml
+nowo_time_track:
+    resource: .
+    type: nowo_time_track
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `route_prefix` | `''` | Prepended to every path below |
+| `routes.index.path` / `.name` | `/tools/time-track` / `nowo_time_track_index` | Timer page (GET, POST) |
+| `routes.reports.path` / `.name` | `/tools/time-track/reports` / `nowo_time_track_reports` | Reports page (GET) |
+| `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `heartbeat`, `entries`; only when `clients.enabled`) |
+
+**Why a route loader instead of `#[Route]` (documented exemption from REQ-SF-004 rule 1).** Every route **name and
+path** is host configuration (`routes.*`, `clients.routes.*`, `route_prefix`), and the client API routes exist only
+when `clients.enabled` is true. Static `#[Route]` attributes cannot carry per-host names, and hosts already depend on
+the configured names (`path('nowo_time_track_index')`, the browser extension and desktop app call the configured API
+paths). `Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader` (type `nowo_time_track`) therefore builds the routes
+from the configuration; names, paths and methods are unchanged since 1.0. The other REQ-SF-004 rules hold:
+controllers are services with constructor injection and no `#[AsController]`, no YAML/XML route files ship with the
+bundle, access is enforced by `TimeTrackAccessCheckerInterface` (REQ-UI-002), and the controllers carry no `#[Route]`,
+so the host's `routing.controllers` import never loads them (rule 7, `tests/Unit/Routing/HostRoutingControllersTest.php`).
+
+Hosts may also route single controller actions themselves (e.g. only the client API under their own firewall):
+
+```yaml
+nowo_time_track_api_login:
+    path: /api/time-track/login
+    controller: Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController::login
+    methods: [POST, OPTIONS]
+```
+
+## Reports (REQ-PERF-001)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `reports.page_size` | `50` | Entries per page of the reports list (1–500). The page is read from the `page` query parameter; out-of-range pages show the nearest existing page. The default repository pages in the database (`PaginatedTimeEntryRepositoryInterface`); a custom `TimeEntryRepositoryInterface` without it is sliced in memory. |
+
+The template receives `entries` (the entries of the page) and `entry_page` (`Nowo\TimeTrackBundle\Dto\TimeEntryPage`:
+`page`, `perPage`, `total`, `totalPages()`, `hasPrevious()`, `hasNext()`), plus `from` / `to`.
 
 ## Templates (REQ-UI-001)
 

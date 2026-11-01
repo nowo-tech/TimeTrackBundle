@@ -39,14 +39,29 @@ services:
     Nowo\TimeTrackBundle\Service\ClientAuthService:
         arguments:
             $tokenTtlSeconds: '%nowo_time_track.clients.token_ttl%'
+        tags:
+            - { name: monolog.logger, channel: time_track }
 
     Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController:
         public: true
         arguments:
             $idleThresholdSeconds: '%nowo_time_track.clients.idle_threshold_seconds%'
+        tags:
+            - { name: monolog.logger, channel: time_track }
+
+    Nowo\TimeTrackBundle\Command\PurgeExpiredClientTokensCommand:
+        tags:
+            - { name: monolog.logger, channel: time_track }
 
     Nowo\TimeTrackBundle\Controller\TimeTrackManageController:
         public: true
         arguments:
             $templates: '%nowo_time_track.templates%'
             $allowUnauthenticated: '%nowo_time_track.security.allow_unauthenticated%'
+            $reportsPageSize: '%nowo_time_track.reports.page_size%'
+
+    # REQ-OBS-001: services that log use the `time_track` Monolog channel when MonologBundle is installed (the tag is
+    # ignored otherwise and the default `logger`, or none, is injected).
+    Nowo\TimeTrackBundle\Service\TimerService:
+        tags:
+            - { name: monolog.logger, channel: time_track }

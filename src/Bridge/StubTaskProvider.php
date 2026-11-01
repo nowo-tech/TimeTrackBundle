@@ -20,6 +20,9 @@ final class StubTaskProvider implements TaskProviderInterface
     /** @var array<string, TaskReference> */
     private array $tasks;
 
+    /**
+     * Creates the provider with demo tasks (or the given ones).
+     */
     public function __construct()
     {
         $this->tasks = [
@@ -29,11 +32,17 @@ final class StubTaskProvider implements TaskProviderInterface
         ];
     }
 
+    /**
+     * Finds a stub task by id.
+     */
     public function findForUser(string $taskId, UserInterface $user): ?TaskReference
     {
         return $this->tasks[$taskId] ?? null;
     }
 
+    /**
+     * Lists the stub tasks matching the query.
+     */
     public function listTrackableForUser(UserInterface $user, TaskListQuery $query): array
     {
         $tasks = array_values($this->tasks);
@@ -49,6 +58,9 @@ final class StubTaskProvider implements TaskProviderInterface
         return array_slice($tasks, $query->offset, max(1, $query->limit));
     }
 
+    /**
+     * Whether the task exists.
+     */
     public function canUserTrack(UserInterface $user, string $taskId): bool
     {
         return isset($this->tasks[$taskId]);

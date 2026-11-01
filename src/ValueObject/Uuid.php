@@ -23,11 +23,17 @@ final readonly class Uuid implements Stringable
         }
     }
 
+    /**
+     * Wraps a UUID string (lower-cased; throws InvalidArgumentException when invalid).
+     */
     public static function fromString(string $value): self
     {
         return new self(strtolower($value));
     }
 
+    /**
+     * Generates a random (version 4) UUID.
+     */
     public static function generate(): self
     {
         $bytes    = random_bytes(16);
@@ -37,11 +43,17 @@ final readonly class Uuid implements Stringable
         return new self(vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4)));
     }
 
+    /**
+     * Canonical string form.
+     */
     public function toString(): string
     {
         return $this->value;
     }
 
+    /**
+     * Canonical string form.
+     */
     public function __toString(): string
     {
         return $this->value;

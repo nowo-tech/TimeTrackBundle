@@ -22,6 +22,9 @@ use function sprintf;
  */
 final readonly class TimeTrackMetadataListener
 {
+    /**
+     * Receives the configured table names and the host user class.
+     */
     public function __construct(
         private string $entriesTableName,
         private string $activeTimersTableName,
@@ -30,6 +33,9 @@ final readonly class TimeTrackMetadataListener
     ) {
     }
 
+    /**
+     * Applies the table prefix and the host user class to the bundle entities.
+     */
     public function loadClassMetadata(LoadClassMetadataEventArgs $args): void
     {
         $metadata = $args->getClassMetadata();

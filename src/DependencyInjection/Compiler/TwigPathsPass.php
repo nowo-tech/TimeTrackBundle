@@ -19,6 +19,9 @@ final class TwigPathsPass implements CompilerPassInterface
 {
     private const TWIG_NAMESPACE = 'NowoTimeTrackBundle';
 
+    /**
+     * Registers `templates/bundles/NowoTimeTrackBundle` first and the bundle views after it on the native Twig loader.
+     */
     public function process(ContainerBuilder $container): void
     {
         $loaderId = $this->getNativeLoaderServiceId($container);

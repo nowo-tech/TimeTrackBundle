@@ -21,6 +21,10 @@ reports:
   started: Inicio
   duration: Duración
   source: Origen
+  pagination: Paginación
+  page_of: "Página %page% de %pages% (%total% entradas)"
+  previous: Anterior
+  next: Siguiente
 flash:
   timer_started: Temporizador iniciado.
   timer_already_active: Ya tienes un temporizador activo.

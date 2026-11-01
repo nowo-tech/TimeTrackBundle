@@ -1,6 +1,6 @@
 # TimeTrack Bundle
 
-[![CI](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml/badge.svg)](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml) [![Packagist Version](https://img.shields.io/packagist/v/nowo-tech/time-track-bundle.svg?style=flat)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![Packagist Downloads](https://img.shields.io/packagist/dt/nowo-tech/time-track-bundle.svg)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net) [![Symfony](https://img.shields.io/badge/Symfony-7.4%2B%20%7C%208.0%20%7C%208.1%2B-000000?logo=symfony)](https://symfony.com) [![GitHub stars](https://img.shields.io/github/stars/nowo-tech/time-track-bundle.svg?style=social&label=Star)](https://github.com/nowo-tech/TimeTrackBundle) [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#tests-and-coverage)
+[![CI](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml/badge.svg)](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml) [![Packagist Version](https://img.shields.io/packagist/v/nowo-tech/time-track-bundle.svg?style=flat)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![Packagist Downloads](https://img.shields.io/packagist/dt/nowo-tech/time-track-bundle.svg)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net) [![Symfony](https://img.shields.io/badge/Symfony-7.4%2B%20%7C%208.0%20%7C%208.1%2B-000000?logo=symfony)](https://symfony.com) [![GitHub stars](https://img.shields.io/github/stars/nowo-tech/TimeTrackBundle.svg?style=social&label=Star)](https://github.com/nowo-tech/TimeTrackBundle) [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#tests-and-coverage)
 
 > ⭐ **Found this useful?** Give it a **star** on [GitHub](https://github.com/nowo-tech/TimeTrackBundle) so more developers can find it.
 
@@ -12,7 +12,7 @@ This bundle is **FrankenPHP worker mode friendly**.
 
 ## Features
 
-- Web UI at `/tools/time-track` (timer + reports)
+- Web UI at `/tools/time-track` (timer + paginated reports)
 - REST API for browser extension and Tauri desktop (`Bearer` auth)
 - Single active timer per user (409 on conflict)
 - Teams and managers v1 via `TeamContextProviderInterface`
@@ -42,7 +42,8 @@ Integrated demo with **TaskBoardBundle** (kanban + timer):
 
 ```bash
 make -C demo up-symfony8
-# Demo started at: http://localhost:8024/tools/time-track
+# Timer UI: http://localhost:8024/tools/time-track
+# Demo started at: http://localhost:8024
 ```
 
 - Timer UI: `/tools/time-track`

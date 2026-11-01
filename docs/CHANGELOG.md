@@ -34,7 +34,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Reports list pagination (REQ-PERF-001): `nowo_time_track.reports.page_size` (default 50, 1–500), `page` query
+  parameter, `TimerService::listEntriesPage()` returning `Dto\TimeEntryPage`; the Doctrine repository pages in the
+  database through the new optional `Repository\PaginatedTimeEntryRepositoryInterface`. The reports template receives
+  `entry_page` and renders previous / next links (`nowo-ui-pagination`) only when there is more than one page.
+- PSR-3 logging (REQ-OBS-001) on the Monolog channel `time_track`: timer start / stop, client login success / failure /
+  throttling, token revocation and the expired-token purge. Records carry the action and the client type only — no
+  user, task, duration, token or IP (time entries are personal data). See [SECURITY](SECURITY.md#logging).
+- `make assets` (no-op) and `make validate-phpdoc`; demo targets `restart`, `ensure-up`, `setup`, `test-coverage`,
+  `verify`, `release-check` (runs `update-bundle` before `verify`).
+
+### Changed
+
+- Time comes from an injected `Psr\Clock\ClockInterface` (REQ-DI-001) in `TimerService`, `ClientAuthService`, the
+  client API and manage controllers and `DoctrineOrmClientTokenRepository` (optional trailing constructor arguments,
+  default: the system clock). Entities accept an optional time argument (`ActiveTimer::__construct(..., $startedAt)`,
+  `heartbeat(..., $at)`, `TimeEntry` / `ClientToken` `$createdAt`, `ClientToken::isExpired($now)` / `touch($at)`).
+- New runtime requirements: `psr/clock`, `psr/log`, `symfony/clock` (already installed by FrameworkBundle).
+- The demo `make up` ends with the canonical `Demo started at: http://localhost:<PORT>` line (the timer page URL is
+  printed on the line before it).
+
 ### Documentation
+
+- USAGE: overridable template subpaths, override procedure and freeze rule (REQ-TWIG-001); translation override
+  procedure (REQ-I18N-001). CONFIGURATION: routes and the documented route-loader exemption (REQ-SF-004), reports
+  pagination. SECURITY: secrets & cryptography, logging, dependency and updates. DEMO-FRANKENPHP: production start and
+  troubleshooting. PHPDoc on every public class and method (REQ-CS-001).
 
 - [ROADMAP](ROADMAP.md): planned browser extension (MV3) and Tauri desktop app with a scoped token API, compliant by
   design with RGPD / LOPDGDD (working-time records, not monitoring); target 1.8 / 2.0.

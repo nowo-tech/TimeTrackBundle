@@ -91,6 +91,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-VO-001**: `Uuid` value object for primary keys where used.
 - **FR-REPO-001**: Repository interfaces for active timer, time entry, client token.
 - **FR-REPO-002**: Doctrine ORM implementations with save/find/query methods.
+- **FR-REPO-003**: Optional `PaginatedTimeEntryRepositoryInterface` (page + count in the database) for the reports list (REQ-PERF-001).
 
 ### Integration bridges
 
@@ -98,6 +99,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-INT-002**: `TeamContextProviderInterface` MUST expose team membership for manager reports.
 - **FR-BRIDGE-001**: `StubTaskProvider` and `NullTeamContextProvider` MUST provide no-op/demo defaults.
 - **FR-DTO-001**: `TaskReference`, `TaskListQuery` DTOs for provider contracts.
+- **FR-DTO-002**: `TimeEntryPage` — one page of time entries with totals (`reports.page_size`).
 
 ### Domain services
 

@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-10-20 (worker recovery, access checkers, query period, Twig globals)
+**Last audited**: 2026-11-01 (clock / logger injection, paginated reports list)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -22,6 +22,7 @@
 | `ValueObject/Uuid.php` | UUID helper | FR-VO-001 |
 | `Dto/TaskReference.php` | Task DTO | FR-DTO-001 |
 | `Dto/TaskListQuery.php` | Task list query | FR-DTO-001 |
+| `Dto/TimeEntryPage.php` | Reports page of entries | FR-DTO-002 |
 | `Integration/TaskProviderInterface.php` | Task provider contract | FR-INT-001 |
 | `Integration/TeamContextProviderInterface.php` | Team context contract | FR-INT-002 |
 | `Bridge/StubTaskProvider.php` | Demo task provider | FR-BRIDGE-001 |
@@ -29,6 +30,7 @@
 | `Repository/ActiveTimerRepositoryInterface.php` | Active timer repo IF | FR-REPO-001 |
 | `Repository/TimeEntryRepositoryInterface.php` | Time entry repo IF | FR-REPO-001 |
 | `Repository/ClientTokenRepositoryInterface.php` | Client token repo IF | FR-REPO-001 |
+| `Repository/PaginatedTimeEntryRepositoryInterface.php` | Paged time entry repo IF | FR-REPO-003 |
 | `Repository/DoctrineOrmActiveTimerRepository.php` | Active timer ORM | FR-REPO-002 |
 | `Repository/DoctrineOrmTimeEntryRepository.php` | Time entry ORM | FR-REPO-002 |
 | `Repository/DoctrineOrmClientTokenRepository.php` | Client token ORM | FR-REPO-002 |

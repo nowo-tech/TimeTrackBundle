@@ -8,11 +8,17 @@ use DateTimeImmutable;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
+/**
+ * Lets listeners set the user ids whose entries a viewer sees in a period (team reports).
+ */
 final class TimeEntryListQueryEvent extends Event
 {
     /** @var list<string> */
     private array $userIds = [];
 
+    /**
+     * Creates the query for a viewer and a period.
+     */
     public function __construct(
         private readonly UserInterface $viewer,
         private readonly DateTimeImmutable $from,
@@ -20,16 +26,25 @@ final class TimeEntryListQueryEvent extends Event
     ) {
     }
 
+    /**
+     * User asking for the entries.
+     */
     public function getViewer(): UserInterface
     {
         return $this->viewer;
     }
 
+    /**
+     * Period start.
+     */
     public function getFrom(): DateTimeImmutable
     {
         return $this->from;
     }
 
+    /**
+     * Period end.
+     */
     public function getTo(): DateTimeImmutable
     {
         return $this->to;

@@ -18,6 +18,9 @@ final readonly class ConfigurableTimeTrackAccessChecker implements TimeTrackAcce
     ) {
     }
 
+    /**
+     * Whether the user holds one of the access roles (an empty list denies everyone).
+     */
     public function canAccess(?object $user): bool
     {
         // Empty access_roles = deny (fail-closed). Use allow_unauthenticated or AllowAll* for demos.

@@ -16,6 +16,10 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 use function in_array;
 
+/**
+ * Decides whether a viewer may read the entries of another user (self, admin roles, managed users) or edit an entry
+ * (owner, manager, admin roles, then the access-check event).
+ */
 final readonly class TeamAccessGuard
 {
     /**
@@ -31,6 +35,9 @@ final readonly class TeamAccessGuard
     ) {
     }
 
+    /**
+     * Whether the viewer may read the entries of the target user.
+     */
     public function canViewUserEntries(UserInterface $viewer, string $targetUserId): bool
     {
         if (UserIdResolver::getId($viewer) === $targetUserId) {
@@ -48,6 +55,9 @@ final readonly class TeamAccessGuard
         return in_array($targetUserId, $this->teamContext->getManagedUserIds($viewer), true);
     }
 
+    /**
+     * Whether the viewer may edit the entry (host code only; the bundle ships no edit route).
+     */
     public function canEditEntry(UserInterface $editor, TimeEntry $entry): bool
     {
         $entryUser = $entry->getUser();

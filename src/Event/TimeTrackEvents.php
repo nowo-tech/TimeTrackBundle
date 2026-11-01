@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Event;
 
+/**
+ * Names of the events dispatched by the bundle.
+ */
 final class TimeTrackEvents
 {
     public const TIMER_START = 'nowo_time_track.timer.start';

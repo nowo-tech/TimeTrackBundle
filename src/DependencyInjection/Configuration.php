@@ -28,6 +28,9 @@ final class Configuration implements ConfigurationInterface
         'none',
     ];
 
+    /**
+     * Builds the `nowo_time_track` configuration tree.
+     */
     public function getConfigTreeBuilder(): TreeBuilder
     {
         $treeBuilder = new TreeBuilder(self::ALIAS);
@@ -108,6 +111,18 @@ final class Configuration implements ConfigurationInterface
                                 ->scalarNode('path')->defaultValue('/tools/time-track/reports')->end()
                                 ->scalarNode('name')->defaultValue('nowo_time_track_reports')->end()
                             ->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('reports')
+                    ->info('Reports page of the manage UI (REQ-PERF-001).')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->integerNode('page_size')
+                            ->info('Entries per reports page (query parameter `page`).')
+                            ->min(1)
+                            ->max(500)
+                            ->defaultValue(50)
                         ->end()
                     ->end()
                 ->end()

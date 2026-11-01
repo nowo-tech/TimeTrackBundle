@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 
 use App\Entity\User;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
@@ -66,9 +67,31 @@ final class ConfigurationTest extends TestCase
         self::assertSame('bootstrap5', $config['templates']['css_framework']);
     }
 
+    public function testReportsPageSizeDefaultsTo50(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class]]);
+
+        self::assertSame(50, $config['reports']['page_size']);
+    }
+
     /**
-     * @dataProvider acceptedCssFrameworkProvider
+     * @return iterable<string, array{0: int}>
      */
+    public static function invalidPageSizeProvider(): iterable
+    {
+        yield 'zero' => [0];
+        yield 'over the cap' => [501];
+    }
+
+    #[DataProvider('invalidPageSizeProvider')]
+    public function testReportsPageSizeIsBounded(int $value): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'reports' => ['page_size' => $value]]]);
+    }
+
+    #[DataProvider('acceptedCssFrameworkProvider')]
     public function testAcceptsCssFrameworkValues(string $value): void
     {
         $config = (new Processor())->processConfiguration(new Configuration(), [[

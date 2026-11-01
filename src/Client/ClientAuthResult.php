@@ -7,6 +7,9 @@ namespace Nowo\TimeTrackBundle\Client;
 use LogicException;
 use Symfony\Component\Security\Core\User\UserInterface;
 
+/**
+ * Outcome of a client login: the authenticated user, or a failure.
+ */
 final readonly class ClientAuthResult
 {
     private function __construct(
@@ -15,21 +18,33 @@ final readonly class ClientAuthResult
     ) {
     }
 
+    /**
+     * Successful login of the user.
+     */
     public static function success(UserInterface $user): self
     {
         return new self(true, $user);
     }
 
+    /**
+     * Failed login.
+     */
     public static function failure(): self
     {
         return new self(false);
     }
 
+    /**
+     * Whether the login succeeded.
+     */
     public function isSuccess(): bool
     {
         return $this->success;
     }
 
+    /**
+     * Authenticated user (null on failure).
+     */
     public function getUser(): ?UserInterface
     {
         return $this->user;

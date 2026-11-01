@@ -73,4 +73,13 @@ final class QueryPeriodResolverTest extends TestCase
 
         self::assertSame('2025-06-01', $period['from']->format('Y-m-d'));
     }
+
+    public function testDefaultsAreRelativeToTheGivenTime(): void
+    {
+        $now    = new DateTimeImmutable('2026-05-04 12:00:00');
+        $period = QueryPeriodResolver::resolve('', 'garbage', $now);
+
+        self::assertSame('2026-04-27 12:00:00', $period['from']->format('Y-m-d H:i:s'));
+        self::assertSame('2026-05-04 12:00:00', $period['to']->format('Y-m-d H:i:s'));
+    }
 }

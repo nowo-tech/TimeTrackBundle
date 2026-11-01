@@ -13,6 +13,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 interface TaskProviderInterface
 {
+    /**
+     * Finds a task the user may see.
+     */
     public function findForUser(string $taskId, UserInterface $user): ?TaskReference;
 
     /**
@@ -20,5 +23,8 @@ interface TaskProviderInterface
      */
     public function listTrackableForUser(UserInterface $user, TaskListQuery $query): array;
 
+    /**
+     * Whether the user may track time on the task.
+     */
     public function canUserTrack(UserInterface $user, string $taskId): bool;
 }
