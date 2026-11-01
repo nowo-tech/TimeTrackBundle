@@ -90,7 +90,7 @@ final class TimerActionType extends AbstractType
     }
 
     /**
-     * Block prefix `nowo_time_track_timer_action`.
+     * Empty block prefix: the fields post flat (`_token`, `action`, `task_id`).
      */
     #[Override]
     public function getBlockPrefix(): string

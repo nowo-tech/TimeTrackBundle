@@ -21,7 +21,7 @@ final class StubTaskProvider implements TaskProviderInterface
     private array $tasks;
 
     /**
-     * Creates the provider with demo tasks (or the given ones).
+     * Creates the provider with three demo tasks.
      */
     public function __construct()
     {
