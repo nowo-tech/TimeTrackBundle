@@ -16,7 +16,7 @@ use Doctrine\Persistence\ManagerRegistry;
 final class ManagedEntityRefresher
 {
     /**
-     * Re-attaches an entity loaded by a previous request (worker mode) to the current entity manager.
+     * Refreshes a managed entity from the database (fresh roles in worker mode); no-op when it is not managed.
      */
     public static function refresh(?ManagerRegistry $managerRegistry, object $entity): void
     {
