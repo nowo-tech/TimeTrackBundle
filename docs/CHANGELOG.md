@@ -56,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The demo `make up` ends with the canonical `Demo started at: http://localhost:<PORT>` line (the timer page URL is
   printed on the line before it).
 
+### Tests
+
+- REQ-TEST-003: the `src/Controller`, `src/Repository` and `src/Doctrine` coverage exclusions are gone. A functional
+  kernel (`tests/Support/FunctionalKernel.php`: Doctrine on in-memory SQLite, SecurityBundle entity provider, FormKit,
+  UiKit, the route loader) covers the client API end to end (preflight / CORS, Bearer auth, login validation and
+  throttling, timer lifecycle, 409 conflict, entries ACL, logout), the manage UI (start / stop forms, flashes, CSRF,
+  access contract, `allow_unauthenticated`, paginated reports) and the Doctrine repositories / metadata listener.
+  Only pure interfaces stay excluded.
+
 ### Documentation
 
 - USAGE: overridable template subpaths, override procedure and freeze rule (REQ-TWIG-001); translation override

@@ -85,7 +85,7 @@ make test-coverage
 make release-check
 ```
 
-- **PHP:** 100% lines (justified exclusions: controllers, Doctrine repositories/listeners, integration interfaces)
+- **PHP:** 100% lines — controllers, Doctrine repositories and listeners included (functional tests on in-memory SQLite, `tests/Functional/`); only pure interfaces are excluded (`phpunit.xml.dist`)
 - **TS/JS:** N/A (desktop agent lives in `desktop/`, outside bundle PHP coverage)
 - **Python:** N/A
 
