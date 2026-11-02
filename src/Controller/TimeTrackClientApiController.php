@@ -11,8 +11,10 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -48,6 +50,7 @@ use function json_encode;
 use function max;
 use function mb_substr;
 use function min;
+use function preg_match;
 use function preg_replace;
 use function sprintf;
 use function trim;
@@ -87,6 +90,7 @@ final readonly class TimeTrackClientApiController
      * @param bool $allowMetadata `client_api.allow_metadata`: accept free `metadata` on timer start (default false)
      * @param ClockInterface|null $clock Reference time of the default periods (defaults to the system clock)
      * @param LoggerInterface|null $logger Logs throttled logins without username or IP (defaults to no logging)
+     * @param ClientMinSupportedVersionProviderInterface|null $minSupportedVersionProvider `me.minSupportedVersion` source (null = key never sent)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -102,6 +106,7 @@ final readonly class TimeTrackClientApiController
         private bool $allowMetadata = false,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        private ?ClientMinSupportedVersionProviderInterface $minSupportedVersionProvider = null,
     ) {
         $this->clock  = $clock ?? new NativeClock();
         $this->logger = $logger ?? new NullLogger();
@@ -170,7 +175,8 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * GET me: user id, identifier, display name, scopes and working hours of the token user.
+     * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
+     * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1).
      */
     public function me(Request $request): Response
     {
@@ -180,14 +186,19 @@ final readonly class TimeTrackClientApiController
         }
 
         $user = $principal->user;
-
-        return $this->responseFactory->json([
+        $body = [
             'userId'       => UserIdResolver::getId($user),
             'identifier'   => $user->getUserIdentifier(),
             'displayName'  => $this->profileProvider->getDisplayName($user),
             'scopes'       => ClientScope::values($principal->token->getScopes()),
             'workingHours' => $this->profileProvider->getWorkingHours($user),
-        ], Response::HTTP_OK, $request);
+        ];
+        $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
+        if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
+            $body['minSupportedVersion'] = $minSupportedVersion;
+        }
+
+        return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }
 
     /**
@@ -330,7 +341,8 @@ final readonly class TimeTrackClientApiController
 
     /**
      * POST timer/discard-idle `{from, to, action: keep|discard|split}`: the user's decision about an idle span the
-     * client detected locally (replaces the server-side idle flag of the heartbeat).
+     * client detected locally (replaces the server-side idle flag of the heartbeat). 409 timer_running when a
+     * concurrent start took the timer slot before a split could continue (1.9.1).
      */
     public function timerDiscardIdle(Request $request): Response
     {
@@ -349,6 +361,8 @@ final readonly class TimeTrackClientApiController
 
         try {
             $result = $this->timerService->resolveIdle($principal->user, $from, $to, $resolution);
+        } catch (ActiveTimerConflictException) {
+            return $this->timerRunning($request);
         } catch (InvalidArgumentException $e) {
             return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
         }

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\ClientApi;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Driver\Exception as DriverException;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
+use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -21,6 +23,7 @@ use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\ClientApiStack;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
+use Nowo\TimeTrackBundle\Tests\Support\RacingActiveTimerRepository;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -126,6 +129,35 @@ final class ClientApiControllerUnitTest extends TestCase
         $start = $controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1', 'metadata' => ['app' => 'tray'], 'note' => 'n']));
         self::assertSame(201, $start->getStatusCode());
         self::assertSame(['app' => 'tray', 'note' => 'n'], $this->body($start)['timer']['metadata']);
+    }
+
+    public function testIdleSplitRacedByAConcurrentStartAnswersTimerRunning(): void
+    {
+        $timers     = new RacingActiveTimerRepository();
+        $stack      = $this->stack(timers: $timers);
+        $controller = $stack->apiController();
+        $token      = $stack->authService->issueToken($this->user, ClientType::Desktop)['token'];
+        self::assertSame(201, $controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1']))->getStatusCode());
+        $stack->clock->sleep(600);
+
+        $timers->failNextSave($this->createStub(DriverException::class));
+        $split = $controller->timerDiscardIdle($this->request('POST', $token, ['from' => '2026-11-02T10:02:00+00:00', 'to' => '2026-11-02T10:05:00+00:00', 'action' => 'split']));
+
+        self::assertSame(Response::HTTP_CONFLICT, $split->getStatusCode());
+        self::assertSame('timer_running', $this->body($split)['error']);
+    }
+
+    public function testInvalidProviderMinSupportedVersionIsOmitted(): void
+    {
+        $versions = $this->createStub(ClientMinSupportedVersionProviderInterface::class);
+        $versions->method('getMinSupportedVersion')->willReturnCallback(static fn (ClientType $type): string => $type === ClientType::Desktop ? '<b>1.0</b>' : '1.2.3');
+        $stack = $this->stack();
+
+        $desktop = $stack->apiController(minSupportedVersions: $versions)->me($this->request('GET', $stack->authService->issueToken($this->user, ClientType::Desktop)['token']));
+        self::assertArrayNotHasKey('minSupportedVersion', $this->body($desktop));
+
+        $extension = $stack->apiController(minSupportedVersions: $versions)->me($this->request('GET', $stack->authService->issueToken($this->user, ClientType::Extension)['token']));
+        self::assertSame('1.2.3', $this->body($extension)['minSupportedVersion']);
     }
 
     private function stack(

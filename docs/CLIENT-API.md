@@ -75,7 +75,7 @@ the user approved. Tokens issued before 1.9 carry all four. `entries:write` is n
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle) |
 | 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
 | 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
-| 409 | `timer_running` | `timer/start` while a timer runs |
+| 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 
 ## Endpoints
@@ -99,6 +99,11 @@ Revokes the presented token. Always `204`.
 Scope: any. `200 {"userId": "42", "identifier": "person@example.com", "displayName": null, "scopes": [...], "workingHours": null}`
 (`displayName` / `workingHours` from `ClientUserProfileProviderInterface`; clients suppress reminders outside the
 working hours — the API never pushes).
+
+Since 1.9.1 the body also carries `"minSupportedVersion": "1.4.0"` — the oldest version of the **calling token's**
+client type (`extension`, `desktop` or `web`) the host still supports, from `ClientMinSupportedVersionProviderInterface`.
+The key is **absent** when the host sets none for that type. A client older than this value should ask the user to
+update (it may keep working read-only); compare it as semver.
 
 ### GET tasks
 

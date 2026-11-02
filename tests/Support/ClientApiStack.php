@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
@@ -75,7 +76,7 @@ final readonly class ClientApiStack
         $this->clock       = new MockClock('2026-11-02 10:00:00');
         $this->cache       = new ArrayAdapter();
         $this->dispatcher  = new EventDispatcher();
-        $this->tokens      = new InMemoryClientTokenRepository();
+        $this->tokens      = new InMemoryClientTokenRepository($this->clock);
         $this->devices     = new InMemoryDeviceAuthorizationRepository($this->clock);
         $this->authService = new ClientAuthService($authenticator, $this->tokens, 3600, null, $this->clock);
         $this->rateLimiter = new ClientApiRateLimiter($this->cache, $this->clock);
@@ -93,7 +94,7 @@ final readonly class ClientApiStack
 
     private TeamAccessGuard $teamGuard;
 
-    public function apiController(?TaskAccessCheckerInterface $taskAccess = null, bool $allowMetadata = false): TimeTrackClientApiController
+    public function apiController(?TaskAccessCheckerInterface $taskAccess = null, bool $allowMetadata = false, ?ClientMinSupportedVersionProviderInterface $minSupportedVersions = null): TimeTrackClientApiController
     {
         return new TimeTrackClientApiController(
             $this->authService,
@@ -108,6 +109,7 @@ final readonly class ClientApiStack
             $this->auditor,
             $allowMetadata,
             $this->clock,
+            minSupportedVersionProvider: $minSupportedVersions,
         );
     }
 

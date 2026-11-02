@@ -174,6 +174,15 @@ your page (the default page does): `X-Frame-Options: DENY`, `Content-Security-Po
 **`ClientApiSettingsProviderInterface::getSettings(): ClientApiSettings`** — origins and rate limits from your
 instance settings (read per request). **`ClientDistributionProviderInterface::getDistribution(): ClientDistribution`**
 — download links. **`ClientUserProfileProviderInterface`** — `getDisplayName()` / `getWorkingHours()` of `GET me`.
+**`ClientMinSupportedVersionProviderInterface::getMinSupportedVersion(ClientType): ?string`** (1.9.1) — `GET me`'s
+`minSupportedVersion` for the token's client type (`null` = key absent). Default: `client_distribution.min_supported_version.*`;
+a host with a release manifest backs it there (Beacon reads its `stable.json`) and sets
+`client_distribution.min_supported_version.provider` to its service id. Return semver only.
+
+**Custom active timer store** — implement `ConditionalActiveTimerRepositoryInterface` (1.9.1): `removeIfPresent()`
+deletes the timer only while it still exists and runs the callback (which records the entry) in the same transaction,
+so two concurrent `timer/stop` / `timer/switch` calls record one entry. A store with only
+`ActiveTimerRepositoryInterface` keeps the 1.x behaviour, which can record a concurrently stopped timer twice.
 
 **Downloads partial** — embed in a page on the UiKit page contract (plain anchors, no script / style):
 

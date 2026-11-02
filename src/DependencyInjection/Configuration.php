@@ -35,6 +35,11 @@ final class Configuration implements ConfigurationInterface
     ];
 
     /** 1.x default of templates.layout (deprecated shim, maps to the UiKit admin layout). */
+    /**
+     * Semantic version 2.0.0 (core, optional pre-release and build metadata; no leading zeros, no `v` prefix).
+     */
+    public const SEMVER_PATTERN = '/\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?\z/';
+
     public const LEGACY_LAYOUT = '@NowoTimeTrackBundle/layout.html.twig';
 
     public const DEFAULT_INDEX_TEMPLATE = '@NowoTimeTrackBundle/time_track/index.html.twig';
@@ -488,6 +493,34 @@ final class Configuration implements ConfigurationInterface
                                 ->scalarNode('linux')->defaultNull()->end()
                                 ->scalarNode('latest_version')->defaultNull()->end()
                                 ->scalarNode('update_manifest_url')->defaultNull()->end()
+                            ->end()
+                        ->end()
+                        ->arrayNode('min_supported_version')
+                            ->info('Oldest supported client version per client type, returned by GET me as minSupportedVersion (semver; null = key absent).')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->scalarNode('provider')->info('Service id implementing ClientMinSupportedVersionProviderInterface (null = these versions).')->defaultNull()->end()
+                                ->scalarNode('extension')
+                                    ->defaultNull()
+                                    ->validate()
+                                        ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || preg_match(self::SEMVER_PATTERN, $v) !== 1))
+                                        ->thenInvalid('client_distribution.min_supported_version.extension must be a semantic version (e.g. 1.4.0) or null.')
+                                    ->end()
+                                ->end()
+                                ->scalarNode('desktop')
+                                    ->defaultNull()
+                                    ->validate()
+                                        ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || preg_match(self::SEMVER_PATTERN, $v) !== 1))
+                                        ->thenInvalid('client_distribution.min_supported_version.desktop must be a semantic version (e.g. 1.4.0) or null.')
+                                    ->end()
+                                ->end()
+                                ->scalarNode('web')
+                                    ->defaultNull()
+                                    ->validate()
+                                        ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || preg_match(self::SEMVER_PATTERN, $v) !== 1))
+                                        ->thenInvalid('client_distribution.min_supported_version.web must be a semantic version (e.g. 1.4.0) or null.')
+                                    ->end()
+                                ->end()
                             ->end()
                         ->end()
                     ->end()

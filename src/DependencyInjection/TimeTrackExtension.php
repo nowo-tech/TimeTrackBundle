@@ -16,10 +16,12 @@ use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
+use Nowo\TimeTrackBundle\Client\ConfigClientMinSupportedVersionProvider;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
@@ -235,7 +237,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     {
         /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}} $api */
         $api = $config['client_api'];
-        /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>} $distribution */
+        /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
         /** @var array{cors_allowed_origins: list<string>} $clients */
         $clients = $config['clients'];
@@ -263,14 +265,18 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ]));
         $container->setDefinition(ConfigClientDistributionProvider::class, (new Definition(ConfigClientDistributionProvider::class))
             ->setArguments(['$extension' => $distribution['extension'], '$desktop' => $distribution['desktop']]));
+        $minVersion = $distribution['min_supported_version'];
+        $container->setDefinition(ConfigClientMinSupportedVersionProvider::class, (new Definition(ConfigClientMinSupportedVersionProvider::class))
+            ->setArguments(['$versions' => ['extension' => $minVersion['extension'], 'desktop' => $minVersion['desktop'], 'web' => $minVersion['web']]]));
 
         foreach ([
-            ClientApiSettingsProviderInterface::class  => [$api['settings_provider'], ConfigClientApiSettingsProvider::class],
-            ClientDistributionProviderInterface::class => [$distribution['provider'], ConfigClientDistributionProvider::class],
-            ClientCredentialStateInterface::class      => [$api['credential_state'], AlwaysActiveClientCredentialState::class],
-            ClientCredentialIssuerInterface::class     => [$api['credential_issuer'], OpaqueClientCredentialIssuer::class],
-            TaskAccessCheckerInterface::class          => [$api['task_access_checker'], TaskProviderTaskAccessChecker::class],
-            ClientUserProfileProviderInterface::class  => [$api['profile_provider'], NullClientUserProfileProvider::class],
+            ClientApiSettingsProviderInterface::class         => [$api['settings_provider'], ConfigClientApiSettingsProvider::class],
+            ClientDistributionProviderInterface::class        => [$distribution['provider'], ConfigClientDistributionProvider::class],
+            ClientMinSupportedVersionProviderInterface::class => [$minVersion['provider'], ConfigClientMinSupportedVersionProvider::class],
+            ClientCredentialStateInterface::class             => [$api['credential_state'], AlwaysActiveClientCredentialState::class],
+            ClientCredentialIssuerInterface::class            => [$api['credential_issuer'], OpaqueClientCredentialIssuer::class],
+            TaskAccessCheckerInterface::class                 => [$api['task_access_checker'], TaskProviderTaskAccessChecker::class],
+            ClientUserProfileProviderInterface::class         => [$api['profile_provider'], NullClientUserProfileProvider::class],
         ] as $interface => [$serviceId, $default]) {
             $container->setAlias($interface, is_string($serviceId) && $serviceId !== '' ? $serviceId : $default);
         }
@@ -301,7 +307,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$clock'               => $clockRef,
             ]));
 
-        $container->getDefinition(TimeTrackClientApiController::class)->setArgument('$allowMetadata', $api['allow_metadata']);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$allowMetadata', $api['allow_metadata'])
+            ->setArgument('$minSupportedVersionProvider', new Reference(ClientMinSupportedVersionProviderInterface::class));
         $container->getDefinition(TimeTrackClientDeviceController::class)
             ->setArgument('$verificationUri', $device['verification_uri'])
             ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);

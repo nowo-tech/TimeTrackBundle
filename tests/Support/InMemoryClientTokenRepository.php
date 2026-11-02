@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
+use Psr\Clock\ClockInterface;
 
 use function array_values;
 
@@ -14,6 +15,13 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
 {
     /** @var array<string, ClientToken> */
     private array $tokens = [];
+
+    /**
+     * @param ClockInterface|null $clock same clock as the services under test (null = system time), like DoctrineOrmClientTokenRepository
+     */
+    public function __construct(private readonly ?ClockInterface $clock = null)
+    {
+    }
 
     public function save(ClientToken $token): void
     {
@@ -28,7 +36,7 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
     public function findValidByTokenHash(string $tokenHash): ?ClientToken
     {
         foreach ($this->tokens as $token) {
-            if ($token->getTokenHash() === $tokenHash && !$token->isExpired()) {
+            if ($token->getTokenHash() === $tokenHash && !$token->isExpired($this->clock?->now())) {
                 return $token;
             }
         }
@@ -40,7 +48,7 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
     {
         $purged = 0;
         foreach ($this->tokens as $id => $token) {
-            if ($token->isExpired()) {
+            if ($token->isExpired($this->clock?->now())) {
                 unset($this->tokens[$id]);
                 ++$purged;
             }

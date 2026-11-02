@@ -222,6 +222,8 @@ URLs are kept.
 | `client_distribution.desktop.windows` / `.macos` / `.linux` | `null` | Installer links (e.g. GitHub Releases of the public desktop repo) |
 | `client_distribution.desktop.latest_version` | `null` | Shown next to the desktop links |
 | `client_distribution.desktop.update_manifest_url` | `null` | Tauri `latest.json` (exposed on `ClientDistribution`, not rendered) |
+| `client_distribution.min_supported_version.provider` | `null` | `ClientMinSupportedVersionProviderInterface` service (default: the versions below) — 1.9.1 |
+| `client_distribution.min_supported_version.extension` / `.desktop` / `.web` | `null` | Oldest supported client version per type, sent by `GET me` as `minSupportedVersion` (key absent when `null`). Must be semver 2.0.0 (`1.4.0`, `2.0.0-rc.1`; no `v` prefix) — 1.9.1 |
 
 ## Security
 
