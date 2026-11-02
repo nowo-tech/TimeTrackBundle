@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -37,13 +38,20 @@ use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 
 use function array_key_exists;
+use function array_merge;
 use function is_array;
 use function is_string;
 use function rtrim;
 use function sprintf;
 
+/**
+ * Loads the bundle services and parameters and prepends the Doctrine mapping, UiKit and FormKit defaults.
+ */
 final class TimeTrackExtension extends Extension implements PrependExtensionInterface
 {
+    /**
+     * Registers the parameters, repositories, access checker, client services and Twig globals from the configuration.
+     */
     public function load(array $configs, ContainerBuilder $container): void
     {
         $configuration = new Configuration();
@@ -67,7 +75,11 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.clients.routes', $clients['routes']);
         $container->setParameter('nowo_time_track.clients.cors_allowed_origins', $clients['cors_allowed_origins']);
         $container->setParameter('nowo_time_track.routes', $config['routes']);
-        $container->setParameter('nowo_time_track.templates', $config['templates']);
+        // 1.x shape (layout, css_framework, index, reports); index / reports are the resolved web_ui.templates values.
+        $container->setParameter('nowo_time_track.templates', array_merge($config['templates'], $config['web_ui']['templates']));
+        $container->setParameter('nowo_time_track.web_ui.layout_template', $config['web_ui']['layout_template']);
+        $container->setParameter('nowo_time_track.web_ui.templates', $config['web_ui']['templates']);
+        $container->setParameter('nowo_time_track.reports.page_size', (int) $config['reports']['page_size']);
         $container->setParameter('nowo_time_track.templates.layout', $config['templates']['layout']);
         $container->setParameter('nowo_time_track.templates.css_framework', $config['templates']['css_framework']);
         $container->setParameter('nowo_time_track.route_prefix', $config['route_prefix']);
@@ -110,10 +122,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             DoctrineOrmActiveTimerRepository::class => ActiveTimerRepositoryInterface::class,
             DoctrineOrmClientTokenRepository::class => ClientTokenRepositoryInterface::class,
         ] as $repoClass => $interface) {
-            $container->setDefinition($repoClass, (new Definition($repoClass))
+            $repoDefinition = (new Definition($repoClass))
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
-                ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)));
+                ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+            if ($repoClass === DoctrineOrmClientTokenRepository::class) {
+                $repoDefinition->setArgument('$clock', new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE));
+            }
+            $container->setDefinition($repoClass, $repoDefinition);
             $container->setAlias($interface, $repoClass);
         }
 
@@ -174,6 +190,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         }
     }
 
+    /**
+     * Configuration alias (`nowo_time_track`).
+     */
     public function getAlias(): string
     {
         return Configuration::ALIAS;
@@ -221,6 +240,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         return isset($bundles['SecurityBundle']);
     }
 
+    /**
+     * Prepends the Doctrine mapping, the UiKit stack defaults and the `time_track` FormKit profile.
+     */
     public function prepend(ContainerBuilder $container): void
     {
         if ($container->hasExtension('doctrine')) {

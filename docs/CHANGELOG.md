@@ -34,7 +34,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Reports list pagination (REQ-PERF-001): `nowo_time_track.reports.page_size` (default 50, 1–500), `page` query
+  parameter, `TimerService::listEntriesPage()` returning `Dto\TimeEntryPage`; the Doctrine repository pages in the
+  database through the new optional `Repository\PaginatedTimeEntryRepositoryInterface`. The reports template receives
+  `entry_page`; the page renders the UiKit pagination.
+- PSR-3 logging (REQ-OBS-001) on the Monolog channel `time_track`: timer start / stop, client login success / failure /
+  throttling, token revocation and the expired-token purge. Records carry the action and the client type only — no
+  user, task, duration, token or IP (time entries are personal data). See [SECURITY](SECURITY.md#logging).
+- UiKit page contract (REQ-UI-003): `Nowo\TimeTrackBundle\Ui\TimeTrackPages` builds the UiKit view models
+  (`ListPage`, `PageHeader`, `Action`, `Pagination`, `EmptyState`) of the timer and reports pages; both templates
+  extend `@NowoUiKit/page/list.html.twig` and render inside `nowo_ui_kit.layouts.admin`. New options
+  `web_ui.layout_template` (null = UiKit admin layout) and `web_ui.templates.index|reports`. Page contract in
+  [TEMPLATES](TEMPLATES.md), enforced by `tests/Integration/Contract/PageContractTest.php` (UiKit
+  `PageContractTestCase`, strict missing-translation rule).
+- Demo (REQ-DEMO-013): Playwright e2e (`make -C demo/symfony8 test-e2e`: timer page, start / stop, reports) and README
+  screenshots `docs/images/demo/timer.webp`, `reports.webp` (`make -C demo/symfony8 demo-screenshots`). The demo
+  pages render inside a one-file UiKit bridge (`templates/layouts/admin.html.twig`); the demo is bound to 127.0.0.1;
+  demo time entries (`TimeTrackFixtures`) and a migration for the TaskBoardBundle 1.20 schema (demo lock: UiKit 2.21,
+  TaskBoard 1.20, FormKit 2.17).
+- `make assets` (no-op) and `make validate-phpdoc`; demo targets `restart`, `ensure-up`, `setup`, `test-coverage`,
+  `verify`, `release-check` (runs `update-bundle` before `verify`).
+
+### Changed
+
+- **Manage UI markup (REQ-UI-001 / REQ-UI-003):** the timer and reports pages no longer ship local `card` / `btn` /
+  `flash` markup or inline styles: page header, actions, table, empty state, flashes and pagination come from the UiKit
+  scaffold and theme slots (`nowo_ui_kit.css_framework`). The running timer is shown in the page header (intro
+  `Running: %task% (since %started%)`, status badge, Stop action); Start is a row action; durations read
+  `%minutes% min`; the
+  entry source is translated. Requires `nowo-tech/ui-kit-bundle` `^2.20` (was `^1.4 || ^2.2`).
+- Translation keys added: `timer.running_intro`, `timer.status_running`, `tasks.task`, `tasks.board`, `tasks.actions`,
+  `reports.period`, `reports.minutes`, `reports.source_web|extension|desktop` (7 locales).
+
+### Deprecated
+
+- `nowo_time_track.templates.layout`, `.css_framework`, `.index`, `.reports` (removed in 2.0): use
+  `web_ui.layout_template`, `nowo_ui_kit.css_framework`, `web_ui.templates.index|reports`. They keep working (mapped
+  onto `web_ui.*`); a 1.x layout without the UiKit canonical blocks is wrapped in the deprecated
+  `_legacy_layout.html.twig` bridge, and `layout.html.twig` is now a shim that renders 1.x templates extending
+  `nowo_time_track_layout` inside the UiKit admin layout. See [UPGRADING](UPGRADING.md#unreleased).
+
+- Time comes from an injected `Psr\Clock\ClockInterface` (REQ-DI-001) in `TimerService`, `ClientAuthService`, the
+  client API and manage controllers and `DoctrineOrmClientTokenRepository` (optional trailing constructor arguments,
+  default: the system clock). Entities accept an optional time argument (`ActiveTimer::__construct(..., $startedAt)`,
+  `heartbeat(..., $at)`, `TimeEntry` / `ClientToken` `$createdAt`, `ClientToken::isExpired($now)` / `touch($at)`).
+- New runtime requirements: `psr/clock`, `psr/log`, `symfony/clock` (already installed by FrameworkBundle).
+- The demo `make up` ends with the canonical `Demo started at: http://localhost:<PORT>` line (the timer page URL is
+  printed on the line before it).
+
+### Tests
+
+- REQ-TEST-003: the `src/Controller`, `src/Repository` and `src/Doctrine` coverage exclusions are gone. A functional
+  kernel (`tests/Support/FunctionalKernel.php`: Doctrine on in-memory SQLite, SecurityBundle entity provider, FormKit,
+  UiKit, the route loader) covers the client API end to end (preflight / CORS, Bearer auth, login validation and
+  throttling, timer lifecycle, 409 conflict, entries ACL, logout), the manage UI (start / stop forms, flashes, CSRF,
+  access contract, `allow_unauthenticated`, paginated reports) and the Doctrine repositories / metadata listener.
+  Only pure interfaces stay excluded.
+
 ### Documentation
+
+- USAGE: overridable template subpaths, override procedure and freeze rule (REQ-TWIG-001); translation override
+  procedure (REQ-I18N-001). CONFIGURATION: routes and the documented route-loader exemption (REQ-SF-004), reports
+  pagination. SECURITY: secrets & cryptography, logging, dependency and updates. DEMO-FRANKENPHP: production start and
+  troubleshooting. PHPDoc on every public class and method (REQ-CS-001).
 
 - [ROADMAP](ROADMAP.md): planned browser extension (MV3) and Tauri desktop app with a scoped token API, compliant by
   design with RGPD / LOPDGDD (working-time records, not monitoring); target 1.8 / 2.0.

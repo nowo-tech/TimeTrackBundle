@@ -9,9 +9,14 @@ timer:
   active: Active task
   started_at: Started at
   none: No active timer
+  running_intro: "Running: %task% (since %started%)"
+  status_running: Running
 tasks:
   title: Trackable tasks
   empty: No tasks available. Install TaskBoardBundle or configure task_provider.
+  task: Task
+  board: Board
+  actions: Actions
 action:
   start: Start
   stop: Stop
@@ -21,6 +26,11 @@ reports:
   started: Started
   duration: Duration
   source: Source
+  period: "%from% – %to%"
+  minutes: "%minutes% min"
+  source_web: Web
+  source_extension: Browser extension
+  source_desktop: Desktop app
 flash:
   timer_started: Timer started.
   timer_already_active: You already have an active timer.

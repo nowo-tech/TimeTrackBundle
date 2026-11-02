@@ -18,6 +18,10 @@ use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -29,6 +33,16 @@ use function is_array;
  */
 final readonly class TimeTrackClientApiController
 {
+    private ClockInterface $clock;
+
+    private LoggerInterface $logger;
+
+    /**
+     * Receives the services of the client API.
+     *
+     * @param ClockInterface|null $clock Reference time of the default report period (defaults to the system clock)
+     * @param LoggerInterface|null $logger Logs throttled logins without username or IP (defaults to no logging)
+     */
     public function __construct(
         private ClientAuthService $authService,
         private TimerService $timerService,
@@ -36,9 +50,16 @@ final readonly class TimeTrackClientApiController
         private ClientResponseFactory $responseFactory,
         private ClientLoginRateLimiter $loginRateLimiter,
         private int $idleThresholdSeconds,
+        ?ClockInterface $clock = null,
+        ?LoggerInterface $logger = null,
     ) {
+        $this->clock  = $clock ?? new NativeClock();
+        $this->logger = $logger ?? new NullLogger();
     }
 
+    /**
+     * POST login: issues a Bearer token for valid credentials (throttled).
+     */
     public function login(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -57,6 +78,8 @@ final readonly class TimeTrackClientApiController
 
         $clientIp = (string) $request->getClientIp();
         if ($this->loginRateLimiter->isLimited($clientIp, $username)) {
+            $this->logger->warning('TimeTrack client login throttled.', ['bundle' => 'time_track', 'action' => 'client_login', 'client' => $clientType->value]);
+
             return $this->responseFactory->json(['error' => 'Too many login attempts. Try again later.'], Response::HTTP_TOO_MANY_REQUESTS, $request);
         }
 
@@ -73,6 +96,9 @@ final readonly class TimeTrackClientApiController
         return $this->responseFactory->json($result, Response::HTTP_OK, $request);
     }
 
+    /**
+     * POST logout: revokes the Bearer token.
+     */
     public function logout(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -87,6 +113,9 @@ final readonly class TimeTrackClientApiController
         return $this->responseFactory->empty(Response::HTTP_NO_CONTENT, $request);
     }
 
+    /**
+     * GET me: id and identifier of the token user.
+     */
     public function me(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -104,6 +133,9 @@ final readonly class TimeTrackClientApiController
         ], Response::HTTP_OK, $request);
     }
 
+    /**
+     * GET tasks: trackable tasks (`search`, `limit` 1-100, `offset`).
+     */
     public function tasks(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -128,6 +160,9 @@ final readonly class TimeTrackClientApiController
         ], Response::HTTP_OK, $request);
     }
 
+    /**
+     * GET timer: the active timer (204 when none).
+     */
     public function timer(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -147,6 +182,9 @@ final readonly class TimeTrackClientApiController
         return $this->responseFactory->json(['timer' => $active->toArray()], Response::HTTP_OK, $request);
     }
 
+    /**
+     * POST timer/start: starts a timer on a task (409 when one is running).
+     */
     public function timerStart(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -186,6 +224,9 @@ final readonly class TimeTrackClientApiController
         return $this->responseFactory->json(['timer' => $timer->toArray()], Response::HTTP_CREATED, $request);
     }
 
+    /**
+     * POST timer/stop: stops the active timer and returns the entry.
+     */
     public function timerStop(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -205,6 +246,9 @@ final readonly class TimeTrackClientApiController
         return $this->responseFactory->json(['entry' => $entry->toArray()], Response::HTTP_OK, $request);
     }
 
+    /**
+     * POST heartbeat: keeps the active timer alive and stores the idle flag.
+     */
     public function heartbeat(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -231,6 +275,9 @@ final readonly class TimeTrackClientApiController
         ], Response::HTTP_OK, $request);
     }
 
+    /**
+     * GET entries: time entries of a period (`from`, `to`, optional `userId` checked by the team guard).
+     */
     public function entries(Request $request): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -242,7 +289,7 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->json(['error' => 'Unauthorized.'], Response::HTTP_UNAUTHORIZED, $request);
         }
 
-        $period       = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'));
+        $period       = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'), $this->clock->now());
         $targetUserId = $request->query->getString('userId') ?: null;
 
         if ($targetUserId !== null && !$this->teamAccessGuard->canViewUserEntries($user, $targetUserId)) {

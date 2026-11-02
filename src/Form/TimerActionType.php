@@ -73,6 +73,9 @@ final class TimerActionType extends AbstractType
         }
     }
 
+    /**
+     * CSRF id `nowo_time_track_manage`, FormKit profile `time_track` and the `id_suffix` option.
+     */
     #[Override]
     public function configureOptions(OptionsResolver $resolver): void
     {
@@ -86,6 +89,9 @@ final class TimerActionType extends AbstractType
         $resolver->setAllowedTypes('id_suffix', 'string');
     }
 
+    /**
+     * Empty block prefix: the fields post flat (`_token`, `action`, `task_id`).
+     */
     #[Override]
     public function getBlockPrefix(): string
     {

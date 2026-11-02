@@ -11,6 +11,9 @@ use Symfony\Component\HttpFoundation\Response;
 use function in_array;
 use function str_starts_with;
 
+/**
+ * Builds the JSON / empty responses of the client API with the CORS headers of the allowed origins.
+ */
 final readonly class ClientResponseFactory
 {
     /**

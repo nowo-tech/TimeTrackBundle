@@ -1,44 +1,19 @@
-{% extends nowo_time_track_layout %}
-{% import '@NowoUiKitBundle/macros/ui.html.twig' as ui %}
+{#
+  Reports page (REQ-UI-003): UiKit list scaffold. Variable: page (View\ListPage from TimeTrackPages::reportsPage():
+  header page.reports with the period as intro; columns task, started, duration (end-aligned), source (priority 2);
+  rows = list<TimeEntry> of the current page; View\Pagination (reports.page_size per page); EmptyState reports.empty;
+  data-testid="time-track-reports").
+  1.x variables, still passed for host overrides: entries, entry_page, from, to.
+  Data block filled: nowo_ui_list_row (start time, duration in minutes, translated source on the badge_neutral slot).
+#}
+{% extends '@NowoUiKit/page/list.html.twig' %}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
 
-{% block title %}{{ 'page.reports'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}
-
-{% block stylesheets %}
-    {{ parent() }}
-    <link rel="stylesheet" href="{{ asset('css/nowo-ui.css', 'nowo_ui_kit') }}">
-{% endblock %}
-
-{% block javascripts %}
-    {{ parent() }}
-{% endblock %}
-
-{% block body %}
-<h1>{{ 'page.reports'|trans({}, 'NowoTimeTrackBundle') }}</h1>
-
-<div class="card">
-    {% if entries is empty %}
-        <p>{{ 'reports.empty'|trans({}, 'NowoTimeTrackBundle') }}</p>
-    {% else %}
-        <table style="width:100%; border-collapse: collapse;">
-            <thead>
-                <tr>
-                    <th align="left">{{ 'reports.task'|trans({}, 'NowoTimeTrackBundle') }}</th>
-                    <th align="left">{{ 'reports.started'|trans({}, 'NowoTimeTrackBundle') }}</th>
-                    <th align="left">{{ 'reports.duration'|trans({}, 'NowoTimeTrackBundle') }}</th>
-                    <th align="left">{{ 'reports.source'|trans({}, 'NowoTimeTrackBundle') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in entries %}
-                    <tr>
-                        <td>{{ entry.taskTitleSnapshot }}</td>
-                        <td>{{ entry.startedAt|date('Y-m-d H:i') }}</td>
-                        <td>{{ (entry.durationSeconds / 60)|round(1) }} min</td>
-                        <td>{{ entry.source.value }}</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% endif %}
-</div>
+{% block nowo_ui_list_row %}
+    {% set _b = page.bundle %}
+    {% set _cell = nowo_ui_class('table_cell', _b) %}
+    <td class="{{ _cell }}" data-label="{{ 'reports.task'|trans }}" data-required="1">{{ row.taskTitleSnapshot }}</td>
+    <td class="{{ _cell }}" data-label="{{ 'reports.started'|trans }}"><time datetime="{{ row.startedAt|date('c') }}">{{ row.startedAt|date('Y-m-d H:i') }}</time></td>
+    <td class="{{ _cell }} nowo-ui-cell--end" data-label="{{ 'reports.duration'|trans }}">{{ 'reports.minutes'|trans({'%minutes%': (row.durationSeconds / 60)|round(1)}) }}</td>
+    <td class="{{ _cell }}" data-label="{{ 'reports.source'|trans }}" data-nowo-ui-priority="2"><span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ ('reports.source_' ~ row.source.value)|trans }}</span></td>
 {% endblock %}

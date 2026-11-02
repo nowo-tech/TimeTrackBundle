@@ -9,9 +9,14 @@ timer:
   active: Actieve taak
   started_at: Gestart om
   none: Geen actieve timer
+  running_intro: "Loopt: %task% (sinds %started%)"
+  status_running: Loopt
 tasks:
   title: Registreerbare taken
   empty: Geen tijdregistraties in deze periode.
+  task: Taak
+  board: Bord
+  actions: Acties
 action:
   start: Start
   stop: Stop
@@ -21,6 +26,11 @@ reports:
   started: Gestart
   duration: Duur
   source: Bron
+  period: "%from% – %to%"
+  minutes: "%minutes% min"
+  source_web: Web
+  source_extension: Browserextensie
+  source_desktop: Desktop-app
 flash:
   timer_started: Timer gestart.
   timer_already_active: Je hebt al een actieve timer.

@@ -9,5 +9,8 @@ namespace Nowo\TimeTrackBundle\Security;
  */
 interface TimeTrackAccessCheckerInterface
 {
+    /**
+     * Whether the user may open the manage UI.
+     */
     public function canAccess(?object $user): bool;
 }

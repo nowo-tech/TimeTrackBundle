@@ -16,6 +16,9 @@ use Throwable;
  */
 final class RecoveringFlusher
 {
+    /**
+     * Flushes the entity manager; on failure resets a closed manager (worker mode) and rethrows.
+     */
     public static function flush(EntityManagerInterface $entityManager, ?ManagerRegistry $managerRegistry): void
     {
         try {
@@ -27,6 +30,9 @@ final class RecoveringFlusher
         }
     }
 
+    /**
+     * Resets the entity manager through the registry when a previous error closed it.
+     */
     public static function resetIfClosed(EntityManagerInterface $entityManager, ?ManagerRegistry $managerRegistry): void
     {
         if (!$managerRegistry instanceof ManagerRegistry || $entityManager->isOpen()) {

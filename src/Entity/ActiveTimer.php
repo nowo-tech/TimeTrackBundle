@@ -12,6 +12,9 @@ use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use const DATE_ATOM;
 
+/**
+ * Running timer of a user (one per user, unique index on user_id).
+ */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_active_timers')]
 #[ORM\UniqueConstraint(name: 'time_track_active_timers_user_unique', columns: ['user_id'])]
@@ -27,6 +30,9 @@ class ActiveTimer
     #[ORM\Column(name: 'last_heartbeat_at', type: 'datetime_immutable')]
     private DateTimeImmutable $lastHeartbeatAt;
 
+    /**
+     * Starts a timer (start time: the given one, else now).
+     */
     public function __construct(
         #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(name: 'user_id', nullable: false, onDelete: 'CASCADE')]
@@ -42,48 +48,73 @@ class ActiveTimer
         /** @var array<string, mixed> */
         #[ORM\Column(type: 'json', nullable: true)]
         private ?array $metadata = null,
+        ?DateTimeImmutable $startedAt = null,
     ) {
-        $now                   = new DateTimeImmutable();
+        $now                   = $startedAt ?? new DateTimeImmutable();
         $this->id              = Uuid::generate()->toString();
         $this->startedAt       = $now;
         $this->lastHeartbeatAt = $now;
     }
 
+    /**
+     * Timer id (UUID).
+     */
     public function getId(): string
     {
         return $this->id;
     }
 
+    /**
+     * Timer owner.
+     */
     public function getUser(): object
     {
         return $this->user;
     }
 
+    /**
+     * Tracked task id.
+     */
     public function getTaskId(): string
     {
         return $this->taskId;
     }
 
+    /**
+     * Task title when the timer started.
+     */
     public function getTaskTitleSnapshot(): string
     {
         return $this->taskTitleSnapshot;
     }
 
+    /**
+     * Board id when the timer started.
+     */
     public function getBoardIdSnapshot(): ?string
     {
         return $this->boardIdSnapshot;
     }
 
+    /**
+     * Start time.
+     */
     public function getStartedAt(): DateTimeImmutable
     {
         return $this->startedAt;
     }
 
+    /**
+     * Last heartbeat time.
+     */
     public function getLastHeartbeatAt(): DateTimeImmutable
     {
         return $this->lastHeartbeatAt;
     }
 
+    /**
+     * Client that started the timer.
+     */
     public function getClientType(): ClientType
     {
         return $this->clientType;
@@ -100,10 +131,10 @@ class ActiveTimer
     }
 
     /** @phpstan-impure */
-    public function heartbeat(bool $isIdle = false): self
+    public function heartbeat(bool $isIdle = false, ?DateTimeImmutable $at = null): self
     {
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
-        $this->lastHeartbeatAt = new DateTimeImmutable();
+        $this->lastHeartbeatAt = $at ?? new DateTimeImmutable();
         $metadata              = $this->metadata ?? [];
         $metadata['isIdle']    = $isIdle;
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.

@@ -10,6 +10,10 @@ use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+/**
+ * Route loader (type `nowo_time_track`) of the manage UI and the client API: configurable paths, names and prefix
+ * (documented exemption from attribute routes, see docs/CONFIGURATION.md "Routes").
+ */
 final class TimeTrackRouteLoader extends Loader
 {
     /**
@@ -24,6 +28,9 @@ final class TimeTrackRouteLoader extends Loader
     ) {
     }
 
+    /**
+     * Builds the manage routes and, when the client API is enabled, the client routes.
+     */
     public function load(mixed $resource, ?string $type = null): RouteCollection
     {
         $collection = new RouteCollection();
@@ -84,6 +91,9 @@ final class TimeTrackRouteLoader extends Loader
         return $collection;
     }
 
+    /**
+     * Whether the resource is the `nowo_time_track` route import.
+     */
     public function supports(mixed $resource, ?string $type = null): bool
     {
         return $type === 'nowo_time_track';

@@ -1,0 +1,8 @@
+{# A 1.x host layout (LegacyLayoutManageUiTest): flashes outside body, nowo_ui_content inside body, no nowo_ui_page_header. #}
+<div data-test-layout>
+<title>{% block title %}{% block nowo_ui_document_title %}{% endblock %}{% endblock %}</title>
+{% block stylesheets %}{% block nowo_ui_styles %}{% endblock %}{% endblock %}
+{% block nowo_ui_flashes %}{% for label, messages in app.flashes %}{% for message in messages %}<p class="flash flash-{{ label }}">{{ message }}</p>{% endfor %}{% endfor %}{% endblock %}
+{% block body %}{% block nowo_ui_content %}{% endblock %}{% endblock %}
+{% block javascripts %}{% block nowo_ui_scripts %}{% endblock %}{% endblock %}
+</div>

@@ -6,7 +6,10 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 
 - [Required](#required)
 - [Integration](#integration)
-- [Templates (REQ-UI-001)](#templates-req-ui-001)
+- [Routes (REQ-SF-004 exemption)](#routes-req-sf-004-exemption)
+- [Reports (REQ-PERF-001)](#reports-req-perf-001)
+- [Web UI and templates (REQ-UI-001 / REQ-UI-003)](#web-ui-and-templates-req-ui-001--req-ui-003)
+  - [Deprecated `templates.*` keys (1.x, removed in 2.0)](#deprecated-templates-keys-1x-removed-in-20)
 - [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Security](#security)
@@ -25,44 +28,102 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | `team_context_provider` | `NullTeamContextProvider` | `TeamContextProviderInterface` service id |
 | `table_prefix` | `time_track_` | DB table prefix |
 
-## Templates (REQ-UI-001)
+## Routes (REQ-SF-004 exemption)
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `templates.layout` | `@NowoTimeTrackBundle/layout.html.twig` | Outer Twig layout extended by timer/report pages. Exposed as Twig global **`nowo_time_track_layout`**. **Set this to your project layout** (e.g. `base.html.twig`) or a one-file bridge; the bundle default is for demos only. |
-| `templates.css_framework` | `tabler` | Host CSS stack hint (REQ-UI-001). Exposed as Twig global **`nowo_time_track_css_framework`**. Values: `bootstrap` (treat as bootstrap5), `bootstrap4`, `bootstrap5`, `tabler` (Bootstrap-compatible), `tailwind`, `foundation`, `custom`, `none`. Default **`tabler`** matches the shared demo Tabler CDN. |
-| `templates.index` | `@NowoTimeTrackBundle/time_track/index.html.twig` | Timer page template |
-| `templates.reports` | `@NowoTimeTrackBundle/time_track/reports.html.twig` | Reports page template |
+The routes are opt-in: the host imports them once (the Flex recipe writes `config/routes/nowo_time_track.yaml`):
 
 ```yaml
 nowo_time_track:
-    user_class: App\Entity\User
-    templates:
-        # Prefer project chrome — do not fork index/reports just to match the host layout
-        layout: base.html.twig
-        css_framework: tabler   # or: bootstrap5 | custom | tailwind | foundation | none
+    resource: .
+    type: nowo_time_track
 ```
 
-**CSS stack:** timer/report markup uses **Tabler / Bootstrap 5-compatible** classes (`.card`, `.btn`, …). Set `templates.css_framework` to match the host. With `custom` (or `none`), keep those class names in host CSS or map via semantic `nowo-ui-*` styles — you do **not** need to fork page Twig files. Changing `css_framework` alone does not rewrite markup; it documents the stack and is available in Twig as `nowo_time_track_css_framework` for bridges/macros.
+| Option | Default | Description |
+|--------|---------|-------------|
+| `route_prefix` | `''` | Prepended to every path below |
+| `routes.index.path` / `.name` | `/tools/time-track` / `nowo_time_track_index` | Timer page (GET, POST) |
+| `routes.reports.path` / `.name` | `/tools/time-track/reports` / `nowo_time_track_reports` | Reports page (GET) |
+| `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `heartbeat`, `entries`; only when `clients.enabled`) |
 
-If the project layout uses a different content block than `body`, use a thin bridge:
+**Why a route loader instead of `#[Route]` (documented exemption from REQ-SF-004 rule 1).** Every route **name and
+path** is host configuration (`routes.*`, `clients.routes.*`, `route_prefix`), and the client API routes exist only
+when `clients.enabled` is true. Static `#[Route]` attributes cannot carry per-host names, and hosts already depend on
+the configured names (`path('nowo_time_track_index')`, the browser extension and desktop app call the configured API
+paths). `Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader` (type `nowo_time_track`) therefore builds the routes
+from the configuration; names, paths and methods are unchanged since 1.0. The other REQ-SF-004 rules hold:
+controllers are services with constructor injection and no `#[AsController]`, no YAML/XML route files ship with the
+bundle, access is enforced by `TimeTrackAccessCheckerInterface` (REQ-UI-002), and the controllers carry no `#[Route]`,
+so the host's `routing.controllers` import never loads them (rule 7, `tests/Unit/Routing/HostRoutingControllersTest.php`).
+
+Hosts may also route single controller actions themselves (e.g. only the client API under their own firewall):
+
+```yaml
+nowo_time_track_api_login:
+    path: /api/time-track/login
+    controller: Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController::login
+    methods: [POST, OPTIONS]
+```
+
+## Reports (REQ-PERF-001)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `reports.page_size` | `50` | Entries per page of the reports list (1–500). The page is read from the `page` query parameter; out-of-range pages show the nearest existing page. The default repository pages in the database (`PaginatedTimeEntryRepositoryInterface`); a custom `TimeEntryRepositoryInterface` without it is sliced in memory. |
+
+The template receives the `page` view model (UiKit `ListPage` with a `Pagination`), plus, for 1.x overrides, `entries`
+(the entries of the page), `entry_page` (`Nowo\TimeTrackBundle\Dto\TimeEntryPage`: `page`, `perPage`, `total`,
+`totalPages()`, `hasPrevious()`, `hasNext()`) and `from` / `to`.
+
+## Web UI and templates (REQ-UI-001 / REQ-UI-003)
+
+Since 1.8 the timer and reports pages extend the UiKit list scaffold (`@NowoUiKit/page/list.html.twig`) and render
+inside a UiKit layout; classes come from the UiKit theme slots (`nowo_ui_kit.css_framework`, `nowo_ui_kit.theme`).
+The page contract is in [TEMPLATES](TEMPLATES.md).
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `web_ui.layout_template` | `null` | Layout of the pages. `null` = `nowo_ui_kit.layouts.admin` (set that once for every UiKit page of the host). A layout that renders the UiKit canonical blocks (`nowo_ui_page_header`, `nowo_ui_flashes`, `nowo_ui_content`, …) is used as is; a 1.x layout (`title`, `stylesheets`, `body`, `javascripts`) is wrapped in a deprecated bridge (removed in 2.0). |
+| `web_ui.templates.index` | `@NowoTimeTrackBundle/time_track/index.html.twig` | Timer page template (a host template extending `@!NowoTimeTrackBundle/time_track/index.html.twig`) |
+| `web_ui.templates.reports` | `@NowoTimeTrackBundle/time_track/reports.html.twig` | Reports page template |
+
+```yaml
+nowo_ui_kit:
+    css_framework: bootstrap5
+    layouts:
+        admin: 'layouts/admin.html.twig'   # one-file bridge onto the project shell (see below)
+
+nowo_time_track:
+    user_class: App\Entity\User
+    # web_ui:
+    #     layout_template: null           # null = nowo_ui_kit.layouts.admin
+```
+
+One-file bridge onto the project shell (the UiKit `_bridge.html.twig` prints the canonical blocks):
 
 ```twig
-{# templates/time_track_layout_bridge.html.twig #}
+{# templates/layouts/admin.html.twig #}
 {% extends 'base.html.twig' %}
-{% block body %}
-    {% block nowo_ui_content %}{% endblock %}
-{% endblock %}
+{% use '@NowoUiKit/layout/_bridge.html.twig' %}
+{% block title %}{{ block('nowo_ui_bridge_title') }}{% endblock %}
+{% block stylesheets %}{{ parent() }}{{ block('nowo_ui_bridge_assets') }}{% endblock %}
+{% block body %}{{ block('nowo_ui_bridge_body') }}{% endblock %}
+{% block javascripts %}{{ parent() }}{{ block('nowo_ui_bridge_end') }}{% endblock %}
 ```
 
-Then set `templates.layout: time_track_layout_bridge.html.twig`.
+### Deprecated `templates.*` keys (1.x, removed in 2.0)
 
-Pages call `{{ parent() }}` in `stylesheets` / `javascripts` so host assets keep loading when the layout points at the project shell.
+Each key triggers a configuration deprecation and keeps working until 2.0:
+
+| Deprecated key | Replacement | 1.8 behaviour |
+|----------------|-------------|---------------|
+| `templates.layout` | `web_ui.layout_template` | Feeds `web_ui.layout_template` unless that is set. The 1.x default `@NowoTimeTrackBundle/layout.html.twig` maps to `null` (UiKit admin layout). A 1.x layout without the canonical blocks is wrapped in `_legacy_layout.html.twig`. Still exposed as Twig global `nowo_time_track_layout`. |
+| `templates.css_framework` | `nowo_ui_kit.css_framework` | Seeds `nowo_ui_kit.css_framework` / `icon_set` when the host does not set them; Twig global `nowo_time_track_css_framework`. |
+| `templates.index` / `templates.reports` | `web_ui.templates.index` / `.reports` | Feed `web_ui.templates.*` unless those are set. |
 
 | Twig global | Source |
 |-------------|--------|
-| `nowo_time_track_layout` | `templates.layout` |
-| `nowo_time_track_css_framework` | `templates.css_framework` |
+| `nowo_time_track_layout` | `templates.layout` (deprecated) |
+| `nowo_time_track_css_framework` | `templates.css_framework` (deprecated) |
 
 ## FormKit profile (REQ-TWIG-005)
 

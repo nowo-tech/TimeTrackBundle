@@ -1,6 +1,6 @@
 # TimeTrack Bundle
 
-[![CI](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml/badge.svg)](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml) [![Packagist Version](https://img.shields.io/packagist/v/nowo-tech/time-track-bundle.svg?style=flat)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![Packagist Downloads](https://img.shields.io/packagist/dt/nowo-tech/time-track-bundle.svg)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net) [![Symfony](https://img.shields.io/badge/Symfony-7.4%2B%20%7C%208.0%20%7C%208.1%2B-000000?logo=symfony)](https://symfony.com) [![GitHub stars](https://img.shields.io/github/stars/nowo-tech/time-track-bundle.svg?style=social&label=Star)](https://github.com/nowo-tech/TimeTrackBundle) [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#tests-and-coverage)
+[![CI](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml/badge.svg)](https://github.com/nowo-tech/TimeTrackBundle/actions/workflows/ci.yml) [![Packagist Version](https://img.shields.io/packagist/v/nowo-tech/time-track-bundle.svg?style=flat)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![Packagist Downloads](https://img.shields.io/packagist/dt/nowo-tech/time-track-bundle.svg)](https://packagist.org/packages/nowo-tech/time-track-bundle) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![PHP](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php)](https://php.net) [![Symfony](https://img.shields.io/badge/Symfony-7.4%2B%20%7C%208.0%20%7C%208.1%2B-000000?logo=symfony)](https://symfony.com) [![GitHub stars](https://img.shields.io/github/stars/nowo-tech/TimeTrackBundle.svg?style=social&label=Star)](https://github.com/nowo-tech/TimeTrackBundle) [![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](#tests-and-coverage)
 
 > ⭐ **Found this useful?** Give it a **star** on [GitHub](https://github.com/nowo-tech/TimeTrackBundle) so more developers can find it.
 
@@ -12,7 +12,7 @@ This bundle is **FrankenPHP worker mode friendly**.
 
 ## Features
 
-- Web UI at `/tools/time-track` (timer + reports)
+- Web UI at `/tools/time-track` (timer + paginated reports)
 - REST API for browser extension and Tauri desktop (`Bearer` auth)
 - Single active timer per user (409 on conflict)
 - Teams and managers v1 via `TeamContextProviderInterface`
@@ -42,12 +42,31 @@ Integrated demo with **TaskBoardBundle** (kanban + timer):
 
 ```bash
 make -C demo up-symfony8
-# Demo started at: http://localhost:8024/tools/time-track
+# Timer UI: http://localhost:8024/tools/time-track
+# Demo started at: http://localhost:8024
 ```
 
 - Timer UI: `/tools/time-track`
 - Task board: `/tools/task-board`
 - Login: `demo@example.com` / `demo`
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/demo/timer.webp" alt="Timer page in the demo: navigation (Board / Timer / Reports), Timer started flash, page header with the running task and its start time, Running status badge and Stop button, table of trackable tasks with their board, Symfony web debug toolbar" />
+    </td>
+    <td width="50%">
+      <img src="docs/images/demo/reports.webp" alt="Reports page in the demo: page header with the report period, table of time entries (task, start time, duration in minutes, source badge), Symfony web debug toolbar" />
+    </td>
+  </tr>
+</table>
+
+End-to-end tests (Playwright, REQ-DEMO-013) and the screenshots:
+
+```bash
+make -C demo/symfony8 test-e2e           # timer page, start / stop, reports
+make -C demo/symfony8 demo-screenshots   # refreshes docs/images/demo/*.webp
+```
 
 With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.task_provider` — see [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md).
 
@@ -56,6 +75,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Usage](docs/USAGE.md)
+- [Templates (UiKit page contract)](docs/TEMPLATES.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Changelog](docs/CHANGELOG.md)
@@ -84,7 +104,7 @@ make test-coverage
 make release-check
 ```
 
-- **PHP:** 100% lines (justified exclusions: controllers, Doctrine repositories/listeners, integration interfaces)
+- **PHP:** 100% lines — controllers, Doctrine repositories and listeners included (functional tests on in-memory SQLite, `tests/Functional/`); only pure interfaces are excluded (`phpunit.xml.dist`)
 - **TS/JS:** N/A (desktop agent lives in `desktop/`, outside bundle PHP coverage)
 - **Python:** N/A
 

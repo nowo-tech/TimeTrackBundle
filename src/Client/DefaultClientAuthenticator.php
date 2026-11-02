@@ -32,6 +32,10 @@ final readonly class DefaultClientAuthenticator implements ClientAuthenticatorIn
     ) {
     }
 
+    /**
+     * Loads the user through the user provider and checks the password (unknown users still run a dummy password
+     * check, so timing does not reveal them).
+     */
     public function authenticate(string $username, string $password): ?ClientAuthResult
     {
         try {

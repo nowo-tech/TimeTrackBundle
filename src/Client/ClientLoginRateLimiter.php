@@ -31,6 +31,9 @@ final readonly class ClientLoginRateLimiter
 
     private int $maxAttemptsPerIp;
 
+    /**
+     * Configures the cache pool, the attempt budgets and the window.
+     */
     public function __construct(
         private CacheItemPoolInterface $cache,
         private int $maxAttempts,
@@ -41,6 +44,9 @@ final readonly class ClientLoginRateLimiter
         $this->maxAttemptsPerIp = $maxAttemptsPerIp ?? 5 * $maxAttempts;
     }
 
+    /**
+     * Whether the IP + username pair (or the IP alone) has used up its failed-login budget.
+     */
     public function isLimited(string $clientIp, string $username): bool
     {
         if (!$this->isActive()) {
@@ -53,6 +59,9 @@ final readonly class ClientLoginRateLimiter
             || ($this->maxAttemptsPerIp > 0 && $this->count($items[1]) >= $this->maxAttemptsPerIp);
     }
 
+    /**
+     * Counts a failed login in both buckets (IP + username and IP only).
+     */
     public function registerFailedAttempt(string $clientIp, string $username): void
     {
         if (!$this->isActive()) {

@@ -13,6 +13,8 @@ use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
+use Nowo\TimeTrackBundle\Ui\TimeTrackPages;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
@@ -23,10 +25,25 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
+use function array_filter;
+
+/**
+ * Manage UI: timer page (start / stop, CSRF-protected forms) and the reports list.
+ */
 final class TimeTrackManageController extends AbstractController
 {
+    /** Default page size of the reports list (`nowo_time_track.reports.page_size`, REQ-PERF-001). */
+    public const DEFAULT_REPORTS_PAGE_SIZE = 50;
+
     /**
-     * @param array<string, string> $templates
+     * @param TimerService $timerService Timer use cases
+     * @param TimeTrackAccessCheckerInterface $accessChecker Access contract of the manage UI (REQ-UI-002)
+     * @param array<string, string> $templates Page templates (`templates.index`, `templates.reports`)
+     * @param bool $allowUnauthenticated Demo-only bypass of the access checker
+     * @param TranslatorInterface|null $translator Translates the flash messages
+     * @param int $reportsPageSize Entries per reports page
+     * @param ClockInterface|null $clock Reference time of the default report period
+     * @param TimeTrackPages|null $pages View models of the pages (REQ-UI-003)
      */
     public function __construct(
         private readonly TimerService $timerService,
@@ -34,9 +51,15 @@ final class TimeTrackManageController extends AbstractController
         private readonly array $templates,
         private readonly bool $allowUnauthenticated = false,
         private readonly ?TranslatorInterface $translator = null,
+        private readonly int $reportsPageSize = self::DEFAULT_REPORTS_PAGE_SIZE,
+        private readonly ?ClockInterface $clock = null,
+        private readonly ?TimeTrackPages $pages = null,
     ) {
     }
 
+    /**
+     * Timer page: active timer, trackable tasks and the start / stop forms; POST runs the action and redirects.
+     */
     public function index(Request $request): Response
     {
         $this->denyUnlessGrantedAccess();
@@ -85,14 +108,21 @@ final class TimeTrackManageController extends AbstractController
             $startForms[$task->id] = $this->createTimerActionForm(['action' => 'start', 'task_id' => $task->id], 'start_' . $task->id)->createView();
         }
 
+        $stopForm = $this->createTimerActionForm(['action' => 'stop'], 'stop')->createView();
+        $pages    = $this->pages ?? new TimeTrackPages();
+
         return $this->render($this->templates['index'], [
+            'page'         => $pages->timerPage($tasks, $active, $stopForm, $startForms),
             'active_timer' => $active,
             'tasks'        => $tasks,
-            'stop_form'    => $this->createTimerActionForm(['action' => 'stop'], 'stop')->createView(),
+            'stop_form'    => $stopForm,
             'start_forms'  => $startForms,
-        ]);
+        ] + $pages->layoutContext());
     }
 
+    /**
+     * Reports page: one page of the time entries of the period (`from`, `to`, `page`).
+     */
     public function reports(Request $request): Response
     {
         $this->denyUnlessGrantedAccess();
@@ -102,17 +132,22 @@ final class TimeTrackManageController extends AbstractController
             return $this->redirectToRoute('nowo_time_track_index');
         }
 
-        $period = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'));
+        $period = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'), $this->clock?->now());
         $from   = $period['from'];
         $to     = $period['to'];
 
-        $entries = $this->timerService->listEntries($user, $from, $to);
+        $entryPage = $this->timerService->listEntriesPage($user, $from, $to, (int) $request->query->getString('page', '1'), $this->reportsPageSize);
+
+        $pages = $this->pages ?? new TimeTrackPages();
+        $query = array_filter(['from' => $request->query->getString('from'), 'to' => $request->query->getString('to')], static fn (string $v): bool => $v !== '');
 
         return $this->render($this->templates['reports'], [
-            'entries' => $entries,
-            'from'    => $from,
-            'to'      => $to,
-        ]);
+            'page'       => $pages->reportsPage($entryPage, $from, $to, $request->attributes->getString('_route') ?: null, $query),
+            'entries'    => $entryPage->entries,
+            'entry_page' => $entryPage,
+            'from'       => $from,
+            'to'         => $to,
+        ] + $pages->layoutContext());
     }
 
     /**

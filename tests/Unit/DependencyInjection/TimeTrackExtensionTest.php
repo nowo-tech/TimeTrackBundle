@@ -23,6 +23,7 @@ use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 use stdClass;
 use Symfony\Bundle\SecurityBundle\DependencyInjection\SecurityExtension;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
@@ -105,6 +106,22 @@ final class TimeTrackExtensionTest extends TestCase
             self::assertSame('doctrine', (string) $argument);
             self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $argument->getInvalidBehavior());
         }
+    }
+
+    public function testLoadWiresTheClockIntoTheTokenRepositoryAndTheReportsPageSize(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([['user_class' => User::class, 'reports' => ['page_size' => 25]]], $container);
+
+        $clock = $container->getDefinition(DoctrineOrmClientTokenRepository::class)->getArgument('$clock');
+        self::assertInstanceOf(Reference::class, $clock);
+        self::assertSame(ClockInterface::class, (string) $clock);
+        self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $clock->getInvalidBehavior());
+        self::assertArrayNotHasKey('$clock', $container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArguments());
+        self::assertSame(25, $container->getParameter('nowo_time_track.reports.page_size'));
     }
 
     public function testLoadWiresCustomLayoutIntoTwigGlobalArgument(): void

@@ -1,3 +1,7 @@
 nowo_ui_kit:
     css_framework: bootstrap5
     icon_set: bootstrap-icons
+    # REQ-UI-003: the TimeTrack pages (nowo_time_track.web_ui.layout_template null) and the TaskBoard pages render
+    # inside this bridge.
+    layouts:
+        admin: 'layouts/admin.html.twig'

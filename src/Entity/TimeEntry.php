@@ -12,6 +12,9 @@ use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use const DATE_ATOM;
 
+/**
+ * Closed time entry: task snapshot, start, end, duration and source.
+ */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_entries')]
 #[ORM\Index(name: 'time_track_entries_user_idx', columns: ['user_id'])]
@@ -26,6 +29,9 @@ class TimeEntry
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private DateTimeImmutable $createdAt;
 
+    /**
+     * Creates a time entry.
+     */
     public function __construct(
         #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(name: 'user_id', nullable: false, onDelete: 'CASCADE')]
@@ -47,51 +53,79 @@ class TimeEntry
         /** @var array<string, mixed> */
         #[ORM\Column(type: 'json', nullable: true)]
         private ?array $metadata = null,
+        ?DateTimeImmutable $createdAt = null,
     ) {
         $this->id        = Uuid::generate()->toString();
-        $this->createdAt = new DateTimeImmutable();
+        $this->createdAt = $createdAt ?? new DateTimeImmutable();
     }
 
+    /**
+     * Entry id (UUID).
+     */
     public function getId(): string
     {
         return $this->id;
     }
 
+    /**
+     * Entry owner.
+     */
     public function getUser(): object
     {
         return $this->user;
     }
 
+    /**
+     * Tracked task id.
+     */
     public function getTaskId(): string
     {
         return $this->taskId;
     }
 
+    /**
+     * Task title when the timer started.
+     */
     public function getTaskTitleSnapshot(): string
     {
         return $this->taskTitleSnapshot;
     }
 
+    /**
+     * Board id when the timer started.
+     */
     public function getBoardIdSnapshot(): ?string
     {
         return $this->boardIdSnapshot;
     }
 
+    /**
+     * Start time.
+     */
     public function getStartedAt(): DateTimeImmutable
     {
         return $this->startedAt;
     }
 
+    /**
+     * End time.
+     */
     public function getEndedAt(): DateTimeImmutable
     {
         return $this->endedAt;
     }
 
+    /**
+     * Duration in seconds.
+     */
     public function getDurationSeconds(): int
     {
         return $this->durationSeconds;
     }
 
+    /**
+     * Client that recorded the entry.
+     */
     public function getSource(): TimeEntrySource
     {
         return $this->source;
@@ -105,6 +139,9 @@ class TimeEntry
         return $this->metadata;
     }
 
+    /**
+     * Creation time.
+     */
     public function getCreatedAt(): DateTimeImmutable
     {
         return $this->createdAt;

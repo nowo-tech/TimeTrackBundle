@@ -9,9 +9,14 @@ timer:
   active: Tâche active
   started_at: Démarré à
   none: Aucun minuteur actif
+  running_intro: "En cours : %task% (depuis %started%)"
+  status_running: En cours
 tasks:
   title: Tâches chronométrables
   empty: Aucune entrée sur cette période.
+  task: Tâche
+  board: Tableau
+  actions: Actions
 action:
   start: Démarrer
   stop: Arrêter
@@ -21,6 +26,11 @@ reports:
   started: Début
   duration: Durée
   source: Source
+  period: "%from% – %to%"
+  minutes: "%minutes% min"
+  source_web: Web
+  source_extension: Extension du navigateur
+  source_desktop: Application de bureau
 flash:
   timer_started: Minuteur démarré.
   timer_already_active: Vous avez déjà un minuteur actif.

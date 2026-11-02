@@ -16,6 +16,9 @@ interface TeamContextProviderInterface
      */
     public function getTeamIdsForUser(UserInterface $user): array;
 
+    /**
+     * Whether the manager manages the member.
+     */
     public function isManagerOf(UserInterface $manager, UserInterface $member): bool;
 
     /**

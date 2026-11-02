@@ -9,9 +9,14 @@ timer:
   active: Aktive Aufgabe
   started_at: Gestartet um
   none: Kein aktiver Timer
+  running_intro: "Läuft: %task% (seit %started%)"
+  status_running: Läuft
 tasks:
   title: Erfassbare Aufgaben
   empty: Keine Zeiteinträge in diesem Zeitraum.
+  task: Aufgabe
+  board: Board
+  actions: Aktionen
 action:
   start: Starten
   stop: Stoppen
@@ -21,6 +26,11 @@ reports:
   started: Gestartet
   duration: Dauer
   source: Quelle
+  period: "%from% – %to%"
+  minutes: "%minutes% Min."
+  source_web: Web
+  source_extension: Browsererweiterung
+  source_desktop: Desktop-App
 flash:
   timer_started: Timer gestartet.
   timer_already_active: Sie haben bereits einen aktiven Timer.

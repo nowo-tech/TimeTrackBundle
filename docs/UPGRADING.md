@@ -43,6 +43,39 @@
 
 ## Unreleased
 
+Route names, paths, controllers, form field names / CSRF id and the client API are unchanged. The manage pages now use
+the UiKit page contract (REQ-UI-003); hosts that render them should check the points below.
+
+- **Dependency:** `nowo-tech/ui-kit-bundle` `^2.20` (UiKit 1.x is no longer supported).
+- **Layout:** the pages render inside `nowo_ui_kit.layouts.admin` (UiKit default: its own admin layout). Point it at
+  your layout or at a one-file bridge (see [CONFIGURATION](CONFIGURATION.md#web-ui-and-templates-req-ui-001--req-ui-003)),
+  or set `nowo_time_track.web_ui.layout_template`. With the 1.x default (`templates.layout` unset) the bundle demo
+  shell (dark nav bar with Board / Timer / Reports links) is gone: add the navigation to your layout.
+- **Deprecated config (removed in 2.0):** `templates.layout` → `web_ui.layout_template`; `templates.css_framework` →
+  `nowo_ui_kit.css_framework`; `templates.index` / `templates.reports` → `web_ui.templates.index` / `.reports`. The old
+  keys keep working in 1.x and trigger a deprecation. A layout set through them that only has the 1.x blocks
+  (`title`, `stylesheets`, `body`, `javascripts`, optionally `nowo_ui_content` inside `body`) is wrapped in
+  `_legacy_layout.html.twig` (runtime deprecation): the page renders once inside `body`, host CSS / JS keep loading.
+- **Template overrides:** a full-file override of `time_track/index.html.twig` / `reports.html.twig` written for 1.x
+  keeps rendering: it still receives `active_timer`, `tasks`, `stop_form`, `start_forms` / `entries`, `entry_page`,
+  `from`, `to`, and `{% extends nowo_time_track_layout %}` renders inside the UiKit admin layout through the
+  `layout.html.twig` shim. New overrides should extend `@!NowoTimeTrackBundle/time_track/<page>.html.twig` and fill
+  a data block instead (see [TEMPLATES](TEMPLATES.md)).
+- **Markup / CSS hooks:** host CSS or tests targeting the 1.x classes (`.card`, `.flash-success`, `.btn-primary` in
+  the bundle pages, `[data-test-layout]`) must move to the UiKit classes / `data-testid="time-track-timer"`,
+  `time-track-reports`, `time-track-stop`, `time-track-start-<task id>`.
+
+- **Reports pagination:** the reports page now shows `reports.page_size` entries (default **50**) per page with
+  previous / next links; set `nowo_time_track.reports.page_size` (max 500) to change it. A host override of
+  `time_track/reports.html.twig` keeps receiving `entries` (now the entries of the current page) and can render
+  `entry_page` (`Nowo\TimeTrackBundle\Dto\TimeEntryPage`) for the links.
+- **Custom repositories:** a host `TimeEntryRepositoryInterface` implementation keeps working (the page is sliced in
+  memory); implement `PaginatedTimeEntryRepositoryInterface` to page in the database.
+- **Logging:** records go to the Monolog channel `time_track`; exclude it in your handlers (`channels: ['!time_track']`)
+  if you do not want them.
+- **Subclasses / manual construction:** the new constructor arguments (clock, logger, reports page size) are optional
+  and trailing; code that builds `TimerService`, `ClientAuthService` or the controllers by hand needs no change.
+
 ## To 1.7.0
 
 `nowo-tech/form-kit-bundle` (`^2.14`) is now required. Register `Nowo\FormKitBundle\NowoFormKitBundle` in

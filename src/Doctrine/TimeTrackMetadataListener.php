@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Doctrine;
 
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
-use Doctrine\ORM\Mapping\AssociationMapping;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -22,6 +21,9 @@ use function sprintf;
  */
 final readonly class TimeTrackMetadataListener
 {
+    /**
+     * Receives the configured table names and the host user class.
+     */
     public function __construct(
         private string $entriesTableName,
         private string $activeTimersTableName,
@@ -30,6 +32,9 @@ final readonly class TimeTrackMetadataListener
     ) {
     }
 
+    /**
+     * Applies the table prefix and the host user class to the bundle entities.
+     */
     public function loadClassMetadata(LoadClassMetadataEventArgs $args): void
     {
         $metadata = $args->getClassMetadata();
@@ -54,10 +59,8 @@ final readonly class TimeTrackMetadataListener
     /** @param ClassMetadata<object> $metadata */
     private function remapUserAssociation(ClassMetadata $metadata, string $fieldName): void
     {
-        $mapping = $metadata->associationMappings[$fieldName] ?? null;
-        if (!$mapping instanceof AssociationMapping) {
-            return;
-        }
+        // The caller checked isset(): ORM 3 stores every association as an AssociationMapping object.
+        $mapping = $metadata->associationMappings[$fieldName];
 
         $userClass = ltrim($this->userClass, '\\');
         if (!class_exists($userClass)) {

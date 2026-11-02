@@ -9,6 +9,9 @@ namespace Nowo\TimeTrackBundle\Security;
  */
 final class AllowAllTimeTrackAccessChecker implements TimeTrackAccessCheckerInterface
 {
+    /**
+     * Always true (demo only, `security.allow_unauthenticated: true`).
+     */
     public function canAccess(?object $user): bool
     {
         return true;

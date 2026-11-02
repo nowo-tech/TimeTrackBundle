@@ -1,0 +1,33 @@
+{#
+  UiKit page contract (REQ-UI-003): the demo's admin layout (nowo_ui_kit.layouts.admin), a one-file bridge onto
+  base.html.twig through UiKit's bridge blocks. The TimeTrack pages (web_ui.layout_template null) and the TaskBoard
+  pages extend it; the demo navigation renders in nowo_ui_navigation.
+#}
+{% extends 'base.html.twig' %}
+{% use '@NowoUiKit/layout/_bridge.html.twig' %}
+
+{% set nowo_ui_document_title_suffix = 'TimeTrack demo' %}
+
+{% block title %}{{ block('nowo_ui_bridge_title') }}{% endblock %}
+
+{% block stylesheets %}
+    {{ parent() }}
+    {{ block('nowo_ui_bridge_assets') }}
+{% endblock %}
+
+{% block nowo_ui_navigation %}
+    {% set _route = app.request.attributes.get('_route') %}
+    <nav class="nav nav-pills mb-4" aria-label="Demo">
+        <a class="nav-link{{ _route starts with 'nowo_task_board' ? ' active' }}" href="{{ path('nowo_task_board_index') }}">{{ 'nav.board'|trans({}, 'NowoTaskBoardBundle') }}</a>
+        <a class="nav-link{{ _route == 'nowo_time_track_index' ? ' active' }}" href="{{ path('nowo_time_track_index') }}">{{ 'nav.timer'|trans({}, 'NowoTimeTrackBundle') }}</a>
+        <a class="nav-link{{ _route == 'nowo_time_track_reports' ? ' active' }}" href="{{ path('nowo_time_track_reports') }}">{{ 'nav.reports'|trans({}, 'NowoTimeTrackBundle') }}</a>
+    </nav>
+{% endblock %}
+
+{% block body %}{{ block('nowo_ui_bridge_body') }}{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    {{ include(nowo_ui_partial('scripts')) }}
+    {{ block('nowo_ui_bridge_end') }}
+{% endblock %}
