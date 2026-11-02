@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
@@ -93,7 +94,7 @@ final readonly class ClientApiStack
 
     private TeamAccessGuard $teamGuard;
 
-    public function apiController(?TaskAccessCheckerInterface $taskAccess = null, bool $allowMetadata = false): TimeTrackClientApiController
+    public function apiController(?TaskAccessCheckerInterface $taskAccess = null, bool $allowMetadata = false, ?ClientMinSupportedVersionProviderInterface $minSupportedVersions = null): TimeTrackClientApiController
     {
         return new TimeTrackClientApiController(
             $this->authService,
@@ -108,6 +109,7 @@ final readonly class ClientApiStack
             $this->auditor,
             $allowMetadata,
             $this->clock,
+            minSupportedVersionProvider: $minSupportedVersions,
         );
     }
 

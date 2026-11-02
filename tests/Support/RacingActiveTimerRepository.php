@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Doctrine\DBAL\Driver\Exception as DriverException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 
@@ -24,14 +26,31 @@ final class RacingActiveTimerRepository implements ConditionalActiveTimerReposit
     /** @var list<bool> */
     private array $script = [];
 
+    private ?DriverException $failNextSave = null;
+
     public function staleReads(bool ...$script): void
     {
         $this->snapshot = $this->current();
         $this->script   = array_values($script);
     }
 
+    /**
+     * The next save hits the unique user index, as when a concurrent start inserted its timer first.
+     */
+    public function failNextSave(DriverException $driverException): void
+    {
+        $this->failNextSave = $driverException;
+    }
+
     public function save(ActiveTimer $timer): void
     {
+        if ($this->failNextSave instanceof DriverException) {
+            $driverException    = $this->failNextSave;
+            $this->failNextSave = null;
+
+            throw new UniqueConstraintViolationException($driverException, null);
+        }
+
         $this->byId[$timer->getId()] = $timer;
     }
 

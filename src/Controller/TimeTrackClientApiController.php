@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -49,6 +50,7 @@ use function json_encode;
 use function max;
 use function mb_substr;
 use function min;
+use function preg_match;
 use function preg_replace;
 use function sprintf;
 use function trim;
@@ -174,7 +176,7 @@ final readonly class TimeTrackClientApiController
 
     /**
      * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
-     * `minSupportedVersion` for the token client type when the host sets one (1.9.1).
+     * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1).
      */
     public function me(Request $request): Response
     {
@@ -192,7 +194,7 @@ final readonly class TimeTrackClientApiController
             'workingHours' => $this->profileProvider->getWorkingHours($user),
         ];
         $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
-        if ($minSupportedVersion !== null) {
+        if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
             $body['minSupportedVersion'] = $minSupportedVersion;
         }
 
@@ -339,7 +341,8 @@ final readonly class TimeTrackClientApiController
 
     /**
      * POST timer/discard-idle `{from, to, action: keep|discard|split}`: the user's decision about an idle span the
-     * client detected locally (replaces the server-side idle flag of the heartbeat).
+     * client detected locally (replaces the server-side idle flag of the heartbeat). 409 timer_running when a
+     * concurrent start took the timer slot before a split could continue (1.9.1).
      */
     public function timerDiscardIdle(Request $request): Response
     {
@@ -358,6 +361,8 @@ final readonly class TimeTrackClientApiController
 
         try {
             $result = $this->timerService->resolveIdle($principal->user, $from, $to, $resolution);
+        } catch (ActiveTimerConflictException) {
+            return $this->timerRunning($request);
         } catch (InvalidArgumentException $e) {
             return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
         }

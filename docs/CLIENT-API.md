@@ -75,7 +75,7 @@ the user approved. Tokens issued before 1.9 carry all four. `entries:write` is n
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle) |
 | 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
 | 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
-| 409 | `timer_running` | `timer/start` while a timer runs |
+| 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 
 ## Endpoints

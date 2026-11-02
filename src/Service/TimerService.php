@@ -222,6 +222,7 @@ final readonly class TimerService
      * @param DateTimeImmutable $to Idle end (after `from`, not in the future)
      * @param IdleResolution $resolution The user's decision
      *
+     * @throws ActiveTimerConflictException When a concurrent start took the timer slot before the split continued
      * @throws InvalidArgumentException When the span is not inside the running timer
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer|null}|null Recorded entry and running timer, or null when no timer runs
@@ -251,7 +252,14 @@ final readonly class TimerService
         }
 
         $next = new ActiveTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to);
-        $this->activeTimerRepository->save($next);
+        try {
+            $this->activeTimerRepository->save($next);
+        } catch (UniqueConstraintViolationException $e) {
+            // A concurrent start won between the stop and the continuation (1.9.1): the entry stays, its timer runs.
+            $this->logger->warning('TimeTrack idle split rejected: concurrent start.', $this->context('timer_split', $timer->getClientType()));
+
+            throw ActiveTimerConflictException::concurrentStart($e);
+        }
         $this->eventDispatcher->dispatch(new TimerStartEvent($user, new TaskReference($timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot()), $timer->getClientType()), TimeTrackEvents::TIMER_START);
         $this->logger->info('TimeTrack idle span discarded, timer continued.', $this->context('timer_split', $timer->getClientType()));
 

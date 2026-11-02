@@ -48,8 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Concurrent `timer/stop` (or `timer/switch`, idle split) calls no longer record the same time entry twice (CL-05,
   Low, pre-existing in 1.x): the timer row is removed with a conditional delete and the entry is saved only by the call
-  whose delete affected one row, in one transaction (MySQL, PostgreSQL, SQLite). The losing call answers as if no
-  timer were running.
+  whose delete affected one row, in one transaction (MySQL, PostgreSQL, SQLite). A losing `timer/stop` answers
+  `404 no_active_timer`. A `timer/switch` that loses its stop to a concurrent `timer/stop` records no entry and then
+  starts the new task (`201`); one that loses to a concurrent switch gets `409 timer_running` from the start. Either
+  way the data stays consistent: one entry, at most one timer. Host stores that implement only
+  `ActiveTimerRepositoryInterface` keep the 1.x race (see UPGRADING).
+- An idle split (`timer/discard-idle` `split`) raced by a concurrent `timer/start` answers `409 timer_running` instead
+  of a `500` on the unique user index; the idle entry is recorded once and the other request's timer is kept.
+- `minSupportedVersion` values from a host provider that are not semver are omitted from `GET me`.
 
 ## [1.9.0] - 2026-11-02
 

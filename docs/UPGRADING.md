@@ -51,10 +51,16 @@ From **1.9.0**: no schema change, no BC break.
   `client_distribution.min_supported_version.extension|desktop|web` (semver) or point
   `client_distribution.min_supported_version.provider` at your `ClientMinSupportedVersionProviderInterface` service.
   `ClientDistributionProviderInterface` is unchanged.
-- A custom `ActiveTimerRepositoryInterface` store keeps working; implement `ConditionalActiveTimerRepositoryInterface`
-  to get race-free stops. The Doctrine store already does.
+- **Own (non-Doctrine) active timer store:** it keeps working, but it **keeps the 1.x stop race** (two concurrent
+  `timer/stop` / `timer/switch` calls can record the same entry twice) until it implements
+  `ConditionalActiveTimerRepositoryInterface::removeIfPresent()` (conditional delete + the callback in one
+  transaction). The bundled Doctrine store already does.
 - `TimerService::stop()` / `resolveIdle()` may now return `null` when a concurrent call stopped the timer first
-  (`timer/stop` then answers `404 no_active_timer`; a losing `timer/switch` answers `409` without stopping anything).
+  (`timer/stop` / `timer/discard-idle` then answer `404 no_active_timer`). A `timer/switch` whose stop lost to a
+  concurrent stop starts the new task (`201`) without recording a second entry.
+- `resolveIdle()` may throw `ActiveTimerConflictException` (API: `409 timer_running`) when a concurrent start took the
+  timer slot before a split continued.
+- `minSupportedVersion` values from a host provider must be semver; others are omitted from `GET me`.
 
 ## To 1.9.0
 
