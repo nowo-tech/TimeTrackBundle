@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.9.1] - 2026-11-02](#191---2026-11-02)
 - [[1.9.0] - 2026-11-02](#190---2026-11-02)
 - [[1.8.0] - 2026-11-02](#180---2026-11-02)
 - [[1.7.0] - 2026-10-30](#170---2026-10-30)
@@ -35,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.9.1] - 2026-11-02
+
+Clients: GET me returns minSupportedVersion for the token's client type (new ClientMinSupportedVersionProviderInterface, config client_distribution.min_supported_version.*). Fixed: concurrent stop / switch / idle split record one entry (CL-05); idle split raced by a start answers 409. See [UPGRADING](https://github.com/nowo-tech/TimeTrackBundle/blob/v1.9.1/docs/UPGRADING.md#to-191).
 
 ### Added
 
@@ -515,7 +520,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.6.0...v1.7.0
