@@ -151,8 +151,8 @@ user deletes the credential (immediate end of every session issued from it; audi
 `timer/switch`. Deny by default; return true only when the user may track the task now (Beacon:
 `project.tasks.track_time` on the task's project). Missing and foreign tasks both answer `403 task_forbidden`.
 
-**`ClientCredentialIssuerInterface::issueForDevice(UserInterface $user, string $clientName, array $scopes): string`** —
-called when the user approves a device: create a credential (e.g. an app password named `$clientName`) so the device
+**`ClientCredentialIssuerInterface::issueForDevice(UserInterface $user, ClientType $clientType, string $clientName, array $scopes): string`** —
+called when the user approves a device: create a credential (e.g. an app password named `$clientName`, typed by `$clientType`) so the device
 shows in the same list, and return its id.
 
 **`DeviceAuthorizationService`** (own verification page; set `device_flow.default_page: false` and

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Client;
 
+use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -16,7 +17,7 @@ final readonly class OpaqueClientCredentialIssuer implements ClientCredentialIss
     /**
      * Returns a new opaque credential id.
      */
-    public function issueForDevice(UserInterface $user, string $clientName, array $scopes): string
+    public function issueForDevice(UserInterface $user, ClientType $clientType, string $clientName, array $scopes): string
     {
         return 'device:' . Uuid::generate()->toString();
     }

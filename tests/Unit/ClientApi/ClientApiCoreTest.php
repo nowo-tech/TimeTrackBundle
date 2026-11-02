@@ -172,7 +172,7 @@ final class ClientApiCoreTest extends TestCase
     public function testDefaultsOfTheOptionalHostInterfaces(): void
     {
         $user = new TestUser('u-1', 'u@example.com');
-        self::assertStringStartsWith('device:', (new OpaqueClientCredentialIssuer())->issueForDevice($user, 'Laptop', []));
+        self::assertStringStartsWith('device:', (new OpaqueClientCredentialIssuer())->issueForDevice($user, ClientType::Desktop, 'Laptop', []));
         self::assertNull((new NullClientUserProfileProvider())->getDisplayName($user));
         self::assertNull((new NullClientUserProfileProvider())->getWorkingHours($user));
 

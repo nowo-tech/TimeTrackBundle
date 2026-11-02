@@ -143,7 +143,7 @@ final readonly class DeviceAuthorizationService
      */
     public function approve(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): string
     {
-        $credentialId = $this->credentialIssuer->issueForDevice($user, $authorization->getClientName(), $authorization->getScopes());
+        $credentialId = $this->credentialIssuer->issueForDevice($user, $authorization->getClientType(), $authorization->getClientName(), $authorization->getScopes());
         $authorization->approve($user, $credentialId);
         $this->repository->save($authorization);
         $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $authorization->getClientType(), $clientIp);

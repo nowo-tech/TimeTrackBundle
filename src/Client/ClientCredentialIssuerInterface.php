@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Client;
 
 use Nowo\TimeTrackBundle\Enum\ClientScope;
+use Nowo\TimeTrackBundle\Enum\ClientType;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -18,8 +19,9 @@ interface ClientCredentialIssuerInterface
      * Creates a credential for the device and returns its id (stored on the session tokens, max 191 characters).
      *
      * @param UserInterface $user User who approved the device
+     * @param ClientType $clientType Client type the device declared (e.g. desktop app or browser extension), for the host's list
      * @param string $clientName Name the device sent (already trimmed and length-capped by the bundle)
      * @param list<ClientScope> $scopes Scopes the user approved
      */
-    public function issueForDevice(UserInterface $user, string $clientName, array $scopes): string;
+    public function issueForDevice(UserInterface $user, ClientType $clientType, string $clientName, array $scopes): string;
 }
