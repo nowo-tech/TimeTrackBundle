@@ -18,6 +18,7 @@ final class ClientApiRateLimitTest extends FunctionalTestCase
 
     public function testPerTokenThenPerIpLimits(): void
     {
+        $this->avoidWindowEdge();
         $token = $this->login();
 
         $this->api('GET', '/api/time-track/timer', null, $token);
@@ -39,6 +40,7 @@ final class ClientApiRateLimitTest extends FunctionalTestCase
 
     public function testDeviceEndpointsHaveTheirOwnIpBudgetAndTheHostVerificationUri(): void
     {
+        $this->avoidWindowEdge();
         $grant = $this->api('POST', '/api/time-track/device/code', ['clientName' => 'Laptop']);
         self::assertResponseIsSuccessful();
         self::assertSame('https://host.example/account/devices', $grant['verificationUri'] ?? null);
@@ -48,6 +50,18 @@ final class ClientApiRateLimitTest extends FunctionalTestCase
 
         $this->client->request('GET', '/tools/time-track/device');
         self::assertResponseStatusCodeSame(404, 'default page disabled');
+    }
+
+    /**
+     * The limiters count in fixed 60 s windows of the system clock: a test that crosses a window edge between two
+     * requests starts a fresh counter and misses the 429. Wait out the last 10 s of the current window.
+     */
+    private function avoidWindowEdge(): void
+    {
+        $second = time() % 60;
+        if ($second >= 50) {
+            sleep(61 - $second);
+        }
     }
 
     private function assertStateless(): void
