@@ -15,10 +15,12 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use RuntimeException;
 
 use function sprintf;
 
@@ -66,6 +68,53 @@ final class DoctrineRepositoriesTest extends FunctionalTestCase
 
         $repository->remove($found);
         self::assertNull($repository->findByUserId($userId));
+    }
+
+    public function testConditionalRemoveRunsTheCallbackOnlyForTheCallThatDeletesTheTimer(): void
+    {
+        $repository = self::getContainer()->get(ActiveTimerRepositoryInterface::class);
+        self::assertInstanceOf(ConditionalActiveTimerRepositoryInterface::class, $repository);
+        $userId = (string) $this->user->getId();
+
+        $timer = new ActiveTimer($this->user, 'task-1', 'Task', 'board-1', ClientType::Web);
+        $repository->save($timer);
+        $stale = $repository->findByUserId($userId);
+        self::assertInstanceOf(ActiveTimer::class, $stale);
+
+        $calls = 0;
+        self::assertTrue($repository->removeIfPresent($timer, static function () use (&$calls): void {
+            ++$calls;
+        }));
+        self::assertNull($repository->findByUserId($userId));
+        self::assertFalse($this->entityManager()->contains($timer));
+
+        // The racing request read the same row before it was deleted: its conditional delete affects no row.
+        self::assertFalse($repository->removeIfPresent($stale, static function () use (&$calls): void {
+            ++$calls;
+        }));
+        self::assertSame(1, $calls);
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+    }
+
+    public function testConditionalRemoveRollsBackTheDeleteWhenTheCallbackFails(): void
+    {
+        /** @var ConditionalActiveTimerRepositoryInterface $repository */
+        $repository = self::getContainer()->get(ActiveTimerRepositoryInterface::class);
+        $timer      = new ActiveTimer($this->user, 'task-1', 'Task', 'board-1', ClientType::Web);
+        $repository->save($timer);
+
+        try {
+            $repository->removeIfPresent($timer, static function (): never {
+                throw new RuntimeException('entry store down');
+            });
+            self::fail('The callback exception must propagate.');
+        } catch (RuntimeException $exception) {
+            self::assertSame('entry store down', $exception->getMessage());
+        }
+
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+        $this->entityManager()->clear();
+        self::assertInstanceOf(ActiveTimer::class, $repository->findByUserId((string) $this->user->getId()));
     }
 
     public function testClientTokenRepositoryIgnoresAndPurgesExpiredTokens(): void

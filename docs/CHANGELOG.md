@@ -36,6 +36,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/time-track/me` returns `minSupportedVersion` for the calling token's client type when the host sets one
+  (key absent otherwise). New `ClientMinSupportedVersionProviderInterface::getMinSupportedVersion(ClientType)`;
+  default `ConfigClientMinSupportedVersionProvider` reads `client_distribution.min_supported_version.extension|desktop|web`
+  (semver-validated) or a host service via `client_distribution.min_supported_version.provider`.
+- `ConditionalActiveTimerRepositoryInterface::removeIfPresent()` (implemented by the Doctrine store).
+
+### Fixed
+
+- Concurrent `timer/stop` (or `timer/switch`, idle split) calls no longer record the same time entry twice (CL-05,
+  Low, pre-existing in 1.x): the timer row is removed with a conditional delete and the entry is saved only by the call
+  whose delete affected one row, in one transaction (MySQL, PostgreSQL, SQLite). The losing call answers as if no
+  timer were running.
+
 ## [1.9.0] - 2026-11-02
 
 Client API for the browser extension and desktop app: scoped tokens linked to host credentials, device flow, per-request credential and task checks, stateless Bearer endpoints with exact-origin CORS, rate limits per token / IP (/64) / username, timer switch / discard-idle / export, audit events. See [UPGRADING](https://github.com/nowo-tech/TimeTrackBundle/blob/v1.9.0/docs/UPGRADING.md#to-190).

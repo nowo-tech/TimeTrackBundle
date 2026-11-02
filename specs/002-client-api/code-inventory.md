@@ -1,7 +1,7 @@
 # Code inventory — 002-client-api (100% of `src/`)
 
 **Spec**: [`spec.md`](spec.md) · **Baseline**: [`../001-baseline/code-inventory.md`](../001-baseline/code-inventory.md)  
-**Last audited**: 2026-11-02 (TimeTrackBundle 1.9.0, client API contract v0.2)
+**Last audited**: 2026-11-02 (TimeTrackBundle 1.9.1 unreleased, client API contract v0.2)
 
 Every file under `src/` is listed: `new` / `changed` files map to this spec; `unchanged` files keep their baseline
 requirement ids.
@@ -24,22 +24,24 @@ requirement ids.
 | `Client/ClientDistribution.php` | new | Download links DTO (safe URLs) | FR-API-012 |
 | `Client/ClientDistributionProviderInterface.php` | new | Distribution provider (host) | FR-API-012 |
 | `Client/ClientLoginRateLimiter.php` | changed | IPv6 /64 keys, per-username bucket | FR-API-009 |
+| `Client/ClientMinSupportedVersionProviderInterface.php` | new | me.minSupportedVersion provider (host) — 1.9.1 | FR-API-015 |
 | `Client/ClientResponseFactory.php` | changed | JSON / error responses, exact-origin CORS | FR-API-008 |
 | `Client/ClientTokenRevoker.php` | new | Revoke by credential | FR-API-002 |
 | `Client/ClientUserProfileProviderInterface.php` | new | me.displayName / workingHours (host) | FR-API-004 |
 | `Client/ConfigClientApiSettingsProvider.php` | new | Settings from config | FR-API-011 |
 | `Client/ConfigClientDistributionProvider.php` | new | Distribution from config | FR-API-012 |
+| `Client/ConfigClientMinSupportedVersionProvider.php` | new | Min supported versions from config — 1.9.1 | FR-API-015 |
 | `Client/DefaultClientAuthenticator.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Client/NullClientUserProfileProvider.php` | new | Default profile provider | FR-API-004 |
 | `Client/OpaqueClientCredentialIssuer.php` | new | Default device credential issuer | FR-API-007 |
 | `Command/PurgeExpiredClientTokensCommand.php` | changed | Purge tokens + device codes | FR-API-007 |
-| `Controller/TimeTrackClientApiController.php` | changed | Client API endpoints | FR-API-001..006, FR-API-014 |
+| `Controller/TimeTrackClientApiController.php` | changed | Client API endpoints (1.9.1: me.minSupportedVersion) | FR-API-001..006, FR-API-014, FR-API-015 |
 | `Controller/TimeTrackClientDeviceController.php` | new | device/code, device/token | FR-API-007 |
 | `Controller/TimeTrackDeviceVerificationController.php` | new | Default verification page | FR-API-007 |
 | `Controller/TimeTrackManageController.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `DependencyInjection/Compiler/TwigPathsPass.php` | unchanged | Unchanged (see 001-baseline) | — |
-| `DependencyInjection/Configuration.php` | changed | client_api.*, client_distribution.*, routes | FR-API-011, FR-API-012 |
-| `DependencyInjection/TimeTrackExtension.php` | changed | Client API wiring | FR-API-011 |
+| `DependencyInjection/Configuration.php` | changed | client_api.*, client_distribution.* (1.9.1: min_supported_version), routes | FR-API-011, FR-API-012, FR-API-015 |
+| `DependencyInjection/TimeTrackExtension.php` | changed | Client API wiring | FR-API-011, FR-API-015 |
 | `Doctrine/ManagedEntityRefresher.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Doctrine/RecoveringFlusher.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Doctrine/TimeTrackMetadataListener.php` | changed | Device codes table prefix | FR-API-007 |
@@ -74,9 +76,10 @@ requirement ids.
 | `Integration/TeamContextProviderInterface.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Repository/ActiveTimerRepositoryInterface.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Repository/ClientTokenRepositoryInterface.php` | unchanged | Unchanged (see 001-baseline) | — |
+| `Repository/ConditionalActiveTimerRepositoryInterface.php` | new | Conditional timer removal (atomic stop) — 1.9.1 | FR-API-016 |
 | `Repository/CredentialClientTokenRepositoryInterface.php` | new | Bulk revoke by credential | FR-API-002 |
 | `Repository/DeviceAuthorizationRepositoryInterface.php` | new | Device request store | FR-API-007 |
-| `Repository/DoctrineOrmActiveTimerRepository.php` | unchanged | Unchanged (see 001-baseline) | — |
+| `Repository/DoctrineOrmActiveTimerRepository.php` | changed | removeIfPresent: conditional DELETE in a transaction — 1.9.1 | FR-API-016 |
 | `Repository/DoctrineOrmClientTokenRepository.php` | changed | removeByCredentialId | FR-API-002 |
 | `Repository/DoctrineOrmDeviceAuthorizationRepository.php` | new | Doctrine device store (atomic consume) | FR-API-007 |
 | `Repository/DoctrineOrmTimeEntryRepository.php` | unchanged | Unchanged (see 001-baseline) | — |
@@ -106,7 +109,7 @@ requirement ids.
 | `Service/ClientAuthService.php` | changed | authenticate / issueToken / resolveToken | FR-API-001 |
 | `Service/DeviceAuthorizationService.php` | new | Device flow logic | FR-API-007 |
 | `Service/TeamAccessGuard.php` | unchanged | Unchanged (see 001-baseline) | — |
-| `Service/TimerService.php` | changed | switchTo, resolveIdle, listOwnEntries, keepAlive, stop note | FR-API-005, FR-API-006 |
+| `Service/TimerService.php` | changed | switchTo, resolveIdle, listOwnEntries, keepAlive, stop note, atomic stop (1.9.1) | FR-API-005, FR-API-006, FR-API-016 |
 | `Support/IpPrefix.php` | new | IP /24 /64 truncation, rate-limit keys | FR-API-009, FR-API-010 |
 | `Support/QueryPeriodResolver.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Support/TimeEntryCsv.php` | new | CSV export (formula-safe) | FR-API-006 |

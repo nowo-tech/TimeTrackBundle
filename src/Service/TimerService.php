@@ -22,6 +22,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -145,7 +146,7 @@ final readonly class TimerService
      * @param DateTimeImmutable|null $endedAt End of the entry (default: now; used by the idle resolution)
      * @param string|null $note Note of the user stored in the entry metadata (`note`)
      *
-     * @return TimeEntry|null The recorded entry, or null when no timer was running
+     * @return TimeEntry|null The recorded entry, or null when no timer was running (or a concurrent stop recorded it)
      */
     public function stop(UserInterface $user, ?DateTimeImmutable $endedAt = null, ?string $note = null): ?TimeEntry
     {
@@ -170,9 +171,17 @@ final readonly class TimerService
             $endedAt,
         );
 
-        $this->timeEntryRepository->save($entry);
-        // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-        $this->activeTimerRepository->remove($timer);
+        if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
+            // 1.9.1 (CL-05): only the call that deletes the timer row records the entry, so concurrent stops record it once.
+            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
+            if (!$this->activeTimerRepository->removeIfPresent($timer, fn () => $this->timeEntryRepository->save($entry))) {
+                return null;
+            }
+        } else {
+            $this->timeEntryRepository->save($entry);
+            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
+            $this->activeTimerRepository->remove($timer);
+        }
         $this->eventDispatcher->dispatch(new TimerStopEvent($user, $entry), TimeTrackEvents::TIMER_STOP);
         $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
 
@@ -233,6 +242,10 @@ final readonly class TimerService
         }
 
         $entry = $this->stop($user, $from);
+        if (!$entry instanceof TimeEntry) {
+            return null; // A concurrent call stopped the timer first (1.9.1, CL-05).
+        }
+
         if ($resolution === IdleResolution::Discard) {
             return ['entry' => $entry, 'timer' => null];
         }

@@ -45,6 +45,17 @@
 
 ## Unreleased
 
+From **1.9.0**: no schema change, no BC break.
+
+- `GET me` may now carry `minSupportedVersion`. To send it, set
+  `client_distribution.min_supported_version.extension|desktop|web` (semver) or point
+  `client_distribution.min_supported_version.provider` at your `ClientMinSupportedVersionProviderInterface` service.
+  `ClientDistributionProviderInterface` is unchanged.
+- A custom `ActiveTimerRepositoryInterface` store keeps working; implement `ConditionalActiveTimerRepositoryInterface`
+  to get race-free stops. The Doctrine store already does.
+- `TimerService::stop()` / `resolveIdle()` may now return `null` when a concurrent call stopped the timer first
+  (`timer/stop` then answers `404 no_active_timer`; a losing `timer/switch` answers `409` without stopping anything).
+
 ## To 1.9.0
 
 From **1.8.0**:
