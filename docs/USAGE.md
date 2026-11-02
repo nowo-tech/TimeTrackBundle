@@ -166,6 +166,11 @@ $request = $devices->findPendingById($postedId);                 // after the CS
 $devices->approve($request, $user, $httpRequest->getClientIp()); // or ->deny(...)
 ```
 
+Also show `->getCreatedAt()` and `->getIpPrefix()` (requesting /24 or /64) so the user can spot a request they did not
+start, and treat `getClientName()` / `getClientType()` as the device's own claims. Send these headers on every answer of
+your page (the default page does): `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
+`Cache-Control: no-store` — a framed page pre-filled from `?code=` is a two-click clickjacking target.
+
 **`ClientApiSettingsProviderInterface::getSettings(): ClientApiSettings`** — origins and rate limits from your
 instance settings (read per request). **`ClientDistributionProviderInterface::getDistribution(): ClientDistribution`**
 — download links. **`ClientUserProfileProviderInterface`** — `getDisplayName()` / `getWorkingHours()` of `GET me`.

@@ -36,7 +36,7 @@ makes the next request `401 invalid_token`. Tests: `ClientApiV19Test::testRevoke
 **Acceptance**: `device/code` → user code `XXXX-XXXX` (no vowels) + verification URI; polling answers
 `authorization_pending` / `slow_down`; the signed-in user enters the code, reviews client name / type / scopes, approves
 (CSRF bound to action + request) → the host issues a credential → one `device/token` exchange returns the token, the
-next answers `expired_token`; denial answers `access_denied`. Tests: `DeviceFlowTest`, `DeviceAuthorizationServiceTest`.
+next answers `expired_token`; denial answers `access_denied`. Tests: `DeviceFlowTest`, `DeviceAuthorizationServiceTest`. Security audit CL (fail-closed scopes, IPv6 /64 limits, device request caps, per-username login throttle, anti-framing, request time + network on the page): `SecurityAuditClTest` (unit + functional).
 
 ### User Story 3 — Timer use cases of the clients (P1)
 

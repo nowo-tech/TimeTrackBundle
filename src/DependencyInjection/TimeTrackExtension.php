@@ -177,7 +177,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$maxAttempts', (int) $loginRateLimit['max_attempts'])
             ->setArgument('$intervalSeconds', (int) $loginRateLimit['interval_seconds'])
             ->setArgument('$enabled', (bool) $loginRateLimit['enabled'])
-            ->setArgument('$maxAttemptsPerIp', $loginRateLimit['max_attempts_per_ip'] !== null ? (int) $loginRateLimit['max_attempts_per_ip'] : null));
+            ->setArgument('$maxAttemptsPerIp', $loginRateLimit['max_attempts_per_ip'] !== null ? (int) $loginRateLimit['max_attempts_per_ip'] : null)
+            ->setArgument('$maxAttemptsPerUsername', $loginRateLimit['max_attempts_per_username'] !== null ? (int) $loginRateLimit['max_attempts_per_username'] : null));
 
         $authenticatorId = $clients['authenticator'] ?? null;
         if (!is_string($authenticatorId) || $authenticatorId === '') {
@@ -232,7 +233,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int}} $api */
+        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>} $distribution */
         $distribution = $config['client_distribution'];
@@ -295,6 +296,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$intervalSeconds'     => $device['interval'],
                 '$lookupLimit'         => $device['lookup_limit'],
                 '$lookupWindowSeconds' => $device['lookup_window_seconds'],
+                '$maxPendingPerPrefix' => $device['max_pending_per_prefix'],
+                '$maxPending'          => $device['max_pending'],
                 '$clock'               => $clockRef,
             ]));
 

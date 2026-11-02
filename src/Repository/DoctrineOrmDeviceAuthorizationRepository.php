@@ -92,6 +92,18 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
             ->execute();
     }
 
+    /** Counts the requests that have not expired yet in one DQL statement. */
+    public function countUnexpired(): int
+    {
+        return (int) $this->entityManager->createQueryBuilder()
+            ->select('COUNT(d.id)')
+            ->from(DeviceAuthorization::class, 'd')
+            ->where('d.expiresAt > :now')
+            ->setParameter('now', $this->clock->now())
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     /**
      * @param array<string, string> $criteria
      */

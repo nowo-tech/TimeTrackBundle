@@ -48,6 +48,7 @@ class DeviceAuthorization
      * Creates a pending request.
      *
      * @param list<ClientScope> $scopes Requested scopes
+     * @param string|null $ipPrefix IPv4 /24 or IPv6 /64 of the requesting device (shown on the approval page)
      */
     public function __construct(
         #[ORM\Column(name: 'device_code_hash', type: 'string', length: 64, unique: true)]
@@ -63,6 +64,8 @@ class DeviceAuthorization
         private DateTimeImmutable $expiresAt,
         #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
         private DateTimeImmutable $createdAt,
+        #[ORM\Column(name: 'ip_prefix', type: 'string', length: 64, nullable: true)]
+        private ?string $ipPrefix = null,
     ) {
         $this->id     = Uuid::generate()->toString();
         $this->scopes = ClientScope::values($scopes);
@@ -90,6 +93,12 @@ class DeviceAuthorization
     public function getClientType(): ClientType
     {
         return $this->clientType;
+    }
+
+    /** IPv4 /24 or IPv6 /64 of the device that started the request (null when unknown). */
+    public function getIpPrefix(): ?string
+    {
+        return $this->ipPrefix;
     }
 
     /** Name the client sent (shown to the user before approval). */

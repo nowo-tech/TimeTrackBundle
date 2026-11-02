@@ -51,6 +51,8 @@ device:
   client_name: "Gerätename"
   client_type: "Client"
   scopes: "Berechtigungen"
+  requested_at: "Angefordert am"
+  requested_from: "Angefordert von (Netzwerk)"
   expires: "Läuft ab"
   approved: "Das Gerät ist verbunden. Du kannst jetzt zu ihm zurückkehren."
   approved_status: "Genehmigt"

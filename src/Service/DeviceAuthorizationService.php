@@ -17,7 +17,9 @@ use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
+use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
+use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
@@ -58,6 +60,9 @@ final readonly class DeviceAuthorizationService
 
     public const CLIENT_NAME_MAX_LENGTH = 100;
 
+    /** Retry-After (seconds) when the global cap of unexpired requests is reached. */
+    public const CAPACITY_RETRY_AFTER = 60;
+
     private ClockInterface $clock;
 
     /**
@@ -65,6 +70,8 @@ final readonly class DeviceAuthorizationService
      * @param int $intervalSeconds Minimum polling interval (`interval`; faster polls get `slow_down`)
      * @param int $lookupLimit User code lookups per user per window
      * @param int $lookupWindowSeconds Window of the lookup limit
+     * @param int $maxPendingPerPrefix Requests created per client IPv4 /24 or IPv6 /64 within the code TTL (0 = off)
+     * @param int $maxPending Unexpired requests in total (0 = off)
      */
     public function __construct(
         private DeviceAuthorizationRepositoryInterface $repository,
@@ -77,22 +84,31 @@ final readonly class DeviceAuthorizationService
         private int $lookupLimit = 10,
         private int $lookupWindowSeconds = 900,
         ?ClockInterface $clock = null,
+        private int $maxPendingPerPrefix = 20,
+        private int $maxPending = 10000,
     ) {
         $this->clock = $clock ?? new NativeClock();
     }
 
     /**
-     * Creates a pending request.
+     * Creates a pending request. Bounded per client IP prefix and in total, so an unauthenticated client cannot fill
+     * the table by rotating addresses. With the global cap on, expired rows are purged before counting.
      *
      * @param string $clientName Name the client sent (control characters removed, trimmed, capped at 100 characters)
-     * @param list<ClientScope> $scopes Requested scopes (empty = every scope)
+     * @param list<ClientScope>|null $scopes Requested scopes (null = every scope; parse device input with {@see ClientScope::fromRequested()})
+     * @param string|null $clientIp Device IP (its /24 or /64 is counted and shown on the approval page)
+     *
+     * @throws DeviceFlowCapacityExceededException When a cap is reached
      */
-    public function start(ClientType $clientType, string $clientName, array $scopes = []): DeviceCodeGrant
+    public function start(ClientType $clientType, string $clientName, ?array $scopes = null, ?string $clientIp = null): DeviceCodeGrant
     {
+        $ttl      = max(60, $this->codeTtlSeconds);
+        $ipPrefix = IpPrefix::of($clientIp);
+        $this->checkCapacity($ipPrefix, $ttl);
+
         $deviceCode = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
         $userCode   = $this->newUserCode();
         $now        = $this->clock->now();
-        $ttl        = max(60, $this->codeTtlSeconds);
 
         $this->repository->save(new DeviceAuthorization(
             self::hash($deviceCode),
@@ -103,6 +119,7 @@ final readonly class DeviceAuthorizationService
             // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
             $now->add(new DateInterval('PT' . $ttl . 'S')),
             $now,
+            $ipPrefix,
         ));
 
         return new DeviceCodeGrant($deviceCode, self::formatUserCode($userCode), $ttl, max(1, $this->intervalSeconds));
@@ -225,6 +242,24 @@ final readonly class DeviceAuthorizationService
         $clean = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $clientName));
 
         return $clean === '' ? $clientType->value : mb_substr($clean, 0, self::CLIENT_NAME_MAX_LENGTH);
+    }
+
+    private function checkCapacity(?string $ipPrefix, int $ttl): void
+    {
+        $retry = $this->rateLimiter->hit('device_prefix', $ipPrefix ?? 'none', $this->maxPendingPerPrefix, $ttl);
+        if ($retry > 0) {
+            throw new DeviceFlowCapacityExceededException($retry);
+        }
+
+        if ($this->maxPending <= 0) {
+            return;
+        }
+
+        // Expired rows are useless (polling one answers expired_token like an unknown code): drop them first.
+        $this->repository->purgeExpired();
+        if ($this->repository->countUnexpired() >= $this->maxPending) {
+            throw new DeviceFlowCapacityExceededException(self::CAPACITY_RETRY_AFTER);
+        }
     }
 
     private function newUserCode(): string

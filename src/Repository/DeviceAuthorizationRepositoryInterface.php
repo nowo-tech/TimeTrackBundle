@@ -45,4 +45,9 @@ interface DeviceAuthorizationRepositoryInterface
      * Deletes the expired requests and returns how many were deleted.
      */
     public function purgeExpired(): int;
+
+    /**
+     * Number of requests that have not expired yet (any state): the global cap of `device/code`.
+     */
+    public function countUnexpired(): int;
 }

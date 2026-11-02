@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Controller;
 
+use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -57,9 +59,25 @@ final readonly class TimeTrackClientDeviceController
             return $this->responseFactory->error('invalid_request', 'clientType must be desktop or extension.', Response::HTTP_BAD_REQUEST, $request);
         }
 
-        $scopes = is_array($payload['scopes'] ?? null) ? ClientScope::normalize($payload['scopes']) : [];
-        $grant  = $this->deviceService->start($clientType, is_string($payload['clientName'] ?? null) ? $payload['clientName'] : '', $scopes);
-        $uri    = $this->verificationUri();
+        $scopes = $payload['scopes'] ?? null;
+        try {
+            if ($scopes !== null && !is_array($scopes)) {
+                throw new InvalidArgumentException('scopes must be a list.');
+            }
+            $scopes = ClientScope::fromRequested($scopes);
+        } catch (InvalidArgumentException) {
+            return $this->responseFactory->error('invalid_scope', 'scopes must be a non-empty list of known scopes (or omitted for every scope).', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        try {
+            $grant = $this->deviceService->start($clientType, is_string($payload['clientName'] ?? null) ? $payload['clientName'] : '', $scopes, $request->getClientIp());
+        } catch (DeviceFlowCapacityExceededException $exception) {
+            return $this->responseFactory->error('rate_limited', 'Too many pending device requests. Try again later.', Response::HTTP_TOO_MANY_REQUESTS, $request, [
+                'Retry-After' => (string) $exception->retryAfter,
+            ]);
+        }
+
+        $uri = $this->verificationUri();
 
         return $this->responseFactory->json($grant->toArray() + [
             'verificationUri'         => $uri,

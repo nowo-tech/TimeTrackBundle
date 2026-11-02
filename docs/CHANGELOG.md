@@ -81,6 +81,20 @@ Client API 1.9 (contract v0.2) for the extension and the desktop app. Schema cha
 
 - Free client `metadata` on `timer/start` rejected by default (`client_api.allow_metadata`), no server-side idle signal.
 - Export CSV neutralises spreadsheet formulas.
+- Security audit (Appendix CL) fixes before the release:
+  - Scopes fail closed: only an absent list grants every scope. `device/code` answers `400 invalid_scope` and
+    `ClientAuthResult::success()` throws `InvalidArgumentException` for an empty list or an unknown scope
+    (`ClientScope::fromRequested()`); stored lists are never widened. Tokens without stored scopes (before 1.9) keep
+    every scope.
+  - Every per-IP limit (API, device flow, client login) keys an IPv6 client by its /64 (`IpPrefix::rateLimitKey()`).
+  - `device/code` capped per IPv4 /24 or IPv6 /64 (`client_api.device_flow.max_pending_per_prefix`, default 20) and in
+    total (`client_api.device_flow.max_pending`, default 10 000) → `429`; `DeviceFlowCapacityExceededException`,
+    `DeviceAuthorizationRepositoryInterface::countUnexpired()`.
+  - Client login throttled per username across addresses (`clients.login_rate_limit.max_attempts_per_username`,
+    default 5 × `max_attempts`).
+  - The default verification page sends `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'` and
+    `Cache-Control: no-store`, and shows the request time and the requesting network
+    (`DeviceAuthorization::getIpPrefix()`, column `ip_prefix`).
 
 ## [1.8.0] - 2026-11-02
 

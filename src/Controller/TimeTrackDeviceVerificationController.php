@@ -48,9 +48,20 @@ final class TimeTrackDeviceVerificationController extends AbstractController
     }
 
     /**
-     * GET: code form (prefilled from `?code=`); POST: code lookup, or approve / deny of a request.
+     * GET: code form (prefilled from `?code=`); POST: code lookup, or approve / deny of a request. Every answer forbids
+     * framing (`X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`: a framed page pre-filled with an attacker's code
+     * would be a two-click clickjacking target) and caching.
      */
     public function verify(Request $request): Response
+    {
+        $response = $this->handle($request);
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->add(['X-Frame-Options' => 'DENY', 'Content-Security-Policy' => "frame-ancestors 'none'", 'Cache-Control' => 'no-store, private']);
+
+        return $response;
+    }
+
+    private function handle(Request $request): Response
     {
         $user = $this->getUser();
         if (!$user instanceof UserInterface || (!$this->allowUnauthenticated && !$this->accessChecker->canAccess($user))) {

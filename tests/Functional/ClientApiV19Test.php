@@ -187,7 +187,7 @@ final class ClientApiV19Test extends FunctionalTestCase
         $this->api('GET', '/api/time-track/export?format=xml', null, $token);
         self::assertResponseStatusCodeSame(400);
 
-        $other = $this->issue([], 'other@example.com');
+        $other = $this->issue(null, 'other@example.com');
         $none  = $this->api('GET', '/api/time-track/export', null, $other);
         self::assertSame([], $none['entries'] ?? null, 'own data only');
     }
@@ -225,9 +225,9 @@ final class ClientApiV19Test extends FunctionalTestCase
 
     public function testRevokeByCredentialEndsEverySessionOfTheCredential(): void
     {
-        $first  = $this->issue([], 'person@example.com', 'app-password-7');
-        $second = $this->issue([], 'person@example.com', 'app-password-7');
-        $other  = $this->issue([], 'person@example.com', 'app-password-8');
+        $first  = $this->issue(null, 'person@example.com', 'app-password-7');
+        $second = $this->issue(null, 'person@example.com', 'app-password-7');
+        $other  = $this->issue(null, 'person@example.com', 'app-password-8');
 
         /** @var ClientTokenRevoker $revoker */
         $revoker = self::getContainer()->get(ClientTokenRevoker::class);
@@ -242,10 +242,10 @@ final class ClientApiV19Test extends FunctionalTestCase
     }
 
     /**
-     * @param list<ClientScope> $scopes
+     * @param list<ClientScope>|null $scopes
      * @param non-empty-string $email
      */
-    private function issue(array $scopes, string $email = 'person@example.com', ?string $credentialId = null): string
+    private function issue(?array $scopes, string $email = 'person@example.com', ?string $credentialId = null): string
     {
         $user = $email === 'person@example.com' ? $this->user : $this->createUser($email);
 

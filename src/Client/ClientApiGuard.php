@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Client;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -39,11 +40,12 @@ final readonly class ClientApiGuard
 
     /**
      * Per-IP rate limit of an unauthenticated route (`device` = the stricter device-flow bucket); null when allowed.
+     * IPv6 clients are keyed by their /64 ({@see IpPrefix::rateLimitKey()}).
      */
     public function limitIp(Request $request, bool $device = false): ?Response
     {
         $settings = $this->settingsProvider->getSettings();
-        $ip       = (string) $request->getClientIp();
+        $ip       = IpPrefix::rateLimitKey($request->getClientIp());
         $retry    = $device
             ? $this->rateLimiter->hit('device_ip', $ip, $settings->deviceIpLimit, $settings->windowSeconds)
             : $this->rateLimiter->hit('ip', $ip, $settings->perIpLimit, $settings->windowSeconds);

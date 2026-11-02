@@ -167,11 +167,11 @@ final readonly class ClientAuthService
      * @param UserInterface $user Token owner
      * @param ClientType $clientType Client holding the token
      * @param string|null $credentialId Host credential the token comes from
-     * @param list<ClientScope> $scopes Granted scopes (empty = every scope)
+     * @param list<ClientScope>|null $scopes Granted scopes (null = every scope; an empty list grants none)
      *
      * @return array{token: string, expiresAt: string, scopes: list<string>}
      */
-    public function issueToken(UserInterface $user, ClientType $clientType, ?string $credentialId = null, array $scopes = []): array
+    public function issueToken(UserInterface $user, ClientType $clientType, ?string $credentialId = null, ?array $scopes = null): array
     {
         $scopes     = ClientScope::normalize($scopes);
         $plainToken = $this->generatePlainToken();

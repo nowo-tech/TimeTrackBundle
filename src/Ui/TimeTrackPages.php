@@ -177,6 +177,8 @@ final readonly class TimeTrackPages
                 new DetailItem(self::label('device.client_name'), $authorization->getClientName()),
                 new DetailItem(self::label('device.client_type'), self::label('reports.source_' . $authorization->getClientType()->value)),
                 new DetailItem(self::label('device.scopes'), implode(', ', ClientScope::values($authorization->getScopes()))),
+                new DetailItem(self::label('device.requested_at'), $authorization->getCreatedAt()->format('Y-m-d H:i')),
+                new DetailItem(self::label('device.requested_from'), $authorization->getIpPrefix() ?? '—'),
                 new DetailItem(self::label('device.expires'), $authorization->getExpiresAt()->format('Y-m-d H:i')),
             ])],
             bundle: self::BUNDLE,

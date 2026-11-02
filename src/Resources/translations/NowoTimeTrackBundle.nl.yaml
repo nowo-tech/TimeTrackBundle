@@ -51,6 +51,8 @@ device:
   client_name: "Apparaatnaam"
   client_type: "Client"
   scopes: "Rechten"
+  requested_at: "Aangevraagd op"
+  requested_from: "Aangevraagd vanaf (netwerk)"
   expires: "Verloopt"
   approved: "Het apparaat is gekoppeld. Je kunt er nu naar terugkeren."
   approved_status: "Goedgekeurd"

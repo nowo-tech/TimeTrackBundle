@@ -161,6 +161,7 @@ prepend its default. The stock profile adds no classes.
 | `clients.login_rate_limit.cache_pool` | `cache.app` | PSR-6 pool shared by all workers (no atomic increment: put a proxy/firewall limit in front for hard guarantees) |
 | `clients.login_rate_limit.max_attempts` | `10` | Failed logins per IP + username within the interval |
 | `clients.login_rate_limit.max_attempts_per_ip` | `null` | Failed logins per IP (any username) within the interval; `null` = 5 × `max_attempts`. Not cleared by a successful login |
+| `clients.login_rate_limit.max_attempts_per_username` | `null` | Failed logins per username (any IP) within the interval; `null` = 5 × `max_attempts`. Cleared by a successful login (1.9). IPv6 clients count per /64 in every bucket |
 | `clients.login_rate_limit.interval_seconds` | `900` | Window (min. 60) |
 
 ## Client API 1.9
@@ -180,7 +181,7 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.rate_limit.cache_pool` | `cache.app` | PSR-6 pool of the API counters, shared by all workers (Redis in production) |
 | `client_api.rate_limit.per_token` | `60` | Requests per token per window (`0` = off) |
 | `client_api.rate_limit.per_ip` | `300` | Requests per client IP per window, every API route (`0` = off) |
-| `client_api.rate_limit.device_per_ip` | `30` | Requests per client IP per window on `device/code`, `device/token` |
+| `client_api.rate_limit.device_per_ip` | `30` | Requests per client IP per window on `device/code`, `device/token` (IPv6 per /64, like every per-IP limit) |
 | `client_api.rate_limit.window_seconds` | `60` | Window |
 | `client_api.audit.denial_interval_seconds` | `60` | At most one `request_denied` audit event per credential (or IP /24 /64) and reason per interval |
 | `client_api.device_flow.enabled` | `false` | Route `device/code`, `device/token` (opt-in) |
@@ -189,6 +190,8 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.device_flow.code_ttl` | `600` | Lifetime of a device request (60–3600 s) |
 | `client_api.device_flow.interval` | `5` | Polling interval; faster polls get `slow_down` |
 | `client_api.device_flow.lookup_limit` / `lookup_window_seconds` | `10` / `900` | User-code lookups per signed-in user per window |
+| `client_api.device_flow.max_pending_per_prefix` | `20` | Device requests created per client IPv4 /24 or IPv6 /64 within `code_ttl`; above it `device/code` answers `429` (0 = off) |
+| `client_api.device_flow.max_pending` | `10000` | Pending, not expired device requests in total; expired rows are purged first, then `device/code` answers `429` (0 = off) |
 
 ```yaml
 nowo_time_track:

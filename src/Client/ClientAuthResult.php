@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Client;
 
+use InvalidArgumentException;
 use LogicException;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -18,15 +19,15 @@ final readonly class ClientAuthResult
     private array $scopes;
 
     /**
-     * @param list<ClientScope|string> $scopes
+     * @param list<ClientScope|string>|null $scopes
      */
     private function __construct(
         private bool $success,
         private ?UserInterface $user = null,
         private ?string $credentialId = null,
-        array $scopes = [],
+        ?array $scopes = null,
     ) {
-        $this->scopes = $success ? ClientScope::normalize($scopes) : [];
+        $this->scopes = $success ? ClientScope::fromRequested($scopes) : [];
     }
 
     /**
@@ -34,9 +35,11 @@ final readonly class ClientAuthResult
      *
      * @param UserInterface $user Authenticated user
      * @param string|null $credentialId Host credential used (e.g. app password id); 1.x authenticators pass none
-     * @param list<ClientScope|string> $scopes Granted scopes; empty = every scope (`timer:read`, `timer:write`, `tasks:read`, `entries:read`)
+     * @param list<ClientScope|string>|null $scopes Granted scopes; null = every scope (`timer:read`, `timer:write`, `tasks:read`, `entries:read`)
+     *
+     * @throws InvalidArgumentException When $scopes is an empty list or holds an unknown scope (never widened to every scope)
      */
-    public static function success(UserInterface $user, ?string $credentialId = null, array $scopes = []): self
+    public static function success(UserInterface $user, ?string $credentialId = null, ?array $scopes = null): self
     {
         return new self(true, $user, $credentialId === '' ? null : $credentialId, $scopes);
     }

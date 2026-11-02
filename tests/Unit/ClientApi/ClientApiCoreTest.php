@@ -112,7 +112,7 @@ final class ClientApiCoreTest extends TestCase
 
     public function testScopesAuthResultAndTokens(): void
     {
-        self::assertSame(ClientScope::all(), ClientScope::normalize([]));
+        self::assertSame(ClientScope::all(), ClientScope::normalize(null));
         self::assertSame([ClientScope::TimerRead, ClientScope::EntriesRead], ClientScope::normalize(['entries:read', ClientScope::TimerRead, 'admin', 7, 'entries:read']));
         self::assertSame([], ClientScope::normalize(['admin']));
 

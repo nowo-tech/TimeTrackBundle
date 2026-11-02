@@ -144,7 +144,7 @@ final class DeviceFlowTest extends FunctionalTestCase
         $missing = $this->api('POST', '/api/time-track/device/token', ['deviceCode' => 'nope']);
         self::assertSame('expired_token', $missing['error'] ?? null);
 
-        $grant = $this->api('POST', '/api/time-track/device/code', ['clientType' => 'extension', 'clientName' => "\x07", 'scopes' => ['entries:read', 'admin']]);
+        $grant = $this->api('POST', '/api/time-track/device/code', ['clientType' => 'extension', 'clientName' => "\x07", 'scopes' => ['entries:read']]);
         self::assertResponseIsSuccessful();
         self::assertIsArray($grant);
 

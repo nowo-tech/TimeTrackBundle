@@ -87,6 +87,18 @@ final class InMemoryDeviceAuthorizationRepository implements DeviceAuthorization
         return $purged;
     }
 
+    public function countUnexpired(): int
+    {
+        $count = 0;
+        foreach ($this->items as $item) {
+            if (!$item->isExpired($this->now())) {
+                ++$count;
+            }
+        }
+
+        return $count;
+    }
+
     /**
      * @return list<DeviceAuthorization>
      */

@@ -51,6 +51,8 @@ device:
   client_name: "Nome do dispositivo"
   client_type: "Cliente"
   scopes: "Permissões"
+  requested_at: "Pedido em"
+  requested_from: "Pedido a partir de (rede)"
   expires: "Expira"
   approved: "O dispositivo está ligado. Já pode voltar a ele."
   approved_status: "Aprovado"

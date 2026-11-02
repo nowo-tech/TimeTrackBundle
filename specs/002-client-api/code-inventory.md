@@ -23,7 +23,7 @@ requirement ids.
 | `Client/ClientCredentialStateInterface.php` | new | Per-request credential state (host) | FR-API-002 |
 | `Client/ClientDistribution.php` | new | Download links DTO (safe URLs) | FR-API-012 |
 | `Client/ClientDistributionProviderInterface.php` | new | Distribution provider (host) | FR-API-012 |
-| `Client/ClientLoginRateLimiter.php` | unchanged | Unchanged (see 001-baseline) | — |
+| `Client/ClientLoginRateLimiter.php` | changed | IPv6 /64 keys, per-username bucket | FR-API-009 |
 | `Client/ClientResponseFactory.php` | changed | JSON / error responses, exact-origin CORS | FR-API-008 |
 | `Client/ClientTokenRevoker.php` | new | Revoke by credential | FR-API-002 |
 | `Client/ClientUserProfileProviderInterface.php` | new | me.displayName / workingHours (host) | FR-API-004 |
@@ -66,6 +66,7 @@ requirement ids.
 | `Event/TimerStopEvent.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Exception/ActiveTimerConflictException.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Exception/DeviceCodeAttemptsExceededException.php` | new | User-code lookup throttle | FR-API-007 |
+| `Exception/DeviceFlowCapacityExceededException.php` | new | device/code caps (per prefix, total) | FR-API-007, FR-API-009 |
 | `Form/DeviceDecisionType.php` | new | Approve / deny form (CSRF per action + request) | FR-API-007 |
 | `Form/DeviceUserCodeType.php` | new | User code form | FR-API-007 |
 | `Form/TimerActionType.php` | unchanged | Unchanged (see 001-baseline) | — |
@@ -106,7 +107,7 @@ requirement ids.
 | `Service/DeviceAuthorizationService.php` | new | Device flow logic | FR-API-007 |
 | `Service/TeamAccessGuard.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Service/TimerService.php` | changed | switchTo, resolveIdle, listOwnEntries, keepAlive, stop note | FR-API-005, FR-API-006 |
-| `Support/IpPrefix.php` | new | IP /24 /64 truncation | FR-API-010 |
+| `Support/IpPrefix.php` | new | IP /24 /64 truncation, rate-limit keys | FR-API-009, FR-API-010 |
 | `Support/QueryPeriodResolver.php` | unchanged | Unchanged (see 001-baseline) | — |
 | `Support/TimeEntryCsv.php` | new | CSV export (formula-safe) | FR-API-006 |
 | `Support/UserIdResolver.php` | unchanged | Unchanged (see 001-baseline) | — |
@@ -115,4 +116,4 @@ requirement ids.
 | `Ui/TimeTrackPages.php` | changed | Device page view models | FR-API-007 |
 | `ValueObject/Uuid.php` | unchanged | Unchanged (see 001-baseline) | — |
 
-**Files**: 106 (41 new, 24 changed, 41 unchanged).
+**Files**: 107 (42 new, 25 changed, 40 unchanged).
