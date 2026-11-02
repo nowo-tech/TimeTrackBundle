@@ -75,7 +75,7 @@ final readonly class ClientApiStack
         $this->clock       = new MockClock('2026-11-02 10:00:00');
         $this->cache       = new ArrayAdapter();
         $this->dispatcher  = new EventDispatcher();
-        $this->tokens      = new InMemoryClientTokenRepository();
+        $this->tokens      = new InMemoryClientTokenRepository($this->clock);
         $this->devices     = new InMemoryDeviceAuthorizationRepository($this->clock);
         $this->authService = new ClientAuthService($authenticator, $this->tokens, 3600, null, $this->clock);
         $this->rateLimiter = new ClientApiRateLimiter($this->cache, $this->clock);
