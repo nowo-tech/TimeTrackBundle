@@ -1285,6 +1285,10 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             path?: scalar|Param|null, // Default: "/tools/time-track/reports"
  *             name?: scalar|Param|null, // Default: "nowo_time_track_reports"
  *         },
+ *         device_verify?: array{ // Default device verification page (1.9; only routed when client_api.device_flow.enabled and default_page are true). Session-authenticated: keep it behind the host firewall.
+ *             path?: scalar|Param|null, // Default: "/tools/time-track/device"
+ *             name?: scalar|Param|null, // Default: "nowo_time_track_device_verify"
+ *         },
  *     },
  *     reports?: array{ // Reports page of the manage UI (REQ-PERF-001).
  *         page_size?: int|Param, // Entries per reports page (query parameter `page`). // Default: 50
@@ -1309,7 +1313,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         authenticator?: scalar|Param|null, // Service id implementing ClientAuthenticatorInterface. // Default: null
  *         user_provider?: scalar|Param|null, // Symfony user provider for default password authenticator. // Default: null
  *         cors_allowed_origins?: list<scalar|Param|null>,
- *         cors_allow_any_extension_origin?: bool|Param, // Opt-in: allow every chrome-extension:// and moz-extension:// origin (any installed extension). Prefer listing your extension id in cors_allowed_origins. // Default: false
+ *         cors_allow_any_extension_origin?: bool|Param, // Deprecated: The "nowo_time_track.clients.cors_allow_any_extension_origin.cors_allow_any_extension_origin" option is deprecated: list the exact extension origins in "nowo_time_track.client_api.allowed_origins". // Deprecated since 1.9 (removed in 2.0): allow every chrome-extension:// and moz-extension:// origin. List the exact extension origins in client_api.allowed_origins. // Default: false
  *         login_rate_limit?: array{
  *             enabled?: bool|Param, // Default: true
  *             cache_pool?: scalar|Param|null, // Default: "cache.app"
@@ -1354,6 +1358,70 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *                 path?: scalar|Param|null, // Default: "/api/time-track/entries"
  *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_entries"
  *             },
+ *             timer_switch?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/timer/switch"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timer_switch"
+ *             },
+ *             timer_discard_idle?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/timer/discard-idle"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timer_discard_idle"
+ *             },
+ *             export?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/export"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_export"
+ *             },
+ *             device_code?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/device/code"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_device_code"
+ *             },
+ *             device_token?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/device/token"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_device_token"
+ *             },
+ *         },
+ *     },
+ *     client_api?: array{ // Client API 1.9 (contract v0.2): host interfaces, CORS, metadata, rate limits, audit and device flow. Needs clients.enabled.
+ *         allowed_origins?: list<scalar|Param|null>,
+ *         allow_tauri_webview_origins?: bool|Param, // Deprecated 1.x behaviour (false in 2.0): also allow tauri://localhost and http(s)://tauri.localhost (desktop agent calling from its webview). // Default: true
+ *         allow_metadata?: bool|Param, // Accept free client "metadata" on timer/start (default false: rejected with 400 metadata_not_allowed; clients send source + note). // Default: false
+ *         settings_provider?: scalar|Param|null, // Service id implementing ClientApiSettingsProviderInterface (null = these config values). // Default: null
+ *         credential_state?: scalar|Param|null, // Service id implementing ClientCredentialStateInterface, checked on every request (null = tokens stay valid until expiry / logout). // Default: null
+ *         credential_issuer?: scalar|Param|null, // Service id implementing ClientCredentialIssuerInterface, called when a device is approved (null = opaque device:<uuid> ids). // Default: null
+ *         task_access_checker?: scalar|Param|null, // Service id implementing TaskAccessCheckerInterface, checked on timer/start and timer/switch (null = the task provider decides). // Default: null
+ *         profile_provider?: scalar|Param|null, // Service id implementing ClientUserProfileProviderInterface (displayName / workingHours of GET me; null = none). // Default: null
+ *         rate_limit?: array{
+ *             cache_pool?: scalar|Param|null, // PSR-6 pool shared by all workers (Redis, filesystem, APCu; not an array pool). // Default: "cache.app"
+ *             per_token?: int|Param, // Requests per token per window (0 = off). // Default: 60
+ *             per_ip?: int|Param, // Requests per client IP per window on every API route (0 = off). // Default: 300
+ *             device_per_ip?: int|Param, // Requests per client IP per window on device/code and device/token (0 = off). // Default: 30
+ *             window_seconds?: int|Param, // Default: 60
+ *         },
+ *         audit?: array{
+ *             denial_interval_seconds?: int|Param, // At most one request_denied event per credential (or IP prefix) and reason per interval. // Default: 60
+ *         },
+ *         device_flow?: array{ // Device flow of the desktop app (RFC 8628 shape). Opt-in.
+ *             enabled?: bool|Param, // Default: false
+ *             default_page?: bool|Param, // Route the bundle verification page (routes.device_verify). false when the host renders its own page with DeviceAuthorizationService. // Default: true
+ *             verification_uri?: scalar|Param|null, // Absolute URL of the verification page sent to the device (null = the default page URL; required when default_page is false). // Default: null
+ *             code_ttl?: int|Param, // Default: 600
+ *             interval?: int|Param, // Default: 5
+ *             lookup_limit?: int|Param, // User code lookups per user per lookup_window_seconds. // Default: 10
+ *             lookup_window_seconds?: int|Param, // Default: 900
+ *         },
+ *     },
+ *     client_distribution?: array{ // Download / store links of the clients (ClientDistributionProviderInterface default). Absolute http(s) URLs only.
+ *         provider?: scalar|Param|null, // Service id implementing ClientDistributionProviderInterface (null = these links). // Default: null
+ *         extension?: array{
+ *             chrome?: scalar|Param|null, // Default: null
+ *             edge?: scalar|Param|null, // Default: null
+ *             firefox?: scalar|Param|null, // Default: null
+ *         },
+ *         desktop?: array{
+ *             windows?: scalar|Param|null, // Default: null
+ *             macos?: scalar|Param|null, // Default: null
+ *             linux?: scalar|Param|null, // Default: null
+ *             latest_version?: scalar|Param|null, // Default: null
+ *             update_manifest_url?: scalar|Param|null, // Default: null
  *         },
  *     },
  *     ...<string, mixed>

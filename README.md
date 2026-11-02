@@ -59,6 +59,12 @@ make -C demo up-symfony8
       <img src="docs/images/demo/reports.webp" alt="Reports page in the demo: page header with the report period, table of time entries (task, start time, duration in minutes, source badge), Symfony web debug toolbar" />
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/demo/device.webp" alt="Default device verification page (client API 1.9): page header Connect a device with Approve and Deny buttons, request card with device name, client, permissions (scopes) and expiry, Symfony web debug toolbar" />
+    </td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 End-to-end tests (Playwright, REQ-DEMO-013) and the screenshots:
