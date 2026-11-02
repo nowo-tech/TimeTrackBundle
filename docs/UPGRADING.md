@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.8.0](#to-180)
 - [To 1.7.0](#to-170)
 - [To 1.6.0](#to-160)
 - [To 1.5.2](#to-152)
@@ -32,7 +33,6 @@
   - [Requirements](#requirements)
   - [Installation checklist](#installation-checklist)
   - [Client apps (repository only)](#client-apps-repository-only)
-- [Unreleased](#unreleased-1)
 - [To 1.3.5](#to-135)
 - [To 1.3.4](#to-134)
 - [To 1.3.2](#to-132)
@@ -42,6 +42,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.8.0
+
+From **1.7.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Route names, paths, controllers, form field names / CSRF id and the client API are unchanged. The manage pages now use
 the UiKit page contract (REQ-UI-003); hosts that render them should check the points below.
@@ -352,8 +360,6 @@ First stable release. No upgrade steps required.
 - **Desktop agent** — build from `desktop/` with Tauri 2; default demo API URL is `http://localhost:8024`.
 
 Neither client is part of the Packagist archive (`demo/` and client folders are for development and integration testing).
-
-## Unreleased
 
 ## To 1.3.5
 

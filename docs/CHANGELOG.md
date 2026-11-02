@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.8.0] - 2026-11-02](#180---2026-11-02)
 - [[1.7.0] - 2026-10-30](#170---2026-10-30)
 - [[1.6.0] - 2026-10-26](#160---2026-10-26)
 - [[1.5.2] - 2026-10-18](#152---2026-10-18)
@@ -33,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.8.0] - 2026-11-02
+
+REQ-100 release: timer and reports pages on the UiKit page contract (layout_template / web_ui.templates.*, 1.x layouts wrapped with a deprecation), PSR clock and logger, paginated reports, 100% coverage without exclusions, demo e2e. Requires nowo-tech/ui-kit-bundle ^2.20. See [UPGRADING](https://github.com/nowo-tech/TimeTrackBundle/blob/v1.8.0/docs/UPGRADING.md#to-180).
 
 ### Added
 
@@ -422,7 +427,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.1...v1.5.2
