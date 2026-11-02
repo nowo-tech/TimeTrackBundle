@@ -8,7 +8,10 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+use function array_filter;
+use function array_values;
 use function in_array;
+use function preg_match;
 use function str_starts_with;
 
 /**
@@ -18,7 +21,9 @@ use function str_starts_with;
  * {@see ClientApiSettingsProviderInterface}) plus the constructor list (`clients.cors_allowed_origins`). The desktop
  * app (Tauri HTTP plugin) sends no Origin and needs no CORS header. Deprecated 1.x opt-ins, removed in 2.0: `*` outside
  * prod, `clients.cors_allow_any_extension_origin`, and the Tauri webview origins (`client_api.allow_tauri_webview_origins`).
- * No `Access-Control-Allow-Credentials`: the API is Bearer-only.
+ * No `Access-Control-Allow-Credentials`: the API is Bearer-only. Origins from the settings provider (instance settings,
+ * e.g. a database-backed form) must be exact `scheme://host[:port]` values: `*`, wildcards and anything with a path,
+ * query or whitespace are ignored in every environment, so deny-by-default never depends on the host's form.
  */
 final readonly class ClientResponseFactory
 {
@@ -100,7 +105,7 @@ final readonly class ClientResponseFactory
     private function isOriginAllowed(string $origin): bool
     {
         $settings = $this->settingsProvider?->getSettings();
-        $allowed  = $settings instanceof ClientApiSettings ? [...$this->allowedOrigins, ...$settings->allowedOrigins] : $this->allowedOrigins;
+        $allowed  = $settings instanceof ClientApiSettings ? [...$this->allowedOrigins, ...$this->exactOrigins($settings->allowedOrigins)] : $this->allowedOrigins;
 
         if (in_array('*', $allowed, true)) {
             return $this->kernelEnvironment !== 'prod';
@@ -116,5 +121,20 @@ final readonly class ClientResponseFactory
 
         return $this->allowAnyExtensionOrigin
             && (str_starts_with($origin, 'chrome-extension://') || str_starts_with($origin, 'moz-extension://'));
+    }
+
+    /**
+     * Keeps only exact origins (`scheme://host[:port]`, no wildcard, path, query or whitespace).
+     *
+     * @param list<string> $origins
+     *
+     * @return list<string>
+     */
+    private function exactOrigins(array $origins): array
+    {
+        return array_values(array_filter(
+            $origins,
+            static fn (string $origin): bool => preg_match('~\A[a-z][a-z0-9+.-]*://[^\s/?#*@]+\z~', $origin) === 1,
+        ));
     }
 }

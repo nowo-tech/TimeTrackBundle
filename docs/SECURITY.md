@@ -32,7 +32,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 | Token theft | Tokens stored hashed (SHA-256); HTTPS in production |
 | Brute force login | Rate limit per IP + username (`cache.app`); unknown usernames still run a password hash check (no timing oracle) |
 | IDOR on entries | `TimeEntryAccessCheckEvent` and team context provider |
-| CORS abuse | Exact origins only (`client_api.allowed_origins`) |
+| CORS abuse | Exact origins only (`client_api.allowed_origins`); origins from `ClientApiSettingsProviderInterface` that are not an exact `scheme://host[:port]` (`*`, wildcards, paths) are ignored in every environment |
 | CSRF on manage UI | Manage POST start/stop require Symfony CSRF token `nowo_time_track_manage` |
 | Unauthenticated manage UI | Keep `security.allow_unauthenticated: false` in production; demo-only bypass wires AllowAll checker |
 
