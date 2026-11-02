@@ -161,7 +161,7 @@ prepend its default. The stock profile adds no classes.
 | `clients.login_rate_limit.cache_pool` | `cache.app` | PSR-6 pool shared by all workers (no atomic increment: put a proxy/firewall limit in front for hard guarantees) |
 | `clients.login_rate_limit.max_attempts` | `10` | Failed logins per IP + username within the interval |
 | `clients.login_rate_limit.max_attempts_per_ip` | `null` | Failed logins per IP (any username) within the interval; `null` = 5 × `max_attempts`. Not cleared by a successful login |
-| `clients.login_rate_limit.max_attempts_per_username` | `null` | Failed logins per username (any IP) within the interval; `null` = 5 × `max_attempts`. Cleared by a successful login (1.9). IPv6 clients count per /64 in every bucket |
+| `clients.login_rate_limit.max_attempts_per_username` | `null` | Failed logins per username (any IP) within the interval; `null` = 5 × `max_attempts`. Cleared by a successful login (1.9). Usernames are NFKC-normalised (ext-intl), trimmed, lower-cased. Anyone can spend a user's budget and lock them out of client login for `interval_seconds` (tokens and web login unaffected): raise it, or set `enabled: false` and use a proxy limit. IPv6 clients count per /64 in every bucket (IPv4-mapped addresses as IPv4) |
 | `clients.login_rate_limit.interval_seconds` | `900` | Window (min. 60) |
 
 ## Client API 1.9
@@ -191,7 +191,7 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.device_flow.interval` | `5` | Polling interval; faster polls get `slow_down` |
 | `client_api.device_flow.lookup_limit` / `lookup_window_seconds` | `10` / `900` | User-code lookups per signed-in user per window |
 | `client_api.device_flow.max_pending_per_prefix` | `20` | Device requests created per client IPv4 /24 or IPv6 /64 within `code_ttl`; above it `device/code` answers `429` (0 = off) |
-| `client_api.device_flow.max_pending` | `10000` | Pending, not expired device requests in total; expired rows are purged first, then `device/code` answers `429` (0 = off) |
+| `client_api.device_flow.max_pending` | `10000` | Pending, not expired device requests in total; expired rows are purged first, then `device/code` answers `429` (0 = off). About 500 IPv6 /64s can fill it for one `code_ttl`, blocking new device sign-ins only (not login or existing tokens): raise it, lower `max_pending_per_prefix` / `code_ttl`, or set 0 |
 
 ```yaml
 nowo_time_track:

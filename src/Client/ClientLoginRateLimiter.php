@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Client;
 
+use Normalizer;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 
+use function class_exists;
 use function hash;
 use function is_array;
+use function is_string;
 use function iterator_to_array;
 use function max;
 use function mb_strtolower;
@@ -130,11 +133,22 @@ final readonly class ClientLoginRateLimiter
 
     private function cacheKey(string $clientIp, string $username): string
     {
-        return self::CACHE_PREFIX . hash('sha256', IpPrefix::rateLimitKey($clientIp) . '|' . mb_strtolower(trim($username)));
+        return self::CACHE_PREFIX . hash('sha256', IpPrefix::rateLimitKey($clientIp) . '|' . $this->normalizeUsername($username));
     }
 
     private function usernameKey(string $username): string
     {
-        return self::USERNAME_CACHE_PREFIX . hash('sha256', mb_strtolower(trim($username)));
+        return self::USERNAME_CACHE_PREFIX . hash('sha256', $this->normalizeUsername($username));
+    }
+
+    /**
+     * Counter form of a username: NFKC when ext-intl is available (fullwidth letters fold to ASCII, NBSP to a space),
+     * then trimmed and lower-cased; without ext-intl, or for invalid UTF-8, the raw username is trimmed and lower-cased.
+     */
+    private function normalizeUsername(string $username): string
+    {
+        $normalized = class_exists(Normalizer::class) ? Normalizer::normalize($username, Normalizer::FORM_KC) : false;
+
+        return mb_strtolower(trim(is_string($normalized) ? $normalized : $username));
     }
 }

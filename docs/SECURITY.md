@@ -62,6 +62,20 @@ Threat model of the 1.9 API (contract v0.2):
 
 Operations: purge expired tokens and device requests with `php bin/console nowo:time-track:client-tokens:purge`.
 
+**Residual risks (accepted trade-offs, Low)**
+
+- **Per-username login lockout.** Anyone who knows a username can spend its budget
+  (`clients.login_rate_limit.max_attempts_per_username`, default 5 × `max_attempts` = 50 failures per 15 min, any IP)
+  and lock that user out of `POST login` for up to `interval_seconds`. Usernames are NFKC-normalised (with ext-intl),
+  trimmed and lower-cased, so Unicode variants share the counter. Existing tokens, the device flow and the web login
+  are not affected. Tune it with `max_attempts_per_username` / `interval_seconds`, or disable the client-login throttle
+  with `clients.login_rate_limit.enabled: false` (then rely on a proxy limit).
+- **Global device cap.** About 500 IPv6 /64s (20 requests each) can fill `client_api.device_flow.max_pending` (10 000)
+  for one `code_ttl`; this blocks new device sign-ins only (`device/code` → `429`), not `login` nor existing tokens.
+  Raise `max_pending`, lower `max_pending_per_prefix` or `code_ttl`, or set `max_pending: 0` and rely on the per-prefix
+  cap and a proxy limit.
+- IPv4-mapped IPv6 client addresses (`::ffff:a.b.c.d`) are keyed and shown as their IPv4 address.
+
 ## Reports
 
 - Managers access team data via `TeamContextProviderInterface`

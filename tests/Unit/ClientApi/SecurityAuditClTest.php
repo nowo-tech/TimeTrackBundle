@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\ClientApi;
 
 use DateTimeImmutable;
 use InvalidArgumentException;
+use Normalizer;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
@@ -21,6 +22,8 @@ use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\ClientApiStack;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+
+use function class_exists;
 
 /**
  * Regression tests of the 1.9 security audit (Appendix CL): scopes fail closed (CL-01), per-IP limits key IPv6 by /64,
@@ -100,6 +103,30 @@ final class SecurityAuditClTest extends TestCase
         self::assertSame('203.0.113.7', IpPrefix::rateLimitKey('203.0.113.7'));
         self::assertSame('', IpPrefix::rateLimitKey(null));
         self::assertSame('garbage', IpPrefix::rateLimitKey('garbage'));
+    }
+
+    /** R1: IPv4-mapped IPv6 addresses count per IPv4 address, not in one shared `::/64` bucket. */
+    public function testIpv4MappedAddressesAreUnmapped(): void
+    {
+        self::assertSame('203.0.113.7', IpPrefix::rateLimitKey('::ffff:203.0.113.7'));
+        self::assertNotSame(IpPrefix::rateLimitKey('::ffff:203.0.113.7'), IpPrefix::rateLimitKey('::ffff:198.51.100.1'));
+        self::assertSame('203.0.113.0/24', IpPrefix::of('::ffff:203.0.113.7'));
+        self::assertSame('::/64', IpPrefix::of('::1'));
+    }
+
+    /** R3: Unicode variants of a username (fullwidth letters, NBSP padding) share the per-username counter. */
+    public function testLoginLimiterUsernameVariantsShareTheCounter(): void
+    {
+        if (!class_exists(Normalizer::class)) {
+            self::markTestSkipped('ext-intl is not installed.');
+        }
+
+        $limiter = new ClientLoginRateLimiter(new ArrayAdapter(), 10, 900, true, null, 2);
+        $limiter->registerFailedAttempt('198.51.100.1', "\u{FF41}\u{FF4C}\u{FF49}\u{FF43}\u{FF45}");
+        $limiter->registerFailedAttempt('198.51.100.2', "\u{00A0}Alice\u{00A0}");
+
+        self::assertTrue($limiter->isLimited('203.0.113.9', 'alice'));
+        self::assertFalse($limiter->isLimited('203.0.113.9', "\xff"));
     }
 
     /** CL-02: rotating addresses inside one /64 does not reset the login buckets. */
