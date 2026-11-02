@@ -14,7 +14,7 @@ use Symfony\Component\Clock\NativeClock;
 /**
  * Doctrine ORM store of the hashed client tokens.
  */
-final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepositoryInterface
+final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepositoryInterface, CredentialClientTokenRepositoryInterface
 {
     /**
      * Receives the entity manager, the registry (worker-mode recovery) and the clock.
@@ -83,6 +83,19 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
             ->delete(ClientToken::class, 't')
             ->where('t.expiresAt <= :now')
             ->setParameter('now', $this->clock->now())
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * Deletes the tokens of a credential in one DQL statement and returns how many were deleted.
+     */
+    public function removeByCredentialId(string $credentialId): int
+    {
+        return $this->entityManager->createQueryBuilder()
+            ->delete(ClientToken::class, 't')
+            ->where('t.credentialId = :credential')
+            ->setParameter('credential', $credentialId)
             ->getQuery()
             ->execute();
     }

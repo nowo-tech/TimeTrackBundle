@@ -1,0 +1,9 @@
+{#
+  Device verification, steps 2 and 3 (contract v0.2 §2): UiKit show scaffold. Variable: page (View\ShowPage from
+  TimeTrackPages::deviceConfirmPage(): client name / type / scopes / expiry with the Approve and Deny header actions
+  (POST, CSRF bound to action and request id; data-testid time-track-device-approve / -deny), or
+  TimeTrackPages::deviceResultPage(): the outcome as header intro + status; data-testid time-track-device-confirm /
+  time-track-device-result).
+  Data blocks: none (the scaffold prints the sections).
+#}
+{% extends '@NowoUiKit/page/show.html.twig' %}

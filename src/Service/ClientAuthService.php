@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
+use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Psr\Clock\ClockInterface;
@@ -69,9 +70,23 @@ final readonly class ClientAuthService
      * @param string $password Plain password (never logged)
      * @param ClientType $clientType Client asking for the token
      *
-     * @return array{token: string, expiresAt: string}|null The plain token and its expiry, or null on bad credentials
+     * @return array{token: string, expiresAt: string, scopes: list<string>}|null The plain token, its expiry and scopes, or null on bad credentials
      */
     public function login(string $username, string $password, ClientType $clientType): ?array
+    {
+        $result = $this->authenticate($username, $password, $clientType);
+
+        return $result instanceof ClientAuthResult
+            ? $this->issueToken($result->requireUser(), $clientType, $result->getCredentialId(), $result->getScopes())
+            : null;
+    }
+
+    /**
+     * Checks the credentials through the host authenticator (logs success / failure without personal data).
+     *
+     * @return ClientAuthResult|null The successful result, or null on bad credentials
+     */
+    public function authenticate(string $username, string $password, ClientType $clientType): ?ClientAuthResult
     {
         $result = $this->authenticator->authenticate($username, $password);
         if (!$result instanceof ClientAuthResult || !$result->isSuccess()) {
@@ -80,10 +95,9 @@ final readonly class ClientAuthService
             return null;
         }
 
-        $token = $this->issueToken($result->requireUser(), $clientType);
         $this->logger->info('TimeTrack client login succeeded.', $this->context('client_login', $clientType));
 
-        return $token;
+        return $result;
     }
 
     /**
@@ -95,43 +109,71 @@ final readonly class ClientAuthService
      */
     public function resolveUser(string $plainToken): ?UserInterface
     {
+        $user = $this->resolveToken($plainToken)?->getUser();
+
+        return $user instanceof UserInterface ? $user : null;
+    }
+
+    /**
+     * Resolves a valid (not expired) Bearer token whose owner is a security user (refreshed in worker mode) and
+     * refreshes its last-used time every 5 minutes.
+     *
+     * @param string $plainToken Token sent by the client
+     *
+     * @return ClientToken|null The token, or null for an unknown or expired token
+     */
+    public function resolveToken(string $plainToken): ?ClientToken
+    {
         $entity = $this->tokenRepository->findValidByTokenHash(self::hashToken($plainToken));
         if (!$entity instanceof ClientToken) {
             return null;
         }
-
-        $this->touchIfStale($entity);
 
         $user = $entity->getUser();
         if (!$user instanceof UserInterface) {
             return null;
         }
 
+        $this->touchIfStale($entity);
         ManagedEntityRefresher::refresh($this->managerRegistry, $user);
 
-        return $user;
+        return $entity;
     }
 
     /**
      * Revokes a Bearer token (no-op for an unknown or expired token).
      *
      * @param string $plainToken Token sent by the client
+     *
+     * @return ClientToken|null The revoked token (detached), or null when nothing was revoked
      */
-    public function logout(string $plainToken): void
+    public function logout(string $plainToken): ?ClientToken
     {
         $entity = $this->tokenRepository->findValidByTokenHash(self::hashToken($plainToken));
-        if ($entity instanceof ClientToken) {
-            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-            $this->tokenRepository->remove($entity);
-            $this->logger->info('TimeTrack client token revoked.', $this->context('client_logout', $entity->getClientType()));
+        if (!$entity instanceof ClientToken) {
+            return null;
         }
+
+        // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
+        $this->tokenRepository->remove($entity);
+        $this->logger->info('TimeTrack client token revoked.', $this->context('client_logout', $entity->getClientType()));
+
+        return $entity;
     }
 
     /**
-     * @return array{token: string, expiresAt: string}
+     * Issues a session token linked to a host credential (login and device flow).
+     *
+     * @param UserInterface $user Token owner
+     * @param ClientType $clientType Client holding the token
+     * @param string|null $credentialId Host credential the token comes from
+     * @param list<ClientScope> $scopes Granted scopes (empty = every scope)
+     *
+     * @return array{token: string, expiresAt: string, scopes: list<string>}
      */
-    private function issueToken(UserInterface $user, ClientType $clientType): array
+    public function issueToken(UserInterface $user, ClientType $clientType, ?string $credentialId = null, array $scopes = []): array
     {
+        $scopes     = ClientScope::normalize($scopes);
         $plainToken = $this->generatePlainToken();
         $now        = $this->clock->now();
         // @igor-ignore - DateTimeImmutable::add() returns a new instance; the clock value is not mutated.
@@ -143,11 +185,14 @@ final readonly class ClientAuthService
             $user,
             $clientType,
             $now,
+            $credentialId,
+            ClientScope::values($scopes),
         ));
 
         return [
             'token'     => $plainToken,
             'expiresAt' => $expiresAt->format(DATE_ATOM),
+            'scopes'    => ClientScope::values($scopes),
         ];
     }
 

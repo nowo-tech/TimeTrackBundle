@@ -63,4 +63,24 @@ final class TimeTrackRouteLoaderTest extends TestCase
         self::assertNotSame($first, $second);
         self::assertSame('/tools/time-track', $second->get('nowo_time_track_index')?->getPath());
     }
+
+    public function testDeviceRoutesOnlyWithTheDeviceFlow(): void
+    {
+        $api    = ['device_code' => ['path' => '/api/d/code', 'name' => 'api_device_code'], 'device_token' => ['path' => '/api/d/token', 'name' => 'api_device_token'], 'export' => ['path' => '/api/export', 'name' => 'api_export']];
+        $manage = ['device_verify' => ['path' => '/device', 'name' => 'device_verify']];
+
+        $off = (new TimeTrackRouteLoader(true, $api, $manage, ''))->load('.');
+        self::assertNull($off->get('api_device_code'));
+        self::assertNull($off->get('device_verify'));
+        self::assertInstanceOf(Route::class, $off->get('api_export'));
+
+        $on = (new TimeTrackRouteLoader(true, $api, $manage, '/p', true, true))->load('.');
+        self::assertSame('/p/api/d/code', $on->get('api_device_code')?->getPath());
+        self::assertSame(['POST', 'OPTIONS'], $on->get('api_device_token')?->getMethods());
+        self::assertSame(['GET', 'POST'], $on->get('device_verify')?->getMethods());
+
+        $hostPage = (new TimeTrackRouteLoader(true, $api, $manage, '', true, false))->load('.');
+        self::assertInstanceOf(Route::class, $hostPage->get('api_device_code'));
+        self::assertNull($hostPage->get('device_verify'));
+    }
 }

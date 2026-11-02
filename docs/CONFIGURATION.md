@@ -12,6 +12,8 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
   - [Deprecated `templates.*` keys (1.x, removed in 2.0)](#deprecated-templates-keys-1x-removed-in-20)
 - [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
+- [Client API 1.9](#client-api-19)
+- [Client distribution](#client-distribution)
 - [Security](#security)
 
 ## Required
@@ -43,7 +45,8 @@ nowo_time_track:
 | `route_prefix` | `''` | Prepended to every path below |
 | `routes.index.path` / `.name` | `/tools/time-track` / `nowo_time_track_index` | Timer page (GET, POST) |
 | `routes.reports.path` / `.name` | `/tools/time-track/reports` / `nowo_time_track_reports` | Reports page (GET) |
-| `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `heartbeat`, `entries`; only when `clients.enabled`) |
+| `routes.device_verify.path` / `.name` | `/tools/time-track/device` / `nowo_time_track_device_verify` | Default device verification page (GET, POST; only when `client_api.device_flow.enabled` and `default_page`; session-authenticated, keep it behind the host firewall) |
+| `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `timer_switch`, `timer_discard_idle`, `heartbeat`, `entries`, `export`; `device_code`, `device_token` only with the device flow; only when `clients.enabled`) |
 
 **Why a route loader instead of `#[Route]` (documented exemption from REQ-SF-004 rule 1).** Every route **name and
 path** is host configuration (`routes.*`, `clients.routes.*`, `route_prefix`), and the client API routes exist only
@@ -152,13 +155,70 @@ prepend its default. The stock profile adds no classes.
 | `clients.enabled` | `false` | Enable REST API routes |
 | `clients.token_ttl` | `86400` | Bearer token lifetime (seconds) |
 | `clients.idle_threshold_seconds` | `300` | Desktop idle threshold |
-| `clients.cors_allowed_origins` | `[]` | Exact CORS origins, e.g. `chrome-extension://<extension-id>` (`tauri://` always allowed; `*` only outside `prod`). No `Access-Control-Allow-Credentials` is sent (Bearer auth) |
-| `clients.cors_allow_any_extension_origin` | `false` | Opt-in wildcard: allow every `chrome-extension://` / `moz-extension://` origin (any installed extension). Prefer listing your extension id |
+| `clients.cors_allowed_origins` | `[]` | Exact CORS origins, merged with `client_api.allowed_origins`. `*` (any origin outside `prod`) is deprecated since 1.9. No `Access-Control-Allow-Credentials` is sent (Bearer auth) |
+| `clients.cors_allow_any_extension_origin` | `false` | **Deprecated since 1.9** (removed in 2.0): allow every `chrome-extension://` / `moz-extension://` origin. List the exact origins instead |
 | `clients.login_rate_limit.enabled` | `true` | Throttle failed `POST` logins |
 | `clients.login_rate_limit.cache_pool` | `cache.app` | PSR-6 pool shared by all workers (no atomic increment: put a proxy/firewall limit in front for hard guarantees) |
 | `clients.login_rate_limit.max_attempts` | `10` | Failed logins per IP + username within the interval |
 | `clients.login_rate_limit.max_attempts_per_ip` | `null` | Failed logins per IP (any username) within the interval; `null` = 5 × `max_attempts`. Not cleared by a successful login |
 | `clients.login_rate_limit.interval_seconds` | `900` | Window (min. 60) |
+
+## Client API 1.9
+
+Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional; `null` keeps the bundle default.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `client_api.allowed_origins` | `[]` | Exact CORS origins (`chrome-extension://<id>`, `moz-extension://<uuid>`, `extension://<id>`); a value with `*` is rejected |
+| `client_api.allow_tauri_webview_origins` | `true` | Deprecated 1.x behaviour (false in 2.0): also allow `tauri://localhost`, `http(s)://tauri.localhost` (1.x desktop agent calling from its webview). The 1.9 desktop app sends no Origin |
+| `client_api.allow_metadata` | `false` | Accept free `metadata` on `timer/start` (otherwise `400 metadata_not_allowed`; clients send `source` + `note`) |
+| `client_api.settings_provider` | `null` | `ClientApiSettingsProviderInterface` (origins + rate limits read per request, e.g. from DB settings) |
+| `client_api.credential_state` | `null` | `ClientCredentialStateInterface`, checked on every request (default: always active) |
+| `client_api.credential_issuer` | `null` | `ClientCredentialIssuerInterface`, called on device approval (default: opaque `device:<uuid>`) |
+| `client_api.task_access_checker` | `null` | `TaskAccessCheckerInterface` for `timer/start` / `timer/switch` (default: the task provider decides) |
+| `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`) |
+| `client_api.rate_limit.cache_pool` | `cache.app` | PSR-6 pool of the API counters, shared by all workers (Redis in production) |
+| `client_api.rate_limit.per_token` | `60` | Requests per token per window (`0` = off) |
+| `client_api.rate_limit.per_ip` | `300` | Requests per client IP per window, every API route (`0` = off) |
+| `client_api.rate_limit.device_per_ip` | `30` | Requests per client IP per window on `device/code`, `device/token` |
+| `client_api.rate_limit.window_seconds` | `60` | Window |
+| `client_api.audit.denial_interval_seconds` | `60` | At most one `request_denied` audit event per credential (or IP /24 /64) and reason per interval |
+| `client_api.device_flow.enabled` | `false` | Route `device/code`, `device/token` (opt-in) |
+| `client_api.device_flow.default_page` | `true` | Also route the bundle verification page (`routes.device_verify`) |
+| `client_api.device_flow.verification_uri` | `null` | Absolute `https://` URL of the host page (required when `default_page` is false; `http://localhost` allowed) |
+| `client_api.device_flow.code_ttl` | `600` | Lifetime of a device request (60–3600 s) |
+| `client_api.device_flow.interval` | `5` | Polling interval; faster polls get `slow_down` |
+| `client_api.device_flow.lookup_limit` / `lookup_window_seconds` | `10` / `900` | User-code lookups per signed-in user per window |
+
+```yaml
+nowo_time_track:
+    clients:
+        enabled: true
+        authenticator: App\TimeTrack\Client\AppPasswordAuthenticator
+    client_api:
+        allowed_origins: ['chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'moz-extension://00000000-0000-0000-0000-000000000000']
+        credential_state: App\TimeTrack\Client\AppPasswordCredentialState
+        credential_issuer: App\TimeTrack\Client\AppPasswordDeviceIssuer
+        task_access_checker: App\TimeTrack\Security\ProjectTaskAccess
+        rate_limit: { cache_pool: cache.redis }
+        device_flow:
+            enabled: true
+            default_page: false
+            verification_uri: 'https://beacon.example/account/security/time-apps/connect'
+```
+
+## Client distribution
+
+Download links rendered by `@NowoTimeTrackBundle/client_distribution/_downloads.html.twig`. Only absolute http(s)
+URLs are kept.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `client_distribution.provider` | `null` | `ClientDistributionProviderInterface` service (default: the links below) |
+| `client_distribution.extension.chrome` / `.edge` / `.firefox` | `null` | Store links |
+| `client_distribution.desktop.windows` / `.macos` / `.linux` | `null` | Installer links (e.g. GitHub Releases of the public desktop repo) |
+| `client_distribution.desktop.latest_version` | `null` | Shown next to the desktop links |
+| `client_distribution.desktop.update_manifest_url` | `null` | Tauri `latest.json` (exposed on `ClientDistribution`, not rendered) |
 
 ## Security
 

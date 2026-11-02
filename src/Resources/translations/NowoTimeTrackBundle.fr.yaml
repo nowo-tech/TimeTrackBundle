@@ -5,6 +5,7 @@ nav:
 page:
   timer: Suivi du temps
   reports: Rapports de temps
+  device: "Connecter un appareil"
 timer:
   active: Tâche active
   started_at: Démarré à
@@ -36,3 +37,34 @@ flash:
   timer_already_active: Vous avez déjà un minuteur actif.
   timer_stopped: Minuteur arrêté.
   no_active_timer: Aucun minuteur actif.
+device:
+  intro: "Saisissez le code affiché par l’application de bureau ou l’extension du navigateur."
+  user_code: "Code de l’appareil"
+  user_code_help: "8 caractères, p. ex. BCDF-GHJK."
+  continue: "Continuer"
+  invalid_code: "Code invalide ou expiré."
+  too_many_attempts: "Trop de tentatives. Réessayez plus tard."
+  confirm_intro: "%client% demande l’accès à votre suivi du temps. N’approuvez que si vous l’avez lancé vous-même sur votre appareil."
+  approve: "Approuver"
+  deny: "Refuser"
+  request: "Demande"
+  client_name: "Nom de l’appareil"
+  client_type: "Client"
+  scopes: "Autorisations"
+  expires: "Expire"
+  approved: "L’appareil est connecté. Vous pouvez y retourner."
+  approved_status: "Approuvé"
+  denied: "La demande a été refusée."
+  denied_status: "Refusé"
+  expired: "Cette demande a expiré ou a déjà été traitée. Recommencez depuis l’appareil."
+  expired_status: "Expiré"
+downloads:
+  title: "Applications de suivi du temps"
+  get: "Télécharger"
+  chrome: "Extension Chrome"
+  edge: "Module Edge"
+  firefox: "Module Firefox"
+  windows: "Application de bureau pour Windows"
+  macos: "Application de bureau pour macOS"
+  linux: "Application de bureau pour Linux"
+  latest_version: "Dernière version de bureau"

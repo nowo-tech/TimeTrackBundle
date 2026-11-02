@@ -16,4 +16,7 @@ final class TimeTrackEvents
     public const TIME_ENTRY_LIST_QUERY = 'nowo_time_track.time_entry.list_query';
 
     public const TIME_ENTRY_ACCESS_CHECK = 'nowo_time_track.time_entry.access_check';
+
+    /** {@see ClientApiEvent}: client API audit trail (1.9). */
+    public const CLIENT_API = 'nowo_time_track.client_api';
 }

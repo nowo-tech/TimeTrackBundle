@@ -9,6 +9,7 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
+use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 
 use function array_replace_recursive;
@@ -29,6 +30,7 @@ final readonly class TimeTrackMetadataListener
         private string $activeTimersTableName,
         private string $clientTokensTableName,
         private string $userClass,
+        private string $deviceCodesTableName = 'time_track_device_codes',
     ) {
     }
 
@@ -41,13 +43,14 @@ final readonly class TimeTrackMetadataListener
         $class    = $metadata->getName();
 
         match ($class) {
-            TimeEntry::class   => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->entriesTableName])),
-            ActiveTimer::class => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->activeTimersTableName])),
-            ClientToken::class => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->clientTokensTableName])),
-            default            => null,
+            TimeEntry::class           => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->entriesTableName])),
+            ActiveTimer::class         => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->activeTimersTableName])),
+            ClientToken::class         => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->clientTokensTableName])),
+            DeviceAuthorization::class => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->deviceCodesTableName])),
+            default                    => null,
         };
 
-        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class], true)) {
+        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class], true)) {
             return;
         }
 

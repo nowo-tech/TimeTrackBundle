@@ -1,0 +1,18 @@
+{#
+  Client downloads partial (contract v0.2 §4/§6) for a host "Integrations" page on the UiKit page contract: a UiKit
+  section card with the UiKit detail_list partial of plain anchors (no inline script / style, CSP safe). Links come
+  from ClientDistributionProviderInterface (default: nowo_time_track.client_distribution.*); only absolute http(s)
+  URLs are kept. Renders nothing when no link is configured.
+  Optional variables: distribution (Client\ClientDistribution; default nowo_time_track_client_distribution()),
+  bundle (UiKit theme bundle; default NowoTimeTrackBundle), title (View\Label or string; default downloads.title).
+#}
+{% set _distribution = distribution ?? nowo_time_track_client_distribution() %}
+{% set _b = bundle ?? 'NowoTimeTrackBundle' %}
+{% if _distribution.hasLinks %}
+    <section class="{{ nowo_ui_class('section', _b) }} {{ nowo_ui_class('card', _b) }}" data-nowo-ui-region="section" data-testid="time-track-downloads"{{ nowo_ui_attrs('section', _b) }}>
+        <header class="{{ nowo_ui_class('card_header', _b) }}"><h2 class="{{ nowo_ui_class('card_title', _b) }}">{{ (title ?? nowo_time_track_label('downloads.title'))|nowo_ui_trans }}</h2></header>
+        <div class="{{ nowo_ui_class('card_body', _b) }}">
+            {{ include(nowo_ui_partial('detail_list', _b), {items: nowo_time_track_client_download_items(_distribution), bundle: _b}, false) }}
+        </div>
+    </section>
+{% endif %}

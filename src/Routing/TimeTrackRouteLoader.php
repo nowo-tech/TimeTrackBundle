@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Routing;
 
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackManageController;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
@@ -19,17 +21,22 @@ final class TimeTrackRouteLoader extends Loader
     /**
      * @param array<string, array{path: string, name: string}> $clientRoutes
      * @param array<string, array{path: string, name: string}> $manageRoutes
+     * @param bool $deviceFlowEnabled Route `device/code` and `device/token` (client_api.device_flow.enabled)
+     * @param bool $deviceDefaultPage Route the default device verification page (client_api.device_flow.default_page)
      */
     public function __construct(
         private readonly bool $clientsEnabled,
         private readonly array $clientRoutes,
         private readonly array $manageRoutes,
         private readonly string $routePrefix,
+        private readonly bool $deviceFlowEnabled = false,
+        private readonly bool $deviceDefaultPage = false,
     ) {
     }
 
     /**
-     * Builds the manage routes and, when the client API is enabled, the client routes.
+     * Builds the manage routes and, when the client API is enabled, the client routes (device flow routes and the
+     * default verification page only when the device flow is enabled).
      */
     public function load(mixed $resource, ?string $type = null): RouteCollection
     {
@@ -57,9 +64,16 @@ final class TimeTrackRouteLoader extends Loader
             );
         }
 
+        if ($this->clientsEnabled && $this->deviceFlowEnabled && $this->deviceDefaultPage && isset($this->manageRoutes['device_verify'])) {
+            $collection->add(
+                $this->manageRoutes['device_verify']['name'],
+                $this->createRoute($this->manageRoutes['device_verify']['path'], ['_controller' => TimeTrackDeviceVerificationController::class . '::verify'], ['GET', 'POST']),
+            );
+        }
+
         if ($this->clientsEnabled) {
             $apiController = TimeTrackClientApiController::class;
-            /** @var array<string, array{0: string, 1: list<string>}> $apiMap */
+            /** @var array<string, array{0: string, 1: list<string>, 2?: string}> $apiMap */
             $apiMap = [
                 'login'       => ['login', ['POST', 'OPTIONS']],
                 'logout'      => ['logout', ['POST', 'OPTIONS']],
@@ -70,9 +84,17 @@ final class TimeTrackRouteLoader extends Loader
                 'timer_stop'  => ['timerStop', ['POST', 'OPTIONS']],
                 'heartbeat'   => ['heartbeat', ['POST', 'OPTIONS']],
                 'entries'     => ['entries', ['GET', 'OPTIONS']],
+                // 1.9 (contract v0.2)
+                'timer_switch'       => ['timerSwitch', ['POST', 'OPTIONS']],
+                'timer_discard_idle' => ['timerDiscardIdle', ['POST', 'OPTIONS']],
+                'export'             => ['export', ['GET', 'OPTIONS']],
             ];
+            if ($this->deviceFlowEnabled) {
+                $apiMap['device_code']  = ['code', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
+                $apiMap['device_token'] = ['token', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
+            }
 
-            foreach ($apiMap as $key => [$action, $methods]) {
+            foreach ($apiMap as $key => $route) {
                 if (!isset($this->clientRoutes[$key])) {
                     continue;
                 }
@@ -81,8 +103,8 @@ final class TimeTrackRouteLoader extends Loader
                     $this->clientRoutes[$key]['name'],
                     $this->createRoute(
                         $this->clientRoutes[$key]['path'],
-                        ['_controller' => $apiController . '::' . $action],
-                        $methods,
+                        ['_controller' => ($route[2] ?? $apiController) . '::' . $route[0]],
+                        $route[1],
                     ),
                 );
             }

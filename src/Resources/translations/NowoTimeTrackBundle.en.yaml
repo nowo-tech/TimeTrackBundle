@@ -5,6 +5,7 @@ nav:
 page:
   timer: Time tracker
   reports: Time reports
+  device: "Connect a device"
 timer:
   active: Active task
   started_at: Started at
@@ -36,3 +37,34 @@ flash:
   timer_already_active: You already have an active timer.
   timer_stopped: Timer stopped.
   no_active_timer: No active timer.
+device:
+  intro: "Enter the code shown by the desktop app or the browser extension."
+  user_code: "Device code"
+  user_code_help: "8 characters, e.g. BCDF-GHJK."
+  continue: "Continue"
+  invalid_code: "Invalid or expired code."
+  too_many_attempts: "Too many attempts. Try again later."
+  confirm_intro: "%client% asks for access to your time tracking. Approve only if you started this on your own device."
+  approve: "Approve"
+  deny: "Deny"
+  request: "Request"
+  client_name: "Device name"
+  client_type: "Client"
+  scopes: "Permissions"
+  expires: "Expires"
+  approved: "The device is connected. You can return to it now."
+  approved_status: "Approved"
+  denied: "The request was denied."
+  denied_status: "Denied"
+  expired: "This request expired or was already decided. Start again from the device."
+  expired_status: "Expired"
+downloads:
+  title: "Time tracking apps"
+  get: "Download"
+  chrome: "Chrome extension"
+  edge: "Edge add-on"
+  firefox: "Firefox add-on"
+  windows: "Desktop app for Windows"
+  macos: "Desktop app for macOS"
+  linux: "Desktop app for Linux"
+  latest_version: "Latest desktop version"

@@ -13,7 +13,7 @@ This bundle is **FrankenPHP worker mode friendly**.
 ## Features
 
 - Web UI at `/tools/time-track` (timer + paginated reports)
-- REST API for browser extension and Tauri desktop (`Bearer` auth)
+- Stateless client API for the browser extension and the desktop app (`Bearer` session tokens linked to host credentials, scopes, per-request credential and task checks, device flow, rate limits, audit events) — [reference](docs/CLIENT-API.md)
 - Single active timer per user (409 on conflict)
 - Teams and managers v1 via `TeamContextProviderInterface`
 - Task integration via `TaskProviderInterface` (designed for `nowo-tech/task-board-bundle`)
@@ -91,6 +91,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md) (includes worker mode)
 - [GitHub Actions CI requirements](docs/GITHUB_CI.md)
 - [PSR evaluation (REQ-CS-007)](docs/PSR.md)
+- [Client API reference](docs/CLIENT-API.md)
 - [Browser extension](docs/BROWSER-EXTENSION.md)
 - [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)

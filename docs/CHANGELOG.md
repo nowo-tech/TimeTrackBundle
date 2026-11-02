@@ -35,6 +35,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Client API 1.9 (contract v0.2) for the extension and the desktop app. Schema change: see
+[UPGRADING](UPGRADING.md#to-190).
+
+### Added
+
+- Session tokens linked to a host credential: `ClientToken::credentialId`, `scopes`, `getIssuedAt()`;
+  `ClientAuthResult::success($user, ?$credentialId, $scopes)` (new arguments optional).
+- Scopes `timer:read`, `timer:write`, `tasks:read`, `entries:read` (`Enum\ClientScope`), checked per endpoint
+  (`403 insufficient_scope`).
+- Host interfaces: `ClientCredentialStateInterface::isActive(ClientToken)` (per request),
+  `ClientCredentialIssuerInterface::issueForDevice()`, `TaskAccessCheckerInterface::canTrack()` (per start / switch, deny
+  by default, `403 task_forbidden` for missing and foreign tasks), `ClientUserProfileProviderInterface`,
+  `ClientApiSettingsProviderInterface`, `ClientDistributionProviderInterface` — each with a config default
+  (`client_api.*`, `client_distribution.*`).
+- `ClientTokenRevoker::revokeByCredential()` (public service) and `CredentialClientTokenRepositoryInterface`.
+- Endpoints `timer/switch`, `timer/discard-idle` (keep / discard / split), `export` (CSV / JSON, own data), and the
+  device flow `device/code`, `device/token` (opt-in `client_api.device_flow.enabled`) with `DeviceAuthorizationService`,
+  hashed single-use codes (`DeviceAuthorization`, table `{prefix}_device_codes`), and an optional default verification
+  page (`routes.device_verify`, UiKit form / show scaffolds, CSRF bound to action + request).
+- Per-IP and per-token rate limits (`client_api.rate_limit.*`, host cache pool), `429 rate_limited` + `Retry-After`.
+- Audit event `nowo_time_track.client_api` (`ClientApiEvent`: user id, credential id, client type, IP /24 or /64, reason;
+  never the token), denials throttled per credential.
+- `GET me` adds `displayName`, `scopes`, `workingHours`; `login` adds `scopes`; `entries` adds `limit` (≤ 100) / `offset`.
+- Downloads partial `@NowoTimeTrackBundle/client_distribution/_downloads.html.twig` and Twig functions
+  `nowo_time_track_client_distribution()`, `nowo_time_track_client_download_items()`, `nowo_time_track_label()`.
+- Docs: [CLIENT-API](CLIENT-API.md) reference, host integration in USAGE, API threat model in SECURITY. Spec
+  `specs/002-client-api`. Translations (7 locales) for the device page and the downloads partial.
+
+### Changed
+
+- Client API errors are `{error: code, message}`; stateless on every answer (kernel test asserts no `Set-Cookie` and no
+  session start, also on `401` / `429`).
+- CORS: exact origins only (`client_api.allowed_origins` + `clients.cors_allowed_origins`); the 1.x `tauri://` prefix
+  rule became the exact Tauri webview origins.
+- `GET tasks` `limit` capped at 50; `GET entries` returns own entries unless the deprecated `userId` is given.
+- `PurgeExpiredClientTokensCommand` also purges expired device requests.
+
+### Deprecated
+
+- `POST heartbeat` (`isIdle` ignored, `Deprecation: true` header), `entries?userId=`,
+  `clients.cors_allow_any_extension_origin`, `*` origins, `client_api.allow_tauri_webview_origins` — removed in 2.0.
+
+### Security
+
+- Free client `metadata` on `timer/start` rejected by default (`client_api.allow_metadata`), no server-side idle signal.
+- Export CSV neutralises spreadsheet formulas.
+
 ## [1.8.0] - 2026-11-02
 
 REQ-100 release: timer and reports pages on the UiKit page contract (layout_template / web_ui.templates.*, 1.x layouts wrapped with a deprecation), PSR clock and logger, paginated reports, 100% coverage without exclusions, demo e2e. Requires nowo-tech/ui-kit-bundle ^2.20. See [UPGRADING](https://github.com/nowo-tech/TimeTrackBundle/blob/v1.8.0/docs/UPGRADING.md#to-180).

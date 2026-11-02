@@ -5,6 +5,7 @@ nav:
 page:
   timer: Controlo de tempo
   reports: Relatórios de tempo
+  device: "Ligar um dispositivo"
 timer:
   active: Tarefa ativa
   started_at: Iniciado às
@@ -36,3 +37,34 @@ flash:
   timer_already_active: Já tem um temporizador ativo.
   timer_stopped: Temporizador parado.
   no_active_timer: Nenhum temporizador ativo.
+device:
+  intro: "Introduza o código mostrado pela aplicação de ambiente de trabalho ou pela extensão do navegador."
+  user_code: "Código do dispositivo"
+  user_code_help: "8 caracteres, p. ex. BCDF-GHJK."
+  continue: "Continuar"
+  invalid_code: "Código inválido ou expirado."
+  too_many_attempts: "Demasiadas tentativas. Tente mais tarde."
+  confirm_intro: "%client% pede acesso ao seu registo de tempo. Aprove apenas se o iniciou no seu próprio dispositivo."
+  approve: "Aprovar"
+  deny: "Recusar"
+  request: "Pedido"
+  client_name: "Nome do dispositivo"
+  client_type: "Cliente"
+  scopes: "Permissões"
+  expires: "Expira"
+  approved: "O dispositivo está ligado. Já pode voltar a ele."
+  approved_status: "Aprovado"
+  denied: "O pedido foi recusado."
+  denied_status: "Recusado"
+  expired: "Este pedido expirou ou já foi decidido. Recomece a partir do dispositivo."
+  expired_status: "Expirado"
+downloads:
+  title: "Aplicações de registo de tempo"
+  get: "Transferir"
+  chrome: "Extensão para Chrome"
+  edge: "Extra para Edge"
+  firefox: "Extra para Firefox"
+  windows: "Aplicação de ambiente de trabalho para Windows"
+  macos: "Aplicação de ambiente de trabalho para macOS"
+  linux: "Aplicação de ambiente de trabalho para Linux"
+  latest_version: "Versão de ambiente de trabalho mais recente"

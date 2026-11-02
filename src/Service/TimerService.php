@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Dto\TimeEntryPage;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartEvent;
@@ -141,17 +142,19 @@ final readonly class TimerService
      * Stops the running timer of the user and records it as a time entry.
      *
      * @param UserInterface $user Timer owner
+     * @param DateTimeImmutable|null $endedAt End of the entry (default: now; used by the idle resolution)
+     * @param string|null $note Note of the user stored in the entry metadata (`note`)
      *
      * @return TimeEntry|null The recorded entry, or null when no timer was running
      */
-    public function stop(UserInterface $user): ?TimeEntry
+    public function stop(UserInterface $user, ?DateTimeImmutable $endedAt = null, ?string $note = null): ?TimeEntry
     {
         $timer = $this->getActive($user);
         if (!$timer instanceof ActiveTimer) {
             return null;
         }
 
-        $endedAt  = $this->clock->now();
+        $endedAt ??= $this->clock->now();
         $duration = max(0, $endedAt->getTimestamp() - $timer->getStartedAt()->getTimestamp());
 
         $entry = new TimeEntry(
@@ -163,7 +166,7 @@ final readonly class TimerService
             $endedAt,
             $duration,
             $this->mapClientTypeToSource($timer->getClientType()),
-            $timer->getMetadata(),
+            $note !== null ? ['note' => $note] + ($timer->getMetadata() ?? []) : $timer->getMetadata(),
             $endedAt,
         );
 
@@ -174,6 +177,119 @@ final readonly class TimerService
         $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
 
         return $entry;
+    }
+
+    /**
+     * Stops the running timer (if any) and starts one on another task (`POST timer/switch`). The new task is checked
+     * before the running timer is stopped, so a refused task leaves the running timer untouched.
+     *
+     * @param UserInterface $user Timer owner
+     * @param string $taskId Task to track next
+     * @param ClientType $clientType Client that switches
+     * @param string|null $note Note stored in the entry of the stopped timer
+     *
+     * @throws InvalidArgumentException When the task is unknown or not trackable by the user
+     * @throws ActiveTimerConflictException When a concurrent start won the race
+     *
+     * @return array{entry: TimeEntry|null, timer: ActiveTimer} The entry of the stopped timer and the new timer
+     */
+    public function switchTo(UserInterface $user, string $taskId, ClientType $clientType, ?string $note = null): array
+    {
+        if (!$this->taskProvider->canUserTrack($user, $taskId) || !$this->taskProvider->findForUser($taskId, $user) instanceof TaskReference) {
+            throw new InvalidArgumentException(sprintf('User cannot track task %s.', $taskId));
+        }
+
+        $entry = $this->stop($user, null, $note);
+
+        return ['entry' => $entry, 'timer' => $this->start($user, $taskId, $clientType)];
+    }
+
+    /**
+     * Applies the user's decision about an idle span of the running timer (`POST timer/discard-idle`): keep it,
+     * discard it and stop at its start, or discard it and continue on the same task from its end (split).
+     *
+     * @param UserInterface $user Timer owner
+     * @param DateTimeImmutable $from Idle start (not before the timer start)
+     * @param DateTimeImmutable $to Idle end (after `from`, not in the future)
+     * @param IdleResolution $resolution The user's decision
+     *
+     * @throws InvalidArgumentException When the span is not inside the running timer
+     *
+     * @return array{entry: TimeEntry|null, timer: ActiveTimer|null}|null Recorded entry and running timer, or null when no timer runs
+     */
+    public function resolveIdle(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to, IdleResolution $resolution): ?array
+    {
+        $timer = $this->getActive($user);
+        if (!$timer instanceof ActiveTimer) {
+            return null;
+        }
+
+        if ($from < $timer->getStartedAt() || $to <= $from || $to > $this->clock->now()) {
+            throw new InvalidArgumentException('The idle span must lie inside the running timer.');
+        }
+
+        if ($resolution === IdleResolution::Keep) {
+            return ['entry' => null, 'timer' => $timer];
+        }
+
+        $entry = $this->stop($user, $from);
+        if ($resolution === IdleResolution::Discard) {
+            return ['entry' => $entry, 'timer' => null];
+        }
+
+        $next = new ActiveTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to);
+        $this->activeTimerRepository->save($next);
+        $this->eventDispatcher->dispatch(new TimerStartEvent($user, new TaskReference($timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot()), $timer->getClientType()), TimeTrackEvents::TIMER_START);
+        $this->logger->info('TimeTrack idle span discarded, timer continued.', $this->context('timer_split', $timer->getClientType()));
+
+        return ['entry' => $entry, 'timer' => $next];
+    }
+
+    /**
+     * The user's own entries of the period, newest first, one page (client API `entries` / `export`; no team
+     * widening through the list-query event).
+     *
+     * @param UserInterface $user Owner
+     * @param DateTimeImmutable $from Period start (inclusive)
+     * @param DateTimeImmutable $to Period end (inclusive)
+     * @param int $limit Page size (at least 1)
+     * @param int $offset Entries to skip
+     *
+     * @return list<TimeEntry>
+     */
+    public function listOwnEntries(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to, int $limit, int $offset = 0): array
+    {
+        $limit  = max(1, $limit);
+        $offset = max(0, $offset);
+        $userId = UserIdResolver::getId($user);
+        if ($this->timeEntryRepository instanceof PaginatedTimeEntryRepositoryInterface) {
+            return $this->timeEntryRepository->findPageByUsersAndPeriod([$userId], $from, $to, $offset, $limit);
+        }
+
+        $entries = $this->timeEntryRepository->findByUserAndPeriod($userId, $from, $to);
+        usort($entries, static fn (TimeEntry $a, TimeEntry $b): int => $b->getStartedAt() <=> $a->getStartedAt());
+
+        return array_slice($entries, $offset, $limit);
+    }
+
+    /**
+     * Records a heartbeat on the running timer without any activity signal (deprecated `POST heartbeat` since 1.9).
+     *
+     * @param UserInterface $user Timer owner
+     *
+     * @return ActiveTimer|null The updated timer, or null when no timer is running
+     */
+    public function keepAlive(UserInterface $user): ?ActiveTimer
+    {
+        $timer = $this->getActive($user);
+        if (!$timer instanceof ActiveTimer) {
+            return null;
+        }
+
+        $timer->touchHeartbeat($this->clock->now());
+        $this->activeTimerRepository->save($timer);
+
+        return $timer;
     }
 
     /**

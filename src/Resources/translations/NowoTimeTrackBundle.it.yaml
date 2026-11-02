@@ -5,6 +5,7 @@ nav:
 page:
   timer: Tracciamento tempo
   reports: Report tempo
+  device: "Collega un dispositivo"
 timer:
   active: Attività attiva
   started_at: Avviato alle
@@ -36,3 +37,34 @@ flash:
   timer_already_active: Hai già un timer attivo.
   timer_stopped: Timer fermato.
   no_active_timer: Nessun timer attivo.
+device:
+  intro: "Inserisci il codice mostrato dall’app desktop o dall’estensione del browser."
+  user_code: "Codice del dispositivo"
+  user_code_help: "8 caratteri, ad es. BCDF-GHJK."
+  continue: "Continua"
+  invalid_code: "Codice non valido o scaduto."
+  too_many_attempts: "Troppi tentativi. Riprova più tardi."
+  confirm_intro: "%client% chiede accesso al tuo monitoraggio del tempo. Approva solo se l’hai avviato tu sul tuo dispositivo."
+  approve: "Approva"
+  deny: "Rifiuta"
+  request: "Richiesta"
+  client_name: "Nome del dispositivo"
+  client_type: "Client"
+  scopes: "Autorizzazioni"
+  expires: "Scade"
+  approved: "Il dispositivo è collegato. Puoi tornarci ora."
+  approved_status: "Approvato"
+  denied: "La richiesta è stata rifiutata."
+  denied_status: "Rifiutato"
+  expired: "Questa richiesta è scaduta o è già stata decisa. Ricomincia dal dispositivo."
+  expired_status: "Scaduto"
+downloads:
+  title: "App di monitoraggio del tempo"
+  get: "Scarica"
+  chrome: "Estensione per Chrome"
+  edge: "Componente aggiuntivo per Edge"
+  firefox: "Componente aggiuntivo per Firefox"
+  windows: "App desktop per Windows"
+  macos: "App desktop per macOS"
+  linux: "App desktop per Linux"
+  latest_version: "Ultima versione desktop"

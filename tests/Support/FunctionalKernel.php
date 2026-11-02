@@ -126,6 +126,7 @@ final class FunctionalKernel extends Kernel
                 'cors_allowed_origins' => ['chrome-extension://functional'],
                 'login_rate_limit'     => ['max_attempts' => 2, 'cache_pool' => 'cache.time_track_test'],
             ],
+            'client_api' => ['rate_limit' => ['cache_pool' => 'cache.time_track_test']],
         ], $this->timeTrackConfig));
     }
 

@@ -8,19 +8,26 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Dto\TimeEntryPage;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
+use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\View\Action;
 use Nowo\UiKitBundle\View\Column;
+use Nowo\UiKitBundle\View\DetailItem;
+use Nowo\UiKitBundle\View\DetailSection;
 use Nowo\UiKitBundle\View\EmptyState;
+use Nowo\UiKitBundle\View\FormPage;
 use Nowo\UiKitBundle\View\Label;
 use Nowo\UiKitBundle\View\ListPage;
 use Nowo\UiKitBundle\View\PageHeader;
 use Nowo\UiKitBundle\View\PageStatus;
 use Nowo\UiKitBundle\View\Pagination;
+use Nowo\UiKitBundle\View\ShowPage;
 use Symfony\Component\Form\FormView;
 use Twig\Environment;
 use Twig\Error\Error as TwigError;
 
+use function implode;
 use function in_array;
 use function sprintf;
 use function trigger_deprecation;
@@ -128,6 +135,69 @@ final readonly class TimeTrackPages
             bundle: self::BUNDLE,
             layout: $this->layout(),
             attributes: ['data-testid' => 'time-track-reports'],
+        );
+    }
+
+    /**
+     * Device verification, step 1: the user code form (FormKit `DeviceUserCodeType`).
+     *
+     * @param FormView $form Code form view
+     */
+    public function deviceCodePage(FormView $form): FormPage
+    {
+        return new FormPage(
+            new PageHeader(self::label('page.device'), self::label('device.intro')),
+            $form,
+            self::label('device.continue'),
+            bundle: self::BUNDLE,
+            layout: $this->layout(),
+            attributes: ['data-testid' => 'time-track-device'],
+        );
+    }
+
+    /**
+     * Device verification, step 2: client name, type and requested scopes with Approve / Deny (CSRF forms).
+     *
+     * @param DeviceAuthorization $authorization Pending request
+     * @param FormView $approveForm CSRF form of Approve
+     * @param FormView $denyForm CSRF form of Deny
+     */
+    public function deviceConfirmPage(DeviceAuthorization $authorization, FormView $approveForm, FormView $denyForm): ShowPage
+    {
+        return new ShowPage(
+            new PageHeader(
+                self::label('page.device'),
+                self::label('device.confirm_intro', ['%client%' => $authorization->getClientName()]),
+                [
+                    new Action(kind: 'custom', label: self::label('device.approve'), method: 'POST', variant: 'primary', attributes: ['data-testid' => 'time-track-device-approve'], form: $approveForm),
+                    new Action(kind: 'custom', label: self::label('device.deny'), method: 'POST', variant: 'secondary', attributes: ['data-testid' => 'time-track-device-deny'], form: $denyForm),
+                ],
+            ),
+            [new DetailSection(self::label('device.request'), [
+                new DetailItem(self::label('device.client_name'), $authorization->getClientName()),
+                new DetailItem(self::label('device.client_type'), self::label('reports.source_' . $authorization->getClientType()->value)),
+                new DetailItem(self::label('device.scopes'), implode(', ', ClientScope::values($authorization->getScopes()))),
+                new DetailItem(self::label('device.expires'), $authorization->getExpiresAt()->format('Y-m-d H:i')),
+            ])],
+            bundle: self::BUNDLE,
+            layout: $this->layout(),
+            attributes: ['data-testid' => 'time-track-device-confirm'],
+        );
+    }
+
+    /**
+     * Device verification, step 3: outcome (approved, denied or expired).
+     *
+     * @param string $messageKey Translation key of the outcome
+     * @param string $tone UiKit status tone
+     */
+    public function deviceResultPage(string $messageKey, string $tone): ShowPage
+    {
+        return new ShowPage(
+            new PageHeader(self::label('page.device'), self::label($messageKey), status: new PageStatus(self::label($messageKey . '_status'), $tone)),
+            bundle: self::BUNDLE,
+            layout: $this->layout(),
+            attributes: ['data-testid' => 'time-track-device-result'],
         );
     }
 

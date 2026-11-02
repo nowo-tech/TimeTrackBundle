@@ -5,25 +5,40 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Client;
 
 use LogicException;
+use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Outcome of a client login: the authenticated user, or a failure.
+ * Outcome of a client login: the authenticated user (with the host credential it used and the scopes it grants), or
+ * a failure.
  */
 final readonly class ClientAuthResult
 {
+    /** @var list<ClientScope> */
+    private array $scopes;
+
+    /**
+     * @param list<ClientScope|string> $scopes
+     */
     private function __construct(
         private bool $success,
         private ?UserInterface $user = null,
+        private ?string $credentialId = null,
+        array $scopes = [],
     ) {
+        $this->scopes = $success ? ClientScope::normalize($scopes) : [];
     }
 
     /**
      * Successful login of the user.
+     *
+     * @param UserInterface $user Authenticated user
+     * @param string|null $credentialId Host credential used (e.g. app password id); 1.x authenticators pass none
+     * @param list<ClientScope|string> $scopes Granted scopes; empty = every scope (`timer:read`, `timer:write`, `tasks:read`, `entries:read`)
      */
-    public static function success(UserInterface $user): self
+    public static function success(UserInterface $user, ?string $credentialId = null, array $scopes = []): self
     {
-        return new self(true, $user);
+        return new self(true, $user, $credentialId === '' ? null : $credentialId, $scopes);
     }
 
     /**
@@ -48,6 +63,24 @@ final readonly class ClientAuthResult
     public function getUser(): ?UserInterface
     {
         return $this->user;
+    }
+
+    /**
+     * Host credential id (null when the authenticator did not report one).
+     */
+    public function getCredentialId(): ?string
+    {
+        return $this->credentialId;
+    }
+
+    /**
+     * Granted scopes.
+     *
+     * @return list<ClientScope>
+     */
+    public function getScopes(): array
+    {
+        return $this->scopes;
     }
 
     /**

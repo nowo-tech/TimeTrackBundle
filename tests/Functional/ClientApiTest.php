@@ -80,7 +80,7 @@ final class ClientApiTest extends FunctionalTestCase
 
         $body = $this->api('POST', '/api/time-track/login', ['username' => 'person@example.com', 'password' => 'secret']);
         self::assertResponseStatusCodeSame(429);
-        self::assertSame(['error' => 'Too many login attempts. Try again later.'], $body);
+        self::assertSame(['error' => 'rate_limited', 'message' => 'Too many login attempts. Try again later.'], $body);
     }
 
     public function testTimerLifecycle(): void
@@ -89,7 +89,7 @@ final class ClientApiTest extends FunctionalTestCase
 
         $me = $this->api('GET', '/api/time-track/me', null, $token);
         self::assertResponseIsSuccessful();
-        self::assertSame(['userId' => (string) $this->user->getId(), 'identifier' => 'person@example.com'], $me);
+        self::assertSame(['userId' => (string) $this->user->getId(), 'identifier' => 'person@example.com', 'displayName' => null, 'scopes' => ['timer:read', 'timer:write', 'tasks:read', 'entries:read'], 'workingHours' => null], $me);
 
         $tasks = $this->api('GET', '/api/time-track/tasks?search=unit&limit=5', null, $token);
         self::assertResponseIsSuccessful();
@@ -110,10 +110,15 @@ final class ClientApiTest extends FunctionalTestCase
         $this->api('POST', '/api/time-track/timer/start', ['clientType' => 'desktop'], $token);
         self::assertResponseStatusCodeSame(400);
 
-        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'missing-task'], $token);
-        self::assertResponseStatusCodeSame(400);
+        $missing = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'missing-task'], $token);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('task_forbidden', $missing['error'] ?? null);
 
-        $started = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'metadata' => ['app' => 'tray']], $token);
+        $metadata = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'metadata' => ['url' => 'https://example.com']], $token);
+        self::assertResponseStatusCodeSame(400);
+        self::assertSame('metadata_not_allowed', $metadata['error'] ?? null);
+
+        $started = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop'], $token);
         self::assertResponseStatusCodeSame(201);
         self::assertSame('task-1', $started['timer']['taskId'] ?? null);
         self::assertSame('desktop', $started['timer']['clientType'] ?? null);
@@ -127,7 +132,9 @@ final class ClientApiTest extends FunctionalTestCase
 
         $beat = $this->api('POST', '/api/time-track/heartbeat', ['isIdle' => true], $token);
         self::assertResponseIsSuccessful();
-        self::assertTrue($beat['timer']['metadata']['isIdle'] ?? null);
+        self::assertNull($beat['timer']['metadata']['isIdle'] ?? null, 'isIdle is ignored since 1.9');
+        self::assertTrue($beat['deprecated'] ?? null);
+        self::assertResponseHeaderSame('Deprecation', 'true');
         self::assertSame(300, $beat['idleThresholdSeconds'] ?? null);
 
         $stopped = $this->api('POST', '/api/time-track/timer/stop', null, $token);

@@ -51,7 +51,7 @@ final class PurgeExpiredClientTokensCommandTest extends TestCase
 
         self::assertSame(0, (new CommandTester(new PurgeExpiredClientTokensCommand($repository, $logger)))->execute([]));
         self::assertSame(['TimeTrack expired client token purge started.', 'TimeTrack expired client token purge finished.'], $logger->messages());
-        self::assertSame(['bundle' => 'time_track', 'action' => 'client_tokens_purge', 'purged' => 3], $logger->records[1]['context']);
+        self::assertSame(['bundle' => 'time_track', 'action' => 'client_tokens_purge', 'purged' => 3, 'purged_device_codes' => 0], $logger->records[1]['context']);
     }
 
     public function testLogsAndRethrowsAFailure(): void

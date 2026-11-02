@@ -22,7 +22,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 | Surface | Description |
 | ------- | ----------- |
 | Manage UI | Authenticated timer page (POST start / stop) and reports list (`from`, `to`, `page` query parameters) behind `TimeTrackAccessCheckerInterface` + `security.access_roles` |
-| Client API | Bearer tokens for extension clients |
+| Client API | Stateless Bearer API of the extension and desktop app (session tokens issued from host credentials, scopes), device flow (`device/code`, `device/token`) and the optional device verification page |
 | Configuration | CORS origins, token TTL, table prefix |
 
 ## Threat model
@@ -32,18 +32,32 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 | Token theft | Tokens stored hashed (SHA-256); HTTPS in production |
 | Brute force login | Rate limit per IP + username (`cache.app`); unknown usernames still run a password hash check (no timing oracle) |
 | IDOR on entries | `TimeEntryAccessCheckEvent` and team context provider |
-| CORS abuse | Restrict `clients.cors_allowed_origins` in production |
+| CORS abuse | Exact origins only (`client_api.allowed_origins`) |
 | CSRF on manage UI | Manage POST start/stop require Symfony CSRF token `nowo_time_track_manage` |
 | Unauthenticated manage UI | Keep `security.allow_unauthenticated: false` in production; demo-only bypass wires AllowAll checker |
 
 ## Client API
 
-- Bearer tokens stored hashed (SHA-256) in `{prefix}_client_tokens`
-- Rate limit login attempts per IP + username (`cache.app`)
-- CORS: only `tauri://` plus the exact `clients.cors_allowed_origins` by default; any `chrome-extension://` / `moz-extension://` only with `clients.cors_allow_any_extension_origin: true`; no `*` in production; never `Access-Control-Allow-Credentials` (Bearer tokens)
-- Login throttle: per IP + username and per IP (`max_attempts_per_ip`, default 5 × `max_attempts`)
-- Unbounded queries: `tasks` `limit` capped at 100; `entries` `from`/`to` parsed strictly and capped at 366 days
-- Purge expired tokens: `php bin/console nowo:time-track:client-tokens:purge`
+Threat model of the 1.9 API (contract v0.2):
+
+| Threat | Mitigation |
+| ------ | ---------- |
+| Stolen session token | SHA-256 at rest; short TTL (`clients.token_ttl`); never logged nor put in audit events; per-request `ClientCredentialStateInterface` (revoked credential, disabled user, sign out everywhere after `issuedAt` → `401`); `ClientTokenRevoker::revokeByCredential()` on credential deletion; logout |
+| Second hidden token list | Tokens are not listed to users; the host credential list is the only one (device approval creates a host credential through `ClientCredentialIssuerInterface`) |
+| Over-privileged client | Fixed scopes per token (`timer:read`, `timer:write`, `tasks:read`, `entries:read`), checked per endpoint (`403 insufficient_scope`); no write access to entries |
+| IDOR on tasks | `TaskAccessCheckerInterface::canTrack()` per `timer/start` / `timer/switch`, deny by default; missing and foreign task → same `403 task_forbidden` |
+| IDOR on entries / export | Own entries only (`entries`, `export`); the deprecated `userId` goes through `TeamAccessGuard` |
+| Brute force (login, user code, device code) | Failed-login throttle per IP + username and per IP; per-IP limit on every route and a stricter one on `device/*`; user-code lookups limited per user; 20^8 user codes, 256-bit device codes, 10-minute lifetime |
+| Device code phishing / replay | Approval only by the signed-in user on the host page after reviewing client name, type and scopes; CSRF bound to action + request id; device code single use (atomic `approved → consumed`), hashed at rest; denied / expired requests removed |
+| CSRF / session riding on the API | Bearer only, no cookies, no session started (kernel test incl. `401` / `429`); no `Access-Control-Allow-Credentials` |
+| CORS abuse | Exact origins only; `*` and any-extension are deprecated 1.x opt-ins (off by default) |
+| Flooding / DoS | Per-token and per-IP fixed-window limits on a shared pool (`client_api.rate_limit.cache_pool`, Redis recommended); bounded lists (`tasks` ≤ 50, `entries` ≤ 100, export ≤ 10 000 rows, periods ≤ 366 days) |
+| Monitoring creep | No server-side activity signal: `heartbeat` ignores `isIdle`; free `metadata` rejected unless `client_api.allow_metadata`; idle handling is the user's decision (`timer/discard-idle`) |
+| Audit flooding / privacy | `ClientApiEvent` with user id, credential id, client type and IP truncated to /24 (IPv4) or /64 (IPv6); denials throttled per credential (or IP prefix) and reason; PSR-3 records carry action, client and reason only |
+| CSV injection in exports | Cells starting with `= + - @` (tab, CR) prefixed with `'` |
+| Malicious download links | The downloads partial keeps absolute http(s) URLs only, renders plain anchors, no inline script / style |
+
+Operations: purge expired tokens and device requests with `php bin/console nowo:time-track:client-tokens:purge`.
 
 ## Reports
 
