@@ -185,4 +185,46 @@ final class ConfigurationTest extends TestCase
             'templates'  => ['css_framework' => 'bulma'],
         ]]);
     }
+
+    public function testClientApiDefaults(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class]]);
+
+        self::assertSame([], $config['client_api']['allowed_origins']);
+        self::assertFalse($config['client_api']['allow_metadata']);
+        self::assertFalse($config['client_api']['device_flow']['enabled']);
+        self::assertSame(['cache_pool' => 'cache.app', 'per_token' => 60, 'per_ip' => 300, 'device_per_ip' => 30, 'window_seconds' => 60], $config['client_api']['rate_limit']);
+        self::assertNull($config['client_distribution']['extension']['chrome']);
+        self::assertSame('/api/time-track/timer/switch', $config['clients']['routes']['timer_switch']['path']);
+        self::assertSame('nowo_time_track_device_verify', $config['routes']['device_verify']['name']);
+    }
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: string}>
+     */
+    public static function invalidClientApi(): iterable
+    {
+        yield 'wildcard origin' => [['allowed_origins' => ['chrome-extension://*']], 'exact origins only'];
+        yield 'host page without uri' => [['device_flow' => ['enabled' => true, 'default_page' => false]], 'verification_uri is required'];
+        yield 'plain http uri' => [['device_flow' => ['verification_uri' => 'http://host.example/device']], 'absolute https://'];
+    }
+
+    /**
+     * @param array<string, mixed> $clientApi
+     */
+    #[DataProvider('invalidClientApi')]
+    public function testInvalidClientApiIsRejected(array $clientApi, string $message): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage($message);
+
+        (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'client_api' => $clientApi]]);
+    }
+
+    public function testLocalHttpVerificationUriIsAccepted(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'client_api' => ['device_flow' => ['verification_uri' => 'http://localhost:8000/device']]]]);
+
+        self::assertSame('http://localhost:8000/device', $config['client_api']['device_flow']['verification_uri']);
+    }
 }

@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+  - [To 1.9.0](#to-190)
 - [To 1.8.0](#to-180)
 - [To 1.7.0](#to-170)
 - [To 1.6.0](#to-160)
@@ -42,6 +43,65 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+### To 1.9.0
+
+From **1.8.0**: `composer update nowo-tech/time-track-bundle`, then the schema migration below. Client API contract
+v0.2 ([CLIENT-API](CLIENT-API.md)); no change to the manage pages.
+
+**Schema** (MySQL; reference: `demo/symfony8/migrations/Version20261103000000.php`; use your `table_prefix`). Schema
+only — no data migration, safe with `doctrine_migrations.transactional: false`:
+
+```sql
+ALTER TABLE time_track_client_tokens ADD credential_id VARCHAR(191) DEFAULT NULL, ADD scopes JSON DEFAULT NULL;
+CREATE INDEX time_track_client_tokens_credential_idx ON time_track_client_tokens (credential_id);
+CREATE TABLE time_track_device_codes (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, credential_id VARCHAR(191) DEFAULT NULL, last_polled_at DATETIME DEFAULT NULL, scopes JSON NOT NULL, device_code_hash VARCHAR(64) NOT NULL, user_code_hash VARCHAR(64) NOT NULL, client_type VARCHAR(16) NOT NULL, client_name VARCHAR(100) NOT NULL, expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL, ip_prefix VARCHAR(64) DEFAULT NULL, user_id INT DEFAULT NULL, UNIQUE INDEX UNIQ_4978FDD0DCB31CE8 (device_code_hash), INDEX time_track_device_codes_user_code_idx (user_code_hash), INDEX time_track_device_codes_expires_idx (expires_at), INDEX IDX_4978FDD0A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
+ALTER TABLE time_track_device_codes ADD CONSTRAINT FK_4978FDD0A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
+```
+
+Or run `doctrine:migrations:diff` and review. Tokens issued before the upgrade keep working with every scope.
+
+**Kept (BC)**
+
+- `ClientAuthenticatorInterface` and `ClientAuthResult::success($user)`; the new `$credentialId` / `$scopes` arguments
+  are optional (none = no credential, all scopes). A `$scopes` list must be non-empty and hold known scopes only
+  (`timer:read`, `timer:write`, `tasks:read`, `entries:read`), otherwise `InvalidArgumentException`: pass `null` for
+  every scope.
+- `ClientTokenRepositoryInterface` is unchanged (host decorators keep compiling); bulk revocation uses the new
+  `CredentialClientTokenRepositoryInterface`, implemented by the Doctrine repository.
+- Login request, route names and paths; `ClientAuthService::login()` / `resolveUser()`; `TimerService::heartbeat()`.
+- Without any `client_api.*` key the host interfaces fall back to 1.x behaviour (credential always active, task check
+  through the task provider, opaque device credentials) and the device flow stays off.
+
+**Behaviour changes of the client API (clients, not hosts)**
+
+- Error bodies are `{"error": "<code>", "message": "..."}` (1.x: `{"error": "<message>"}`).
+- `timer/start` on a missing or foreign task: `403 task_forbidden` (1.x: `400`). Free `metadata`: `400
+  metadata_not_allowed` unless `client_api.allow_metadata: true`; send `source` and `note`.
+- `heartbeat` is deprecated (removed in 2.0): `isIdle` is ignored and no longer stored in the timer metadata; use
+  `timer/discard-idle`.
+- `GET me` adds `displayName`, `scopes`, `workingHours`; `login` adds `scopes`; `GET entries` returns own entries by
+  default (`limit` ≤ 100, `offset`) — `userId` still works through the team guard but is deprecated; `GET tasks`
+  `limit` ≤ 50 (1.x: 100).
+- Per-IP (300/min) and per-token (60/min) rate limits on the shared pool `client_api.rate_limit.cache_pool`
+  (default `cache.app`; use Redis in production). Every per-IP limit, including the 1.x client-login throttle, now
+  counts an IPv6 client by its /64.
+- Client login: new per-username bucket `clients.login_rate_limit.max_attempts_per_username` (default 5 ×
+  `max_attempts` = 50 failures per 15 min, any IP); a successful login clears it.
+- Device flow: `device/code` answers `400 invalid_scope` for an empty or unknown scope list (omit `scopes` for every
+  scope) and `429` above `client_api.device_flow.max_pending_per_prefix` (20 per /24 or /64 within `code_ttl`) or
+  `max_pending` (10 000 unexpired requests).
+- CORS: exact origins only. The 1.x `tauri://` prefix rule became the exact Tauri webview origins
+  (`client_api.allow_tauri_webview_origins`, deprecated, true until 2.0); `clients.cors_allow_any_extension_origin`
+  and `*` are deprecated.
+
+**Deprecations (removed in 2.0)**: `POST heartbeat`, `entries?userId=`, `clients.cors_allow_any_extension_origin`,
+`*` in `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true`.
+
+**Beacon-style hosts**: implement `ClientCredentialStateInterface`, `ClientCredentialIssuerInterface` and
+`TaskAccessCheckerInterface`; call `ClientTokenRevoker::revokeByCredential()` when an app password is deleted; set
+`device_flow.default_page: false` + `verification_uri` for your own page ([USAGE](USAGE.md#host-integration-client-api-19)),
+sending `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` on it.
 
 ## To 1.8.0
 

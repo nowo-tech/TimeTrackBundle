@@ -5,6 +5,7 @@ nav:
 page:
   timer: Zeiterfassung
   reports: Zeitberichte
+  device: "Gerät verbinden"
 timer:
   active: Aktive Aufgabe
   started_at: Gestartet um
@@ -36,3 +37,36 @@ flash:
   timer_already_active: Sie haben bereits einen aktiven Timer.
   timer_stopped: Timer gestoppt.
   no_active_timer: Kein aktiver Timer.
+device:
+  intro: "Gib den Code ein, den die Desktop-App oder die Browser-Erweiterung anzeigt."
+  user_code: "Gerätecode"
+  user_code_help: "8 Zeichen, z. B. BCDF-GHJK."
+  continue: "Weiter"
+  invalid_code: "Ungültiger oder abgelaufener Code."
+  too_many_attempts: "Zu viele Versuche. Versuche es später erneut."
+  confirm_intro: "%client% bittet um Zugriff auf deine Zeiterfassung. Genehmige nur, wenn du dies selbst auf deinem Gerät gestartet hast."
+  approve: "Genehmigen"
+  deny: "Ablehnen"
+  request: "Anfrage"
+  client_name: "Gerätename"
+  client_type: "Client"
+  scopes: "Berechtigungen"
+  requested_at: "Angefordert am"
+  requested_from: "Angefordert von (Netzwerk)"
+  expires: "Läuft ab"
+  approved: "Das Gerät ist verbunden. Du kannst jetzt zu ihm zurückkehren."
+  approved_status: "Genehmigt"
+  denied: "Die Anfrage wurde abgelehnt."
+  denied_status: "Abgelehnt"
+  expired: "Diese Anfrage ist abgelaufen oder wurde bereits entschieden. Starte erneut am Gerät."
+  expired_status: "Abgelaufen"
+downloads:
+  title: "Zeiterfassungs-Apps"
+  get: "Herunterladen"
+  chrome: "Chrome-Erweiterung"
+  edge: "Edge-Add-on"
+  firefox: "Firefox-Add-on"
+  windows: "Desktop-App für Windows"
+  macos: "Desktop-App für macOS"
+  linux: "Desktop-App für Linux"
+  latest_version: "Neueste Desktop-Version"

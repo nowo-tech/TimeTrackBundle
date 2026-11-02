@@ -13,7 +13,7 @@ This bundle is **FrankenPHP worker mode friendly**.
 ## Features
 
 - Web UI at `/tools/time-track` (timer + paginated reports)
-- REST API for browser extension and Tauri desktop (`Bearer` auth)
+- Stateless client API for the browser extension and the desktop app (`Bearer` session tokens linked to host credentials, scopes, per-request credential and task checks, device flow, rate limits, audit events) — [reference](docs/CLIENT-API.md)
 - Single active timer per user (409 on conflict)
 - Teams and managers v1 via `TeamContextProviderInterface`
 - Task integration via `TaskProviderInterface` (designed for `nowo-tech/task-board-bundle`)
@@ -59,6 +59,12 @@ make -C demo up-symfony8
       <img src="docs/images/demo/reports.webp" alt="Reports page in the demo: page header with the report period, table of time entries (task, start time, duration in minutes, source badge), Symfony web debug toolbar" />
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/demo/device.webp" alt="Default device verification page (client API 1.9): page header Connect a device with Approve and Deny buttons, request card with device name, client, permissions (scopes) and expiry, Symfony web debug toolbar" />
+    </td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 End-to-end tests (Playwright, REQ-DEMO-013) and the screenshots:
@@ -91,6 +97,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Demo with FrankenPHP](docs/DEMO-FRANKENPHP.md) (includes worker mode)
 - [GitHub Actions CI requirements](docs/GITHUB_CI.md)
 - [PSR evaluation (REQ-CS-007)](docs/PSR.md)
+- [Client API reference](docs/CLIENT-API.md)
 - [Browser extension](docs/BROWSER-EXTENSION.md)
 - [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)

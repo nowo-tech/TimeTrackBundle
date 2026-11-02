@@ -4,4 +4,16 @@ nowo_time_track:
     team_context_provider: nowo_task_board.team_context_provider
     clients:
         enabled: true
-        cors_allowed_origins: ['*']
+    client_api:
+        # Exact extension origins only (chrome-extension://<id>, moz-extension://<uuid>); the desktop app sends none.
+        allowed_origins: []
+        # Device flow of the desktop app; the bundle's default verification page is /tools/time-track/device.
+        device_flow:
+            enabled: true
+    client_distribution:
+        extension:
+            chrome: 'https://github.com/nowo-tech/time-track-extension/releases/latest'
+        desktop:
+            linux: 'https://github.com/nowo-tech/time-track-desktop/releases/latest'
+            windows: 'https://github.com/nowo-tech/time-track-desktop/releases/latest'
+            macos: 'https://github.com/nowo-tech/time-track-desktop/releases/latest'

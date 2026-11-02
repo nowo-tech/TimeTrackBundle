@@ -7,23 +7,44 @@ namespace Nowo\TimeTrackBundle\DependencyInjection;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Nowo\TimeTrackBundle\Client\AlwaysActiveClientCredentialState;
+use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
+use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
+use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
+use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
+use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
+use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
+use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
+use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
+use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
+use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
@@ -39,6 +60,9 @@ use Symfony\Component\DependencyInjection\Reference;
 
 use function array_key_exists;
 use function array_merge;
+use function array_unique;
+use function array_values;
+use function in_array;
 use function is_array;
 use function is_string;
 use function rtrim;
@@ -61,6 +85,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $entriesTable      = $prefix . '_entries';
         $activeTimersTable = $prefix . '_active_timers';
         $clientTokensTable = $prefix . '_client_tokens';
+        $deviceCodesTable  = $prefix . '_device_codes';
         $emName            = (string) $config['database']['entity_manager'];
         $clients           = $config['clients'];
         $security          = $config['security'];
@@ -69,6 +94,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.entries_table', $entriesTable);
         $container->setParameter('nowo_time_track.active_timers_table', $activeTimersTable);
         $container->setParameter('nowo_time_track.client_tokens_table', $clientTokensTable);
+        $container->setParameter('nowo_time_track.device_codes_table', $deviceCodesTable);
         $container->setParameter('nowo_time_track.clients.enabled', (bool) $clients['enabled']);
         $container->setParameter('nowo_time_track.clients.token_ttl', (int) $clients['token_ttl']);
         $container->setParameter('nowo_time_track.clients.idle_threshold_seconds', (int) $clients['idle_threshold_seconds']);
@@ -118,26 +144,30 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $emRef = new Reference(sprintf('doctrine.orm.%s_entity_manager', $emName));
 
         foreach ([
-            DoctrineOrmTimeEntryRepository::class   => TimeEntryRepositoryInterface::class,
-            DoctrineOrmActiveTimerRepository::class => ActiveTimerRepositoryInterface::class,
-            DoctrineOrmClientTokenRepository::class => ClientTokenRepositoryInterface::class,
+            DoctrineOrmTimeEntryRepository::class           => TimeEntryRepositoryInterface::class,
+            DoctrineOrmActiveTimerRepository::class         => ActiveTimerRepositoryInterface::class,
+            DoctrineOrmClientTokenRepository::class         => ClientTokenRepositoryInterface::class,
+            DoctrineOrmDeviceAuthorizationRepository::class => DeviceAuthorizationRepositoryInterface::class,
         ] as $repoClass => $interface) {
             $repoDefinition = (new Definition($repoClass))
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
                 ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
-            if ($repoClass === DoctrineOrmClientTokenRepository::class) {
+            if (in_array($repoClass, [DoctrineOrmClientTokenRepository::class, DoctrineOrmDeviceAuthorizationRepository::class], true)) {
                 $repoDefinition->setArgument('$clock', new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE));
             }
             $container->setDefinition($repoClass, $repoDefinition);
             $container->setAlias($interface, $repoClass);
         }
+        // Bulk revocation by credential: a separate alias so host decorators of ClientTokenRepositoryInterface keep working.
+        $container->setAlias(CredentialClientTokenRepositoryInterface::class, DoctrineOrmClientTokenRepository::class);
 
         $container->setDefinition(TimeTrackMetadataListener::class, (new Definition(TimeTrackMetadataListener::class))
             ->setArgument('$entriesTableName', $entriesTable)
             ->setArgument('$activeTimersTableName', $activeTimersTable)
             ->setArgument('$clientTokensTableName', $clientTokensTable)
             ->setArgument('$userClass', $config['user_class'])
+            ->setArgument('$deviceCodesTableName', $deviceCodesTable)
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
         $loginRateLimit = $clients['login_rate_limit'];
@@ -147,7 +177,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$maxAttempts', (int) $loginRateLimit['max_attempts'])
             ->setArgument('$intervalSeconds', (int) $loginRateLimit['interval_seconds'])
             ->setArgument('$enabled', (bool) $loginRateLimit['enabled'])
-            ->setArgument('$maxAttemptsPerIp', $loginRateLimit['max_attempts_per_ip'] !== null ? (int) $loginRateLimit['max_attempts_per_ip'] : null));
+            ->setArgument('$maxAttemptsPerIp', $loginRateLimit['max_attempts_per_ip'] !== null ? (int) $loginRateLimit['max_attempts_per_ip'] : null)
+            ->setArgument('$maxAttemptsPerUsername', $loginRateLimit['max_attempts_per_username'] !== null ? (int) $loginRateLimit['max_attempts_per_username'] : null));
 
         $authenticatorId = $clients['authenticator'] ?? null;
         if (!is_string($authenticatorId) || $authenticatorId === '') {
@@ -169,7 +200,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setAutowired(false)
             ->setArgument('$allowedOrigins', $clients['cors_allowed_origins'])
             ->setArgument('$kernelEnvironment', '%kernel.environment%')
-            ->setArgument('$allowAnyExtensionOrigin', (bool) $clients['cors_allow_any_extension_origin']));
+            ->setArgument('$allowAnyExtensionOrigin', (bool) $clients['cors_allow_any_extension_origin'])
+            ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class)));
 
         $container->setDefinition(TeamAccessGuard::class, (new Definition(TeamAccessGuard::class))
             ->setAutowired(false)
@@ -183,11 +215,98 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
         $loader->load('services.yaml');
 
+        $this->registerClientApi($container, $config);
+
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
                 ->setArgument('$layoutTemplate', $config['templates']['layout'])
-                ->setArgument('$cssFramework', $config['templates']['css_framework']);
+                ->setArgument('$cssFramework', $config['templates']['css_framework'])
+                ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
         }
+    }
+
+    /**
+     * Client API 1.9 services (contract v0.2): host interfaces with config defaults, settings / distribution providers,
+     * rate limiter, auditor, device flow. Registered after the resource scan so these definitions win.
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerClientApi(ContainerBuilder $container, array $config): void
+    {
+        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}} $api */
+        $api = $config['client_api'];
+        /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>} $distribution */
+        $distribution = $config['client_distribution'];
+        /** @var array{cors_allowed_origins: list<string>} $clients */
+        $clients = $config['clients'];
+        /** @var array{allow_unauthenticated: bool} $security */
+        $security = $config['security'];
+        /** @var array{device_verify: array{path: string, name: string}} $routes */
+        $routes    = $config['routes'];
+        $device    = $api['device_flow'];
+        $rateLimit = $api['rate_limit'];
+        $clockRef  = new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $loggerRef = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+
+        $container->setParameter('nowo_time_track.client_api.allow_metadata', $api['allow_metadata']);
+        $container->setParameter('nowo_time_track.client_api.device_flow.enabled', $device['enabled']);
+        $container->setParameter('nowo_time_track.client_api.device_flow.default_page', $device['enabled'] && $device['default_page']);
+
+        $container->setDefinition(ConfigClientApiSettingsProvider::class, (new Definition(ConfigClientApiSettingsProvider::class))
+            ->setArguments([
+                '$allowedOrigins'           => array_values(array_unique([...$clients['cors_allowed_origins'], ...$api['allowed_origins']])),
+                '$perTokenLimit'            => $rateLimit['per_token'],
+                '$perIpLimit'               => $rateLimit['per_ip'],
+                '$deviceIpLimit'            => $rateLimit['device_per_ip'],
+                '$windowSeconds'            => $rateLimit['window_seconds'],
+                '$allowTauriWebviewOrigins' => $api['allow_tauri_webview_origins'],
+            ]));
+        $container->setDefinition(ConfigClientDistributionProvider::class, (new Definition(ConfigClientDistributionProvider::class))
+            ->setArguments(['$extension' => $distribution['extension'], '$desktop' => $distribution['desktop']]));
+
+        foreach ([
+            ClientApiSettingsProviderInterface::class  => [$api['settings_provider'], ConfigClientApiSettingsProvider::class],
+            ClientDistributionProviderInterface::class => [$distribution['provider'], ConfigClientDistributionProvider::class],
+            ClientCredentialStateInterface::class      => [$api['credential_state'], AlwaysActiveClientCredentialState::class],
+            ClientCredentialIssuerInterface::class     => [$api['credential_issuer'], OpaqueClientCredentialIssuer::class],
+            TaskAccessCheckerInterface::class          => [$api['task_access_checker'], TaskProviderTaskAccessChecker::class],
+            ClientUserProfileProviderInterface::class  => [$api['profile_provider'], NullClientUserProfileProvider::class],
+        ] as $interface => [$serviceId, $default]) {
+            $container->setAlias($interface, is_string($serviceId) && $serviceId !== '' ? $serviceId : $default);
+        }
+
+        $container->setDefinition(ClientApiRateLimiter::class, (new Definition(ClientApiRateLimiter::class))
+            ->setArguments(['$cache' => new Reference($rateLimit['cache_pool']), '$clock' => $clockRef]));
+
+        $container->setDefinition(ClientApiAuditor::class, (new Definition(ClientApiAuditor::class))
+            ->setArguments([
+                '$eventDispatcher'       => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$rateLimiter'           => new Reference(ClientApiRateLimiter::class),
+                '$denialIntervalSeconds' => $api['audit']['denial_interval_seconds'],
+                '$clock'                 => $clockRef,
+                '$logger'                => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+
+        $container->setDefinition(DeviceAuthorizationService::class, (new Definition(DeviceAuthorizationService::class))
+            ->setAutowired(true)
+            ->setPublic(true)
+            ->setArguments([
+                '$codeTtlSeconds'      => $device['code_ttl'],
+                '$intervalSeconds'     => $device['interval'],
+                '$lookupLimit'         => $device['lookup_limit'],
+                '$lookupWindowSeconds' => $device['lookup_window_seconds'],
+                '$maxPendingPerPrefix' => $device['max_pending_per_prefix'],
+                '$maxPending'          => $device['max_pending'],
+                '$clock'               => $clockRef,
+            ]));
+
+        $container->getDefinition(TimeTrackClientApiController::class)->setArgument('$allowMetadata', $api['allow_metadata']);
+        $container->getDefinition(TimeTrackClientDeviceController::class)
+            ->setArgument('$verificationUri', $device['verification_uri'])
+            ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);
+        $container->getDefinition(TimeTrackDeviceVerificationController::class)
+            ->setArgument('$allowUnauthenticated', $security['allow_unauthenticated']);
     }
 
     /**

@@ -130,7 +130,24 @@ class ActiveTimer
         return $this->metadata;
     }
 
-    /** @phpstan-impure */
+    /**
+     * Records a heartbeat without any activity signal (1.9 client API).
+     *
+     * @phpstan-impure
+     */
+    public function touchHeartbeat(DateTimeImmutable $at): self
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->lastHeartbeatAt = $at;
+
+        return $this;
+    }
+
+    /**
+     * Records a heartbeat and the client idle flag in the metadata (1.x; the 1.9 client API no longer sends idle).
+     *
+     * @phpstan-impure
+     */
     public function heartbeat(bool $isIdle = false, ?DateTimeImmutable $at = null): self
     {
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.

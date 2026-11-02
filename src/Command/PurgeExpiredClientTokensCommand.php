@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Command;
 
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -17,7 +18,7 @@ use Throwable;
 use function sprintf;
 
 /**
- * Deletes the expired client Bearer tokens (run from cron).
+ * Deletes the expired client Bearer tokens and device authorization requests (run from cron).
  */
 #[AsCommand(
     name: 'nowo:time-track:client-tokens:purge',
@@ -32,10 +33,12 @@ final class PurgeExpiredClientTokensCommand extends Command
      *
      * @param ClientTokenRepositoryInterface $tokenRepository Store of the hashed tokens
      * @param LoggerInterface|null $logger Operational log (defaults to no logging)
+     * @param DeviceAuthorizationRepositoryInterface|null $deviceRepository Store of the device requests (1.9)
      */
     public function __construct(
         private readonly ClientTokenRepositoryInterface $tokenRepository,
         ?LoggerInterface $logger = null,
+        private readonly ?DeviceAuthorizationRepositoryInterface $deviceRepository = null,
     ) {
         parent::__construct();
         $this->logger = $logger ?? new NullLogger();
@@ -48,15 +51,16 @@ final class PurgeExpiredClientTokensCommand extends Command
         $this->logger->info('TimeTrack expired client token purge started.', $context);
 
         try {
-            $purged = $this->tokenRepository->purgeExpired();
+            $purged  = $this->tokenRepository->purgeExpired();
+            $devices = $this->deviceRepository?->purgeExpired() ?? 0;
         } catch (Throwable $e) {
             $this->logger->error('TimeTrack expired client token purge failed.', $context + ['exception_class' => $e::class]);
 
             throw $e;
         }
 
-        $this->logger->info('TimeTrack expired client token purge finished.', $context + ['purged' => $purged]);
-        $io->success(sprintf('Purged %d expired client token(s).', $purged));
+        $this->logger->info('TimeTrack expired client token purge finished.', $context + ['purged' => $purged, 'purged_device_codes' => $devices]);
+        $io->success(sprintf('Purged %d expired client token(s) and %d expired device code(s).', $purged, $devices));
 
         return Command::SUCCESS;
     }

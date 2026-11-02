@@ -5,6 +5,7 @@ nav:
 page:
   timer: Control de tiempo
   reports: Informes de tiempo
+  device: "Conectar un dispositivo"
 timer:
   active: Tarea activa
   started_at: Iniciado a las
@@ -36,3 +37,36 @@ flash:
   timer_already_active: Ya tienes un temporizador activo.
   timer_stopped: Temporizador detenido.
   no_active_timer: No hay ningún temporizador activo.
+device:
+  intro: "Introduce el código que muestra la app de escritorio o la extensión del navegador."
+  user_code: "Código del dispositivo"
+  user_code_help: "8 caracteres, p. ej. BCDF-GHJK."
+  continue: "Continuar"
+  invalid_code: "Código no válido o caducado."
+  too_many_attempts: "Demasiados intentos. Inténtalo más tarde."
+  confirm_intro: "%client% pide acceso a tu registro de tiempo. Apruébalo solo si lo has iniciado tú en tu dispositivo."
+  approve: "Aprobar"
+  deny: "Denegar"
+  request: "Solicitud"
+  client_name: "Nombre del dispositivo"
+  client_type: "Cliente"
+  scopes: "Permisos"
+  requested_at: "Solicitado el"
+  requested_from: "Solicitado desde (red)"
+  expires: "Caduca"
+  approved: "El dispositivo está conectado. Ya puedes volver a él."
+  approved_status: "Aprobado"
+  denied: "La solicitud se ha denegado."
+  denied_status: "Denegado"
+  expired: "Esta solicitud ha caducado o ya se decidió. Vuelve a empezar desde el dispositivo."
+  expired_status: "Caducado"
+downloads:
+  title: "Apps de registro de tiempo"
+  get: "Descargar"
+  chrome: "Extensión para Chrome"
+  edge: "Complemento para Edge"
+  firefox: "Complemento para Firefox"
+  windows: "App de escritorio para Windows"
+  macos: "App de escritorio para macOS"
+  linux: "App de escritorio para Linux"
+  latest_version: "Última versión de escritorio"

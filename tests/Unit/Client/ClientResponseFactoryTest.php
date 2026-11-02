@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\Client;
 
+use Nowo\TimeTrackBundle\Client\ClientApiSettings;
+use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -119,5 +121,26 @@ final class ClientResponseFactoryTest extends TestCase
         $response = $factory->json(['ok' => true], 200, $request);
 
         self::assertNull($response->headers->get('Access-Control-Allow-Origin'));
+    }
+
+    public function testProviderOriginsMustBeExactInEveryEnvironment(): void
+    {
+        $provider = new class implements ClientApiSettingsProviderInterface {
+            public function getSettings(): ClientApiSettings
+            {
+                return new ClientApiSettings(['*', 'chrome-extension://*', 'https://*.example.com', 'https://app.example.com/path', "https://app.example.com\n", 'moz-extension://0f1e2d3c'], allowTauriWebviewOrigins: false);
+            }
+        };
+
+        foreach (['dev', 'prod'] as $env) {
+            $factory = new ClientResponseFactory([], $env, settingsProvider: $provider);
+            foreach (['https://evil.example.com', 'chrome-extension://abc', 'https://a.example.com', 'https://app.example.com'] as $origin) {
+                $response = $factory->json(['ok' => true], 200, Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => $origin]));
+                self::assertNull($response->headers->get('Access-Control-Allow-Origin'), $env . ' ' . $origin);
+            }
+
+            $listed = $factory->json(['ok' => true], 200, Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => 'moz-extension://0f1e2d3c']));
+            self::assertSame('moz-extension://0f1e2d3c', $listed->headers->get('Access-Control-Allow-Origin'), $env);
+        }
     }
 }

@@ -105,9 +105,12 @@ abstract class FunctionalTestCase extends WebTestCase
         return $decoded;
     }
 
-    protected function login(string $username = 'person@example.com', string $password = 'secret', string $clientType = 'desktop'): string
+    /**
+     * @param array<string, string> $server
+     */
+    protected function login(string $username = 'person@example.com', string $password = 'secret', string $clientType = 'desktop', array $server = []): string
     {
-        $body = $this->api('POST', '/api/time-track/login', ['username' => $username, 'password' => $password, 'clientType' => $clientType]);
+        $body = $this->api('POST', '/api/time-track/login', ['username' => $username, 'password' => $password, 'clientType' => $clientType], null, $server);
         self::assertResponseIsSuccessful();
         self::assertIsArray($body);
         self::assertIsString($body['token'] ?? null);

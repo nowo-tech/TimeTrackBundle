@@ -18,6 +18,19 @@ services:
             - '../../Client/ClientLoginRateLimiter.php'
             - '../../Client/ClientResponseFactory.php'
             - '../../Client/DefaultClientAuthenticator.php'
+            - '../../Client/ClientApiRateLimiter.php'
+            - '../../Client/ClientApiAuditor.php'
+            - '../../Client/ConfigClientApiSettingsProvider.php'
+            - '../../Client/ConfigClientDistributionProvider.php'
+            - '../../Client/ClientApiSettings.php'
+            - '../../Client/ClientDistribution.php'
+            - '../../Client/ClientApiPrincipal.php'
+            - '../../Service/DeviceAuthorizationService.php'
+            - '../../Entity/'
+            - '../../Enum/'
+            - '../../Event/'
+            - '../../Exception/'
+            - '../../Dto/'
             - '../../Service/TeamAccessGuard.php'
             - '../../Security/TimeTrackAccessCheckerInterface.php'
             - '../../Security/ConfigurableTimeTrackAccessChecker.php'
@@ -30,6 +43,8 @@ services:
     Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader:
         arguments:
             $clientsEnabled: '%nowo_time_track.clients.enabled%'
+            $deviceFlowEnabled: '%nowo_time_track.client_api.device_flow.enabled%'
+            $deviceDefaultPage: '%nowo_time_track.client_api.device_flow.default_page%'
             $clientRoutes: '%nowo_time_track.clients.routes%'
             $manageRoutes: '%nowo_time_track.routes%'
             $routePrefix: '%nowo_time_track.route_prefix%'
@@ -71,3 +86,7 @@ services:
     Nowo\TimeTrackBundle\Service\TimerService:
         tags:
             - { name: monolog.logger, channel: time_track }
+
+    # 1.9 host entry point: revoke every session token of a deleted credential (public for host controllers/listeners).
+    Nowo\TimeTrackBundle\Client\ClientTokenRevoker:
+        public: true

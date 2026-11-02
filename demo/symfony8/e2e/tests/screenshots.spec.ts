@@ -56,4 +56,17 @@ test.describe('TimeTrack screenshots (full demo frame)', () => {
     await expect(page.getByTestId('time-track-reports').locator('tbody tr').first()).toBeVisible();
     await captureDemoFrame(page, 'reports.png');
   });
+
+  test('device verification page — a desktop app asks for access', async ({ page, request }) => {
+    await page.setViewportSize({ width: WIDTH, height: 900 });
+    const code = await request.post('/api/time-track/device/code', {
+      data: { clientType: 'desktop', clientName: 'Work laptop', scopes: ['timer:read', 'timer:write', 'tasks:read'] },
+    });
+    const grant = await code.json();
+    const complete = new URL(grant.verificationUriComplete);
+    await page.goto(complete.pathname + complete.search);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByTestId('time-track-device-confirm')).toContainText('Work laptop');
+    await captureDemoFrame(page, 'device.png');
+  });
 });

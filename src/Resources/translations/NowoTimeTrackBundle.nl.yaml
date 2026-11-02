@@ -5,6 +5,7 @@ nav:
 page:
   timer: Tijdregistratie
   reports: Tijdrapporten
+  device: "Apparaat koppelen"
 timer:
   active: Actieve taak
   started_at: Gestart om
@@ -36,3 +37,36 @@ flash:
   timer_already_active: Je hebt al een actieve timer.
   timer_stopped: Timer gestopt.
   no_active_timer: Geen actieve timer.
+device:
+  intro: "Voer de code in die de desktopapp of de browserextensie toont."
+  user_code: "Apparaatcode"
+  user_code_help: "8 tekens, bijv. BCDF-GHJK."
+  continue: "Doorgaan"
+  invalid_code: "Ongeldige of verlopen code."
+  too_many_attempts: "Te veel pogingen. Probeer het later opnieuw."
+  confirm_intro: "%client% vraagt toegang tot je tijdregistratie. Keur alleen goed als je dit zelf op je apparaat hebt gestart."
+  approve: "Goedkeuren"
+  deny: "Weigeren"
+  request: "Verzoek"
+  client_name: "Apparaatnaam"
+  client_type: "Client"
+  scopes: "Rechten"
+  requested_at: "Aangevraagd op"
+  requested_from: "Aangevraagd vanaf (netwerk)"
+  expires: "Verloopt"
+  approved: "Het apparaat is gekoppeld. Je kunt er nu naar terugkeren."
+  approved_status: "Goedgekeurd"
+  denied: "Het verzoek is geweigerd."
+  denied_status: "Geweigerd"
+  expired: "Dit verzoek is verlopen of al afgehandeld. Begin opnieuw op het apparaat."
+  expired_status: "Verlopen"
+downloads:
+  title: "Tijdregistratie-apps"
+  get: "Downloaden"
+  chrome: "Chrome-extensie"
+  edge: "Edge-add-on"
+  firefox: "Firefox-add-on"
+  windows: "Desktopapp voor Windows"
+  macos: "Desktopapp voor macOS"
+  linux: "Desktopapp voor Linux"
+  latest_version: "Nieuwste desktopversie"

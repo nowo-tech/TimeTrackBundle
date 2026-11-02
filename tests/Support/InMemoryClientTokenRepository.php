@@ -6,8 +6,11 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
 
-final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterface
+use function array_values;
+
+final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterface, CredentialClientTokenRepositoryInterface
 {
     /** @var array<string, ClientToken> */
     private array $tokens = [];
@@ -44,5 +47,26 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
         }
 
         return $purged;
+    }
+
+    public function removeByCredentialId(string $credentialId): int
+    {
+        $removed = 0;
+        foreach ($this->tokens as $id => $token) {
+            if ($token->getCredentialId() === $credentialId) {
+                unset($this->tokens[$id]);
+                ++$removed;
+            }
+        }
+
+        return $removed;
+    }
+
+    /**
+     * @return list<ClientToken>
+     */
+    public function all(): array
+    {
+        return array_values($this->tokens);
     }
 }
