@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.9.0] - 2026-11-02](#190---2026-11-02)
 - [[1.8.0] - 2026-11-02](#180---2026-11-02)
 - [[1.7.0] - 2026-10-30](#170---2026-10-30)
 - [[1.6.0] - 2026-10-26](#160---2026-10-26)
@@ -34,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.9.0] - 2026-11-02
+
+Client API for the browser extension and desktop app: scoped tokens linked to host credentials, device flow, per-request credential and task checks, stateless Bearer endpoints with exact-origin CORS, rate limits per token / IP (/64) / username, timer switch / discard-idle / export, audit events. See [UPGRADING](https://github.com/nowo-tech/TimeTrackBundle/blob/v1.9.0/docs/UPGRADING.md#to-190).
 
 Client API 1.9 (contract v0.2) for the extension and the desktop app. Schema change: see
 [UPGRADING](UPGRADING.md#to-190).
@@ -489,7 +494,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.5.2...v1.6.0
