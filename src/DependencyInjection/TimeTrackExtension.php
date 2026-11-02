@@ -38,6 +38,7 @@ use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 
 use function array_key_exists;
+use function array_merge;
 use function is_array;
 use function is_string;
 use function rtrim;
@@ -74,7 +75,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.clients.routes', $clients['routes']);
         $container->setParameter('nowo_time_track.clients.cors_allowed_origins', $clients['cors_allowed_origins']);
         $container->setParameter('nowo_time_track.routes', $config['routes']);
-        $container->setParameter('nowo_time_track.templates', $config['templates']);
+        // 1.x shape (layout, css_framework, index, reports); index / reports are the resolved web_ui.templates values.
+        $container->setParameter('nowo_time_track.templates', array_merge($config['templates'], $config['web_ui']['templates']));
+        $container->setParameter('nowo_time_track.web_ui.layout_template', $config['web_ui']['layout_template']);
+        $container->setParameter('nowo_time_track.web_ui.templates', $config['web_ui']['templates']);
         $container->setParameter('nowo_time_track.reports.page_size', (int) $config['reports']['page_size']);
         $container->setParameter('nowo_time_track.templates.layout', $config['templates']['layout']);
         $container->setParameter('nowo_time_track.templates.css_framework', $config['templates']['css_framework']);

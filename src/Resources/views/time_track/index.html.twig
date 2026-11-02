@@ -1,60 +1,10 @@
-{% extends nowo_time_track_layout %}
-{% import '@NowoUiKitBundle/macros/ui.html.twig' as ui %}
-
-{% block title %}{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}
-
-{% block stylesheets %}
-    {{ parent() }}
-    <link rel="stylesheet" href="{{ asset('css/nowo-ui.css', 'nowo_ui_kit') }}">
-{% endblock %}
-
-{% block javascripts %}
-    {{ parent() }}
-{% endblock %}
-
-{% block body %}
-<h1>{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}</h1>
-
-<div class="card">
-    {% if active_timer %}
-        <p><strong>{{ 'timer.active'|trans({}, 'NowoTimeTrackBundle') }}:</strong> {{ active_timer.taskTitleSnapshot }}</p>
-        <p>{{ 'timer.started_at'|trans({}, 'NowoTimeTrackBundle') }}: {{ active_timer.startedAt|date('Y-m-d H:i') }}</p>
-        {{ form_start(stop_form) }}
-            {% for child in stop_form %}
-                {% if not child.rendered %}
-                    {{ form_row(child) }}
-                {% endif %}
-            {% endfor %}
-            <button class="btn btn-danger" type="submit">{{ 'action.stop'|trans({}, 'NowoTimeTrackBundle') }}</button>
-        {{ form_end(stop_form) }}
-    {% else %}
-        <p>{{ 'timer.none'|trans({}, 'NowoTimeTrackBundle') }}</p>
-    {% endif %}
-</div>
-
-<div class="card">
-    <h2>{{ 'tasks.title'|trans({}, 'NowoTimeTrackBundle') }}</h2>
-    {% if tasks is empty %}
-        <p>{{ 'tasks.empty'|trans({}, 'NowoTimeTrackBundle') }}</p>
-    {% else %}
-        <ul>
-            {% for task in tasks %}
-                <li>
-                    {{ task.title }}
-                    {% if not active_timer %}
-                        {% set start_form = start_forms[task.id] %}
-                        {{ form_start(start_form, {attr: {style: 'display:inline'}}) }}
-                            {% for child in start_form %}
-                                {% if not child.rendered %}
-                                    {{ form_row(child) }}
-                                {% endif %}
-                            {% endfor %}
-                            <button class="btn btn-primary" type="submit">{{ 'action.start'|trans({}, 'NowoTimeTrackBundle') }}</button>
-                        {{ form_end(start_form) }}
-                    {% endif %}
-                </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
-</div>
-{% endblock %}
+{#
+  Timer page (REQ-UI-003): UiKit list scaffold. Variable: page (View\ListPage from TimeTrackPages::timerPage():
+  header page.timer with the running task as intro, a "Running" status and the Stop action (POST, CSRF FormView
+  stop_form) while a timer runs; columns tasks.task, tasks.board (priority 2); rows = list<TaskReference>; row action
+  Start (POST, CSRF FormView of start_forms[task.id]) when no timer runs; EmptyState tasks.empty;
+  data-testid="time-track-timer").
+  1.x variables, still passed for host overrides: active_timer, tasks, stop_form, start_forms.
+  Data blocks: none (the scaffold prints the default cells).
+#}
+{% extends '@NowoUiKit/page/list.html.twig' %}

@@ -120,7 +120,6 @@ final class FunctionalKernel extends Kernel
         ]);
         $container->extension('nowo_time_track', array_replace_recursive([
             'user_class' => AppUser::class,
-            'templates'  => ['layout' => '@TimeTrackTest/layout.html.twig'],
             'clients'    => [
                 'enabled'              => true,
                 'user_provider'        => 'security.user.provider.concrete.app_users',

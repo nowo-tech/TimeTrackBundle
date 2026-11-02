@@ -9,9 +9,14 @@ timer:
   active: Tarefa ativa
   started_at: Iniciado às
   none: Nenhum temporizador ativo
+  running_intro: "Em curso: %task% (desde %started%)"
+  status_running: Em curso
 tasks:
   title: Tarefas registáveis
   empty: Sem entradas neste período.
+  task: Tarefa
+  board: Quadro
+  actions: Ações
 action:
   start: Iniciar
   stop: Parar
@@ -21,10 +26,11 @@ reports:
   started: Início
   duration: Duração
   source: Origem
-  pagination: Paginação
-  page_of: "Página %page% de %pages% (%total% registos)"
-  previous: Anterior
-  next: Seguinte
+  period: "%from% – %to%"
+  minutes: "%minutes% min"
+  source_web: Web
+  source_extension: Extensão do navegador
+  source_desktop: Aplicação de ambiente de trabalho
 flash:
   timer_started: Temporizador iniciado.
   timer_already_active: Já tem um temporizador ativo.

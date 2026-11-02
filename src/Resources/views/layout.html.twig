@@ -1,59 +1,24 @@
 {#
-  Default demo shell for TimeTrack Web UI (REQ-UI-001).
-  Host apps: set nowo_time_track.templates.layout to the project layout (or a one-file bridge).
-  Pages extend Twig global nowo_time_track_layout and fill body / nowo_ui_content.
-  CSS stack hint: nowo_time_track.templates.css_framework (Twig global nowo_time_track_css_framework; default tabler).
-  UiKit CSS: asset('css/nowo-ui.css', 'nowo_ui_kit') (REQ-UI-001-kit).
+  Deprecated since 1.8, removed in 2.0 (REQ-TWIG-001 rule 4 shim). The 1.x default layout of the manage pages: the
+  pages now extend the UiKit list scaffold and the UiKit admin layout (nowo_ui_kit.layouts.admin), so this file only
+  keeps 1.x host templates that extend it (full-file overrides written for 1.x: `{% extends nowo_time_track_layout %}`)
+  rendering inside the UiKit admin layout: `title` feeds the document title, `stylesheets` / `javascripts` stack after
+  the UiKit assets, `body` is the page content.
 #}
-{% import '@NowoUiKitBundle/macros/ui.html.twig' as ui %}
-<!DOCTYPE html>
-<html lang="{{ app.request.locale|default('en') }}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{% block nowo_ui_document_title %}Time Track{% endblock %}{% endblock %}</title>
-    {% block stylesheets %}
-        {% block nowo_ui_styles %}
-            {# Demo layout styles — skipped when host sets templates.layout to the project layout. #}
-            <link rel="stylesheet" href="{{ asset('css/nowo-ui.css', 'nowo_ui_kit') }}">
-            <style>
-                :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-                body { margin: 0; padding: 1.5rem; background: #0f172a; color: #e2e8f0; }
-                a { color: #38bdf8; }
-                .card { background: #1e293b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
-                .btn { display: inline-block; padding: .5rem 1rem; border-radius: 6px; border: none; cursor: pointer; text-decoration: none; }
-                .btn-primary { background: #2563eb; color: #fff; }
-                .btn-danger { background: #dc2626; color: #fff; }
-                .flash { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
-                .flash-success { background: #14532d; }
-                .flash-warning { background: #713f12; }
-                .flash-danger { background: #7f1d1d; }
-                nav a { margin-right: 1rem; }
-            </style>
-        {% endblock %}
-    {% endblock %}
-</head>
-<body>
-    <nav>
-        <a href="{{ path('nowo_task_board_index') }}">{{ 'nav.board'|trans({}, 'NowoTaskBoardBundle') }}</a>
-        <a href="{{ path('nowo_time_track_index') }}">{{ 'nav.timer'|trans({}, 'NowoTimeTrackBundle') }}</a>
-        <a href="{{ path('nowo_time_track_reports') }}">{{ 'nav.reports'|trans({}, 'NowoTimeTrackBundle') }}</a>
-    </nav>
+{% extends nowo_ui_layout.admin %}
 
-    {% block nowo_ui_flashes %}
-        {% for label, messages in app.flashes %}
-            {% for message in messages %}
-                <div class="flash flash-{{ label }}">{{ message }}</div>
-            {% endfor %}
-        {% endfor %}
-    {% endblock %}
+{% block nowo_ui_document_title %}{% block title %}{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}{% endblock %}
 
-    {% block body %}
-        {% block nowo_ui_content %}{% endblock %}
-    {% endblock %}
+{% block nowo_ui_styles %}
+    {{ parent() }}
+    {% block stylesheets %}{% endblock %}
+{% endblock %}
 
-    {% block javascripts %}
-        {% block nowo_ui_scripts %}{% endblock %}
-    {% endblock %}
-</body>
-</html>
+{% block nowo_ui_content %}
+    {% block body %}{% endblock %}
+{% endblock %}
+
+{% block nowo_ui_scripts %}
+    {{ parent() }}
+    {% block javascripts %}{% endblock %}
+{% endblock %}

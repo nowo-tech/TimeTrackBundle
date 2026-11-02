@@ -20,7 +20,7 @@ final class UnauthenticatedManageUiTest extends FunctionalTestCase
         $crawler = $this->client->request('GET', '/tools/time-track');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('[data-test-layout]', 'No active timer');
+        self::assertSelectorTextContains('main', 'No active timer');
         self::assertCount(0, $crawler->selectButton('Start'));
 
         $this->client->request('POST', '/tools/time-track', ['action' => 'stop']);

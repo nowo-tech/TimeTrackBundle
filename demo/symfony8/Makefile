@@ -8,7 +8,7 @@ endif
 DOCKER_COMPOSE = $(COMPOSE)
 SERVICE_PHP = php
 
-.PHONY: help ensure-env ensure-up up down restart build install setup database shell test test-coverage verify release-check update-bundle update-deps time-track-purge-tokens
+.PHONY: help ensure-env ensure-up up down restart build install setup database shell test test-coverage verify release-check update-bundle update-deps time-track-purge-tokens test-e2e demo-screenshots
 
 help:
 	@echo "TimeTrack Bundle — Symfony 8.1 Demo"
@@ -28,6 +28,8 @@ help:
 	@echo "  release-check  update-bundle, then verify (REQ-DEMO-007)"
 	@echo "  update-bundle  Sync bundle autoload and clear cache"
 	@echo "  update-deps    composer update inside the demo (REQ-MAKE-008)"
+	@echo "  test-e2e       Playwright e2e against this demo (REQ-DEMO-013)"
+	@echo "  demo-screenshots  Refresh docs/images/demo/*.webp via Playwright (REQ-DEMO-013)"
 	@echo "  time-track-purge-tokens  Purge expired client Bearer tokens"
 
 ensure-env:
@@ -110,6 +112,33 @@ release-check: ensure-up update-bundle verify
 update-bundle: ensure-up
 	@$(COMPOSE) exec -T $(SERVICE_PHP) composer dump-autoload
 	@$(COMPOSE) exec -T $(SERVICE_PHP) php bin/console cache:clear --env=dev --no-warmup || true
+
+# REQ-DEMO-013 — Playwright e2e via the official image (host Chromium deps are often missing on WSL); the image tag
+# matches @playwright/test in e2e/package.json.
+PLAYWRIGHT_IMAGE ?= mcr.microsoft.com/playwright:v1.63.0-jammy
+
+test-e2e: ensure-up
+	@mkdir -p e2e/node_modules
+	@PORT=$$(grep "^PORT=" .env 2>/dev/null | cut -d= -f2 | tr -d '\r'); PORT=$${PORT:-8024}; \
+	docker run --rm --cpus 2 --network host --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+		-v "$(CURDIR)/e2e:/e2e" -w /e2e \
+		-e DEMO_BASE_URL=http://127.0.0.1:$$PORT \
+		$(PLAYWRIGHT_IMAGE) \
+		bash -lc 'npm ci --no-fund --no-audit && npx playwright test --project=chromium --workers=1'
+
+# Captures PNGs with the screenshots project, converts them to WebP (sharp, quality 90) and deletes the PNGs.
+demo-screenshots: ensure-up
+	@mkdir -p ../../docs/images/demo e2e/node_modules
+	@PORT=$$(grep "^PORT=" .env 2>/dev/null | cut -d= -f2 | tr -d '\r'); PORT=$${PORT:-8024}; \
+	docker run --rm --cpus 2 --network host --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+		-v "$(CURDIR)/e2e:/e2e" \
+		-v "$(CURDIR)/../../docs/images/demo:/screenshots" \
+		-w /e2e \
+		-e DEMO_BASE_URL=http://127.0.0.1:$$PORT \
+		-e SCREENSHOT_DIR=/screenshots \
+		$(PLAYWRIGHT_IMAGE) \
+		bash -lc 'npm ci --no-fund --no-audit && npx playwright test --project=screenshots --workers=1 && node scripts/to-webp.mjs /screenshots 90'
+	@echo "Screenshots written under docs/images/demo/ (WebP)"
 
 time-track-purge-tokens: ensure-up
 	@$(COMPOSE) exec -T $(SERVICE_PHP) php bin/console nowo:time-track:client-tokens:purge --no-interaction

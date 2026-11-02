@@ -60,6 +60,12 @@ services:
             $allowUnauthenticated: '%nowo_time_track.security.allow_unauthenticated%'
             $reportsPageSize: '%nowo_time_track.reports.page_size%'
 
+    # REQ-UI-003: view models + layout of the manage pages.
+    Nowo\TimeTrackBundle\Ui\TimeTrackPages:
+        arguments:
+            $layoutTemplate: '%nowo_time_track.web_ui.layout_template%'
+            $twig: '@?twig'
+
     # REQ-OBS-001: services that log use the `time_track` Monolog channel when MonologBundle is installed (the tag is
     # ignored otherwise and the default `logger`, or none, is injected).
     Nowo\TimeTrackBundle\Service\TimerService:

@@ -52,6 +52,7 @@
 | `Event/TimeEntryAccessCheckEvent.php` | Entry ACL event | FR-EVT-003 |
 | `Event/TimeEntryListQueryEvent.php` | Entry list filter | FR-EVT-003 |
 | `Exception/ActiveTimerConflictException.php` | Conflict exception | FR-EXC-001 |
+| `Form/TimerActionType.php` | Start / stop CSRF form type (FormKit profile `time_track`) | FR-CTRL-001 |
 | `Doctrine/ManagedEntityRefresher.php` | Worker-safe entity reload before security checks | FR-WORKER-001 |
 | `Doctrine/RecoveringFlusher.php` | Flush with closed-EntityManager recovery | FR-WORKER-001 |
 | `Security/AllowAllTimeTrackAccessChecker.php` | Permissive checker (allow_unauthenticated) | FR-SEC-001 |
@@ -59,6 +60,7 @@
 | `Security/TimeTrackAccessCheckerInterface.php` | Access checker contract | FR-SEC-001 |
 | `Support/QueryPeriodResolver.php` | from/to query parsing | FR-SUP-002 |
 | `Twig/TimeTrackTwigExtension.php` | Web UI Twig globals | FR-TWIG-002 |
+| `Ui/TimeTrackPages.php` | UiKit view models + layout resolution of the manage pages (REQ-UI-003) | FR-TPL-001 |
 
 ## Symfony config
 
@@ -70,7 +72,8 @@
 
 | Source file | Spec section | Requirement IDs |
 | --- | --- | --- |
-| `Resources/views/layout.html.twig` | Base layout | FR-TPL-001 |
+| `Resources/views/layout.html.twig` | Deprecated 1.x layout shim (maps to the UiKit admin layout) | FR-TPL-001 |
+| `Resources/views/_legacy_layout.html.twig` | Deprecated bridge for 1.x host layouts | FR-TPL-001 |
 | `Resources/views/time_track/index.html.twig` | Timer index | FR-TPL-001 |
 | `Resources/views/time_track/reports.html.twig` | Reports page | FR-TPL-001 |
 
@@ -90,8 +93,8 @@
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes (`src/**/*.php`) | 49 | 49 |
+| PHP classes (`src/**/*.php`) | 53 | 53 |
 | Symfony config | 1 | 1 |
-| Twig views | 3 | 3 |
+| Twig views | 4 | 4 |
 | Translations | 7 | 7 |
-| **Total production sources** | **60** | **60** |
+| **Total production sources** | **65** | **65** |

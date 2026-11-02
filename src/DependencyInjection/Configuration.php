@@ -9,6 +9,10 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
+use function array_key_exists;
+use function is_array;
+use function is_string;
+
 /**
  * Configuration tree for TimeTrackBundle.
  */
@@ -28,6 +32,13 @@ final class Configuration implements ConfigurationInterface
         'none',
     ];
 
+    /** 1.x default of templates.layout (deprecated shim, maps to the UiKit admin layout). */
+    public const LEGACY_LAYOUT = '@NowoTimeTrackBundle/layout.html.twig';
+
+    public const DEFAULT_INDEX_TEMPLATE = '@NowoTimeTrackBundle/time_track/index.html.twig';
+
+    public const DEFAULT_REPORTS_TEMPLATE = '@NowoTimeTrackBundle/time_track/reports.html.twig';
+
     /**
      * Builds the `nowo_time_track` configuration tree.
      */
@@ -37,6 +48,10 @@ final class Configuration implements ConfigurationInterface
         $root        = $treeBuilder->getRootNode();
 
         $root
+            ->beforeNormalization()
+                ->ifTrue(static fn (mixed $v): bool => is_array($v) && is_array($v['templates'] ?? null))
+                ->then($this->mapDeprecatedTemplates(...))
+            ->end()
             ->children()
                 ->scalarNode('user_class')
                     ->info('FQCN of the application user entity (must implement UserInterface and expose getId()).')
@@ -126,24 +141,53 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                     ->end()
                 ->end()
+                ->arrayNode('web_ui')
+                    ->info('Manage UI pages on the UiKit page contract (REQ-UI-003).')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('layout_template')
+                            ->defaultNull()
+                            ->info('Layout of the pages (passed to the UiKit scaffolds as ListPage::$layout). null = nowo_ui_kit.layouts.admin. A 1.x layout without the UiKit canonical blocks is wrapped in a deprecated bridge.')
+                        ->end()
+                        ->arrayNode('templates')
+                            ->info('Per-page template override: a host template that extends @!NowoTimeTrackBundle/<template> and overrides a data block.')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->scalarNode('index')
+                                    ->defaultValue(self::DEFAULT_INDEX_TEMPLATE)
+                                    ->cannotBeEmpty()
+                                ->end()
+                                ->scalarNode('reports')
+                                    ->defaultValue(self::DEFAULT_REPORTS_TEMPLATE)
+                                    ->cannotBeEmpty()
+                                ->end()
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
                 ->arrayNode('templates')
+                    ->info('Deprecated since 1.8 (removed in 2.0): use web_ui.layout_template, web_ui.templates.* and nowo_ui_kit.css_framework.')
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->scalarNode('layout')
-                            ->defaultValue('@NowoTimeTrackBundle/layout.html.twig')
+                            ->defaultValue(self::LEGACY_LAYOUT)
                             ->cannotBeEmpty()
-                            ->info('Twig layout extended by timer/report pages via global nowo_time_track_layout (REQ-UI-001). Host apps set this to the project layout or a one-file bridge. Default is the bundle demo layout.')
+                            ->info('Deprecated: use web_ui.layout_template. Still exposed as Twig global nowo_time_track_layout for 1.x template overrides.')
+                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: use "nowo_time_track.web_ui.layout_template" (null = nowo_ui_kit.layouts.admin).')
                         ->end()
                         ->enumNode('css_framework')
                             ->values(self::CSS_FRAMEWORKS)
                             ->defaultValue('tabler')
-                            ->info('Host-chosen CSS stack (REQ-UI-001). Twig global nowo_time_track_css_framework. Default tabler matches the shared demo Tabler CDN. Values: bootstrap (alias of bootstrap5), bootstrap4, bootstrap5, tabler (Bootstrap-compatible), tailwind, foundation, custom, none. Pages ship Tabler/Bootstrap 5-compatible classes; custom relies on host CSS / semantic nowo-ui-* classes.')
+                            ->info('Deprecated: set nowo_ui_kit.css_framework. Until 2.0 the value still seeds nowo_ui_kit.css_framework / icon_set when the host does not set them, and stays the Twig global nowo_time_track_css_framework.')
+                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: set "nowo_ui_kit.css_framework" (the pages render through the UiKit theme slots).')
                         ->end()
                         ->scalarNode('index')
-                            ->defaultValue('@NowoTimeTrackBundle/time_track/index.html.twig')
+                            ->defaultValue(self::DEFAULT_INDEX_TEMPLATE)
+                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: use "nowo_time_track.web_ui.templates.index".')
                         ->end()
                         ->scalarNode('reports')
-                            ->defaultValue('@NowoTimeTrackBundle/time_track/reports.html.twig')
+                            ->defaultValue(self::DEFAULT_REPORTS_TEMPLATE)
+                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: use "nowo_time_track.web_ui.templates.reports".')
                         ->end()
                     ->end()
                 ->end()
@@ -278,5 +322,37 @@ final class Configuration implements ConfigurationInterface
             ->end();
 
         return $treeBuilder;
+    }
+
+    /**
+     * 1.8: the deprecated `templates.layout|index|reports` keys feed `web_ui.*` unless `web_ui` sets them (both stay
+     * readable; the 1.x default layout is not mapped, so it resolves to the UiKit admin layout).
+     *
+     * @param array<string, mixed> $config Raw configuration
+     *
+     * @return array<string, mixed>
+     */
+    private function mapDeprecatedTemplates(array $config): array
+    {
+        $templates = is_array($config['templates'] ?? null) ? $config['templates'] : [];
+        $webUi     = is_array($config['web_ui'] ?? null) ? $config['web_ui'] : [];
+        $pages     = is_array($webUi['templates'] ?? null) ? $webUi['templates'] : [];
+
+        $layout = $templates['layout'] ?? null;
+        if (is_string($layout) && $layout !== self::LEGACY_LAYOUT && !array_key_exists('layout_template', $webUi)) {
+            $webUi['layout_template'] = $layout;
+        }
+        foreach (['index', 'reports'] as $page) {
+            $template = $templates[$page] ?? null;
+            if (is_string($template) && !isset($pages[$page])) {
+                $pages[$page] = $template;
+            }
+        }
+        if ($pages !== []) {
+            $webUi['templates'] = $pages;
+        }
+        $config['web_ui'] = $webUi;
+
+        return $config;
     }
 }

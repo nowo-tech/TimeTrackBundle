@@ -1,0 +1,4 @@
+# Exclude from git archive (used by GitHub/Packagist for dist packages), like composer.json archive.exclude:
+# the demo application and the versioned .cursor/ pack are not part of the installed bundle.
+/demo export-ignore
+/.cursor export-ignore

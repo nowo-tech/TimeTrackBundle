@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 
 use App\Entity\User;
+use ErrorException;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -12,6 +13,7 @@ use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\Definition\Processor;
+use Symfony\Component\ErrorHandler\ErrorHandler;
 
 final class ConfigurationTest extends TestCase
 {
@@ -65,6 +67,68 @@ final class ConfigurationTest extends TestCase
 
         self::assertSame('base.html.twig', $config['templates']['layout']);
         self::assertSame('bootstrap5', $config['templates']['css_framework']);
+    }
+
+    public function testWebUiDefaultsToTheUiKitLayoutAndTheBundlePages(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class]]);
+
+        self::assertNull($config['web_ui']['layout_template']);
+        self::assertSame(['index' => Configuration::DEFAULT_INDEX_TEMPLATE, 'reports' => Configuration::DEFAULT_REPORTS_TEMPLATE], $config['web_ui']['templates']);
+        self::assertSame(Configuration::LEGACY_LAYOUT, $config['templates']['layout']);
+    }
+
+    public function testDeprecatedTemplatesKeysFeedWebUi(): void
+    {
+        $config = @(new Processor())->processConfiguration(new Configuration(), [[
+            'user_class' => User::class,
+            'templates'  => ['layout' => 'base.html.twig', 'index' => 'host/timer.html.twig', 'reports' => 'host/reports.html.twig'],
+        ]]);
+
+        self::assertSame('base.html.twig', $config['web_ui']['layout_template']);
+        self::assertSame(['index' => 'host/timer.html.twig', 'reports' => 'host/reports.html.twig'], $config['web_ui']['templates']);
+        self::assertSame('base.html.twig', $config['templates']['layout'], 'still exposed (Twig global nowo_time_track_layout)');
+    }
+
+    public function testWebUiWinsOverTheDeprecatedKeysAndThe1xDefaultLayoutIsNotMapped(): void
+    {
+        $config = @(new Processor())->processConfiguration(new Configuration(), [[
+            'user_class' => User::class,
+            'templates'  => ['layout' => Configuration::LEGACY_LAYOUT, 'index' => 'old/timer.html.twig'],
+            'web_ui'     => ['templates' => ['index' => 'new/timer.html.twig']],
+        ]]);
+        self::assertNull($config['web_ui']['layout_template']);
+        self::assertSame('new/timer.html.twig', $config['web_ui']['templates']['index']);
+
+        $config = @(new Processor())->processConfiguration(new Configuration(), [[
+            'user_class' => User::class,
+            'templates'  => ['layout' => 'old/layout.html.twig'],
+            'web_ui'     => ['layout_template' => null],
+        ]]);
+        self::assertNull($config['web_ui']['layout_template'], 'an explicit web_ui.layout_template (even null) wins');
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function deprecatedTemplatesKeys(): iterable
+    {
+        yield 'layout' => ['layout', 'base.html.twig'];
+        yield 'css_framework' => ['css_framework', 'tailwind'];
+        yield 'index' => ['index', 'a.html.twig'];
+        yield 'reports' => ['reports', 'b.html.twig'];
+    }
+
+    #[DataProvider('deprecatedTemplatesKeys')]
+    public function testDeprecatedTemplatesKeysTriggerADeprecation(string $key, string $value): void
+    {
+        $this->expectException(ErrorException::class);
+        $this->expectExceptionMessage('The "nowo_time_track.templates.' . $key . '" option is deprecated');
+
+        ErrorHandler::call(static fn (): array => (new Processor())->processConfiguration(new Configuration(), [[
+            'user_class' => User::class,
+            'templates'  => [$key => $value],
+        ]]));
     }
 
     public function testReportsPageSizeDefaultsTo50(): void

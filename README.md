@@ -50,6 +50,24 @@ make -C demo up-symfony8
 - Task board: `/tools/task-board`
 - Login: `demo@example.com` / `demo`
 
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/demo/timer.webp" alt="Timer page in the demo: navigation (Board / Timer / Reports), Timer started flash, page header with the running task and its start time, Running status badge and Stop button, table of trackable tasks with their board, Symfony web debug toolbar" />
+    </td>
+    <td width="50%">
+      <img src="docs/images/demo/reports.webp" alt="Reports page in the demo: page header with the report period, table of time entries (task, start time, duration in minutes, source badge), Symfony web debug toolbar" />
+    </td>
+  </tr>
+</table>
+
+End-to-end tests (Playwright, REQ-DEMO-013) and the screenshots:
+
+```bash
+make -C demo/symfony8 test-e2e           # timer page, start / stop, reports
+make -C demo/symfony8 demo-screenshots   # refreshes docs/images/demo/*.webp
+```
+
 With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.task_provider` — see [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md).
 
 ## Documentation
@@ -57,6 +75,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Usage](docs/USAGE.md)
+- [Templates (UiKit page contract)](docs/TEMPLATES.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Changelog](docs/CHANGELOG.md)

@@ -133,7 +133,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 ### UI & i18n
 
-- **FR-TPL-001**: `layout.html.twig`, `time_track/index.html.twig`, `time_track/reports.html.twig` render manage UI.
+- **FR-TPL-001**: `time_track/index.html.twig` and `time_track/reports.html.twig` render the manage UI on the UiKit list scaffold with view models from `Ui/TimeTrackPages` (REQ-UI-003, see docs/TEMPLATES.md); `layout.html.twig` / `_legacy_layout.html.twig` are deprecated 1.x shims (removed in 2.0).
 - **FR-I18N-001**: `NowoTimeTrackBundle.en.yaml`, `.es.yaml` translation catalogs.
 
 ---

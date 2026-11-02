@@ -27,7 +27,7 @@ final class ManageUiTest extends FunctionalTestCase
 
         $crawler = $this->client->request('GET', '/tools/time-track');
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('[data-test-layout]', 'Implement login API');
+        self::assertSelectorTextContains('[data-testid="time-track-timer"]', 'Implement login API');
         $startForms = $crawler->selectButton('Start');
         self::assertCount(3, $startForms);
         $firstStart  = $startForms->eq(0)->form();
@@ -36,28 +36,29 @@ final class ManageUiTest extends FunctionalTestCase
         $this->client->submit($firstStart);
         self::assertResponseRedirects('/tools/time-track');
         $crawler = $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash-success', 'Timer started.');
-        self::assertSelectorTextContains('[data-test-layout]', 'Active task');
+        self::assertSelectorTextContains('.nowo-ui-flash--success', 'Timer started.');
+        self::assertSelectorTextContains('main', 'Running: Implement login API');
+        self::assertSelectorExists('[data-testid="time-track-stop"]');
         self::assertCount(0, $crawler->selectButton('Start'));
 
         // A start form loaded before the timer started: one active timer per user.
         $this->client->submit($secondStart);
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash-warning', 'You already have an active timer.');
+        self::assertSelectorTextContains('.nowo-ui-flash--warning', 'You already have an active timer.');
 
         $stop = $this->client->getCrawler()->selectButton('Stop')->form();
         $this->client->submit($stop);
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash-success', 'Timer stopped.');
+        self::assertSelectorTextContains('.nowo-ui-flash--success', 'Timer stopped.');
 
         // The same stop form again: nothing is running any more.
         $this->client->submit($stop);
         $this->client->followRedirect();
-        self::assertSelectorTextContains('.flash-warning', 'No active timer.');
+        self::assertSelectorTextContains('.nowo-ui-flash--warning', 'No active timer.');
 
         $this->client->request('GET', '/tools/time-track/reports');
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('table', 'Implement login API');
+        self::assertSelectorTextContains('[data-testid="time-track-reports"] table', 'Implement login API');
     }
 
     public function testStartingAnUnknownTaskShowsTheError(): void
@@ -69,7 +70,7 @@ final class ManageUiTest extends FunctionalTestCase
         $this->client->submit($form);
         $this->client->followRedirect();
 
-        self::assertSelectorExists('.flash-danger');
+        self::assertSelectorExists('.nowo-ui-flash--error');
     }
 
     public function testAPostWithoutAValidCsrfTokenIsDenied(): void
@@ -109,13 +110,13 @@ final class ManageUiTest extends FunctionalTestCase
 
         $crawler = $this->client->request('GET', '/tools/time-track/reports');
         self::assertResponseIsSuccessful();
-        self::assertCount(2, $crawler->filter('tbody tr'));
-        self::assertSelectorTextContains('.nowo-ui-pagination__info', 'Page 1 of 2 (3 entries)');
-        self::assertSame('/tools/time-track/reports?page=2', $crawler->filter('a[rel="next"]')->attr('href'));
+        self::assertCount(2, $crawler->filter('[data-testid="time-track-reports"] tbody tr'));
+        self::assertSelectorExists('[data-nowo-ui-region="pagination"]');
+        self::assertGreaterThan(0, $crawler->filter('[data-nowo-ui-region="pagination"] a[href*="page=2"]')->count());
 
-        $crawler = $this->client->request('GET', '/tools/time-track/reports?page=9');
-        self::assertCount(1, $crawler->filter('tbody tr'));
-        self::assertSelectorTextContains('tbody', 'Seed task 3');
-        self::assertSame('/tools/time-track/reports?page=1', $crawler->filter('a[rel="prev"]')->attr('href'));
+        $crawler = $this->client->request('GET', '/tools/time-track/reports?page=9&from=' . (new DateTimeImmutable('-2 days'))->format('Y-m-d'));
+        self::assertCount(1, $crawler->filter('[data-testid="time-track-reports"] tbody tr'));
+        self::assertSelectorTextContains('[data-testid="time-track-reports"] tbody', 'Seed task 3');
+        self::assertStringContainsString('from=', (string) $crawler->filter('[data-nowo-ui-region="pagination"] a[href*="page=1"]')->first()->attr('href'));
     }
 }

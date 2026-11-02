@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
+use Nowo\TimeTrackBundle\Ui\TimeTrackPages;
 use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\FormFactoryInterface;
@@ -23,6 +24,8 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
+
+use function array_filter;
 
 /**
  * Manage UI: timer page (start / stop, CSRF-protected forms) and the reports list.
@@ -40,6 +43,7 @@ final class TimeTrackManageController extends AbstractController
      * @param TranslatorInterface|null $translator Translates the flash messages
      * @param int $reportsPageSize Entries per reports page
      * @param ClockInterface|null $clock Reference time of the default report period
+     * @param TimeTrackPages|null $pages View models of the pages (REQ-UI-003)
      */
     public function __construct(
         private readonly TimerService $timerService,
@@ -49,6 +53,7 @@ final class TimeTrackManageController extends AbstractController
         private readonly ?TranslatorInterface $translator = null,
         private readonly int $reportsPageSize = self::DEFAULT_REPORTS_PAGE_SIZE,
         private readonly ?ClockInterface $clock = null,
+        private readonly ?TimeTrackPages $pages = null,
     ) {
     }
 
@@ -103,12 +108,16 @@ final class TimeTrackManageController extends AbstractController
             $startForms[$task->id] = $this->createTimerActionForm(['action' => 'start', 'task_id' => $task->id], 'start_' . $task->id)->createView();
         }
 
+        $stopForm = $this->createTimerActionForm(['action' => 'stop'], 'stop')->createView();
+        $pages    = $this->pages ?? new TimeTrackPages();
+
         return $this->render($this->templates['index'], [
+            'page'         => $pages->timerPage($tasks, $active, $stopForm, $startForms),
             'active_timer' => $active,
             'tasks'        => $tasks,
-            'stop_form'    => $this->createTimerActionForm(['action' => 'stop'], 'stop')->createView(),
+            'stop_form'    => $stopForm,
             'start_forms'  => $startForms,
-        ]);
+        ] + $pages->layoutContext());
     }
 
     /**
@@ -129,12 +138,16 @@ final class TimeTrackManageController extends AbstractController
 
         $entryPage = $this->timerService->listEntriesPage($user, $from, $to, (int) $request->query->getString('page', '1'), $this->reportsPageSize);
 
+        $pages = $this->pages ?? new TimeTrackPages();
+        $query = array_filter(['from' => $request->query->getString('from'), 'to' => $request->query->getString('to')], static fn (string $v): bool => $v !== '');
+
         return $this->render($this->templates['reports'], [
+            'page'       => $pages->reportsPage($entryPage, $from, $to, $request->attributes->getString('_route') ?: null, $query),
             'entries'    => $entryPage->entries,
             'entry_page' => $entryPage,
             'from'       => $from,
             'to'         => $to,
-        ]);
+        ] + $pages->layoutContext());
     }
 
     /**
