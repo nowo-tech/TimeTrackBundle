@@ -15,6 +15,8 @@ use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\ErrorHandler\ErrorHandler;
 
+use function sprintf;
+
 final class ConfigurationTest extends TestCase
 {
     public function testDefaultConfiguration(): void
@@ -153,6 +155,36 @@ final class ConfigurationTest extends TestCase
         $this->expectException(InvalidConfigurationException::class);
 
         (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'reports' => ['page_size' => $value]]]);
+    }
+
+    public function testMinSupportedVersionDefaultsToNullAndAcceptsSemver(): void
+    {
+        $defaults = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class]]);
+        self::assertSame(['provider' => null, 'extension' => null, 'desktop' => null, 'web' => null], $defaults['client_distribution']['min_supported_version']);
+
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'client_distribution' => ['min_supported_version' => ['extension' => '1.4.0', 'desktop' => '2.0.0-rc.1+build.5', 'web' => '0.9.12']]]]);
+        self::assertEquals(['provider' => null, 'extension' => '1.4.0', 'desktop' => '2.0.0-rc.1+build.5', 'web' => '0.9.12'], $config['client_distribution']['min_supported_version']);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: mixed}>
+     */
+    public static function invalidMinSupportedVersionProvider(): iterable
+    {
+        yield 'v prefix' => ['extension', 'v1.4.0'];
+        yield 'two parts' => ['desktop', '1.4'];
+        yield 'leading zero' => ['web', '01.4.0'];
+        yield 'trailing text' => ['extension', '1.4.0 beta'];
+        yield 'not a string' => ['desktop', 140];
+    }
+
+    #[DataProvider('invalidMinSupportedVersionProvider')]
+    public function testMinSupportedVersionMustBeSemver(string $clientType, mixed $value): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage(sprintf('client_distribution.min_supported_version.%s must be a semantic version', $clientType));
+
+        (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'client_distribution' => ['min_supported_version' => [$clientType => $value]]]]);
     }
 
     #[DataProvider('acceptedCssFrameworkProvider')]

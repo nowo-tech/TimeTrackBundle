@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
@@ -87,6 +88,7 @@ final readonly class TimeTrackClientApiController
      * @param bool $allowMetadata `client_api.allow_metadata`: accept free `metadata` on timer start (default false)
      * @param ClockInterface|null $clock Reference time of the default periods (defaults to the system clock)
      * @param LoggerInterface|null $logger Logs throttled logins without username or IP (defaults to no logging)
+     * @param ClientMinSupportedVersionProviderInterface|null $minSupportedVersionProvider `me.minSupportedVersion` source (null = key never sent)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -102,6 +104,7 @@ final readonly class TimeTrackClientApiController
         private bool $allowMetadata = false,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        private ?ClientMinSupportedVersionProviderInterface $minSupportedVersionProvider = null,
     ) {
         $this->clock  = $clock ?? new NativeClock();
         $this->logger = $logger ?? new NullLogger();
@@ -170,7 +173,8 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * GET me: user id, identifier, display name, scopes and working hours of the token user.
+     * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
+     * `minSupportedVersion` for the token client type when the host sets one (1.9.1).
      */
     public function me(Request $request): Response
     {
@@ -180,14 +184,19 @@ final readonly class TimeTrackClientApiController
         }
 
         $user = $principal->user;
-
-        return $this->responseFactory->json([
+        $body = [
             'userId'       => UserIdResolver::getId($user),
             'identifier'   => $user->getUserIdentifier(),
             'displayName'  => $this->profileProvider->getDisplayName($user),
             'scopes'       => ClientScope::values($principal->token->getScopes()),
             'workingHours' => $this->profileProvider->getWorkingHours($user),
-        ], Response::HTTP_OK, $request);
+        ];
+        $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
+        if ($minSupportedVersion !== null) {
+            $body['minSupportedVersion'] = $minSupportedVersion;
+        }
+
+        return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }
 
     /**

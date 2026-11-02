@@ -100,6 +100,11 @@ Scope: any. `200 {"userId": "42", "identifier": "person@example.com", "displayNa
 (`displayName` / `workingHours` from `ClientUserProfileProviderInterface`; clients suppress reminders outside the
 working hours — the API never pushes).
 
+Since 1.9.1 the body also carries `"minSupportedVersion": "1.4.0"` — the oldest version of the **calling token's**
+client type (`extension`, `desktop` or `web`) the host still supports, from `ClientMinSupportedVersionProviderInterface`.
+The key is **absent** when the host sets none for that type. A client older than this value should ask the user to
+update (it may keep working read-only); compare it as semver.
+
 ### GET tasks
 
 Scope `tasks:read`. `?search=&limit=1..50&offset=` → `200 {"tasks": [{"id", "title", "boardId", "boardTitle"}]}`.
