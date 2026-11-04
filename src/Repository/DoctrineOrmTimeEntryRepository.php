@@ -17,7 +17,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements PaginatedTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements PaginatedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface
 {
     /**
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
@@ -104,6 +104,26 @@ final readonly class DoctrineOrmTimeEntryRepository implements PaginatedTimeEntr
             ->select('COUNT(e.id)')
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    /**
+     * End of the user's latest entry (one row, hydrated so the stored time zone is respected).
+     */
+    public function findLatestEndedAt(string $userId): ?DateTimeImmutable
+    {
+        /** @var list<TimeEntry> $result */
+        $result = $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TimeEntry::class, 'e')
+            ->innerJoin('e.user', 'u')
+            ->where('u.id = :userId')
+            ->setParameter('userId', $userId)
+            ->orderBy('e.endedAt', SortDirection::Descending)
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getResult();
+
+        return $result === [] ? null : $result[0]->getEndedAt();
     }
 
     /**

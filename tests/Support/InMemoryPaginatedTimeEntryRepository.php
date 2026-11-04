@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 
 use function array_slice;
@@ -14,7 +15,7 @@ use function count;
 /**
  * In-memory paginated repository that records the page queries it receives.
  */
-final class InMemoryPaginatedTimeEntryRepository implements PaginatedTimeEntryRepositoryInterface
+final class InMemoryPaginatedTimeEntryRepository implements PaginatedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface
 {
     /** @var list<array{userIds: list<string>, offset: int, limit: int}> */
     public array $pageQueries = [];
@@ -50,6 +51,18 @@ final class InMemoryPaginatedTimeEntryRepository implements PaginatedTimeEntryRe
         ++$this->countQueries;
 
         return count($this->all($userIds, $from, $to));
+    }
+
+    public function findLatestEndedAt(string $userId): ?DateTimeImmutable
+    {
+        $latest = null;
+        foreach ($this->inner->findByUserAndPeriod($userId, new DateTimeImmutable('@0'), new DateTimeImmutable('9999-12-31')) as $entry) {
+            if ($latest === null || $entry->getEndedAt() > $latest) {
+                $latest = $entry->getEndedAt();
+            }
+        }
+
+        return $latest;
     }
 
     /**

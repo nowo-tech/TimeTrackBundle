@@ -13,6 +13,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Client API 1.9](#client-api-19)
+- [Client API 1.10](#client-api-110)
 - [Client distribution](#client-distribution)
 - [Security](#security)
 
@@ -208,6 +209,36 @@ nowo_time_track:
             enabled: true
             default_page: false
             verification_uri: 'https://beacon.example/account/security/time-apps/connect'
+```
+
+## Client API 1.10
+
+Contract v0.3 ([CLIENT-API](CLIENT-API.md)). All values except `task_url.origin` can also come from a
+`ClientApiSettingsProviderInterface` (per instance); they are clamped into the ranges below.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `client_api.backdate.max_seconds` | `86400` | How far back `startedAt` on `timer/start` may go (0–86400; hosts may only lower the 24 h default). `0` turns client-supplied `startedAt` / `endedAt` off (`reason: disabled`) |
+| `client_api.backdate.clock_skew_seconds` | `120` | Future tolerance of `startedAt` / `endedAt` read as "now" (0–900); beyond it the value is clamped with `reason: future` |
+| `client_api.idle.allow_reassign` | `true` | Accept `timer/discard-idle` action `reassign` (`false`: `400 invalid_request`, `features.idle_reassign: false`) |
+| `client_api.idle_check.enabled` | `true` | Clients ask the user about idle time (`features.idle_check`) |
+| `client_api.idle_check.threshold_minutes` | `10` | Idle minutes before the client asks (5–60) |
+| `client_api.idle_check.answer_timeout_minutes` | `5` | Minutes the idle prompt waits for an answer (1–30) |
+| `client_api.idle_check.provider` | `null` | Service implementing `IdleCheckSettingsProviderInterface` (per-user settings; `null` from it = the values above; its values are clamped; an exception falls back to the values above) |
+| `client_api.task_url.origin` | `null` | Expected origin of task URLs (exact `https://host[:port]`); `null` = the request origin |
+
+The server only ever receives the user's idle **decision** (`timer/discard-idle`); no activity signal, idle counter or
+input count is sent to it or stored.
+
+Behind a reverse proxy, derive the task URL origin from your public URL instead of the request host (Beacon pattern):
+
+```yaml
+nowo_time_track:
+    client_api:
+        task_url:
+            origin: '%beacon.app_url%'   # e.g. https://beacon.example.com: bare origin, no path, no trailing slash
+        backdate: { max_seconds: 43200 }
+        idle_check: { threshold_minutes: 15, provider: App\TimeTrack\OrganisationIdleCheck }
 ```
 
 ## Client distribution

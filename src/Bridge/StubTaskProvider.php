@@ -26,9 +26,9 @@ final class StubTaskProvider implements TaskProviderInterface
     public function __construct()
     {
         $this->tasks = [
-            'task-1' => new TaskReference('task-1', 'Implement login API', 'board-1', 'Sprint 1'),
-            'task-2' => new TaskReference('task-2', 'Write unit tests', 'board-1', 'Sprint 1'),
-            'task-3' => new TaskReference('task-3', 'Review pull requests', 'board-2', 'Backlog'),
+            'task-1' => new TaskReference('task-1', 'Implement login API', 'board-1', 'Sprint 1', 'project-1', 'Demo project'),
+            'task-2' => new TaskReference('task-2', 'Write unit tests', 'board-1', 'Sprint 1', 'project-1', 'Demo project'),
+            'task-3' => new TaskReference('task-3', 'Review pull requests', 'board-2', 'Backlog', 'project-1', 'Demo project'),
         ];
     }
 

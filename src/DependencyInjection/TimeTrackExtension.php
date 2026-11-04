@@ -18,11 +18,13 @@ use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
+use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientMinSupportedVersionProvider;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
+use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
@@ -48,6 +50,7 @@ use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
+use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Psr\Clock\ClockInterface;
@@ -235,7 +238,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}} $api */
+        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
@@ -256,12 +259,18 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $container->setDefinition(ConfigClientApiSettingsProvider::class, (new Definition(ConfigClientApiSettingsProvider::class))
             ->setArguments([
-                '$allowedOrigins'           => array_values(array_unique([...$clients['cors_allowed_origins'], ...$api['allowed_origins']])),
-                '$perTokenLimit'            => $rateLimit['per_token'],
-                '$perIpLimit'               => $rateLimit['per_ip'],
-                '$deviceIpLimit'            => $rateLimit['device_per_ip'],
-                '$windowSeconds'            => $rateLimit['window_seconds'],
-                '$allowTauriWebviewOrigins' => $api['allow_tauri_webview_origins'],
+                '$allowedOrigins'                => array_values(array_unique([...$clients['cors_allowed_origins'], ...$api['allowed_origins']])),
+                '$perTokenLimit'                 => $rateLimit['per_token'],
+                '$perIpLimit'                    => $rateLimit['per_ip'],
+                '$deviceIpLimit'                 => $rateLimit['device_per_ip'],
+                '$windowSeconds'                 => $rateLimit['window_seconds'],
+                '$allowTauriWebviewOrigins'      => $api['allow_tauri_webview_origins'],
+                '$backdateMaxSeconds'            => $api['backdate']['max_seconds'],
+                '$clockSkewSeconds'              => $api['backdate']['clock_skew_seconds'],
+                '$allowIdleReassign'             => $api['idle']['allow_reassign'],
+                '$idleCheckEnabled'              => $api['idle_check']['enabled'],
+                '$idleCheckThresholdMinutes'     => $api['idle_check']['threshold_minutes'],
+                '$idleCheckAnswerTimeoutMinutes' => $api['idle_check']['answer_timeout_minutes'],
             ]));
         $container->setDefinition(ConfigClientDistributionProvider::class, (new Definition(ConfigClientDistributionProvider::class))
             ->setArguments(['$extension' => $distribution['extension'], '$desktop' => $distribution['desktop']]));
@@ -307,9 +316,28 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$clock'               => $clockRef,
             ]));
 
+        $container->setDefinition(ClientTaskPresenter::class, (new Definition(ClientTaskPresenter::class))
+            ->setArguments([
+                '$timerService'  => new Reference(TimerService::class),
+                '$taskUrlOrigin' => $api['task_url']['origin'],
+                '$logger'        => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $idleProvider = $api['idle_check']['provider'];
+        $container->setDefinition(IdleCheckSettingsResolver::class, (new Definition(IdleCheckSettingsResolver::class))
+            ->setArguments([
+                '$settingsProvider' => new Reference(ClientApiSettingsProviderInterface::class),
+                '$provider'         => is_string($idleProvider) && $idleProvider !== '' ? new Reference($idleProvider) : null,
+                '$logger'           => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+
         $container->getDefinition(TimeTrackClientApiController::class)
             ->setArgument('$allowMetadata', $api['allow_metadata'])
-            ->setArgument('$minSupportedVersionProvider', new Reference(ClientMinSupportedVersionProviderInterface::class));
+            ->setArgument('$minSupportedVersionProvider', new Reference(ClientMinSupportedVersionProviderInterface::class))
+            ->setArgument('$taskPresenter', new Reference(ClientTaskPresenter::class))
+            ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class))
+            ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class));
         $container->getDefinition(TimeTrackClientDeviceController::class)
             ->setArgument('$verificationUri', $device['verification_uri'])
             ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);

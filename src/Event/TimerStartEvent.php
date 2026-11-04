@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Event;
 
+use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -16,11 +17,14 @@ final class TimerStartEvent extends Event
 {
     /**
      * Creates the event for the timer owner, the task and the client.
+     *
+     * @param ClampedTime|null $startTime The client's `startedAt` and the applied start (since 1.10; null without one)
      */
     public function __construct(
         private readonly UserInterface $user,
         private readonly TaskReference $task,
         private readonly ClientType $clientType,
+        private readonly ?ClampedTime $startTime = null,
     ) {
     }
 
@@ -46,5 +50,13 @@ final class TimerStartEvent extends Event
     public function getClientType(): ClientType
     {
         return $this->clientType;
+    }
+
+    /**
+     * The client-supplied start and the applied one (since 1.10; null when the client sent no `startedAt`).
+     */
+    public function getStartTime(): ?ClampedTime
+    {
+        return $this->startTime;
     }
 }

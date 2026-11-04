@@ -1,4 +1,4 @@
-# Client API reference (1.9, contract v0.2)
+# Client API reference (1.10, contract v0.3)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes since v0.2 (1.10)](#changes-since-v02-110)
 - [Conventions](#conventions)
 - [Credential model](#credential-model)
 - [Scopes](#scopes)
@@ -28,6 +29,23 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
   - [POST device/code](#post-devicecode)
   - [POST device/token](#post-devicetoken)
 - [Device verification page](#device-verification-page)
+- [Task details](#task-details)
+- [Client-supplied times](#client-supplied-times)
+- [Idle check](#idle-check)
+
+## Changes since v0.2 (1.10)
+
+All additive: a 1.9 client keeps working unchanged; a 1.10 client detects a 1.9 server by the missing `features` key on
+`GET me`.
+
+| Where | Change |
+|---|---|
+| `GET me` | `features` (object of booleans) and `limits` |
+| `GET tasks` | `projectId`, `projectTitle`, `url` on every task |
+| Every `timer` object | `boardTitle`, `projectId`, `projectTitle`, `url` (resolved live) |
+| `POST timer/start` | Optional `startedAt`; response `startedAtResult` |
+| `POST timer/stop` | Optional `endedAt`; response `endedAtResult` |
+| `POST timer/discard-idle` | Action `reassign` (`taskId`, `then`, `note`, `source`); response key `reassigned` |
 
 ## Conventions
 
@@ -72,10 +90,10 @@ the user approved. Tokens issued before 1.9 carry all four. `entries:write` is n
 | 401 | `invalid_credentials` | `login` with wrong credentials |
 | 401 | `invalid_token` | Missing, unknown, expired, revoked token or inactive credential (`WWW-Authenticate: Bearer error="invalid_token"`) |
 | 403 | `insufficient_scope` | Token lacks the endpoint scope |
-| 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle) |
+| 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |
 | 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
 | 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
-| 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` when a concurrent start took the slot first (1.9.1) |
+| 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 
 ## Endpoints
@@ -105,13 +123,29 @@ client type (`extension`, `desktop` or `web`) the host still supports, from `Cli
 The key is **absent** when the host sets none for that type. A client older than this value should ask the user to
 update (it may keep working read-only); compare it as semver.
 
+Since 1.10 the body also carries:
+
+```json
+"features": {"task_details": true, "start_backdate": true, "stop_backdate": true, "idle_reassign": true,
+             "idle_check": true, "workday": false, "monitoring": false},
+"limits": {"backdate": {"max_seconds": 86400, "clock_skew_seconds": 120},
+           "idle_check": {"threshold_minutes": 10, "answer_timeout_minutes": 5}}
+```
+
+`workday` and `monitoring` are **reserved** and always `false` in 1.10. Clients treat a missing or unknown key as
+`false` and ignore keys they do not know. `limits.idle_check` is the token user's setting (host provider, else the
+instance settings) and is present even when `features.idle_check` is false.
+
 ### GET tasks
 
-Scope `tasks:read`. `?search=&limit=1..50&offset=` → `200 {"tasks": [{"id", "title", "boardId", "boardTitle"}]}`.
+Scope `tasks:read`. `?search=&limit=1..50&offset=` → `200 {"tasks": [{"id", "title", "boardId", "boardTitle",
+"projectId", "projectTitle", "url"}]}` (the last three since 1.10, always present, nullable; see [Task details](#task-details)).
 
 ### GET timer
 
-Scope `timer:read`. `200 {"timer": {"id", "taskId", "taskTitle", "boardId", "startedAt", "lastHeartbeatAt", "clientType", "metadata"}}` or `204`.
+Scope `timer:read`. `200 {"timer": {"id", "taskId", "taskTitle", "boardId", "startedAt", "lastHeartbeatAt", "clientType", "metadata",
+"boardTitle", "projectId", "projectTitle", "url"}}` or `204`. The last four (since 1.10) are on every `timer` object
+of every endpoint.
 
 ### POST timer/start
 
@@ -120,10 +154,18 @@ Scope `timer:write`. `{"taskId": "task-1", "note": "optional, ≤500 chars", "so
 timer_running`; `source` defaults to the 1.x `clientType` field, else the token's client. The note is stored as
 `metadata.note`.
 
+Since 1.10, optional `"startedAt": "2026-11-04T08:47:13.250Z"` (RFC 3339; milliseconds dropped) starts the timer in the
+past, e.g. when a client replays a start made offline. The value is clamped, never refused (a malformed value is
+`400 invalid_request`), and the response adds `"startedAtResult": {"requested", "applied", "clamped", "reason"}` (only
+when `startedAt` was sent). See [Client-supplied times](#client-supplied-times).
+
 ### POST timer/stop
 
 Scope `timer:write`. `{"note": "optional"}` → `200 {"entry": {"id", "taskId", "taskTitle", "boardId", "startedAt",
 "endedAt", "durationSeconds", "source", "metadata"}}` or `404 no_active_timer`.
+
+Since 1.10, optional `"endedAt"` (RFC 3339) stops the timer earlier, e.g. when a client replays a stop made offline;
+the response adds `"endedAtResult"` (only when `endedAt` was sent). See [Client-supplied times](#client-supplied-times).
 
 ### POST timer/switch
 
@@ -145,8 +187,19 @@ activity signal):
 | `keep` | Nothing changes | `{"entry": null, "timer": {...}}` |
 | `discard` | Entry from the timer start to `from`; timer stopped | `{"entry": {...}, "timer": null}` |
 | `split` | Entry to `from`; a new timer on the same task from `to` | `{"entry": {...}, "timer": {...}}` |
+| `reassign` (1.10) | Entry to `from` (omitted when `from` is the timer start); entry on `taskId` for `[from, to]`; then `then` | `{"entry": {...}\|null, "reassigned": {...}, "timer": {...}\|null}` |
 
-`from` ≥ timer start, `to` > `from`, `to` ≤ now, else `400`. No timer → `404`.
+`from` ≥ timer start, `to` > `from`, `to` ≤ now, else `400`. No timer → `404`. Since 1.10 every response carries
+`reassigned` (`null` except for `reassign`).
+
+`reassign` fields: `taskId` (required), `then` = `continue` (default: a new timer on the original task from `to`) |
+`switch` (a new timer on `taskId` from `to`) | `stop` (no timer), optional `note` (≤ 500 chars, stored on the
+reassigned entry) and `source` (as on `timer/start`). Checks, in order, nothing written before the last:
+`400` when reassign is disabled (`client_api.idle.allow_reassign`), `taskId` is blank, or `then` / `source` is
+invalid → `403 task_forbidden` when `TaskAccessCheckerInterface::canTrack()` refuses (identical answer for a missing
+and a foreign task) → `404` without a timer → `400` when `taskId` is the running task → `400` for a span outside the
+timer → `404` when a concurrent stop won → `409` when a concurrent start took the follow-up slot (entries kept). Both
+entries are written in one unit of work and each dispatches `nowo_time_track.timer.stop`.
 
 ### POST heartbeat (deprecated)
 
@@ -200,3 +253,40 @@ Poll every `interval` seconds with `{"deviceCode": "..."}`:
 `/tools/time-track/device`, `client_api.device_flow.default_page: true`) renders the UiKit form and show scaffolds:
 enter the code → client name, type, scopes, expiry → Approve / Deny. Hosts with their own page (Beacon: Account →
 Security → Time tracking apps, with 2FA re-auth) set `default_page: false` and `verification_uri`.
+
+## Task details
+
+Since 1.10 the task provider may fill `projectId`, `projectTitle` and `url` on `TaskReference`. The API publishes:
+
+- `projectId`: trimmed, 1–64 chars, else `null`; `projectTitle`: trimmed, cut to 255 chars, blank → `null`;
+- `url`: only an absolute `https://` URL, ≤ 2048 chars, without whitespace, control characters or credentials, whose
+  origin equals `client_api.task_url.origin` (else the request origin, so set `trusted_proxies` behind a proxy). Any
+  other value is published as `null` (logged at debug level as `task_url_dropped`, never with the URL). Clients check
+  the origin again before opening it.
+
+On `timer` objects the details are resolved **live** with `TaskProviderInterface::findForUser()` for the token user:
+a task that was deleted or is no longer visible gives `null` details (the stored `taskTitle` snapshot stays), and a
+provider error gives `null` details with a `200`.
+
+## Client-supplied times
+
+`startedAt` (`timer/start`) and `endedAt` (`timer/stop`) are clamped and reported, never refused:
+
+| Field | Bound | `reason` when moved |
+|---|---|---|
+| both | later than now + `client_api.backdate.clock_skew_seconds` (default 120) → now; up to the allowance → now, not reported | `future` |
+| `startedAt` | before the end of the user's latest entry → that end (no overlap) | `overlap` |
+| `startedAt` | older than `client_api.backdate.max_seconds` (default and maximum 24 h) → the limit | `max_backdate` |
+| `endedAt` | before the timer start → the timer start (a 0-second entry) | `before_start` |
+| both | `max_seconds: 0` → now | `disabled` |
+
+`{"requested": "…", "applied": "…", "clamped": true, "reason": "overlap"}`. An earlier stop only shortens the
+recorded time, so `endedAt` has no `max_backdate` bound. The overlap check covers this bundle's entries only.
+
+## Idle check
+
+The clients detect idle time locally and ask the user what to do with it, using `features.idle_check` and
+`limits.idle_check` of `GET me` (organisation settings: `client_api.idle_check.*` or the host's
+`IdleCheckSettingsProviderInterface`). **The server only ever receives the user's decision** through
+`POST timer/discard-idle` (`keep`, `discard`, `split`, `reassign`). No activity signal, idle counter, input count or
+screen data is sent to the server or stored by it; the deprecated `heartbeat` ignores `isIdle`.

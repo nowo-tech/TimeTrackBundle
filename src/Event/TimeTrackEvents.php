@@ -17,6 +17,9 @@ final class TimeTrackEvents
 
     public const TIME_ENTRY_ACCESS_CHECK = 'nowo_time_track.time_entry.access_check';
 
+    /** {@see IdleResolvedEvent}: the user's decision about an idle span was applied (1.10). */
+    public const IDLE_RESOLVED = 'nowo_time_track.idle.resolved';
+
     /** {@see ClientApiEvent}: client API audit trail (1.9). */
     public const CLIENT_API = 'nowo_time_track.client_api';
 }

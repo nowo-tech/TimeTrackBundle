@@ -17,4 +17,10 @@ enum IdleResolution: string
 
     /** Drop the idle span and continue: an entry up to the idle start, a new timer on the same task from its end. */
     case Split = 'split';
+
+    /**
+     * Give the idle span to another task (since 1.10): an entry up to the idle start, an entry on the other task for
+     * the span, then what `then` says ({@see IdleFollowUp}).
+     */
+    case Reassign = 'reassign';
 }

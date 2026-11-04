@@ -25,6 +25,7 @@ services:
             - '../../Client/ClientApiSettings.php'
             - '../../Client/ClientDistribution.php'
             - '../../Client/ClientApiPrincipal.php'
+            - '../../Client/IdleCheckSettings.php'
             - '../../Service/DeviceAuthorizationService.php'
             - '../../Entity/'
             - '../../Enum/'

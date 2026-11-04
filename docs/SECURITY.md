@@ -38,7 +38,7 @@ TimeTrackBundle provides time tracking UI, team reports, and a Bearer-token clie
 
 ## Client API
 
-Threat model of the 1.9 API (contract v0.2):
+Threat model of the client API (1.9 contract v0.2, 1.10 contract v0.3):
 
 | Threat | Mitigation |
 | ------ | ---------- |
@@ -55,7 +55,10 @@ Threat model of the 1.9 API (contract v0.2):
 | Device request flood | `device/code` capped per IPv4 /24 or IPv6 /64 within the code lifetime (`client_api.device_flow.max_pending_per_prefix`, 20) and in total (`max_pending`, 10 000; expired rows purged first) → `429 rate_limited` + `Retry-After` |
 | Clickjacking of the approval page | Every answer of the default verification page sends `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `Cache-Control: no-store`; a host page built on `DeviceAuthorizationService` must send the same ([USAGE](USAGE.md#host-integration-client-api-19)) |
 | Flooding / DoS | Per-token and per-IP fixed-window limits on a shared pool (`client_api.rate_limit.cache_pool`, Redis recommended); bounded lists (`tasks` ≤ 50, `entries` ≤ 100, export ≤ 10 000 rows, periods ≤ 366 days) |
-| Monitoring creep | No server-side activity signal: `heartbeat` ignores `isIdle`; free `metadata` rejected unless `client_api.allow_metadata`; idle handling is the user's decision (`timer/discard-idle`) |
+| Monitoring creep | No server-side activity signal: `heartbeat` ignores `isIdle`; free `metadata` rejected unless `client_api.allow_metadata`; idle handling is the user's decision (`timer/discard-idle`); the 1.10 idle-check settings (`GET me`) only configure the client prompt, and the server still receives only the decision, never an activity counter |
+| Time inflation by backdating (1.10) | `startedAt` clamped to `client_api.backdate.max_seconds` (≤ 24 h), never before the user's latest entry, never after now; `endedAt` only shortens time; every clamp is reported to the client, logged without data (`timer_start_clamped`, `timer_stop_clamped`) and exposed to the host on `TimerStartEvent::getStartTime()` / `TimerStopEvent::getEndTime()` |
+| IDOR / oracle on idle reassign (1.10) | `taskId` checked with `TaskAccessCheckerInterface::canTrack()` before any write; a missing and a foreign task get a byte-identical `403 task_forbidden`; only the token user's own timer is touched; `IdleResolvedEvent` for host audit |
+| Open redirect via task URLs (1.10) | `url` published only when https, without credentials, on `client_api.task_url.origin` (else the request origin); never logged; clients re-check the origin |
 | Audit flooding / privacy | `ClientApiEvent` with user id, credential id, client type and IP truncated to /24 (IPv4) or /64 (IPv6); denials throttled per credential (or IP prefix) and reason; PSR-3 records carry action, client and reason only |
 | CSV injection in exports | Cells starting with `= + - @` (tab, CR) prefixed with `'` |
 | Malicious download links | The downloads partial keeps absolute http(s) URLs only, renders plain anchors, no inline script / style |
