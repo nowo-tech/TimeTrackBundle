@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.9.2] - 2026-11-04](#192---2026-11-04)
 - [[1.9.1] - 2026-11-02](#191---2026-11-02)
 - [[1.9.0] - 2026-11-02](#190---2026-11-02)
 - [[1.8.0] - 2026-11-02](#180---2026-11-02)
@@ -81,8 +82,13 @@ change). See [UPGRADING](UPGRADING.md#unreleased).
   timestamps accept a lower-case `z` and are no longer trimmed (EF-I4); idle spans are compared on whole seconds, so a
   span starting within the timer's first second writes no 0-second entry (EF-I5). EF-I1 (`Host` header and the
   request-origin fallback) and EF-I6 (fallback overlap lookup on custom stores) are documented in UPGRADING.
-- `startedAt` / `endedAt` / reassign `from` / `to` are stored in the server time zone (EF-M1, see Security); they
-  were affected the same way as the 1.9 `split` path before this release.
+- The new `startedAt` / `endedAt` / reassign `from` / `to` inputs get the 1.9.2 EF-M1 handling: they are converted to
+  the server time zone before they are compared or stored (also in `TimerService` for direct callers), and offsets
+  outside `-12:00`..`+14:00` answer `400 invalid_request`.
+
+## [1.9.2] - 2026-11-04
+
+Security fix, no API or schema change. See [UPGRADING](UPGRADING.md#to-192).
 
 ### Security
 
@@ -577,7 +583,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.7.0...v1.8.0
