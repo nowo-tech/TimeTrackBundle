@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use function array_map;
 use function date_default_timezone_get;
 use function date_default_timezone_set;
+use function time;
 
 /**
  * EF-M1 (1.9.2): client timestamps with a UTC offset are converted to the server time zone before Doctrine stores
@@ -19,6 +20,18 @@ use function date_default_timezone_set;
  */
 final class ClientTimestampOffsetTest extends FunctionalTestCase
 {
+    /**
+     * One reference instant per test, in whole seconds: every client timestamp is derived from it, so the durations the
+     * server computes from them do not depend on when the real clock ticks over a second during the test.
+     */
+    private DateTimeImmutable $base;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->base = new DateTimeImmutable('@' . time());
+    }
+
     /**
      * @return iterable<string, array{string}>
      */
@@ -148,17 +161,18 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
     {
         $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1'], $token);
         self::assertResponseStatusCodeSame(201);
-        $em = $this->entityManager();
-        $em->getConnection()->executeStatement('UPDATE time_track_active_timers SET started_at = ?', [(new DateTimeImmutable($modifier))->format('Y-m-d H:i:s')]);
+        $em        = $this->entityManager();
+        $startedAt = $this->base->modify($modifier)->setTimezone(new DateTimeZone(date_default_timezone_get()));
+        $em->getConnection()->executeStatement('UPDATE time_track_active_timers SET started_at = ?', [$startedAt->format('Y-m-d H:i:s')]);
         $em->clear();
     }
 
     /**
-     * The instant `$modifier` from now, written in the given UTC offset (RFC 3339).
+     * The instant `$modifier` from the test's reference instant, written in the given UTC offset (RFC 3339).
      */
     private function at(string $modifier, string $offset): string
     {
-        return (new DateTimeImmutable($modifier))->setTimezone(new DateTimeZone($offset))->format('Y-m-d\TH:i:sP');
+        return $this->base->modify($modifier)->setTimezone(new DateTimeZone($offset))->format('Y-m-d\TH:i:sP');
     }
 
     private function instant(string $value): int
