@@ -50,6 +50,18 @@
 
 ## Unreleased
 
+Planned as **1.10.3**. From **1.10.2**: no schema change, no config change.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- Notes no longer keep U+061C, U+200E or U+200F (EF2-I7).
+- Hosts calling `TimerService::start()` / `startAt()` with `['note' => …]` in the metadata get it cleaned like a client
+  note; a non-string or blank note is dropped from the metadata (EF2-I9). Other metadata keys are unchanged.
+- A timer note at 500 code points does not take later notes (they are dropped, earlier text wins), as documented in
+  CLIENT-API (EF2-I8).
+
 ## To 1.10.2
 
 From **1.10.1**: no schema change, no config change.

@@ -40,12 +40,15 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 Since 1.10.2 every client note (`timer/start`, `timer/stop`, `timer/switch`, `timer/discard-idle` `keep` and
 `reassign`, and a string `metadata.note` when free metadata is allowed) goes through one sanitiser and one merge rule:
 
-- **Cleaning:** bidirectional controls (U+202A–U+202E, U+2066–U+2069), U+200B and U+FEFF are removed; each run of
+- **Cleaning:** bidirectional controls (U+202A–U+202E, U+2066–U+2069, and since 1.10.3 the marks U+061C, U+200E and
+  U+200F), U+200B and U+FEFF are removed; each run of
   control characters (CR, LF, tab, C0, DEL, C1) becomes one space; leading / trailing white space and zero-width
   joiners are trimmed (joiners inside the text are kept). A note that is empty after cleaning counts as no note.
 - **Cap:** 500 code points everywhere. `keep` answers `400` above it; the other endpoints cut the note.
 - **Merge:** the timer collects the start note and every `keep` note; `timer/stop` / `timer/switch` append their note.
-  Notes are joined with a newline and the result is cut at 500 code points, earlier text first.
+  Notes are joined with a newline and the result is cut at 500 code points, earlier text first. So once a timer's note
+  has reached 500 code points, later `keep` and stop / switch notes are **dropped** (the call still succeeds; the
+  earlier text wins). Clients that want the user to see this can compare the returned `metadata.note`.
 - **Follow-ups:** idle `split` and reassign `then: continue` start the follow-up timer **without** the note (it stays
   on the entry up to the idle start). A reassign note goes on the reassigned entry only.
 - Notes are plain user text: clients render them as text; hosts escape them.

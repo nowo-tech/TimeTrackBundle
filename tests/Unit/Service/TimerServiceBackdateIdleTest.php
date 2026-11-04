@@ -30,6 +30,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
+use function str_repeat;
+
 /**
  * 1.10 service layer: backdated start / stop, the fallback "latest entry" lookup, idle reassign events and logs
  * without personal data (REQ-OBS-001).
@@ -190,6 +192,29 @@ final class TimerServiceBackdateIdleTest extends TestCase
         $timers->remove($timer);
 
         self::assertNull($service->stopAt($this->user, new DateTimeImmutable('2026-11-02 09:59:00')));
+    }
+
+    public function testDirectStartCleansTheMetadataNote(): void
+    {
+        $service = $this->service(new InMemoryTimeEntryRepository());
+
+        $timer = $service->start($this->user, 'task-1', ClientType::Web, ['app' => 'host', 'note' => "\u{200F}  Host\u{202E} note\n\u{0007}x "]);
+        self::assertSame(['app' => 'host', 'note' => 'Host note x'], $timer->getMetadata());
+        $service->stop($this->user);
+
+        $blank = $service->startAt($this->user, 'task-1', ClientType::Web, ['app' => 'host', 'note' => "\u{200B} \u{061C}"])['timer'];
+        self::assertSame(['app' => 'host'], $blank->getMetadata());
+        $service->stop($this->user);
+
+        $nonString = $service->start($this->user, 'task-1', ClientType::Web, ['note' => ['x'], 'app' => 'host']);
+        self::assertSame(['app' => 'host'], $nonString->getMetadata());
+        $service->stop($this->user);
+
+        $long = $service->start($this->user, 'task-1', ClientType::Web, ['note' => str_repeat('n', 600)]);
+        self::assertSame(str_repeat('n', 500), $long->getMetadata()['note'] ?? null);
+        $service->stop($this->user);
+
+        self::assertSame(['app' => 'host'], $service->start($this->user, 'task-1', ClientType::Web, ['app' => 'host'])->getMetadata(), 'no note: unchanged');
     }
 
     public function testFindTaskPassesThroughTheProvider(): void
