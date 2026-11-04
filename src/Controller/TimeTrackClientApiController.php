@@ -37,6 +37,7 @@ use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Support\TimeEntryCsv;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -58,7 +59,6 @@ use function json_decode;
 use function json_encode;
 use function max;
 use function mb_strlen;
-use function mb_substr;
 use function min;
 use function preg_match;
 use function preg_replace;
@@ -91,8 +91,8 @@ final readonly class TimeTrackClientApiController
     /** Max rows of `GET export` (the period is capped at 366 days too). */
     public const EXPORT_MAX_ROWS = 10_000;
 
-    /** Max length of a timer note. */
-    public const NOTE_MAX_LENGTH = 500;
+    /** Max length of a timer note, in code points ({@see NoteSanitizer::MAX_LENGTH}). */
+    public const NOTE_MAX_LENGTH = NoteSanitizer::MAX_LENGTH;
 
     /** Features of `GET me` reserved for later releases; always false in 1.10. */
     public const RESERVED_FEATURES = ['workday', 'monitoring'];
@@ -639,7 +639,8 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Free client metadata: rejected unless `client_api.allow_metadata`; the note is stored as `note`.
+     * Free client metadata: rejected unless `client_api.allow_metadata`; the note (the `note` field, else a string
+     * `metadata.note`) is cleaned like every note and stored as `note`.
      *
      * @param array<string, mixed> $payload
      *
@@ -654,7 +655,8 @@ final readonly class TimeTrackClientApiController
 
         /** @var array<string, mixed> $kept */
         $kept = is_array($metadata) ? $metadata : [];
-        $note = $this->note($payload);
+        $note = $this->note($payload) ?? (isset($kept['note']) && is_string($kept['note']) ? NoteSanitizer::cleanAndCut($kept['note']) : null);
+        unset($kept['note']);
         if ($note !== null) {
             $kept['note'] = $note;
         }
@@ -706,20 +708,20 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Trimmed note capped at 500 characters (null when absent or blank).
+     * Note of `timer/start`, `timer/stop`, `timer/switch` and reassign, cleaned by {@see NoteSanitizer} and cut at
+     * {@see self::NOTE_MAX_LENGTH} code points (null when absent, not a string, or blank).
      *
      * @param array<string, mixed> $payload
      */
     private function note(array $payload): ?string
     {
-        $note = $this->string($payload, 'note');
-
-        return $note === '' ? null : mb_substr($note, 0, self::NOTE_MAX_LENGTH);
+        return NoteSanitizer::cleanAndCut($this->rawString($payload, 'note'));
     }
 
     /**
-     * Optional note of an idle `keep` (1.10.1): each run of control characters becomes one space and the text is trimmed; null when absent or
-     * empty; false when it is not a string or is longer than {@see self::NOTE_MAX_LENGTH} characters.
+     * Optional note of an idle `keep` (1.10.1), cleaned by {@see NoteSanitizer}; null when absent or blank; false when
+     * it is not a string or is longer than {@see self::NOTE_MAX_LENGTH} code points after cleaning (400, unlike the other
+     * notes, which are cut).
      *
      * @param array<string, mixed> $payload
      */
@@ -734,8 +736,7 @@ final readonly class TimeTrackClientApiController
             return false;
         }
 
-        // The JSON body is valid UTF-8 (json_decode guarantees it), so the /u pattern cannot fail here.
-        $clean = trim((string) preg_replace('/\p{Cc}+/u', ' ', $note));
+        $clean = NoteSanitizer::clean($note);
         if ($clean === '') {
             return null;
         }

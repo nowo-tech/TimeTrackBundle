@@ -32,6 +32,7 @@ use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -43,6 +44,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use function array_slice;
 use function count;
 use function date_default_timezone_get;
+use function is_string;
 use function max;
 use function mb_strlen;
 use function min;
@@ -58,8 +60,8 @@ use function usort;
  */
 final readonly class TimerService
 {
-    /** Max length of a note on a timer or an entry (the client API's `NOTE_MAX_LENGTH`). */
-    public const NOTE_MAX_LENGTH = 500;
+    /** Max length of a note on a timer or an entry, in code points ({@see NoteSanitizer::MAX_LENGTH}). */
+    public const NOTE_MAX_LENGTH = NoteSanitizer::MAX_LENGTH;
 
     private ClockInterface $clock;
 
@@ -306,9 +308,10 @@ final readonly class TimerService
         }
 
         $clientType ??= $timer->getClientType();
+        $note = $note !== null ? NoteSanitizer::cleanAndCut($note) : null;
 
         if ($resolution === IdleResolution::Keep) {
-            if ($note !== null && $note !== '') {
+            if ($note !== null) {
                 // @igor-ignore - $timer is a Doctrine entity loaded for this request, not a shared service.
                 $this->activeTimerRepository->save($timer->appendNote($note, self::NOTE_MAX_LENGTH));
             }
@@ -335,7 +338,8 @@ final readonly class TimerService
             return ['entry' => $entry, 'timer' => null, 'reassigned' => null];
         }
 
-        $next = $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to, 'timer_split');
+        // The note stays on the entry up to the idle start; the follow-up timer starts without it (EF2-I4).
+        $next = $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_split');
         $this->logger->info('TimeTrack idle span discarded, timer continued.', $this->context('timer_split', $timer->getClientType()));
         $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType);
 
@@ -553,7 +557,7 @@ final readonly class TimerService
             $endedAt,
             $duration,
             $this->mapClientTypeToSource($timer->getClientType()),
-            $note !== null ? ['note' => $note] + ($timer->getMetadata() ?? []) : $timer->getMetadata(),
+            $this->entryMetadata($timer->getMetadata(), $note),
             $endedAt,
         );
         $entries = $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries;
@@ -585,6 +589,44 @@ final readonly class TimerService
     }
 
     /**
+     * Metadata of the entry recorded from a timer: the timer's metadata, with a stop / switch note merged into the
+     * timer's note (keep notes first, then this one; {@see NoteSanitizer::merge()}, EF2-I4).
+     *
+     * @param array<string, mixed>|null $metadata
+     *
+     * @return array<string, mixed>|null
+     */
+    private function entryMetadata(?array $metadata, ?string $note): ?array
+    {
+        $note = $note !== null ? NoteSanitizer::cleanAndCut($note) : null;
+        if ($note === null) {
+            return $metadata;
+        }
+
+        $metadata ??= [];
+        $existing         = $metadata['note'] ?? null;
+        $metadata['note'] = NoteSanitizer::merge(is_string($existing) ? $existing : null, $note);
+
+        return $metadata;
+    }
+
+    /**
+     * Metadata for a follow-up timer: the note stays on the entry already recorded.
+     *
+     * @param array<string, mixed>|null $metadata
+     *
+     * @return array<string, mixed>|null
+     */
+    private function withoutNote(?array $metadata): ?array
+    {
+        if (isset($metadata['note'])) {
+            unset($metadata['note']);
+        }
+
+        return $metadata;
+    }
+
+    /**
      * Gives an idle span to another task (`reassign`): entry up to the idle start, entry of the span on the target,
      * then the follow-up timer.
      *
@@ -612,7 +654,7 @@ final readonly class TimerService
         }
 
         $next = match ($followUp) {
-            IdleFollowUp::Continue => $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to, 'timer_idle_reassign'),
+            IdleFollowUp::Continue => $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_idle_reassign'),
             IdleFollowUp::Switch   => $this->continueTimer($user, $target->id, $target->title, $target->boardId, $clientType, null, $to, 'timer_idle_reassign', $target),
             IdleFollowUp::Stop     => null,
         };

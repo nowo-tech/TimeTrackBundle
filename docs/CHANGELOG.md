@@ -40,6 +40,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as **1.10.2**: follow-ups of audit Appendix EF2 (Info only). No API shape or schema change.
+
+### Changed
+
+- **One sanitiser and one merge rule for every client note** (EF2-I4): `timer/start` (also a string `metadata.note`
+  when free metadata is allowed), `timer/stop`, `timer/switch`, `timer/discard-idle` `keep` and `reassign` all go
+  through `Support\NoteSanitizer`. Each run of control characters becomes one space, the text is trimmed, and the cap
+  is 500 code points everywhere (`keep` still answers `400` above it; the other notes are cut, as before).
+- **A stop / switch note no longer replaces the notes already on the timer**: it is appended after them on a new line
+  (start note, keep notes, then the stop note), cut at 500 code points with the earlier text first.
+- **Split and reassign `then: continue` no longer copy the note** to the follow-up timer, so it is not repeated on the
+  next entry.
+- **Invisible characters** (EF2-I2): bidirectional controls U+202A–U+202E and U+2066–U+2069, U+200B and U+FEFF are
+  removed from notes; U+200C / U+200D / U+2060 are kept inside the text (emoji and some scripts need them) and trimmed
+  at both ends.
+- **CSV export** (EF2-I3): the formula guard looks at the first visible character, after leading spaces and invisible
+  format characters (U+200B, U+FEFF, …), and also catches the full-width `＝ ＋ － ＠`.
+
+### Documentation
+
+- `IdleResolvedEvent::getNote()` is raw user text: listeners must escape it (EF2-I5).
+- Two keeps racing on the same timer can lose one note, and a keep that loses to a concurrent stop answers `200`
+  although its note is not recorded (EF2-I1, documented, not changed).
+
 ## [1.10.1] - 2026-11-04
 
 Client API contract v0.3.1 (additive; no schema change). See [UPGRADING](UPGRADING.md#to-1101).
