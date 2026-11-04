@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.10.0] - 2026-11-04](#1100---2026-11-04)
 - [[1.9.2] - 2026-11-04](#192---2026-11-04)
 - [[1.9.1] - 2026-11-02](#191---2026-11-02)
 - [[1.9.0] - 2026-11-02](#190---2026-11-02)
@@ -38,8 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as **1.10.0**. Client API contract v0.3 for the desktop app and the browser extension (additive; no schema
-change). See [UPGRADING](UPGRADING.md#unreleased).
+## [1.10.0] - 2026-11-04
+
+Client API contract v0.3 for the desktop app and the browser extension (additive; no schema
+change). See [UPGRADING](UPGRADING.md#to-1100).
 
 ### Added
 
@@ -583,7 +586,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.2...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.8.0...v1.9.0
