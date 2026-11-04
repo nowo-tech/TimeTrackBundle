@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Controller;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
@@ -41,6 +42,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 use function array_map;
+use function date_default_timezone_get;
 use function in_array;
 use function intdiv;
 use function is_array;
@@ -79,6 +81,12 @@ final readonly class TimeTrackClientApiController
 
     /** Max length of a timer note. */
     public const NOTE_MAX_LENGTH = 500;
+
+    /** Earliest UTC offset accepted on client timestamps, in minutes (-12:00; 1.9.2). */
+    public const MIN_UTC_OFFSET_MINUTES = -720;
+
+    /** Latest UTC offset accepted on client timestamps, in minutes (+14:00; 1.9.2). */
+    public const MAX_UTC_OFFSET_MINUTES = 840;
 
     private ClockInterface $clock;
 
@@ -341,7 +349,8 @@ final readonly class TimeTrackClientApiController
 
     /**
      * POST timer/discard-idle `{from, to, action: keep|discard|split}`: the user's decision about an idle span the
-     * client detected locally (replaces the server-side idle flag of the heartbeat). 409 timer_running when a
+     * client detected locally (replaces the server-side idle flag of the heartbeat). `from` / `to` are converted to the
+     * server time zone and must carry an offset between -12:00 and +14:00 (1.9.2). 409 timer_running when a
      * concurrent start took the timer slot before a split could continue (1.9.1).
      */
     public function timerDiscardIdle(Request $request): Response
@@ -602,7 +611,11 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Strict RFC 3339 date-time (`Z` or an offset, optional milliseconds); null for anything else.
+     * Strict RFC 3339 date-time (`Z` or an offset between -12:00 and +14:00, optional milliseconds), converted to the
+     * server's default time zone (the one Doctrine hydrates date-times in); null for anything else.
+     *
+     * 1.9.2 (EF-M1): Doctrine's `datetime_immutable` stores the wall time without its offset and reads it back in the
+     * server time zone, so a value kept in the client's offset would be stored shifted by that offset.
      */
     private function dateTime(string $value): ?DateTimeImmutable
     {
@@ -610,7 +623,12 @@ final readonly class TimeTrackClientApiController
         foreach ([DATE_ATOM, 'Y-m-d\TH:i:s.vP'] as $format) {
             $date = DateTimeImmutable::createFromFormat('!' . $format, $value);
             if ($date instanceof DateTimeImmutable && $date->format($format) === $value) {
-                return $date;
+                $offsetMinutes = intdiv($date->getOffset(), 60);
+                if ($offsetMinutes < self::MIN_UTC_OFFSET_MINUTES || $offsetMinutes > self::MAX_UTC_OFFSET_MINUTES) {
+                    return null;
+                }
+
+                return $date->setTimezone(new DateTimeZone(date_default_timezone_get()));
             }
         }
 

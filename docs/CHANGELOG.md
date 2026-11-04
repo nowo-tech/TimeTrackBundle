@@ -37,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as **1.9.2** (security fix, no API or schema change). See [UPGRADING](UPGRADING.md#unreleased).
+
+### Security
+
+- **EF-M1 (Medium): client timestamps with a UTC offset were stored shifted by that offset.** `timer/discard-idle`
+  kept the offset of `from` / `to`; Doctrine's `datetime_immutable` stores the wall time without the offset and reads
+  it back in the server time zone. A user could inflate (or reverse) their own recorded time: with `to` at `-11:00`
+  an idle `split` continued the timer 11 h earlier, and the next stop recorded 11 h too much. `from` / `to` are now
+  converted to the server time zone, and offsets outside `-12:00`..`+14:00` answer `400 invalid_request`. The
+  `from` / `to` query parameters of `GET entries`, `GET export` and the reports page are converted the same way.
+  Honest clients sending `Z` were only affected on servers whose PHP time zone is not UTC.
+
 ## [1.9.1] - 2026-11-02
 
 Clients: GET me returns minSupportedVersion for the token's client type (new ClientMinSupportedVersionProviderInterface, config client_distribution.min_supported_version.*). Fixed: concurrent stop / switch / idle split record one entry (CL-05); idle split raced by a start answers 409. See [UPGRADING](https://github.com/nowo-tech/TimeTrackBundle/blob/v1.9.1/docs/UPGRADING.md#to-191).
