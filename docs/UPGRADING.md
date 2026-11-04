@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.10.2](#to-1102)
 - [To 1.10.1](#to-1101)
 - [To 1.10.0](#to-1100)
 - [To 1.9.2](#to-192)
@@ -49,7 +50,9 @@
 
 ## Unreleased
 
-Planned as **1.10.2**. From **1.10.1**: no schema change, no config change.
+## To 1.10.2
+
+From **1.10.1**: no schema change, no config change.
 
 ```bash
 composer update nowo-tech/time-track-bundle
