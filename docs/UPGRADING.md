@@ -46,6 +46,18 @@
 
 ## Unreleased
 
+Planned as **1.9.2**. From **1.9.1**: no schema change, no BC break.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- `timer/discard-idle` now refuses `from` / `to` offsets outside `-12:00`..`+14:00` (`400 invalid_request`) and stores
+  the instant the client sent (EF-M1). Entries recorded before the update with a non-UTC offset (or by a `Z` client on
+  a server whose PHP time zone is not UTC) may be shifted; review them if you need exact history.
+- Hosts calling `TimerService` directly should pass date-times in the server time zone (Doctrine stores the wall time
+  without its offset).
+
 ## To 1.9.1
 
 From **1.9.0**:
