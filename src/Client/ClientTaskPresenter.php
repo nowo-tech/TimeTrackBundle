@@ -162,7 +162,8 @@ final readonly class ClientTaskPresenter
             return 'length';
         }
 
-        $parts = preg_match('/[\x00-\x20\x7F]/', $url) === 1 ? false : parse_url($url);
+        // Any space or control character (Unicode included, EF-I2); invalid UTF-8 (preg_match false) is refused too.
+        $parts = preg_match('/[\x00-\x20\x7F\p{Z}\p{Cc}]/u', $url) !== 0 ? false : parse_url($url);
         if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
             return 'syntax';
         }

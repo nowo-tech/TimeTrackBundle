@@ -437,8 +437,8 @@ final readonly class TimeTrackClientApiController
         }
 
         $payload    = $this->payload($request);
-        $from       = $this->dateTime($this->string($payload, 'from'));
-        $to         = $this->dateTime($this->string($payload, 'to'));
+        $from       = $this->dateTime($this->rawString($payload, 'from'));
+        $to         = $this->dateTime($this->rawString($payload, 'to'));
         $resolution = IdleResolution::tryFrom($this->string($payload, 'action'));
         if (!$from instanceof DateTimeImmutable || !$to instanceof DateTimeImmutable || !$resolution instanceof IdleResolution) {
             return $this->responseFactory->error('invalid_request', 'from and to (RFC 3339) and action (keep, discard, split, reassign) are required.', Response::HTTP_BAD_REQUEST, $request);
@@ -708,15 +708,28 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Strict RFC 3339 date-time (`Z` or an offset between -12:00 and +14:00, optional milliseconds), converted to the
-     * server's default time zone (the one Doctrine hydrates date-times in); null for anything else.
+     * Untrimmed string field ('' when absent or not a string).
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function rawString(array $payload, string $key): string
+    {
+        $value = $payload[$key] ?? null;
+
+        return is_string($value) ? $value : '';
+    }
+
+    /**
+     * Strict RFC 3339 date-time (`Z`, `z` or an offset between -12:00 and +14:00, optional milliseconds; no surrounding
+     * whitespace), converted to the server's default time zone (the one Doctrine hydrates date-times in); null for
+     * anything else.
      *
      * 1.9.2 (EF-M1): Doctrine's `datetime_immutable` stores the wall time without its offset and reads it back in the
      * server time zone, so a value kept in the client's offset would be stored shifted by that offset.
      */
     private function dateTime(string $value): ?DateTimeImmutable
     {
-        $value = (string) preg_replace('/Z$/', '+00:00', $value);
+        $value = (string) preg_replace('/[Zz]\z/', '+00:00', $value);
         foreach ([DATE_ATOM, 'Y-m-d\TH:i:s.vP'] as $format) {
             $date = DateTimeImmutable::createFromFormat('!' . $format, $value);
             if ($date instanceof DateTimeImmutable && $date->format($format) === $value) {
@@ -733,7 +746,7 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Optional RFC 3339 field: null when absent or blank, false when malformed.
+     * Optional RFC 3339 field: null when absent or empty, false when malformed (surrounding whitespace included).
      *
      * @param array<string, mixed> $payload
      */
@@ -748,11 +761,11 @@ final readonly class TimeTrackClientApiController
             return false;
         }
 
-        if (trim($value) === '') {
+        if ($value === '') {
             return null;
         }
 
-        return $this->dateTime(trim($value)) ?? false;
+        return $this->dateTime($value) ?? false;
     }
 
     /**

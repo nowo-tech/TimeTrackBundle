@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Service;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Dto\BackdateLimits;
@@ -41,6 +42,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 use function array_slice;
 use function count;
+use function date_default_timezone_get;
 use function max;
 use function min;
 use function sprintf;
@@ -274,6 +276,9 @@ final readonly class TimerService
         ?ClientType $clientType = null,
         ?string $note = null,
     ): ?array {
+        // Whole seconds in the server zone (EF-M1, EF-I5): what is compared is what is stored.
+        $from   = $this->toSecond($from);
+        $to     = $this->toSecond($to);
         $target = null;
         if ($resolution === IdleResolution::Reassign) {
             if ($targetTaskId === null || $targetTaskId === '') {
@@ -706,11 +711,13 @@ final readonly class TimerService
     }
 
     /**
-     * The same instant without fractions of a second (storage is to the second).
+     * The same instant without fractions of a second (storage is to the second), in the server's default time zone:
+     * Doctrine stores the wall time without its offset and hydrates it in that zone (EF-M1), so a value kept in another
+     * zone would be stored shifted.
      */
     private function toSecond(DateTimeImmutable $time): DateTimeImmutable
     {
-        return $time->setTime((int) $time->format('H'), (int) $time->format('i'), (int) $time->format('s'));
+        return (new DateTimeImmutable('@' . $time->getTimestamp()))->setTimezone(new DateTimeZone(date_default_timezone_get()));
     }
 
     /**

@@ -60,7 +60,9 @@ All additive: a 1.9 client keeps working unchanged; a 1.10 client detects a 1.9 
 - **Rate limits**: per client IP on every route (`client_api.rate_limit.per_ip`, default 300/min), per token
   (`per_token`, 60/min), per IP on `device/*` (`device_per_ip`, 30/min); failed logins per IP + username and per IP
   (`clients.login_rate_limit`). Over the limit: `429 rate_limited` + `Retry-After`.
-- Dates are RFC 3339 (`2026-11-02T09:30:00+01:00`, `Z` and milliseconds accepted where noted).
+- Dates are RFC 3339 (`2026-11-02T09:30:00+01:00`, `Z` / `z` and milliseconds accepted where noted). Since 1.9.2 the offset
+  must lie between `-12:00` and `+14:00` and the value is converted to the server time zone before it is compared or
+  stored; since 1.10 surrounding whitespace is refused and idle spans are compared on whole seconds.
 
 ## Credential model
 

@@ -74,6 +74,16 @@ change). See [UPGRADING](UPGRADING.md#unreleased).
 - `LatestTimeEntryRepositoryInterface::findLatestEndedAt()` (implemented by the Doctrine store); `TimerService::startAt()`,
   `stopAt()`, `findTask()`; `IdleResolution::Reassign`, `IdleFollowUp`, `TaskNotTrackableException`.
 
+### Changed
+
+- Audit Appendix EF (Info): task URLs with Unicode spaces or control characters are dropped (EF-I2);
+  `client_api.task_url.origin` must be a valid host with a port of 1–65535 and no trailing dot (EF-I3); client
+  timestamps accept a lower-case `z` and are no longer trimmed (EF-I4); idle spans are compared on whole seconds, so a
+  span starting within the timer's first second writes no 0-second entry (EF-I5). EF-I1 (`Host` header and the
+  request-origin fallback) and EF-I6 (fallback overlap lookup on custom stores) are documented in UPGRADING.
+- `startedAt` / `endedAt` / reassign `from` / `to` are stored in the server time zone (EF-M1, see Security); they
+  were affected the same way as the 1.9 `split` path before this release.
+
 ### Security
 
 - **EF-M1 (Medium): client timestamps with a UTC offset were stored shifted by that offset.** `timer/discard-idle`

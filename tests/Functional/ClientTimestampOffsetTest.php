@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\Attributes\DataProvider;
 
+use function array_map;
 use function date_default_timezone_get;
 use function date_default_timezone_set;
 
@@ -58,6 +59,54 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
         }
         self::assertSame($this->instant($discardFrom), $this->instant($entries[0]['endedAt']));
         self::assertSame($this->instant($splitFrom), $this->instant($entries[1]['endedAt']));
+    }
+
+    #[DataProvider('offsets')]
+    public function testBackdatedStartStopAndReassignKeepTheInstants(string $offset): void
+    {
+        $token = $this->login();
+
+        $startedAt = $this->at('-30 minutes', $offset);
+        $start     = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'startedAt' => $startedAt], $token);
+        self::assertResponseStatusCodeSame(201);
+        self::assertFalse($start['startedAtResult']['clamped'] ?? null);
+        $this->entityManager()->clear();
+        $timer = $this->api('GET', '/api/time-track/timer', null, $token);
+        self::assertSame($this->instant($startedAt), $this->instant((string) ($timer['timer']['startedAt'] ?? '')), 'stored start = the instant sent');
+
+        $endedAt = $this->at('-20 minutes', $offset);
+        $stop    = $this->api('POST', '/api/time-track/timer/stop', ['endedAt' => $endedAt], $token);
+        self::assertResponseIsSuccessful();
+        self::assertSame(600, $stop['entry']['durationSeconds'] ?? null);
+        $this->entityManager()->clear();
+
+        // Overlap rule on the real instants: a start before the stored end is moved to it, whatever the offset.
+        $overlap = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'startedAt' => $this->at('-25 minutes', $offset)], $token);
+        self::assertSame('overlap', $overlap['startedAtResult']['reason'] ?? null);
+        self::assertSame($this->instant($endedAt), $this->instant((string) ($overlap['timer']['startedAt'] ?? '')));
+        $this->entityManager()->clear();
+
+        $from     = $this->at('-15 minutes', $offset);
+        $to       = $this->at('-5 minutes', $offset);
+        $reassign = $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => $from, 'to' => $to, 'action' => 'reassign', 'taskId' => 'task-2'], $token);
+        self::assertResponseIsSuccessful();
+        self::assertSame(300, $reassign['entry']['durationSeconds'] ?? null);
+        self::assertSame(600, $reassign['reassigned']['durationSeconds'] ?? null);
+        $this->entityManager()->clear();
+
+        $this->api('POST', '/api/time-track/timer/stop', [], $token);
+        $this->entityManager()->clear();
+        $entries = $this->api('GET', '/api/time-track/entries', null, $token)['entries'] ?? [];
+        self::assertSame(['task-1', 'task-2', 'task-1', 'task-1'], array_map(static fn (array $e): string => $e['taskId'], $entries));
+        $total = 0;
+        foreach ($entries as $entry) {
+            self::assertSame($entry['durationSeconds'], $this->instant($entry['endedAt']) - $this->instant($entry['startedAt']));
+            self::assertGreaterThanOrEqual(0, $entry['durationSeconds']);
+            $total += $entry['durationSeconds'];
+        }
+        self::assertEqualsWithDelta(1800, $total, 5, 'no inflation: 30 min of wall time');
+        self::assertSame($this->instant($from), $this->instant($entries[1]['startedAt']));
+        self::assertSame($this->instant($to), $this->instant($entries[1]['endedAt']));
     }
 
     public function testOffsetsOutsideTheRealRangeAre400(): void

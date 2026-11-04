@@ -70,8 +70,15 @@ composer update nowo-tech/time-track-bundle
   `targetTaskId`, `followUp`, `clientType`, `note` arguments. `start()` / `switchTo()` now throw
   `TaskNotTrackableException` (a subclass of `InvalidArgumentException`, so existing catches still work).
 - **Own (non-Doctrine) time entry store:** implement `LatestTimeEntryRepositoryInterface::findLatestEndedAt()` for the
-  backdate overlap check in one query; without it the bundle reads the user's entries of the backdate window plus one
-  day through `findByUserAndPeriod()`.
+  backdate overlap check in one query. Without it the bundle reads the user's entries of the backdate window plus one
+  day through `findByUserAndPeriod()`, so an entry that **started more than one day before the window and ended inside
+  it** is missed and a backdated start may overlap it (EF-I6). The Doctrine store implements the interface.
+- **Task URL origin and the `Host` header (EF-I1).** With `client_api.task_url.origin` unset, the expected origin is
+  the request's, which comes from the caller's `Host` header: a caller sending `Host: evil.test` gets URLs on
+  `https://evil.test` published in its own response (never in other users' responses; no shared caching). Set
+  `client_api.task_url.origin` (Beacon does) or `framework.trusted_hosts`.
+- **Client timestamps (1.10).** `startedAt`, `endedAt`, `from` and `to` are parsed strictly: a lower-case `z` is
+  accepted, surrounding whitespace is no longer trimmed (`400`), and `from` / `to` are compared on whole seconds.
 - **Listeners of `nowo_time_track.timer.stop`** now also receive the entry of a reassigned idle span (the time moved to
   another task), so per-task totals stay right. `IdleResolvedEvent` (`nowo_time_track.idle.resolved`) lets you audit
   idle decisions and `TimerStartEvent::getStartTime()` / `TimerStopEvent::getEndTime()` backdated starts and stops.

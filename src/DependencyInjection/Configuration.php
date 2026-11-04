@@ -40,8 +40,8 @@ final class Configuration implements ConfigurationInterface
      */
     public const SEMVER_PATTERN = '/\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?\z/';
 
-    /** Exact https origin (`https://host[:port]`) of `client_api.task_url.origin`. */
-    public const HTTPS_ORIGIN_PATTERN = '~\Ahttps://[a-z0-9.-]+(?::[0-9]{1,5})?\z~i';
+    /** Exact https origin (`https://host[:port]`) of `client_api.task_url.origin`: DNS labels, no empty label or trailing dot, port 1–65535 (EF-I3). */
+    public const HTTPS_ORIGIN_PATTERN = '~\Ahttps://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?\z~i';
 
     public const LEGACY_LAYOUT = '@NowoTimeTrackBundle/layout.html.twig';
 

@@ -45,6 +45,10 @@ final class ClientTaskPresenterTest extends TestCase
         yield 'control char' => ["https://beacon.test/tasks/1\n", null];
         yield 'too long' => ['https://beacon.test/' . str_repeat('a', 2100), null];
         yield 'not a url' => ['https://', null];
+        yield 'no-break space in the path' => ["https://beacon.test/tasks/\u{00A0}1", null];
+        yield 'line separator in the path' => ["https://beacon.test/tasks/\u{2028}1", null];
+        yield 'C1 control in the path' => ["https://beacon.test/tasks/\u{0085}1", null];
+        yield 'invalid UTF-8' => ["https://beacon.test/tasks/\xC3\x281", null];
     }
 
     #[DataProvider('urls')]

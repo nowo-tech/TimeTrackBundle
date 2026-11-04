@@ -53,6 +53,14 @@ final class ClientApiV110ConfigurationTest extends TestCase
         yield 'origin with credentials' => [['task_url' => ['origin' => 'https://u:p@beacon.test']]];
         yield 'origin with whitespace' => [['task_url' => ['origin' => 'https://beacon.test ']]];
         yield 'non-string origin' => [['task_url' => ['origin' => 42]]];
+        yield 'trailing dot' => [['task_url' => ['origin' => 'https://beacon.test.']]];
+        yield 'bare dot' => [['task_url' => ['origin' => 'https://.']]];
+        yield 'empty label' => [['task_url' => ['origin' => 'https://beacon..test']]];
+        yield 'leading hyphen' => [['task_url' => ['origin' => 'https://-beacon.test']]];
+        yield 'port above 65535' => [['task_url' => ['origin' => 'https://beacon.test:65536']]];
+        yield 'port 0' => [['task_url' => ['origin' => 'https://beacon.test:0']]];
+        yield 'port with leading zero' => [['task_url' => ['origin' => 'https://beacon.test:0443']]];
+        yield 'empty port' => [['task_url' => ['origin' => 'https://beacon.test:']]];
     }
 
     /**
@@ -69,6 +77,8 @@ final class ClientApiV110ConfigurationTest extends TestCase
     {
         self::assertSame('https://beacon.example.com', $this->process(['task_url' => ['origin' => 'https://beacon.example.com']])['client_api']['task_url']['origin']);
         self::assertSame('https://localhost:8443', $this->process(['task_url' => ['origin' => 'https://localhost:8443']])['client_api']['task_url']['origin']);
+        self::assertSame('https://my-beacon.example.co:65535', $this->process(['task_url' => ['origin' => 'https://my-beacon.example.co:65535']])['client_api']['task_url']['origin']);
+        self::assertSame('https://b:1', $this->process(['task_url' => ['origin' => 'https://b:1']])['client_api']['task_url']['origin']);
     }
 
     public function testExtensionWiresTheNewSettings(): void

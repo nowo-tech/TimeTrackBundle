@@ -173,14 +173,18 @@ final class ClientApiV110Test extends TestCase
         $controller = $stack->apiController();
         $token      = $this->token($stack);
 
-        foreach (['yesterday', '2026-11-02 09:00:00', 1_700_000_000] as $bad) {
+        foreach (['yesterday', '2026-11-02 09:00:00', 1_700_000_000, ' ', ' 2026-11-02T09:00:00Z', "2026-11-02T09:00:00Z\n", '2026-11-02T09:00:00+14:01', '2026-11-02T09:00:00-12:01', '2026-11-02T09:00:00+99:00'] as $bad) {
             $response = $controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1', 'startedAt' => $bad]));
             self::assertSame(400, $response->getStatusCode());
             self::assertSame('invalid_request', $this->body($response)['error']);
         }
 
-        $blank = $this->body($controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1', 'startedAt' => ' '])));
-        self::assertArrayNotHasKey('startedAtResult', $blank, 'a blank value is no value');
+        $empty = $this->body($controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1', 'startedAt' => ''])));
+        self::assertArrayNotHasKey('startedAtResult', $empty, 'an empty value is no value');
+        $this->stopAt($controller, $token, null);
+
+        $lower = $this->startAt($controller, $token, '2026-11-02T09:30:00z');
+        self::assertSame($this->atom('2026-11-02T09:30:00Z'), $lower['startedAtResult']['requested'], 'a lower-case z is RFC 3339 (EF-I4)');
 
         $response = $controller->timerStop($this->request('POST', $token, ['endedAt' => 'soon']));
         self::assertSame(400, $response->getStatusCode());
@@ -287,6 +291,30 @@ final class ClientApiV110Test extends TestCase
         self::assertSame('desktop', $body['reassigned']['source'], 'the token client by default');
         self::assertNull($body['reassigned']['metadata']);
         self::assertNull($body['timer']);
+    }
+
+    public function testReassignFromWithinTheStartSecondWritesNoEmptyEntry(): void
+    {
+        $stack      = $this->stack();
+        $controller = $stack->apiController();
+        $token      = $this->token($stack);
+        $this->startAt($controller, $token, '2026-11-02T09:00:00Z');
+
+        $body = $this->body($controller->timerDiscardIdle($this->request('POST', $token, ['from' => '2026-11-02T09:00:00.400Z', 'to' => '2026-11-02T09:10:00.900Z', 'action' => 'reassign', 'taskId' => 'task-2', 'then' => 'stop'])));
+
+        self::assertNull($body['entry'], 'compared on whole seconds (EF-I5)');
+        self::assertSame(600, $body['reassigned']['durationSeconds']);
+    }
+
+    public function testDiscardIdleRefusesPaddedTimestamps(): void
+    {
+        $stack      = $this->stack();
+        $controller = $stack->apiController();
+        $token      = $this->token($stack);
+        $this->startAt($controller, $token, '2026-11-02T09:00:00Z');
+
+        $response = $controller->timerDiscardIdle($this->request('POST', $token, ['from' => ' 2026-11-02T09:10:00Z', 'to' => '2026-11-02T09:20:00Z', 'action' => 'keep']));
+        self::assertSame(400, $response->getStatusCode());
     }
 
     public function testReassignInputIsValidated(): void
