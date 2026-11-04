@@ -21,6 +21,7 @@ final class IdleResolvedEvent extends Event
     /**
      * @param string|null $targetTaskId Task the span was given to (`reassign` only)
      * @param IdleFollowUp|null $followUp What runs after the span (`reassign` only)
+     * @param string|null $note Note sent with the decision (`keep`: added to the running timer, 1.10.1; `reassign`: stored on the reassigned entry)
      */
     public function __construct(
         private readonly UserInterface $user,
@@ -30,6 +31,7 @@ final class IdleResolvedEvent extends Event
         private readonly ClientType $clientType,
         private readonly ?string $targetTaskId = null,
         private readonly ?IdleFollowUp $followUp = null,
+        private readonly ?string $note = null,
     ) {
     }
 
@@ -87,5 +89,13 @@ final class IdleResolvedEvent extends Event
     public function getFollowUp(): ?IdleFollowUp
     {
         return $this->followUp;
+    }
+
+    /**
+     * Note sent with the decision (null when none).
+     */
+    public function getNote(): ?string
+    {
+        return $this->note;
     }
 }

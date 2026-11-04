@@ -19,7 +19,7 @@ final class ClientApiV110Test extends FunctionalTestCase
     {
         return ['client_api' => [
             'backdate'   => ['max_seconds' => 7200],
-            'idle_check' => ['threshold_minutes' => 20, 'answer_timeout_minutes' => 2],
+            'idle_check' => ['threshold_minutes' => 20, 'answer_timeout_minutes' => 2, 'user_can_disable' => true],
             'task_url'   => ['origin' => 'https://beacon.example.com'],
         ]];
     }
@@ -28,8 +28,8 @@ final class ClientApiV110Test extends FunctionalTestCase
     {
         $me = $this->api('GET', '/api/time-track/me', null, $this->login());
 
-        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_check' => true, 'workday' => false, 'monitoring' => false], $me['features'] ?? null);
-        self::assertSame(['backdate' => ['max_seconds' => 7200, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 20, 'answer_timeout_minutes' => 2]], $me['limits'] ?? null);
+        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'monitoring' => false], $me['features'] ?? null);
+        self::assertSame(['backdate' => ['max_seconds' => 7200, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 20, 'answer_timeout_minutes' => 2, 'user_can_disable' => true]], $me['limits'] ?? null);
     }
 
     public function testTasksAndTimerCarryTheTaskDetails(): void

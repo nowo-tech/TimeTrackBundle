@@ -450,6 +450,7 @@ final class Configuration implements ConfigurationInterface
                                 ->booleanNode('enabled')->defaultTrue()->end()
                                 ->integerNode('threshold_minutes')->info('Idle minutes before the client asks.')->defaultValue(10)->min(5)->max(60)->end()
                                 ->integerNode('answer_timeout_minutes')->info('Minutes the idle prompt waits for an answer.')->defaultValue(5)->min(1)->max(30)->end()
+                                ->booleanNode('user_can_disable')->info('Whether users may turn the idle check off in the client (1.10.1; limits.idle_check.user_can_disable).')->defaultFalse()->end()
                                 ->scalarNode('provider')
                                     ->info('Service id implementing IdleCheckSettingsProviderInterface (per-user settings; null = these values). Its values are clamped to the same ranges.')
                                     ->defaultNull()

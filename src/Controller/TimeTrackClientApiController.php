@@ -57,6 +57,7 @@ use function is_string;
 use function json_decode;
 use function json_encode;
 use function max;
+use function mb_strlen;
 use function mb_substr;
 use function min;
 use function preg_match;
@@ -245,6 +246,7 @@ final readonly class TimeTrackClientApiController
             'start_backdate' => $backdate,
             'stop_backdate'  => $backdate,
             'idle_reassign'  => $settings->allowIdleReassign,
+            'idle_keep_note' => true,
             'idle_check'     => $idleCheck->enabled,
         ];
         foreach (self::RESERVED_FEATURES as $reserved) {
@@ -422,7 +424,8 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * POST timer/discard-idle `{from, to, action: keep|discard|split|reassign, taskId?, then?, note?, source?}`: the
+     * POST timer/discard-idle `{from, to, action: keep|discard|split|reassign, taskId?, then?, note?, source?}` (`note` on
+     * `keep` since 1.10.1): the
      * user's decision about an idle span the client detected locally (replaces the server-side idle flag of the
      * heartbeat). `from` / `to` are converted to the server time zone and must carry an offset between -12:00 and
      * +14:00 (1.9.2). 409 timer_running when a concurrent start took the timer slot before the follow-up timer started
@@ -448,6 +451,13 @@ final readonly class TimeTrackClientApiController
         $followUp = IdleFollowUp::Continue;
         $source   = null;
         $note     = null;
+        if ($resolution === IdleResolution::Keep) {
+            $note = $this->keepNote($payload);
+            if ($note === false) {
+                return $this->responseFactory->error('invalid_request', sprintf('note must be plain text of at most %d characters.', self::NOTE_MAX_LENGTH), Response::HTTP_BAD_REQUEST, $request);
+            }
+        }
+
         if ($resolution === IdleResolution::Reassign) {
             $invalid = $this->reassignInput($payload, $principal, $request);
             if ($invalid instanceof Response) {
@@ -705,6 +715,32 @@ final readonly class TimeTrackClientApiController
         $note = $this->string($payload, 'note');
 
         return $note === '' ? null : mb_substr($note, 0, self::NOTE_MAX_LENGTH);
+    }
+
+    /**
+     * Optional note of an idle `keep` (1.10.1): each run of control characters becomes one space and the text is trimmed; null when absent or
+     * empty; false when it is not a string or is longer than {@see self::NOTE_MAX_LENGTH} characters.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function keepNote(array $payload): string|false|null
+    {
+        $note = $payload['note'] ?? null;
+        if ($note === null) {
+            return null;
+        }
+
+        if (!is_string($note)) {
+            return false;
+        }
+
+        // The JSON body is valid UTF-8 (json_decode guarantees it), so the /u pattern cannot fail here.
+        $clean = trim((string) preg_replace('/\p{Cc}+/u', ' ', $note));
+        if ($clean === '') {
+            return null;
+        }
+
+        return mb_strlen($clean) > self::NOTE_MAX_LENGTH ? false : $clean;
     }
 
     /**
