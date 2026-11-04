@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.9.2](#to-192)
 - [To 1.9.1](#to-191)
 - [To 1.9.0](#to-190)
   - [To 1.9.0](#to-190-1)
@@ -46,7 +47,9 @@
 
 ## Unreleased
 
-Planned as **1.9.2**. From **1.9.1**: no schema change, no BC break.
+## To 1.9.2
+
+From **1.9.1**: no schema change, no BC break.
 
 ```bash
 composer update nowo-tech/time-track-bundle
