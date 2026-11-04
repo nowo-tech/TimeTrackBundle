@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Support;
 
 use DateTimeImmutable;
+use DateTimeZone;
 
+use function date_default_timezone_get;
 use function sprintf;
 use function str_contains;
 
@@ -49,7 +51,8 @@ final class QueryPeriodResolver
     }
 
     /**
-     * Parses an ATOM / RFC 3339 or `Y-m-d` value, else returns the fallback.
+     * Parses an ATOM / RFC 3339 or `Y-m-d` value (converted to the server time zone, the one Doctrine binds and hydrates
+     * date-times in), else returns the fallback.
      *
      * @param string $value Raw value
      * @param string $fallback Relative format applied to $now when the value is invalid (`-7 days`, `now`)
@@ -62,7 +65,8 @@ final class QueryPeriodResolver
                 $parsed = DateTimeImmutable::createFromFormat($format, $value);
                 $errors = DateTimeImmutable::getLastErrors();
                 if ($parsed instanceof DateTimeImmutable && ($errors === false || $errors['warning_count'] === 0)) {
-                    return $parsed;
+                    // 1.9.2 (EF-M1): compared with stored date-times, which Doctrine binds without an offset.
+                    return $parsed->setTimezone(new DateTimeZone(date_default_timezone_get()));
                 }
             }
         }

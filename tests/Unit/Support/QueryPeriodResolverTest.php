@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Support;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-use const DATE_ATOM;
+use function date_default_timezone_get;
 
 final class QueryPeriodResolverTest extends TestCase
 {
@@ -38,10 +39,19 @@ final class QueryPeriodResolverTest extends TestCase
 
     public function testParsesAtom(): void
     {
-        self::assertSame(
-            '2026-05-01T10:30:00+02:00',
-            QueryPeriodResolver::parseDate('2026-05-01T10:30:00+02:00', 'now')->format(DATE_ATOM),
-        );
+        $parsed = QueryPeriodResolver::parseDate('2026-05-01T10:30:00+02:00', 'now');
+
+        self::assertSame((new DateTimeImmutable('2026-05-01T10:30:00+02:00'))->getTimestamp(), $parsed->getTimestamp());
+        self::assertSame(date_default_timezone_get(), $parsed->getTimezone()->getName(), 'converted to the server zone (EF-M1)');
+    }
+
+    public function testOffsetsAreConvertedToTheServerZone(): void
+    {
+        $now    = new DateTimeImmutable('2026-11-02 10:00:00', new DateTimeZone('Asia/Tokyo'));
+        $parsed = QueryPeriodResolver::parseDate('2026-11-02T08:00:00-11:00', '-7 days', $now);
+
+        self::assertSame((new DateTimeImmutable('2026-11-02T19:00:00+00:00'))->getTimestamp(), $parsed->getTimestamp());
+        self::assertSame(date_default_timezone_get(), $parsed->getTimezone()->getName(), 'the zone Doctrine binds and hydrates in');
     }
 
     public function testParsesDateOnlyAtMidnight(): void
