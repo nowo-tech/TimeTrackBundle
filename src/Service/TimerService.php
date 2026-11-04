@@ -142,6 +142,7 @@ final readonly class TimerService
         }
 
         $task      = $this->resolveTrackable($user, $taskId);
+        $metadata  = $this->startMetadata($metadata);
         $now       = $this->clock->now();
         $startTime = $requestedStart instanceof DateTimeImmutable ? $this->clampStart($user, $requestedStart, $limits ?? new BackdateLimits(), $now) : null;
 
@@ -606,6 +607,29 @@ final readonly class TimerService
         $metadata ??= [];
         $existing         = $metadata['note'] ?? null;
         $metadata['note'] = NoteSanitizer::merge(is_string($existing) ? $existing : null, $note);
+
+        return $metadata;
+    }
+
+    /**
+     * Metadata of a new timer: a `note` is cleaned like every note (also for hosts calling {@see self::start()} /
+     * {@see self::startAt()} directly, EF2-I9); a note that is not a string or is blank after cleaning is dropped.
+     *
+     * @param array<string, mixed> $metadata
+     *
+     * @return array<string, mixed>
+     */
+    private function startMetadata(array $metadata): array
+    {
+        if (!isset($metadata['note'])) {
+            return $metadata;
+        }
+
+        $note = is_string($metadata['note']) ? NoteSanitizer::cleanAndCut($metadata['note']) : null;
+        unset($metadata['note']);
+        if ($note !== null) {
+            $metadata['note'] = $note;
+        }
 
         return $metadata;
     }

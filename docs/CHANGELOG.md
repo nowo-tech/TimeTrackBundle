@@ -41,6 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as **1.10.3**: last follow-ups of audit Appendix EF2 (Info). No API shape or schema change.
+
+### Changed
+
+- Notes: the bidi marks U+061C (Arabic letter mark), U+200E (LRM) and U+200F (RLM) are removed too, so every
+  bidirectional control is stripped (EF2-I7).
+- `TimerService::start()` / `startAt()` clean a `note` in the metadata a host passes directly, like the client API does;
+  a note that is not a string or is blank after cleaning is dropped (EF2-I9).
+
+### Documentation
+
+- CLIENT-API: once a timer's note has reached 500 code points, later `keep` and stop / switch notes are dropped and the
+  earlier text wins (EF2-I8).
+
 ## [1.10.2] - 2026-11-04
 
 Follow-ups of audit Appendix EF2 (Info only). No API shape or schema change.

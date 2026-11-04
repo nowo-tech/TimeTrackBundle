@@ -12,7 +12,8 @@ use function preg_replace;
  * `timer/switch`, `timer/discard-idle` `keep` and `reassign`, and a `note` in allowed free metadata.
  *
  * Cleaning, in this order:
- * 1. bidirectional controls U+202A–U+202E and U+2066–U+2069 are removed (no right-to-left override spoofing);
+ * 1. bidirectional controls are removed (no right-to-left override spoofing): the embeddings / overrides U+202A–U+202E,
+ *    the isolates U+2066–U+2069 and the marks U+061C (Arabic letter mark), U+200E (LRM) and U+200F (RLM) (1.10.3);
  * 2. U+200B (zero-width space) and U+FEFF (byte-order mark) are removed everywhere; the zero-width joiners U+200C /
  *    U+200D and U+2060 are kept inside the text (emoji sequences and some scripts need them) but trimmed at both ends;
  * 3. each run of control characters (`\p{Cc}`: C0, DEL, C1, including CR / LF / tab) becomes one space;
@@ -34,7 +35,7 @@ final class NoteSanitizer
      */
     public static function clean(string $note): string
     {
-        $note = (string) preg_replace('/[\x{202A}-\x{202E}\x{2066}-\x{2069}\x{200B}\x{FEFF}]+/u', '', $note);
+        $note = (string) preg_replace('/[\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{200B}\x{FEFF}]+/u', '', $note);
         $note = (string) preg_replace('/\p{Cc}+/u', ' ', $note);
 
         return (string) preg_replace('/\A[\s\p{Z}\x{200C}\x{200D}\x{2060}]+|[\s\p{Z}\x{200C}\x{200D}\x{2060}]+\z/u', '', $note);

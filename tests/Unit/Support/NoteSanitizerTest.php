@@ -27,6 +27,8 @@ final class NoteSanitizerTest extends TestCase
         yield 'trimmed' => ["  \t note \n", 'note'];
         yield 'bidi override removed' => ["invoice \u{202E}gpj.exe", 'invoice gpj.exe'];
         yield 'every bidi control removed' => ["\u{202A}a\u{202B}b\u{202C}c\u{202D}d\u{2066}e\u{2067}f\u{2068}g\u{2069}h", 'abcdefgh'];
+        yield 'bidi marks removed (1.10.3)' => ["a\u{061C}b\u{200E}c\u{200F}d", 'abcd'];
+        yield 'only bidi marks' => ["\u{200F}\u{200E}\u{061C}", ''];
         yield 'zero-width space and BOM removed everywhere' => ["\u{FEFF}\u{200B}a\u{200B}b\u{FEFF}c\u{200B}", 'abc'];
         yield 'joiners trimmed at the ends, kept inside' => ["\u{200D}\u{2060}👩\u{200D}💻\u{200C}", "👩\u{200D}💻"];
         yield 'unicode spaces trimmed' => ["\u{00A0}\u{2003}note\u{3000}", 'note'];
