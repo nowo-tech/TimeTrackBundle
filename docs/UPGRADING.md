@@ -49,6 +49,26 @@
 
 ## Unreleased
 
+Planned as **1.10.2**. From **1.10.1**: no schema change, no config change.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- **Stop and switch notes are merged, not replaced.** An entry's `metadata.note` is now the start note, then every
+  idle `keep` note, then the stop / switch note, one per line, cut at 500 code points (earlier text first). Before,
+  a stop note replaced the notes collected on the timer. Code that reads `metadata.note` and expected only the stop
+  note should split on `\n` or take the last line.
+- **Follow-up timers start without a note** (idle `split`, reassign `then: continue`); the note stays on the entry up
+  to the idle start.
+- **Notes are cleaned**: no bidi controls, no U+200B / U+FEFF, control characters folded to one space, trimmed. Hosts
+  calling `TimerService` directly get the same cleaning; `ActiveTimer::appendNote()`'s `$maxLength` is now optional.
+- **`IdleResolvedEvent::getNote()` is raw user text** (EF2-I5). It is cleaned but not escaped: escape it for HTML, CSV
+  or any other output, and do not write it to logs.
+- **Known race (EF2-I1, unchanged).** The keep note is appended with a read-modify-write of the timer row: two keeps
+  sent at the same moment for the same timer can lose one note, and a keep that races a stop answers `200` although
+  the entry does not get its note. It only affects the user's own annotation; clients send one decision at a time.
+
 ## To 1.10.1
 
 From **1.10.0**: no schema change, no BC break.

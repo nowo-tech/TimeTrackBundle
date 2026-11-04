@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
+use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -93,6 +94,10 @@ final class IdleResolvedEvent extends Event
 
     /**
      * Note sent with the decision (null when none).
+     *
+     * **Raw user text** (EF2-I5): cleaned by {@see NoteSanitizer} (no control or bidi
+     * characters, at most 500 code points) but not escaped. A listener that renders or stores it (an audit page, HTML,
+     * CSV, a log) must escape it for that context, and should not write it to logs at all.
      */
     public function getNote(): ?string
     {
