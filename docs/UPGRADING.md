@@ -48,6 +48,19 @@
 
 ## Unreleased
 
+Planned as **1.10.1**. From **1.10.0**: no schema change, no BC break.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- `IdleCheckSettings` has a fourth constructor argument, `userCanDisable` (default `false`): an
+  `IdleCheckSettingsProviderInterface` written for 1.10.0 keeps working and reports `user_can_disable: false`. Pass
+  `true` for users who may turn the idle check off (Beacon: personal accounts), or set
+  `client_api.idle_check.user_can_disable` for the instance default.
+- `timer/discard-idle` `keep` with a `note` now updates the running timer (`metadata.note`). Listeners of
+  `nowo_time_track.idle.resolved` can read it with `IdleResolvedEvent::getNote()`; do not log the text.
+
 ## To 1.10.0
 
 Client API contract v0.3. From **1.9.2**: no schema change, no config change needed.

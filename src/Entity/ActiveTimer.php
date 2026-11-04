@@ -10,6 +10,9 @@ use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
+use function is_string;
+use function mb_substr;
+
 use const DATE_ATOM;
 
 /**
@@ -139,6 +142,23 @@ class ActiveTimer
     {
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastHeartbeatAt = $at;
+
+        return $this;
+    }
+
+    /**
+     * Adds a note to the timer's `metadata.note` (1.10.1, idle `keep`): a timer without a note takes it as is; otherwise it
+     * is appended on a new line, and the combined note is cut at `$maxLength` characters (the earlier text wins).
+     *
+     * @phpstan-impure
+     */
+    public function appendNote(string $note, int $maxLength): self
+    {
+        $metadata         = $this->metadata ?? [];
+        $existing         = isset($metadata['note']) && is_string($metadata['note']) ? $metadata['note'] : '';
+        $metadata['note'] = mb_substr($existing === '' ? $note : $existing . "\n" . $note, 0, $maxLength);
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->metadata = $metadata;
 
         return $this;
     }

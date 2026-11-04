@@ -1,4 +1,4 @@
-# Client API reference (1.10, contract v0.3)
+# Client API reference (1.10.1, contract v0.3.1)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in v0.3.1 (1.10.1)](#changes-in-v031-1101)
 - [Changes since v0.2 (1.10)](#changes-since-v02-110)
 - [Conventions](#conventions)
 - [Credential model](#credential-model)
@@ -32,6 +33,15 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in v0.3.1 (1.10.1)
+
+Additive. A 1.10.1 server is recognised by `features.idle_keep_note`.
+
+| Where | Change |
+|---|---|
+| `POST timer/discard-idle` `keep` | Optional `note`, added to the running timer's note (it ends up on the entry at stop) |
+| `GET me` | `features.idle_keep_note: true`; `limits.idle_check.user_can_disable` (bool) |
 
 ## Changes since v0.2 (1.10)
 
@@ -129,10 +139,14 @@ Since 1.10 the body also carries:
 
 ```json
 "features": {"task_details": true, "start_backdate": true, "stop_backdate": true, "idle_reassign": true,
-             "idle_check": true, "workday": false, "monitoring": false},
+             "idle_keep_note": true, "idle_check": true, "workday": false, "monitoring": false},
 "limits": {"backdate": {"max_seconds": 86400, "clock_skew_seconds": 120},
-           "idle_check": {"threshold_minutes": 10, "answer_timeout_minutes": 5}}
+           "idle_check": {"threshold_minutes": 10, "answer_timeout_minutes": 5, "user_can_disable": false}}
 ```
+
+`idle_keep_note` and `limits.idle_check.user_can_disable` are 1.10.1 additions. `user_can_disable` tells the client
+whether it may offer the user a switch to turn the idle check off (organisation policy: `false`; personal accounts may
+get `true` from the host's `IdleCheckSettingsProviderInterface`).
 
 `workday` and `monitoring` are **reserved** and always `false` in 1.10. Clients treat a missing or unknown key as
 `false` and ignore keys they do not know. `limits.idle_check` is the token user's setting (host provider, else the
@@ -186,13 +200,20 @@ activity signal):
 
 | `action` | Effect | Response `200` |
 |---|---|---|
-| `keep` | Nothing changes | `{"entry": null, "timer": {...}}` |
+| `keep` | Nothing changes; since 1.10.1 an optional `note` is added to the running timer's note | `{"entry": null, "timer": {...}}` |
 | `discard` | Entry from the timer start to `from`; timer stopped | `{"entry": {...}, "timer": null}` |
 | `split` | Entry to `from`; a new timer on the same task from `to` | `{"entry": {...}, "timer": {...}}` |
 | `reassign` (1.10) | Entry to `from` (omitted when `from` is the timer start); entry on `taskId` for `[from, to]`; then `then` | `{"entry": {...}\|null, "reassigned": {...}, "timer": {...}\|null}` |
 
 `from` ≥ timer start, `to` > `from`, `to` ≤ now, else `400`. No timer → `404`. Since 1.10 every response carries
 `reassigned` (`null` except for `reassign`).
+
+`keep` `note` (1.10.1): optional plain text. Each run of control characters becomes one space and the text is trimmed;
+a blank note is ignored; a value that is not a string or is longer than 500 characters (after that cleaning) answers
+`400 invalid_request` ("note must be plain text of at most 500 characters."). The note is added to the running
+timer's `metadata.note`: a timer without a note takes it as is, otherwise it is **appended on a new line** and the
+combined note is cut at 500 characters (the earlier text wins). `timer/stop` then records it on the entry. The note is
+passed to `IdleResolvedEvent::getNote()`; logs carry its length only (`note_length`).
 
 `reassign` fields: `taskId` (required), `then` = `continue` (default: a new timer on the original task from `to`) |
 `switch` (a new timer on `taskId` from `to`) | `stop` (no timer), optional `note` (≤ 500 chars, stored on the

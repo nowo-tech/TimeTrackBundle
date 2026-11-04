@@ -28,6 +28,7 @@ final readonly class ConfigClientApiSettingsProvider implements ClientApiSetting
         bool $idleCheckEnabled = true,
         int $idleCheckThresholdMinutes = 10,
         int $idleCheckAnswerTimeoutMinutes = 5,
+        bool $idleCheckUserCanDisable = false,
     ) {
         $this->settings = new ClientApiSettings(
             $allowedOrigins,
@@ -42,6 +43,7 @@ final readonly class ConfigClientApiSettingsProvider implements ClientApiSetting
             $idleCheckEnabled,
             $idleCheckThresholdMinutes,
             $idleCheckAnswerTimeoutMinutes,
+            $idleCheckUserCanDisable,
         );
     }
 

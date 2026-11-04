@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as **1.10.1** (client API contract v0.3.1, additive; no schema change). See [UPGRADING](UPGRADING.md#unreleased).
+
+### Added
+
+- `POST timer/discard-idle` action `keep` accepts an optional `note` (plain text, control characters replaced by a space,
+  trimmed, at most 500 characters, otherwise `400 invalid_request`). It is added to the running timer's
+  `metadata.note` (appended on a new line when a note exists, combined note cut at 500 characters, earlier text first),
+  so it ends up on the entry at stop. `IdleResolvedEvent::getNote()` carries it (also the reassign note); the
+  `timer_idle_keep` log record carries `note_length` only. `ActiveTimer::appendNote()`, `TimerService::NOTE_MAX_LENGTH`.
+- `GET me`: `features.idle_keep_note: true` and `limits.idle_check.user_can_disable`.
+- `IdleCheckSettings::$userCanDisable` (fourth constructor argument, default `false`), config
+  `client_api.idle_check.user_can_disable` (default `false`) and `ClientApiSettings` / `ConfigClientApiSettingsProvider`
+  argument `idleCheckUserCanDisable`. A provider that returns `null` or throws falls back to the instance value.
+
 ## [1.10.0] - 2026-11-04
 
 Client API contract v0.3 for the desktop app and the browser extension (additive; no schema

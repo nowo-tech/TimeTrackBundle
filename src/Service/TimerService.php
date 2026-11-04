@@ -44,6 +44,7 @@ use function array_slice;
 use function count;
 use function date_default_timezone_get;
 use function max;
+use function mb_strlen;
 use function min;
 use function sprintf;
 use function usort;
@@ -57,6 +58,9 @@ use function usort;
  */
 final readonly class TimerService
 {
+    /** Max length of a note on a timer or an entry (the client API's `NOTE_MAX_LENGTH`). */
+    public const NOTE_MAX_LENGTH = 500;
+
     private ClockInterface $clock;
 
     private LoggerInterface $logger;
@@ -258,7 +262,7 @@ final readonly class TimerService
      * @param string|null $targetTaskId Task the span goes to (`reassign` only; required there)
      * @param IdleFollowUp $followUp What runs after the span (`reassign` only)
      * @param ClientType|null $clientType Client of the decision and source of the reassigned entry (null = the timer's client)
-     * @param string|null $note Note stored on the reassigned entry
+     * @param string|null $note `keep`: added to the running timer's note (1.10.1, see {@see ActiveTimer::appendNote()}); `reassign`: stored on the reassigned entry
      *
      * @throws ActiveTimerConflictException When a concurrent start took the timer slot before the follow-up timer started
      * @throws TaskNotTrackableException When the reassign target is unknown or not trackable by the user
@@ -304,7 +308,14 @@ final readonly class TimerService
         $clientType ??= $timer->getClientType();
 
         if ($resolution === IdleResolution::Keep) {
-            $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType);
+            if ($note !== null && $note !== '') {
+                // @igor-ignore - $timer is a Doctrine entity loaded for this request, not a shared service.
+                $this->activeTimerRepository->save($timer->appendNote($note, self::NOTE_MAX_LENGTH));
+            }
+
+            // REQ-OBS-001: the note's length only, never its text.
+            $this->logger->info('TimeTrack idle span kept.', $this->context('timer_idle_keep', $clientType) + ['note_length' => $note === null ? 0 : mb_strlen($note)]);
+            $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType, null, null, $note);
 
             return ['entry' => null, 'timer' => $timer, 'reassigned' => null];
         }
@@ -607,7 +618,7 @@ final readonly class TimerService
         };
 
         $this->logger->info('TimeTrack idle span reassigned.', $this->context('timer_idle_reassign', $clientType) + ['then' => $followUp->value]);
-        $this->dispatchIdleResolved($user, IdleResolution::Reassign, $from, $to, $clientType, $target->id, $followUp);
+        $this->dispatchIdleResolved($user, IdleResolution::Reassign, $from, $to, $clientType, $target->id, $followUp, $note);
 
         return ['entry' => $hasOwnEntry ? $entry : null, 'timer' => $next, 'reassigned' => $reassigned];
     }
@@ -635,9 +646,9 @@ final readonly class TimerService
         return $next;
     }
 
-    private function dispatchIdleResolved(UserInterface $user, IdleResolution $resolution, DateTimeImmutable $from, DateTimeImmutable $to, ClientType $clientType, ?string $targetTaskId = null, ?IdleFollowUp $followUp = null): void
+    private function dispatchIdleResolved(UserInterface $user, IdleResolution $resolution, DateTimeImmutable $from, DateTimeImmutable $to, ClientType $clientType, ?string $targetTaskId = null, ?IdleFollowUp $followUp = null, ?string $note = null): void
     {
-        $this->eventDispatcher->dispatch(new IdleResolvedEvent($user, $resolution, $from, $to, $clientType, $targetTaskId, $followUp), TimeTrackEvents::IDLE_RESOLVED);
+        $this->eventDispatcher->dispatch(new IdleResolvedEvent($user, $resolution, $from, $to, $clientType, $targetTaskId, $followUp, $note), TimeTrackEvents::IDLE_RESOLVED);
     }
 
     /**

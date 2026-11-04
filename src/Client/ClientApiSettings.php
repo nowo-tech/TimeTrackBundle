@@ -40,6 +40,7 @@ final readonly class ClientApiSettings
      * @param bool $idleCheckEnabled Clients ask the user about idle time (since 1.10)
      * @param int $idleCheckThresholdMinutes Idle minutes before the client asks, 5..60 (since 1.10)
      * @param int $idleCheckAnswerTimeoutMinutes Minutes the idle prompt waits for an answer, 1..30 (since 1.10)
+     * @param bool $idleCheckUserCanDisable Whether users may turn the idle check off in the client (since 1.10.1)
      */
     public function __construct(
         array $allowedOrigins = [],
@@ -54,10 +55,11 @@ final readonly class ClientApiSettings
         bool $idleCheckEnabled = true,
         int $idleCheckThresholdMinutes = 10,
         int $idleCheckAnswerTimeoutMinutes = 5,
+        bool $idleCheckUserCanDisable = false,
     ) {
         $this->allowedOrigins = array_values(array_unique($allowedOrigins));
         $this->windowSeconds  = max(1, $windowSeconds);
         $this->backdate       = new BackdateLimits($backdateMaxSeconds, $clockSkewSeconds);
-        $this->idleCheck      = new IdleCheckSettings($idleCheckEnabled, $idleCheckThresholdMinutes, $idleCheckAnswerTimeoutMinutes);
+        $this->idleCheck      = new IdleCheckSettings($idleCheckEnabled, $idleCheckThresholdMinutes, $idleCheckAnswerTimeoutMinutes, $idleCheckUserCanDisable);
     }
 }

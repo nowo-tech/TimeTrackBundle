@@ -30,7 +30,7 @@ final class ClientApiV110ConfigurationTest extends TestCase
 
         self::assertSame(['max_seconds' => 86400, 'clock_skew_seconds' => 120], $api['backdate']);
         self::assertSame(['allow_reassign' => true], $api['idle']);
-        self::assertSame(['enabled' => true, 'threshold_minutes' => 10, 'answer_timeout_minutes' => 5, 'provider' => null], $api['idle_check']);
+        self::assertSame(['enabled' => true, 'threshold_minutes' => 10, 'answer_timeout_minutes' => 5, 'user_can_disable' => false, 'provider' => null], $api['idle_check']);
         self::assertSame(['origin' => null], $api['task_url']);
     }
 
@@ -92,7 +92,7 @@ final class ClientApiV110ConfigurationTest extends TestCase
             'client_api' => [
                 'backdate'   => ['max_seconds' => 3600, 'clock_skew_seconds' => 60],
                 'idle'       => ['allow_reassign' => false],
-                'idle_check' => ['enabled' => false, 'threshold_minutes' => 15, 'answer_timeout_minutes' => 3, 'provider' => 'app.idle_check'],
+                'idle_check' => ['enabled' => false, 'threshold_minutes' => 15, 'answer_timeout_minutes' => 3, 'user_can_disable' => true, 'provider' => 'app.idle_check'],
                 'task_url'   => ['origin' => 'https://beacon.example.com'],
             ],
         ]], $container);
@@ -104,6 +104,7 @@ final class ClientApiV110ConfigurationTest extends TestCase
         self::assertFalse($settings->getArgument('$idleCheckEnabled'));
         self::assertSame(15, $settings->getArgument('$idleCheckThresholdMinutes'));
         self::assertSame(3, $settings->getArgument('$idleCheckAnswerTimeoutMinutes'));
+        self::assertTrue($settings->getArgument('$idleCheckUserCanDisable'));
 
         self::assertSame('https://beacon.example.com', $container->getDefinition(ClientTaskPresenter::class)->getArgument('$taskUrlOrigin'));
         $provider = $container->getDefinition(IdleCheckSettingsResolver::class)->getArgument('$provider');

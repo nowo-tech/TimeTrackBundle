@@ -40,7 +40,7 @@ final readonly class IdleCheckSettingsResolver
             try {
                 $settings = $this->provider->forUser($user);
                 if ($settings instanceof IdleCheckSettings) {
-                    return new IdleCheckSettings($settings->enabled, $settings->thresholdMinutes, $settings->answerTimeoutMinutes);
+                    return new IdleCheckSettings($settings->enabled, $settings->thresholdMinutes, $settings->answerTimeoutMinutes, $settings->userCanDisable);
                 }
             } catch (Throwable) {
                 $this->logger->warning('TimeTrack idle-check settings provider failed; instance settings used.', ['bundle' => 'time_track', 'action' => 'idle_check_provider_failed']);

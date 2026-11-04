@@ -30,11 +30,15 @@ final readonly class IdleCheckSettings
 
     /**
      * Clamps the minutes into their ranges.
+     *
+     * @param bool $userCanDisable Whether the user may turn the idle check off in the client (since 1.10.1; default false
+     *                             keeps providers written for 1.10.0 working)
      */
     public function __construct(
         public bool $enabled = true,
         int $thresholdMinutes = 10,
         int $answerTimeoutMinutes = 5,
+        public bool $userCanDisable = false,
     ) {
         $this->thresholdMinutes     = max(self::MIN_THRESHOLD_MINUTES, min(self::MAX_THRESHOLD_MINUTES, $thresholdMinutes));
         $this->answerTimeoutMinutes = max(self::MIN_ANSWER_TIMEOUT_MINUTES, min(self::MAX_ANSWER_TIMEOUT_MINUTES, $answerTimeoutMinutes));
@@ -43,10 +47,10 @@ final readonly class IdleCheckSettings
     /**
      * Wire shape of `limits.idle_check` on `GET me`.
      *
-     * @return array{threshold_minutes: int, answer_timeout_minutes: int}
+     * @return array{threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool}
      */
     public function limitsToArray(): array
     {
-        return ['threshold_minutes' => $this->thresholdMinutes, 'answer_timeout_minutes' => $this->answerTimeoutMinutes];
+        return ['threshold_minutes' => $this->thresholdMinutes, 'answer_timeout_minutes' => $this->answerTimeoutMinutes, 'user_can_disable' => $this->userCanDisable];
     }
 }

@@ -37,10 +37,10 @@ final class V110ValueObjectsTest extends TestCase
     {
         $default = new IdleCheckSettings();
         self::assertTrue($default->enabled);
-        self::assertSame(['threshold_minutes' => 10, 'answer_timeout_minutes' => 5], $default->limitsToArray());
+        self::assertSame(['threshold_minutes' => 10, 'answer_timeout_minutes' => 5, 'user_can_disable' => false], $default->limitsToArray());
 
-        self::assertSame(['threshold_minutes' => 5, 'answer_timeout_minutes' => 1], (new IdleCheckSettings(false, 0, 0))->limitsToArray());
-        self::assertSame(['threshold_minutes' => 60, 'answer_timeout_minutes' => 30], (new IdleCheckSettings(true, 61, 31))->limitsToArray());
+        self::assertSame(['threshold_minutes' => 5, 'answer_timeout_minutes' => 1, 'user_can_disable' => false], (new IdleCheckSettings(false, 0, 0))->limitsToArray());
+        self::assertSame(['threshold_minutes' => 60, 'answer_timeout_minutes' => 30, 'user_can_disable' => false], (new IdleCheckSettings(true, 61, 31))->limitsToArray());
     }
 
     public function testClientApiSettingsCarryTheNewValues(): void

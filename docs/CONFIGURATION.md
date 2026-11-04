@@ -224,6 +224,7 @@ Contract v0.3 ([CLIENT-API](CLIENT-API.md)). All values except `task_url.origin`
 | `client_api.idle_check.enabled` | `true` | Clients ask the user about idle time (`features.idle_check`) |
 | `client_api.idle_check.threshold_minutes` | `10` | Idle minutes before the client asks (5–60) |
 | `client_api.idle_check.answer_timeout_minutes` | `5` | Minutes the idle prompt waits for an answer (1–30) |
+| `client_api.idle_check.user_can_disable` | `false` | Whether users may turn the idle check off in the client (`limits.idle_check.user_can_disable`, 1.10.1); a provider can decide per user |
 | `client_api.idle_check.provider` | `null` | Service implementing `IdleCheckSettingsProviderInterface` (per-user settings; `null` from it = the values above; its values are clamped; an exception falls back to the values above) |
 | `client_api.task_url.origin` | `null` | Expected origin of task URLs (exact `https://host[:port]`); `null` = the request origin |
 
