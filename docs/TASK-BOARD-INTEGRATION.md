@@ -12,7 +12,7 @@
 
 | Interface | Purpose |
 |-----------|---------|
-| `TaskProviderInterface` | List/find tasks, `canUserTrack()` |
+| `TaskProviderInterface` | List/find tasks, `canUserTrack()`; since 1.10 the returned `TaskReference` may carry `projectId`, `projectTitle` and the task page `url` for the clients |
 | `TeamContextProviderInterface` | Teams, `isManagerOf()`, `getManagedUserIds()` |
 
 ## Wiring

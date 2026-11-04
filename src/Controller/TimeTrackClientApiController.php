@@ -10,12 +10,17 @@ use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
+use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
+use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
+use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
+use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -24,8 +29,10 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
@@ -63,10 +70,14 @@ use const JSON_UNESCAPED_SLASHES;
 use const JSON_UNESCAPED_UNICODE;
 
 /**
- * Browser extension and desktop app API (contract v0.2): stateless, Bearer only, exact-origin CORS, per-IP and
+ * Browser extension and desktop app API (contract v0.3 since 1.10; v0.2 in 1.9): stateless, Bearer only, exact-origin CORS, per-IP and
  * per-token rate limits, per-request credential state and scope checks ({@see ClientApiGuard}), per-request task check
  * on start / switch ({@see TaskAccessCheckerInterface}, deny by default; a missing and a foreign task both answer
  * `403 task_forbidden`), audit events ({@see ClientApiAuditor}). Errors are `{error: code, message}`.
+ *
+ * Contract v0.3 (1.10, additive): task details on tasks and timers ({@see ClientTaskPresenter}), `startedAt` on
+ * `timer/start` and `endedAt` on `timer/stop` (clamped and reported), `reassign` on `timer/discard-idle`, and
+ * `features` / `limits` on `me`.
  */
 final readonly class TimeTrackClientApiController
 {
@@ -82,6 +93,9 @@ final readonly class TimeTrackClientApiController
     /** Max length of a timer note. */
     public const NOTE_MAX_LENGTH = 500;
 
+    /** Features of `GET me` reserved for later releases; always false in 1.10. */
+    public const RESERVED_FEATURES = ['workday', 'monitoring'];
+
     /** Earliest UTC offset accepted on client timestamps, in minutes (-12:00; 1.9.2). */
     public const MIN_UTC_OFFSET_MINUTES = -720;
 
@@ -92,6 +106,12 @@ final readonly class TimeTrackClientApiController
 
     private LoggerInterface $logger;
 
+    private ClientTaskPresenter $taskPresenter;
+
+    private ClientApiSettingsProviderInterface $settingsProvider;
+
+    private IdleCheckSettingsResolver $idleCheckResolver;
+
     /**
      * Receives the services of the client API.
      *
@@ -99,6 +119,9 @@ final readonly class TimeTrackClientApiController
      * @param ClockInterface|null $clock Reference time of the default periods (defaults to the system clock)
      * @param LoggerInterface|null $logger Logs throttled logins without username or IP (defaults to no logging)
      * @param ClientMinSupportedVersionProviderInterface|null $minSupportedVersionProvider `me.minSupportedVersion` source (null = key never sent)
+     * @param ClientTaskPresenter|null $taskPresenter Task details of tasks and timers (null = request origin, no logging)
+     * @param ClientApiSettingsProviderInterface|null $settingsProvider Backdate and idle settings (null = the defaults)
+     * @param IdleCheckSettingsResolver|null $idleCheckResolver Per-user idle-check settings of `me` (null = instance settings)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -115,9 +138,15 @@ final readonly class TimeTrackClientApiController
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
         private ?ClientMinSupportedVersionProviderInterface $minSupportedVersionProvider = null,
+        ?ClientTaskPresenter $taskPresenter = null,
+        ?ClientApiSettingsProviderInterface $settingsProvider = null,
+        ?IdleCheckSettingsResolver $idleCheckResolver = null,
     ) {
-        $this->clock  = $clock ?? new NativeClock();
-        $this->logger = $logger ?? new NullLogger();
+        $this->clock             = $clock ?? new NativeClock();
+        $this->logger            = $logger ?? new NullLogger();
+        $this->taskPresenter     = $taskPresenter ?? new ClientTaskPresenter($this->timerService);
+        $this->settingsProvider  = $settingsProvider ?? new ConfigClientApiSettingsProvider();
+        $this->idleCheckResolver = $idleCheckResolver ?? new IdleCheckSettingsResolver($this->settingsProvider);
     }
 
     /**
@@ -184,7 +213,9 @@ final readonly class TimeTrackClientApiController
 
     /**
      * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
-     * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1).
+     * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1), and (1.10)
+     * `features` (object of booleans; `workday` and `monitoring` reserved, always false) and `limits` (backdate and
+     * idle-check settings for the token user).
      */
     public function me(Request $request): Response
     {
@@ -206,6 +237,26 @@ final readonly class TimeTrackClientApiController
             $body['minSupportedVersion'] = $minSupportedVersion;
         }
 
+        $settings  = $this->settingsProvider->getSettings();
+        $idleCheck = $this->idleCheckResolver->forUser($user);
+        $backdate  = $settings->backdate->isEnabled();
+        $features  = [
+            'task_details'   => true,
+            'start_backdate' => $backdate,
+            'stop_backdate'  => $backdate,
+            'idle_reassign'  => $settings->allowIdleReassign,
+            'idle_check'     => $idleCheck->enabled,
+        ];
+        foreach (self::RESERVED_FEATURES as $reserved) {
+            $features[$reserved] = false;
+        }
+
+        $body['features'] = $features;
+        $body['limits']   = [
+            'backdate'   => ['max_seconds' => $settings->backdate->maxSeconds, 'clock_skew_seconds' => $settings->backdate->clockSkewSeconds],
+            'idle_check' => $idleCheck->limitsToArray(),
+        ];
+
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }
 
@@ -226,7 +277,7 @@ final readonly class TimeTrackClientApiController
         );
 
         return $this->responseFactory->json([
-            'tasks' => array_map(static fn (TaskReference $task): array => $task->toArray(), $this->timerService->listTasks($principal->user, $query)),
+            'tasks' => array_map(fn (TaskReference $task): array => $this->taskPresenter->task($task, $request), $this->timerService->listTasks($principal->user, $query)),
         ], Response::HTTP_OK, $request);
     }
 
@@ -245,11 +296,12 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->empty(Response::HTTP_NO_CONTENT, $request);
         }
 
-        return $this->responseFactory->json(['timer' => $active->toArray()], Response::HTTP_OK, $request);
+        return $this->responseFactory->json(['timer' => $this->taskPresenter->timer($active, $principal->user, $request)], Response::HTTP_OK, $request);
     }
 
     /**
-     * POST timer/start `{taskId, note?, source?}`: starts a timer (403 task_forbidden, 409 timer_running).
+     * POST timer/start `{taskId, note?, source?, startedAt?}`: starts a timer (403 task_forbidden, 409 timer_running).
+     * Since 1.10 an RFC 3339 `startedAt` backdates the start after the server clamps (reported as `startedAtResult`).
      */
     public function timerStart(Request $request): Response
     {
@@ -274,23 +326,34 @@ final readonly class TimeTrackClientApiController
             return $this->invalidSource($request);
         }
 
+        $startedAt = $this->optionalDateTime($payload, 'startedAt');
+        if ($startedAt === false) {
+            return $this->responseFactory->error('invalid_request', 'startedAt must be an RFC 3339 date-time.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
         if (!$this->taskAccessChecker->canTrack($principal->user, $taskId)) {
             return $this->taskForbidden($principal, $request);
         }
 
         try {
-            $timer = $this->timerService->start($principal->user, $taskId, $clientType, $metadata);
+            $result = $this->timerService->startAt($principal->user, $taskId, $clientType, $metadata, $startedAt, $this->settingsProvider->getSettings()->backdate);
         } catch (ActiveTimerConflictException) {
             return $this->timerRunning($request);
         } catch (InvalidArgumentException) {
             return $this->taskForbidden($principal, $request);
         }
 
-        return $this->responseFactory->json(['timer' => $timer->toArray()], Response::HTTP_CREATED, $request);
+        $body = ['timer' => $this->taskPresenter->timer($result['timer'], $principal->user, $request, $result['task'])];
+        if ($result['startTime'] instanceof ClampedTime) {
+            $body['startedAtResult'] = $result['startTime']->toArray();
+        }
+
+        return $this->responseFactory->json($body, Response::HTTP_CREATED, $request);
     }
 
     /**
-     * POST timer/stop `{note?}`: stops the active timer and returns the entry.
+     * POST timer/stop `{note?, endedAt?}`: stops the active timer and returns the entry. Since 1.10 an RFC 3339
+     * `endedAt` sets an earlier end after the server clamps (reported as `endedAtResult`).
      */
     public function timerStop(Request $request): Response
     {
@@ -299,12 +362,23 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $entry = $this->timerService->stop($principal->user, null, $this->note($this->payload($request)));
-        if (!$entry instanceof TimeEntry) {
+        $payload = $this->payload($request);
+        $endedAt = $this->optionalDateTime($payload, 'endedAt');
+        if ($endedAt === false) {
+            return $this->responseFactory->error('invalid_request', 'endedAt must be an RFC 3339 date-time.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        $result = $this->timerService->stopAt($principal->user, $endedAt, $this->settingsProvider->getSettings()->backdate, $this->note($payload));
+        if ($result === null) {
             return $this->noActiveTimer($request);
         }
 
-        return $this->responseFactory->json(['entry' => $entry->toArray()], Response::HTTP_OK, $request);
+        $body = ['entry' => $result['entry']->toArray()];
+        if ($result['endTime'] instanceof ClampedTime) {
+            $body['endedAtResult'] = $result['endTime']->toArray();
+        }
+
+        return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }
 
     /**
@@ -343,15 +417,17 @@ final readonly class TimeTrackClientApiController
 
         return $this->responseFactory->json([
             'entry' => $result['entry']?->toArray(),
-            'timer' => $result['timer']->toArray(),
+            'timer' => $this->taskPresenter->timer($result['timer'], $principal->user, $request),
         ], Response::HTTP_CREATED, $request);
     }
 
     /**
-     * POST timer/discard-idle `{from, to, action: keep|discard|split}`: the user's decision about an idle span the
-     * client detected locally (replaces the server-side idle flag of the heartbeat). `from` / `to` are converted to the
-     * server time zone and must carry an offset between -12:00 and +14:00 (1.9.2). 409 timer_running when a
-     * concurrent start took the timer slot before a split could continue (1.9.1).
+     * POST timer/discard-idle `{from, to, action: keep|discard|split|reassign, taskId?, then?, note?, source?}`: the
+     * user's decision about an idle span the client detected locally (replaces the server-side idle flag of the
+     * heartbeat). `from` / `to` are converted to the server time zone and must carry an offset between -12:00 and
+     * +14:00 (1.9.2). 409 timer_running when a concurrent start took the timer slot before the follow-up timer started
+     * (1.9.1). Since 1.10 `reassign` gives the span to `taskId` (checked like `timer/start`: an unknown and a foreign
+     * task both answer the same `403 task_forbidden`) and then continues, switches or stops (`then`).
      */
     public function timerDiscardIdle(Request $request): Response
     {
@@ -361,17 +437,37 @@ final readonly class TimeTrackClientApiController
         }
 
         $payload    = $this->payload($request);
-        $from       = $this->dateTime($this->string($payload, 'from'));
-        $to         = $this->dateTime($this->string($payload, 'to'));
+        $from       = $this->dateTime($this->rawString($payload, 'from'));
+        $to         = $this->dateTime($this->rawString($payload, 'to'));
         $resolution = IdleResolution::tryFrom($this->string($payload, 'action'));
         if (!$from instanceof DateTimeImmutable || !$to instanceof DateTimeImmutable || !$resolution instanceof IdleResolution) {
-            return $this->responseFactory->error('invalid_request', 'from and to (RFC 3339) and action (keep, discard, split) are required.', Response::HTTP_BAD_REQUEST, $request);
+            return $this->responseFactory->error('invalid_request', 'from and to (RFC 3339) and action (keep, discard, split, reassign) are required.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        $taskId   = null;
+        $followUp = IdleFollowUp::Continue;
+        $source   = null;
+        $note     = null;
+        if ($resolution === IdleResolution::Reassign) {
+            $invalid = $this->reassignInput($payload, $principal, $request);
+            if ($invalid instanceof Response) {
+                return $invalid;
+            }
+
+            ['taskId' => $taskId, 'followUp' => $followUp, 'source' => $source] = $invalid;
+            $note                                                               = $this->note($payload);
+
+            if (!$this->taskAccessChecker->canTrack($principal->user, $taskId)) {
+                return $this->taskForbidden($principal, $request);
+            }
         }
 
         try {
-            $result = $this->timerService->resolveIdle($principal->user, $from, $to, $resolution);
+            $result = $this->timerService->resolveIdle($principal->user, $from, $to, $resolution, $taskId, $followUp, $source, $note);
         } catch (ActiveTimerConflictException) {
             return $this->timerRunning($request);
+        } catch (TaskNotTrackableException) {
+            return $this->taskForbidden($principal, $request);
         } catch (InvalidArgumentException $e) {
             return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
         }
@@ -381,8 +477,9 @@ final readonly class TimeTrackClientApiController
         }
 
         return $this->responseFactory->json([
-            'entry' => $result['entry']?->toArray(),
-            'timer' => $result['timer']?->toArray(),
+            'entry'      => $result['entry']?->toArray(),
+            'timer'      => $result['timer'] instanceof ActiveTimer ? $this->taskPresenter->timer($result['timer'], $principal->user, $request) : null,
+            'reassigned' => $result['reassigned']?->toArray(),
         ], Response::HTTP_OK, $request);
     }
 
@@ -400,7 +497,7 @@ final readonly class TimeTrackClientApiController
         $timer    = $this->timerService->keepAlive($principal->user);
         $response = $timer instanceof ActiveTimer
             ? $this->responseFactory->json([
-                'timer'                => $timer->toArray(),
+                'timer'                => $this->taskPresenter->timer($timer, $principal->user, $request),
                 'idleThresholdSeconds' => $this->idleThresholdSeconds,
                 'deprecated'           => true,
             ], Response::HTTP_OK, $request)
@@ -611,15 +708,28 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Strict RFC 3339 date-time (`Z` or an offset between -12:00 and +14:00, optional milliseconds), converted to the
-     * server's default time zone (the one Doctrine hydrates date-times in); null for anything else.
+     * Untrimmed string field ('' when absent or not a string).
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function rawString(array $payload, string $key): string
+    {
+        $value = $payload[$key] ?? null;
+
+        return is_string($value) ? $value : '';
+    }
+
+    /**
+     * Strict RFC 3339 date-time (`Z`, `z` or an offset between -12:00 and +14:00, optional milliseconds; no surrounding
+     * whitespace), converted to the server's default time zone (the one Doctrine hydrates date-times in); null for
+     * anything else.
      *
      * 1.9.2 (EF-M1): Doctrine's `datetime_immutable` stores the wall time without its offset and reads it back in the
      * server time zone, so a value kept in the client's offset would be stored shifted by that offset.
      */
     private function dateTime(string $value): ?DateTimeImmutable
     {
-        $value = (string) preg_replace('/Z$/', '+00:00', $value);
+        $value = (string) preg_replace('/[Zz]\z/', '+00:00', $value);
         foreach ([DATE_ATOM, 'Y-m-d\TH:i:s.vP'] as $format) {
             $date = DateTimeImmutable::createFromFormat('!' . $format, $value);
             if ($date instanceof DateTimeImmutable && $date->format($format) === $value) {
@@ -633,6 +743,61 @@ final readonly class TimeTrackClientApiController
         }
 
         return null;
+    }
+
+    /**
+     * Optional RFC 3339 field: null when absent or empty, false when malformed (surrounding whitespace included).
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function optionalDateTime(array $payload, string $key): DateTimeImmutable|false|null
+    {
+        if (!isset($payload[$key])) {
+            return null;
+        }
+
+        $value = $payload[$key];
+        if (!is_string($value)) {
+            return false;
+        }
+
+        if ($value === '') {
+            return null;
+        }
+
+        return $this->dateTime($value) ?? false;
+    }
+
+    /**
+     * Validated `reassign` input, or the 400 answer.
+     *
+     * @param array<string, mixed> $payload
+     *
+     * @return array{taskId: string, followUp: IdleFollowUp, source: ClientType}|JsonResponse
+     */
+    private function reassignInput(array $payload, ClientApiPrincipal $principal, Request $request): array|JsonResponse
+    {
+        if (!$this->settingsProvider->getSettings()->allowIdleReassign) {
+            return $this->responseFactory->error('invalid_request', 'action reassign is not available.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        $taskId = $this->string($payload, 'taskId');
+        if ($taskId === '') {
+            return $this->responseFactory->error('invalid_request', 'taskId is required to reassign an idle span.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        $then     = $payload['then'] ?? null;
+        $followUp = $then === null ? IdleFollowUp::Continue : (is_string($then) ? IdleFollowUp::tryFrom($then) : null);
+        if (!$followUp instanceof IdleFollowUp) {
+            return $this->responseFactory->error('invalid_request', 'then must be one of continue, switch, stop.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        $source = $this->source($payload, $principal);
+        if (!$source instanceof ClientType) {
+            return $this->invalidSource($request);
+        }
+
+        return ['taskId' => $taskId, 'followUp' => $followUp, 'source' => $source];
     }
 
     private function clientType(string $value): ClientType

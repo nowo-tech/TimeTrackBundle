@@ -14,7 +14,9 @@ use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
+use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
+use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
@@ -63,6 +65,8 @@ final readonly class ClientApiStack
 
     public DeviceAuthorizationService $deviceService;
 
+    public ConfigClientApiSettingsProvider $settings;
+
     public function __construct(
         ClientAuthenticatorInterface $authenticator,
         TaskProviderInterface $taskProvider,
@@ -82,6 +86,7 @@ final readonly class ClientApiStack
         $this->rateLimiter = new ClientApiRateLimiter($this->cache, $this->clock);
         $this->auditor     = new ClientApiAuditor($this->dispatcher, $this->rateLimiter, 60, $this->clock);
         $settings ??= new ConfigClientApiSettingsProvider(['chrome-extension://unit']);
+        $this->settings      = $settings;
         $this->responses     = new ClientResponseFactory([], 'prod', false, $settings);
         $this->guard         = new ClientApiGuard($this->authService, $this->responses, $this->rateLimiter, $settings, $credentialState ?? new AlwaysActiveClientCredentialState(), $this->auditor);
         $this->timerService  = new TimerService($taskProvider, $timers ?? new InMemoryActiveTimerRepository(), $entries ?? new InMemoryTimeEntryRepository(), $this->dispatcher, $this->clock);
@@ -94,8 +99,13 @@ final readonly class ClientApiStack
 
     private TeamAccessGuard $teamGuard;
 
-    public function apiController(?TaskAccessCheckerInterface $taskAccess = null, bool $allowMetadata = false, ?ClientMinSupportedVersionProviderInterface $minSupportedVersions = null): TimeTrackClientApiController
-    {
+    public function apiController(
+        ?TaskAccessCheckerInterface $taskAccess = null,
+        bool $allowMetadata = false,
+        ?ClientMinSupportedVersionProviderInterface $minSupportedVersions = null,
+        ?ClientTaskPresenter $taskPresenter = null,
+        ?IdleCheckSettingsResolver $idleCheckResolver = null,
+    ): TimeTrackClientApiController {
         return new TimeTrackClientApiController(
             $this->authService,
             $this->timerService,
@@ -110,6 +120,9 @@ final readonly class ClientApiStack
             $allowMetadata,
             $this->clock,
             minSupportedVersionProvider: $minSupportedVersions,
+            taskPresenter: $taskPresenter,
+            settingsProvider: $this->settings,
+            idleCheckResolver: $idleCheckResolver,
         );
     }
 

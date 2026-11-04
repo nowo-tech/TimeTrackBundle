@@ -5,24 +5,31 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Service;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Dto\BackdateLimits;
+use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Dto\TimeEntryPage;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Event\IdleResolvedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartEvent;
 use Nowo\TimeTrackBundle\Event\TimerStopEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -35,6 +42,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 use function array_slice;
 use function count;
+use function date_default_timezone_get;
 use function max;
 use function min;
 use function sprintf;
@@ -94,25 +102,42 @@ final readonly class TimerService
      * @param array<string, mixed> $metadata Client metadata stored with the timer
      *
      * @throws ActiveTimerConflictException When the user already has a running timer
-     * @throws InvalidArgumentException When the task is unknown or not trackable by the user
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
      *
      * @return ActiveTimer The new running timer
      */
     public function start(UserInterface $user, string $taskId, ClientType $clientType, array $metadata = []): ActiveTimer
+    {
+        return $this->startAt($user, $taskId, $clientType, $metadata)['timer'];
+    }
+
+    /**
+     * Starts a timer, optionally from a client-supplied start (`startedAt` on `timer/start`, since 1.10). The start is
+     * clamped: not after now (beyond the clock-skew allowance it is reported as `future`), not before the end of the
+     * user's latest entry (`overlap`) and not older than the backdate limit (`max_backdate`).
+     *
+     * @param UserInterface $user Timer owner
+     * @param string $taskId Task id resolved through the task provider
+     * @param ClientType $clientType Client that starts the timer
+     * @param array<string, mixed> $metadata Client metadata stored with the timer
+     * @param DateTimeImmutable|null $requestedStart Client-supplied start (null = now, 1.9 behaviour)
+     * @param BackdateLimits|null $limits Backdate limits (null = the defaults)
+     *
+     * @throws ActiveTimerConflictException When the user already has a running timer
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     *
+     * @return array{timer: ActiveTimer, task: TaskReference, startTime: ClampedTime|null} The timer, its task and the clamp result (null without a requested start)
+     */
+    public function startAt(UserInterface $user, string $taskId, ClientType $clientType, array $metadata = [], ?DateTimeImmutable $requestedStart = null, ?BackdateLimits $limits = null): array
     {
         $existing = $this->getActive($user);
         if ($existing instanceof ActiveTimer) {
             throw ActiveTimerConflictException::alreadyRunning($existing->getTaskId());
         }
 
-        if (!$this->taskProvider->canUserTrack($user, $taskId)) {
-            throw new InvalidArgumentException(sprintf('User cannot track task %s.', $taskId));
-        }
-
-        $task = $this->taskProvider->findForUser($taskId, $user);
-        if (!$task instanceof TaskReference) {
-            throw new InvalidArgumentException(sprintf('Task %s not found.', $taskId));
-        }
+        $task      = $this->resolveTrackable($user, $taskId);
+        $now       = $this->clock->now();
+        $startTime = $requestedStart instanceof DateTimeImmutable ? $this->clampStart($user, $requestedStart, $limits ?? new BackdateLimits(), $now) : null;
 
         $timer = new ActiveTimer(
             $user,
@@ -121,7 +146,7 @@ final readonly class TimerService
             $task->boardId,
             $clientType,
             $metadata,
-            $this->clock->now(),
+            $startTime instanceof ClampedTime ? $startTime->applied : $now,
         );
 
         try {
@@ -133,10 +158,13 @@ final readonly class TimerService
             throw ActiveTimerConflictException::concurrentStart($e);
         }
 
-        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
-        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType));
+        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType, $startTime), TimeTrackEvents::TIMER_START);
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime]);
+        if ($startTime instanceof ClampedTime && $startTime->clamped) {
+            $this->logger->info('TimeTrack timer start clamped.', $this->context('timer_start_clamped', $clientType) + ['reason' => $startTime->reason]);
+        }
 
-        return $timer;
+        return ['timer' => $timer, 'task' => $task, 'startTime' => $startTime];
     }
 
     /**
@@ -155,37 +183,40 @@ final readonly class TimerService
             return null;
         }
 
-        $endedAt ??= $this->clock->now();
-        $duration = max(0, $endedAt->getTimestamp() - $timer->getStartedAt()->getTimestamp());
+        return $this->closeTimer($user, $timer, $endedAt ?? $this->clock->now(), $note);
+    }
 
-        $entry = new TimeEntry(
-            $user,
-            $timer->getTaskId(),
-            $timer->getTaskTitleSnapshot(),
-            $timer->getBoardIdSnapshot(),
-            $timer->getStartedAt(),
-            $endedAt,
-            $duration,
-            $this->mapClientTypeToSource($timer->getClientType()),
-            $note !== null ? ['note' => $note] + ($timer->getMetadata() ?? []) : $timer->getMetadata(),
-            $endedAt,
-        );
-
-        if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
-            // 1.9.1 (CL-05): only the call that deletes the timer row records the entry, so concurrent stops record it once.
-            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-            if (!$this->activeTimerRepository->removeIfPresent($timer, fn () => $this->timeEntryRepository->save($entry))) {
-                return null;
-            }
-        } else {
-            $this->timeEntryRepository->save($entry);
-            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-            $this->activeTimerRepository->remove($timer);
+    /**
+     * Stops the running timer at a client-supplied end (`endedAt` on `timer/stop`, since 1.10). The end is clamped: not
+     * after now (beyond the clock-skew allowance it is reported as `future`) and not before the timer start
+     * (`before_start`). An earlier end only ever shortens the recorded time.
+     *
+     * @param UserInterface $user Timer owner
+     * @param DateTimeImmutable|null $requestedEnd Client-supplied end (null = now, 1.9 behaviour)
+     * @param BackdateLimits|null $limits Backdate limits (null = the defaults)
+     * @param string|null $note Note of the user stored in the entry metadata (`note`)
+     *
+     * @return array{entry: TimeEntry, endTime: ClampedTime|null}|null The entry and the clamp result, or null when no timer was running
+     */
+    public function stopAt(UserInterface $user, ?DateTimeImmutable $requestedEnd = null, ?BackdateLimits $limits = null, ?string $note = null): ?array
+    {
+        $timer = $this->getActive($user);
+        if (!$timer instanceof ActiveTimer) {
+            return null;
         }
-        $this->eventDispatcher->dispatch(new TimerStopEvent($user, $entry), TimeTrackEvents::TIMER_STOP);
-        $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
 
-        return $entry;
+        $now     = $this->clock->now();
+        $endTime = $requestedEnd instanceof DateTimeImmutable ? $this->clampEnd($timer, $requestedEnd, $limits ?? new BackdateLimits(), $now) : null;
+        $entry   = $this->closeTimer($user, $timer, $endTime instanceof ClampedTime ? $endTime->applied : $now, $note, $endTime);
+        if (!$entry instanceof TimeEntry) {
+            return null;
+        }
+
+        if ($endTime instanceof ClampedTime && $endTime->clamped) {
+            $this->logger->info('TimeTrack timer stop clamped.', $this->context('timer_stop_clamped', $timer->getClientType()) + ['reason' => $endTime->reason]);
+        }
+
+        return ['entry' => $entry, 'endTime' => $endTime];
     }
 
     /**
@@ -197,16 +228,14 @@ final readonly class TimerService
      * @param ClientType $clientType Client that switches
      * @param string|null $note Note stored in the entry of the stopped timer
      *
-     * @throws InvalidArgumentException When the task is unknown or not trackable by the user
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
      * @throws ActiveTimerConflictException When a concurrent start won the race
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer} The entry of the stopped timer and the new timer
      */
     public function switchTo(UserInterface $user, string $taskId, ClientType $clientType, ?string $note = null): array
     {
-        if (!$this->taskProvider->canUserTrack($user, $taskId) || !$this->taskProvider->findForUser($taskId, $user) instanceof TaskReference) {
-            throw new InvalidArgumentException(sprintf('User cannot track task %s.', $taskId));
-        }
+        $this->resolveTrackable($user, $taskId);
 
         $entry = $this->stop($user, null, $note);
 
@@ -215,31 +244,73 @@ final readonly class TimerService
 
     /**
      * Applies the user's decision about an idle span of the running timer (`POST timer/discard-idle`): keep it,
-     * discard it and stop at its start, or discard it and continue on the same task from its end (split).
+     * discard it and stop at its start, discard it and continue on the same task from its end (split), or (since 1.10)
+     * give it to another task (reassign) and then continue, switch to that task or stop.
+     *
+     * Reassign writes the entry up to the idle start (omitted when the span starts with the timer) and the entry of the
+     * span on the other task in the same unit of work as the timer removal, and dispatches a {@see TimerStopEvent} for
+     * both. Every applied decision dispatches an {@see IdleResolvedEvent}.
      *
      * @param UserInterface $user Timer owner
      * @param DateTimeImmutable $from Idle start (not before the timer start)
      * @param DateTimeImmutable $to Idle end (after `from`, not in the future)
      * @param IdleResolution $resolution The user's decision
+     * @param string|null $targetTaskId Task the span goes to (`reassign` only; required there)
+     * @param IdleFollowUp $followUp What runs after the span (`reassign` only)
+     * @param ClientType|null $clientType Client of the decision and source of the reassigned entry (null = the timer's client)
+     * @param string|null $note Note stored on the reassigned entry
      *
-     * @throws ActiveTimerConflictException When a concurrent start took the timer slot before the split continued
-     * @throws InvalidArgumentException When the span is not inside the running timer
+     * @throws ActiveTimerConflictException When a concurrent start took the timer slot before the follow-up timer started
+     * @throws TaskNotTrackableException When the reassign target is unknown or not trackable by the user
+     * @throws InvalidArgumentException When the span is not inside the running timer, or the target is the timer's task
      *
-     * @return array{entry: TimeEntry|null, timer: ActiveTimer|null}|null Recorded entry and running timer, or null when no timer runs
+     * @return array{entry: TimeEntry|null, timer: ActiveTimer|null, reassigned: TimeEntry|null}|null Recorded entries and running timer, or null when no timer runs
      */
-    public function resolveIdle(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to, IdleResolution $resolution): ?array
-    {
+    public function resolveIdle(
+        UserInterface $user,
+        DateTimeImmutable $from,
+        DateTimeImmutable $to,
+        IdleResolution $resolution,
+        ?string $targetTaskId = null,
+        IdleFollowUp $followUp = IdleFollowUp::Continue,
+        ?ClientType $clientType = null,
+        ?string $note = null,
+    ): ?array {
+        // Whole seconds in the server zone (EF-M1, EF-I5): what is compared is what is stored.
+        $from   = $this->toSecond($from);
+        $to     = $this->toSecond($to);
+        $target = null;
+        if ($resolution === IdleResolution::Reassign) {
+            if ($targetTaskId === null || $targetTaskId === '') {
+                throw new InvalidArgumentException('taskId is required to reassign an idle span.');
+            }
+
+            $target = $this->resolveTrackable($user, $targetTaskId);
+        }
+
         $timer = $this->getActive($user);
         if (!$timer instanceof ActiveTimer) {
             return null;
+        }
+
+        if ($target instanceof TaskReference && $target->id === $timer->getTaskId()) {
+            throw new InvalidArgumentException('The idle span is already on this task: use keep or split.');
         }
 
         if ($from < $timer->getStartedAt() || $to <= $from || $to > $this->clock->now()) {
             throw new InvalidArgumentException('The idle span must lie inside the running timer.');
         }
 
+        $clientType ??= $timer->getClientType();
+
         if ($resolution === IdleResolution::Keep) {
-            return ['entry' => null, 'timer' => $timer];
+            $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType);
+
+            return ['entry' => null, 'timer' => $timer, 'reassigned' => null];
+        }
+
+        if ($target instanceof TaskReference) {
+            return $this->reassignIdle($user, $timer, $from, $to, $target, $followUp, $clientType, $note);
         }
 
         $entry = $this->stop($user, $from);
@@ -248,22 +319,16 @@ final readonly class TimerService
         }
 
         if ($resolution === IdleResolution::Discard) {
-            return ['entry' => $entry, 'timer' => null];
+            $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType);
+
+            return ['entry' => $entry, 'timer' => null, 'reassigned' => null];
         }
 
-        $next = new ActiveTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to);
-        try {
-            $this->activeTimerRepository->save($next);
-        } catch (UniqueConstraintViolationException $e) {
-            // A concurrent start won between the stop and the continuation (1.9.1): the entry stays, its timer runs.
-            $this->logger->warning('TimeTrack idle split rejected: concurrent start.', $this->context('timer_split', $timer->getClientType()));
-
-            throw ActiveTimerConflictException::concurrentStart($e);
-        }
-        $this->eventDispatcher->dispatch(new TimerStartEvent($user, new TaskReference($timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot()), $timer->getClientType()), TimeTrackEvents::TIMER_START);
+        $next = $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to, 'timer_split');
         $this->logger->info('TimeTrack idle span discarded, timer continued.', $this->context('timer_split', $timer->getClientType()));
+        $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType);
 
-        return ['entry' => $entry, 'timer' => $next];
+        return ['entry' => $entry, 'timer' => $next, 'reassigned' => null];
     }
 
     /**
@@ -332,6 +397,16 @@ final readonly class TimerService
         $this->activeTimerRepository->save($timer);
 
         return $timer;
+    }
+
+    /**
+     * The task as the provider shows it to the user (since 1.10; live task details of the client API).
+     *
+     * @return TaskReference|null The task, or null when the user may not see it
+     */
+    public function findTask(UserInterface $user, string $taskId): ?TaskReference
+    {
+        return $this->taskProvider->findForUser($taskId, $user);
     }
 
     /**
@@ -425,6 +500,224 @@ final readonly class TimerService
         $userIds = $event->getUserIds();
 
         return $userIds === [] ? [$targetUserId ?? UserIdResolver::getId($viewer)] : $userIds;
+    }
+
+    /**
+     * The task when the provider lets the user track it.
+     *
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user (one answer for both)
+     */
+    private function resolveTrackable(UserInterface $user, string $taskId): TaskReference
+    {
+        if (!$this->taskProvider->canUserTrack($user, $taskId)) {
+            throw TaskNotTrackableException::forTask($taskId);
+        }
+
+        $task = $this->taskProvider->findForUser($taskId, $user);
+        if (!$task instanceof TaskReference) {
+            throw TaskNotTrackableException::forTask($taskId);
+        }
+
+        return $task;
+    }
+
+    /**
+     * Records the running timer as an entry ending at `$endedAt` (plus any extra entries in the same unit of work) and
+     * removes the timer; dispatches a stop event per recorded entry.
+     *
+     * @param list<TimeEntry> $extraEntries Entries recorded together with the timer's own entry (idle reassign)
+     *
+     * @return TimeEntry|null The timer's entry, or null when a concurrent call removed the timer first
+     */
+    private function closeTimer(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null, array $extraEntries = [], bool $recordOwnEntry = true): ?TimeEntry
+    {
+        $duration = max(0, $endedAt->getTimestamp() - $timer->getStartedAt()->getTimestamp());
+
+        $entry = new TimeEntry(
+            $user,
+            $timer->getTaskId(),
+            $timer->getTaskTitleSnapshot(),
+            $timer->getBoardIdSnapshot(),
+            $timer->getStartedAt(),
+            $endedAt,
+            $duration,
+            $this->mapClientTypeToSource($timer->getClientType()),
+            $note !== null ? ['note' => $note] + ($timer->getMetadata() ?? []) : $timer->getMetadata(),
+            $endedAt,
+        );
+        $entries = $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries;
+
+        if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
+            // 1.9.1 (CL-05): only the call that deletes the timer row records the entries, so concurrent stops record them once.
+            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
+            if (!$this->activeTimerRepository->removeIfPresent($timer, function () use ($entries): void {
+                foreach ($entries as $recorded) {
+                    $this->timeEntryRepository->save($recorded);
+                }
+            })) {
+                return null;
+            }
+        } else {
+            foreach ($entries as $recorded) {
+                $this->timeEntryRepository->save($recorded);
+            }
+            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
+            $this->activeTimerRepository->remove($timer);
+        }
+
+        foreach ($entries as $recorded) {
+            $this->eventDispatcher->dispatch(new TimerStopEvent($user, $recorded, $recorded === $entry ? $endTime : null), TimeTrackEvents::TIMER_STOP);
+        }
+        $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
+
+        return $entry;
+    }
+
+    /**
+     * Gives an idle span to another task (`reassign`): entry up to the idle start, entry of the span on the target,
+     * then the follow-up timer.
+     *
+     * @return array{entry: TimeEntry|null, timer: ActiveTimer|null, reassigned: TimeEntry}|null
+     */
+    private function reassignIdle(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $from, DateTimeImmutable $to, TaskReference $target, IdleFollowUp $followUp, ClientType $clientType, ?string $note): ?array
+    {
+        $reassigned = new TimeEntry(
+            $user,
+            $target->id,
+            $target->title,
+            $target->boardId,
+            $from,
+            $to,
+            max(0, $to->getTimestamp() - $from->getTimestamp()),
+            $this->mapClientTypeToSource($clientType),
+            $note !== null ? ['note' => $note] : null,
+            $this->clock->now(),
+        );
+        $hasOwnEntry = $from > $timer->getStartedAt();
+
+        $entry = $this->closeTimer($user, $timer, $from, null, null, [$reassigned], $hasOwnEntry);
+        if (!$entry instanceof TimeEntry) {
+            return null; // A concurrent call stopped the timer first (CL-05): nothing was written by this call.
+        }
+
+        $next = match ($followUp) {
+            IdleFollowUp::Continue => $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $timer->getMetadata(), $to, 'timer_idle_reassign'),
+            IdleFollowUp::Switch   => $this->continueTimer($user, $target->id, $target->title, $target->boardId, $clientType, null, $to, 'timer_idle_reassign', $target),
+            IdleFollowUp::Stop     => null,
+        };
+
+        $this->logger->info('TimeTrack idle span reassigned.', $this->context('timer_idle_reassign', $clientType) + ['then' => $followUp->value]);
+        $this->dispatchIdleResolved($user, IdleResolution::Reassign, $from, $to, $clientType, $target->id, $followUp);
+
+        return ['entry' => $hasOwnEntry ? $entry : null, 'timer' => $next, 'reassigned' => $reassigned];
+    }
+
+    /**
+     * Starts the follow-up timer of an idle decision at `$startedAt`.
+     *
+     * @param array<string, mixed>|null $metadata
+     *
+     * @throws ActiveTimerConflictException When a concurrent start took the timer slot first (the recorded entries stay)
+     */
+    private function continueTimer(UserInterface $user, string $taskId, string $taskTitle, ?string $boardId, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action, ?TaskReference $task = null): ActiveTimer
+    {
+        $next = new ActiveTimer($user, $taskId, $taskTitle, $boardId, $clientType, $metadata, $startedAt);
+        try {
+            $this->activeTimerRepository->save($next);
+        } catch (UniqueConstraintViolationException $e) {
+            // A concurrent start won between the stop and the continuation (1.9.1): the entries stay, its timer runs.
+            $this->logger->warning('TimeTrack idle follow-up timer rejected: concurrent start.', $this->context($action, $clientType));
+
+            throw ActiveTimerConflictException::concurrentStart($e);
+        }
+        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task ?? new TaskReference($taskId, $taskTitle, $boardId), $clientType), TimeTrackEvents::TIMER_START);
+
+        return $next;
+    }
+
+    private function dispatchIdleResolved(UserInterface $user, IdleResolution $resolution, DateTimeImmutable $from, DateTimeImmutable $to, ClientType $clientType, ?string $targetTaskId = null, ?IdleFollowUp $followUp = null): void
+    {
+        $this->eventDispatcher->dispatch(new IdleResolvedEvent($user, $resolution, $from, $to, $clientType, $targetTaskId, $followUp), TimeTrackEvents::IDLE_RESOLVED);
+    }
+
+    /**
+     * Clamps a client-supplied start (see {@see self::startAt()}).
+     */
+    private function clampStart(UserInterface $user, DateTimeImmutable $requested, BackdateLimits $limits, DateTimeImmutable $now): ClampedTime
+    {
+        $requested = $this->toSecond($requested);
+        if (!$limits->isEnabled()) {
+            return new ClampedTime($requested, $now, true, ClampedTime::REASON_DISABLED);
+        }
+
+        if ($requested > $now) {
+            return $requested->getTimestamp() > $now->getTimestamp() + $limits->clockSkewSeconds
+                ? new ClampedTime($requested, $now, true, ClampedTime::REASON_FUTURE)
+                : new ClampedTime($requested, $now);
+        }
+
+        $lower   = $now->modify(sprintf('-%d seconds', $limits->maxSeconds));
+        $reason  = ClampedTime::REASON_MAX_BACKDATE;
+        $lastEnd = $this->latestEndedAt(UserIdResolver::getId($user), $lower);
+        if ($lastEnd instanceof DateTimeImmutable && $lastEnd >= $lower) {
+            $lower  = min($lastEnd, $now);
+            $reason = ClampedTime::REASON_OVERLAP;
+        }
+
+        return $requested < $lower
+            ? new ClampedTime($requested, $lower, true, $reason)
+            : new ClampedTime($requested, $requested);
+    }
+
+    /**
+     * Clamps a client-supplied end (see {@see self::stopAt()}).
+     */
+    private function clampEnd(ActiveTimer $timer, DateTimeImmutable $requested, BackdateLimits $limits, DateTimeImmutable $now): ClampedTime
+    {
+        $requested = $this->toSecond($requested);
+        if (!$limits->isEnabled()) {
+            return new ClampedTime($requested, $now, true, ClampedTime::REASON_DISABLED);
+        }
+
+        if ($requested > $now) {
+            return $requested->getTimestamp() > $now->getTimestamp() + $limits->clockSkewSeconds
+                ? new ClampedTime($requested, $now, true, ClampedTime::REASON_FUTURE)
+                : new ClampedTime($requested, $now);
+        }
+
+        return $requested < $timer->getStartedAt()
+            ? new ClampedTime($requested, $timer->getStartedAt(), true, ClampedTime::REASON_BEFORE_START)
+            : new ClampedTime($requested, $requested);
+    }
+
+    /**
+     * End of the user's latest entry. Stores without {@see LatestTimeEntryRepositoryInterface} are read from one day
+     * before `$since` (entries that started before the backdate window and ended inside it).
+     */
+    private function latestEndedAt(string $userId, DateTimeImmutable $since): ?DateTimeImmutable
+    {
+        if ($this->timeEntryRepository instanceof LatestTimeEntryRepositoryInterface) {
+            return $this->timeEntryRepository->findLatestEndedAt($userId);
+        }
+
+        $latest = null;
+        foreach ($this->timeEntryRepository->findByUserAndPeriod($userId, $since->modify('-1 day'), $this->clock->now()) as $entry) {
+            if (!$latest instanceof DateTimeImmutable || $entry->getEndedAt() > $latest) {
+                $latest = $entry->getEndedAt();
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
+     * The same instant without fractions of a second (storage is to the second), in the server's default time zone:
+     * Doctrine stores the wall time without its offset and hydrates it in that zone (EF-M1), so a value kept in another
+     * zone would be stored shifted.
+     */
+    private function toSecond(DateTimeImmutable $time): DateTimeImmutable
+    {
+        return (new DateTimeImmutable('@' . $time->getTimestamp()))->setTimezone(new DateTimeZone(date_default_timezone_get()));
     }
 
     /**

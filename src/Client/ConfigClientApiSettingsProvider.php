@@ -22,8 +22,27 @@ final readonly class ConfigClientApiSettingsProvider implements ClientApiSetting
         int $deviceIpLimit = 30,
         int $windowSeconds = 60,
         bool $allowTauriWebviewOrigins = true,
+        int $backdateMaxSeconds = 86_400,
+        int $clockSkewSeconds = 120,
+        bool $allowIdleReassign = true,
+        bool $idleCheckEnabled = true,
+        int $idleCheckThresholdMinutes = 10,
+        int $idleCheckAnswerTimeoutMinutes = 5,
     ) {
-        $this->settings = new ClientApiSettings($allowedOrigins, $perTokenLimit, $perIpLimit, $deviceIpLimit, $windowSeconds, $allowTauriWebviewOrigins);
+        $this->settings = new ClientApiSettings(
+            $allowedOrigins,
+            $perTokenLimit,
+            $perIpLimit,
+            $deviceIpLimit,
+            $windowSeconds,
+            $allowTauriWebviewOrigins,
+            $backdateMaxSeconds,
+            $clockSkewSeconds,
+            $allowIdleReassign,
+            $idleCheckEnabled,
+            $idleCheckThresholdMinutes,
+            $idleCheckAnswerTimeoutMinutes,
+        );
     }
 
     /**

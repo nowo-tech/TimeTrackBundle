@@ -89,7 +89,15 @@ final class ClientApiTest extends FunctionalTestCase
 
         $me = $this->api('GET', '/api/time-track/me', null, $token);
         self::assertResponseIsSuccessful();
-        self::assertSame(['userId' => (string) $this->user->getId(), 'identifier' => 'person@example.com', 'displayName' => null, 'scopes' => ['timer:read', 'timer:write', 'tasks:read', 'entries:read'], 'workingHours' => null], $me);
+        self::assertSame([
+            'userId'       => (string) $this->user->getId(),
+            'identifier'   => 'person@example.com',
+            'displayName'  => null,
+            'scopes'       => ['timer:read', 'timer:write', 'tasks:read', 'entries:read'],
+            'workingHours' => null,
+            'features'     => ['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_check' => true, 'workday' => false, 'monitoring' => false],
+            'limits'       => ['backdate' => ['max_seconds' => 86400, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 10, 'answer_timeout_minutes' => 5]],
+        ], $me);
 
         $tasks = $this->api('GET', '/api/time-track/tasks?search=unit&limit=5', null, $token);
         self::assertResponseIsSuccessful();

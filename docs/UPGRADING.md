@@ -47,6 +47,44 @@
 
 ## Unreleased
 
+Planned as **1.10.0** (client API contract v0.3). From **1.9.2**: no schema change, no config change needed.
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+- **Task provider (optional).** Fill the new `TaskReference` arguments to show the project and an "open in" link in
+  the clients: `new TaskReference($id, $title, $boardId, $boardTitle, projectId: …, projectTitle: …, url: …)`. The
+  `url` must be an absolute `https://` URL of the task page on the host's public origin; anything else is published as
+  `null`. `TaskProviderInterface` is unchanged.
+- **Behind a TLS-terminating proxy.** URLs are compared with the request origin; without `framework.trusted_proxies`
+  the request looks like `http://…` and every URL is dropped. Either trust the proxy or set the origin explicitly from
+  your public URL parameter: `nowo_time_track.client_api.task_url.origin: '%app.public_url%'` (exact
+  `https://host[:port]`, no path, no trailing slash; validated when the container is built).
+- **New client API behaviour** (additive): `startedAt` on `timer/start`, `endedAt` on `timer/stop`, `reassign` on
+  `timer/discard-idle`, `features` / `limits` on `GET me`. Tune or disable with `client_api.backdate.*`,
+  `client_api.idle.allow_reassign` and `client_api.idle_check.*` ([CONFIGURATION](CONFIGURATION.md#client-api-110)).
+- **`IdleResolution` has a new case `Reassign`.** A host `match` over it without a `default` arm throws
+  `UnhandledMatchError` for reassign decisions; add the case.
+- **`TimerService::resolveIdle()`** returns a third key, `reassigned` (`null` except for reassign), and takes optional
+  `targetTaskId`, `followUp`, `clientType`, `note` arguments. `start()` / `switchTo()` now throw
+  `TaskNotTrackableException` (a subclass of `InvalidArgumentException`, so existing catches still work).
+- **Own (non-Doctrine) time entry store:** implement `LatestTimeEntryRepositoryInterface::findLatestEndedAt()` for the
+  backdate overlap check in one query. Without it the bundle reads the user's entries of the backdate window plus one
+  day through `findByUserAndPeriod()`, so an entry that **started more than one day before the window and ended inside
+  it** is missed and a backdated start may overlap it (EF-I6). The Doctrine store implements the interface.
+- **Task URL origin and the `Host` header (EF-I1).** With `client_api.task_url.origin` unset, the expected origin is
+  the request's, which comes from the caller's `Host` header: a caller sending `Host: evil.test` gets URLs on
+  `https://evil.test` published in its own response (never in other users' responses; no shared caching). Set
+  `client_api.task_url.origin` (Beacon does) or `framework.trusted_hosts`.
+- **Client timestamps (1.10).** `startedAt`, `endedAt`, `from` and `to` are parsed strictly: a lower-case `z` is
+  accepted, surrounding whitespace is no longer trimmed (`400`), and `from` / `to` are compared on whole seconds.
+- **Listeners of `nowo_time_track.timer.stop`** now also receive the entry of a reassigned idle span (the time moved to
+  another task), so per-task totals stay right. `IdleResolvedEvent` (`nowo_time_track.idle.resolved`) lets you audit
+  idle decisions and `TimerStartEvent::getStartTime()` / `TimerStopEvent::getEndTime()` backdated starts and stops.
+- **Overlap scope.** The backdate overlap check covers this bundle's entries only; time logged elsewhere (e.g.
+  TaskBoardBundle's manual "Log time") is not considered.
+
 ## To 1.9.2
 
 From **1.9.1**: no schema change, no BC break.

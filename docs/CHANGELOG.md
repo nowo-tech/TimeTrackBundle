@@ -38,6 +38,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as **1.10.0**. Client API contract v0.3 for the desktop app and the browser extension (additive; no schema
+change). See [UPGRADING](UPGRADING.md#unreleased).
+
+### Added
+
+- Task details: `TaskReference` gets optional `projectId`, `projectTitle` and `url` (absolute https URL of the task page
+  in the host). `GET tasks` returns them; every `timer` object (`GET timer`, `timer/start`, `timer/switch`,
+  `timer/discard-idle`, `heartbeat`) also gets `boardTitle`, `projectId`, `projectTitle` and `url`, resolved live through
+  the task provider for the token user (`null` when the task is gone, no longer visible, or the provider fails). A URL
+  is published only when it is https, without credentials, on the expected origin (`client_api.task_url.origin`, else
+  the request origin). `StubTaskProvider` fills a demo project.
+- `POST timer/start` accepts `startedAt` (RFC 3339) for offline-started timers: clamped to now (beyond
+  `client_api.backdate.clock_skew_seconds` reported as `future`), to the end of the user's latest entry (`overlap`) and
+  to `client_api.backdate.max_seconds` back (default and maximum 24 h, `max_backdate`), then reported as
+  `startedAtResult {requested, applied, clamped, reason}`. Malformed values answer `400 invalid_request`.
+- `POST timer/stop` accepts `endedAt`, clamped to now (`future`) and to the timer start (`before_start`), reported as
+  `endedAtResult`.
+- `POST timer/discard-idle` action `reassign` with `taskId`, `then` (`continue` | `switch` | `stop`, default
+  `continue`), optional `note` and `source`: an entry up to the idle start, an entry on `taskId` for the idle span (same
+  unit of work, CL-05), then the follow-up timer. New response key `reassigned`. The target task is checked like
+  `timer/start`; an unknown and a foreign task answer the same `403 task_forbidden`. `client_api.idle.allow_reassign`
+  turns it off.
+- `GET me` returns `features` (object of booleans: `task_details`, `start_backdate`, `stop_backdate`, `idle_reassign`,
+  `idle_check`; `workday` and `monitoring` reserved, always `false`) and `limits` (`backdate.max_seconds`,
+  `backdate.clock_skew_seconds`, `idle_check.threshold_minutes`, `idle_check.answer_timeout_minutes`).
+- Idle-check settings for the clients: `client_api.idle_check.enabled` (default `true`), `threshold_minutes` (5–60,
+  default 10), `answer_timeout_minutes` (1–30, default 5), and an optional per-user host service
+  `IdleCheckSettingsProviderInterface::forUser()` (`client_api.idle_check.provider`; values clamped, exceptions fall back
+  to the instance settings). The server only receives the user's decision; no activity counter is sent or stored.
+- `ClientApiSettings` / `ConfigClientApiSettingsProvider`: appended optional arguments for the backdate, reassign and
+  idle-check values, so a settings provider can override them per instance (clamped into the same ranges).
+- Events: `TimerStartEvent::getStartTime()` and `TimerStopEvent::getEndTime()` (`?ClampedTime`); `TimerStopEvent` is
+  also dispatched for the reassigned entry (TaskBoardBundle's time aggregator counts it); new `IdleResolvedEvent`
+  (`nowo_time_track.idle.resolved`) for every applied idle decision.
+- `LatestTimeEntryRepositoryInterface::findLatestEndedAt()` (implemented by the Doctrine store); `TimerService::startAt()`,
+  `stopAt()`, `findTask()`; `IdleResolution::Reassign`, `IdleFollowUp`, `TaskNotTrackableException`.
+
+### Changed
+
+- Audit Appendix EF (Info): task URLs with Unicode spaces or control characters are dropped (EF-I2);
+  `client_api.task_url.origin` must be a valid host with a port of 1–65535 and no trailing dot (EF-I3); client
+  timestamps accept a lower-case `z` and are no longer trimmed (EF-I4); idle spans are compared on whole seconds, so a
+  span starting within the timer's first second writes no 0-second entry (EF-I5). EF-I1 (`Host` header and the
+  request-origin fallback) and EF-I6 (fallback overlap lookup on custom stores) are documented in UPGRADING.
+- The new `startedAt` / `endedAt` / reassign `from` / `to` inputs get the 1.9.2 EF-M1 handling: they are converted to
+  the server time zone before they are compared or stored (also in `TimerService` for direct callers), and offsets
+  outside `-12:00`..`+14:00` answer `400 invalid_request`.
+
 ## [1.9.2] - 2026-11-04
 
 Security fix, no API or schema change. See [UPGRADING](UPGRADING.md#to-192).
