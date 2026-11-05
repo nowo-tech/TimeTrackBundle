@@ -233,7 +233,8 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
   detached: re-read them before reusing them.
 - Validation (`InvalidImportedTimeEntryException`, field and rule only, never the value): source / id / task / board
   patterns, valid UTF-8 title and description, `0 < duration ≤ end − start + 60 s`, one entry at most
-  `imports.max_entry_seconds` (31 days by default). The title is cleaned to one line and cut to 255; the description
+  `imports.max_entry_seconds` (31 days by default), start year ≥ 1970 and end at most one day after now (since 1.12;
+  `too_old` / `future`). The title is cleaned to one line and cut to 255; the description
   is cleaned (controls and bidi overrides stripped, line breaks kept) and **never truncated**.
 - **The owner never changes**: re-associating someone's time is `removeForUser()` / `remove()` then `upsert()` for
   the new user (the host audits it).
@@ -243,13 +244,23 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 - **Deleting** imported time is an explicit manager action: one entry through `ImportedTimeEntryDeleter` (needs a
   `delete_imported` grant on `TimeEntryAccessCheckEvent`), or in bulk through `remove*()` after the host's own check.
   **Never** call `removeForTasks()` / `removeForBoard()` from a task or board deletion: deleting tasks keeps tracked
-  time (owner rule).
+  time (owner rule). Removals are DQL bulk deletes: since 1.12 loaded entries of removed rows are detached and task
+  lists are bound 1 000 ids per query; do not reuse `TimeEntry` objects of removed rows.
 - Lists, reports and exports include imported entries. The title of an imported entry whose task its owner cannot
   track is shown as *Task not visible* on the bundle's own surfaces (client API, export JSON / CSV, reports page).
 - **Masking is per surface.** The stored `taskTitleSnapshot` and `toArray()` without arguments keep the real title.
   A host that overrides `reports.html.twig` (full file, or the surgical `nowo_ui_list_row` override) must keep the
   `hidden_task_entry_ids` check; host lists and exports must call `TimerService::hiddenTaskEntryIds($entries)` and
-  print `reports.task_not_visible` / use `toArray(false, $translatedTitle)` for the returned ids.
+  print `reports.task_not_visible` / use `toArray(false, $translatedTitle)` for the returned ids. Since 1.12 a masked
+  entry's `description` is hidden as well (`null` in `toArray(false, …)`, empty in the CSV): it is copied from the
+  source and may repeat task content. Do not print it in host lists for those ids either.
+- **Whose access masks a title.** `hiddenTaskEntryIds()` asks the task provider whether the entry's **owner** may track
+  the task (`canUserTrack(owner, taskId)`), not the viewer: a manager sees the titles the member can see, as for live
+  entries. A task the owner can see but no longer track (closed, archived) is masked too (the safe direction). Large
+  lists make one provider call per (owner, task); a provider that implements `BatchTaskProviderInterface`
+  (`filterTrackable(user, taskIds)`, since 1.12) is asked once per owner.
+- If you replace or decorate `TimeEntryRepositoryInterface`, `ImportedTimeEntryRepositoryInterface` resolves to your
+  service (since 1.12): implement it there (or alias it yourself), otherwise getting it throws `LogicException`.
 - The client API's own `GET entries` (without `userId`) and `GET export` **always include** the token user's imported
   entries (flagged `readOnly`, `source: import`) and ignore `TimeEntryListQueryEvent::setIncludeImported(false)`:
   they are the user's copy of their own data (GDPR art. 15 / 20). The team `userId` path honours it.

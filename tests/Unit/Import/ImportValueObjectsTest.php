@@ -23,6 +23,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use PHPUnit\Framework\TestCase;
 
 use function str_repeat;
+use function substr_count;
 
 final class ImportValueObjectsTest extends TestCase
 {
@@ -108,6 +109,8 @@ final class ImportValueObjectsTest extends TestCase
         $hidden = $entry->toArray(false);
         self::assertSame(TimeEntry::HIDDEN_TASK_TITLE, $hidden['taskTitle']);
         self::assertFalse($hidden['taskVisible']);
+        self::assertNull($hidden['description']);
+        self::assertSame("=SUM(A1)\nmore", $visible['description']);
 
         self::assertFalse($entry->applyImport($data));
         $moved = new ImportedTimeEntryData('clickup:dir-1', 'e-1', 'task-2', 'Other', null, new DateTimeImmutable('2026-01-01 10:30:00'), new DateTimeImmutable('2026-01-01 12:00:00'), 5400);
@@ -135,11 +138,16 @@ final class ImportValueObjectsTest extends TestCase
         self::assertSame('actor', $removed->getActorId());
 
         $entry2 = TimeEntry::imported($user, $data);
-        $csv    = TimeEntryCsv::render([$entry2, $entry], [$entry2->getId() => true]);
+        $entry3 = TimeEntry::imported($user, $data);
+        $csv    = TimeEntryCsv::render([$entry2, $entry, $entry3], [$entry2->getId() => true]);
         self::assertStringStartsWith('id,taskId,taskTitle,boardId,startedAt,endedAt,durationSeconds,source,note,billable,description,imported', $csv);
         self::assertStringContainsString(TimeEntry::HIDDEN_TASK_TITLE, $csv);
         self::assertStringContainsString(",yes,\"'=SUM(A1)\nmore\",yes", $csv);
         self::assertStringContainsString(',no,x,yes', $csv);
+        // Since 1.12 (FJ-I3): a masked entry's description is empty too; the visible copy keeps it.
+        self::assertStringContainsString(',"' . TimeEntry::HIDDEN_TASK_TITLE . '",board-1,', $csv);
+        self::assertSame(1, substr_count($csv, 'SUM(A1)'));
+        self::assertStringContainsString(',import,,yes,,yes', $csv);
 
         $list = new TimeEntryListQueryEvent($user, new DateTimeImmutable(), new DateTimeImmutable());
         self::assertTrue($list->includesImported());

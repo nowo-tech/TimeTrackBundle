@@ -16,6 +16,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use SortDirection;
 use Symfony\Component\Security\Core\User\UserInterface;
 
+use function array_chunk;
 use function array_column;
 use function array_map;
 use function count;
@@ -26,6 +27,9 @@ use function max;
  */
 final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface
 {
+    /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
+    public const TASK_IDS_PER_QUERY = 1000;
+
     /**
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
      * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
@@ -282,13 +286,22 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
     }
 
     /**
-     * Since 1.11: deletes the imported entries of a scope by keyset batches (DQL deletes, no entity loaded).
+     * Since 1.11: deletes the imported entries of a scope by keyset batches (DQL deletes, no entity loaded). Since 1.12
+     * a task list is bound {@see self::TASK_IDS_PER_QUERY} ids at a time (driver parameter limits), and entries of a
+     * deleted row that this entity manager had loaded are detached (no stale entity is flushed or returned later).
      */
     public function removeImported(ImportedTimeEntryScope $scope, int $batchSize = 500): ImportedTimeEntryRemoval
     {
         $batchSize = max(1, $batchSize);
         $removal   = new ImportedTimeEntryRemoval();
         if ($scope->kind === ImportedTimeEntryScope::TASKS && $scope->values === []) {
+            return $removal;
+        }
+        if ($scope->kind === ImportedTimeEntryScope::TASKS && count($scope->values) > self::TASK_IDS_PER_QUERY) {
+            foreach (array_chunk($scope->values, self::TASK_IDS_PER_QUERY) as $taskIds) {
+                $removal = $removal->merge($this->removeImported(ImportedTimeEntryScope::tasks($scope->externalSource, $taskIds), $batchSize));
+            }
+
             return $removal;
         }
         $lastId = '';
@@ -327,10 +340,27 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
                 ->setParameter('ids', array_column($rows, 'id'))
                 ->getQuery()
                 ->execute();
+            $this->detachRemoved(array_column($rows, 'id'));
             $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(static fn (array $row): string => (string) $row['userId'], $rows)));
         } while (count($rows) === $batchSize);
 
         return $removal;
+    }
+
+    /**
+     * Detaches the loaded entities of rows a DQL delete removed (the identity map would keep them otherwise).
+     *
+     * @param list<string> $ids
+     */
+    private function detachRemoved(array $ids): void
+    {
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        foreach ($ids as $id) {
+            $loaded = $unitOfWork->tryGetById($id, TimeEntry::class);
+            if ($loaded instanceof TimeEntry) {
+                $this->entityManager->detach($loaded);
+            }
+        }
     }
 
     /**

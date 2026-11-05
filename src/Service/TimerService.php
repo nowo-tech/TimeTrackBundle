@@ -26,6 +26,7 @@ use Nowo\TimeTrackBundle\Event\TimerStopEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
+use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
@@ -42,7 +43,12 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
+use function array_diff;
+use function array_filter;
+use function array_keys;
+use function array_map;
 use function array_slice;
+use function array_values;
 use function count;
 use function date_default_timezone_get;
 use function is_string;
@@ -516,7 +522,10 @@ final readonly class TimerService
 
     /**
      * Since 1.11: ids of the imported entries whose task the entry owner cannot see (by the task provider): their
-     * title must be masked wherever the entries are shown. One provider call per distinct (owner, task).
+     * title (and since 1.12 their description) must be masked wherever the entries are shown. One provider call per
+     * distinct (owner, task), or (since 1.12) one per owner when the provider implements
+     * {@see BatchTaskProviderInterface}. The question is what the entry **owner** may track, not the viewer: a manager
+     * sees what the member can see, and a task the owner can see but no longer track (closed) is masked too.
      *
      * @param list<TimeEntry> $entries
      *
@@ -524,8 +533,9 @@ final readonly class TimerService
      */
     public function hiddenTaskEntryIds(array $entries): array
     {
-        $hidden  = [];
-        $answers = [];
+        $hidden = [];
+        /** @var array<string, array{owner: UserInterface, entries: array<string, list<string>>}> $byOwner */
+        $byOwner = [];
         foreach ($entries as $entry) {
             if ($entry->getSource()->isLive()) {
                 continue;
@@ -535,14 +545,33 @@ final readonly class TimerService
                 $hidden[$entry->getId()] = true;
                 continue;
             }
-            $key = UserIdResolver::getId($owner) . "\0" . $entry->getTaskId();
-            $answers[$key] ??= $this->taskProvider->canUserTrack($owner, $entry->getTaskId());
-            if (!$answers[$key]) {
-                $hidden[$entry->getId()] = true;
+            $ownerId                                             = UserIdResolver::getId($owner);
+            $byOwner[$ownerId]['owner']                          = $owner;
+            $byOwner[$ownerId]['entries'][$entry->getTaskId()][] = $entry->getId();
+        }
+        foreach ($byOwner as ['owner' => $owner, 'entries' => $entryIdsByTask]) {
+            foreach ($this->untrackableTaskIds($owner, array_map(strval(...), array_keys($entryIdsByTask))) as $taskId) {
+                foreach ($entryIdsByTask[$taskId] as $entryId) {
+                    $hidden[$entryId] = true;
+                }
             }
         }
 
         return $hidden;
+    }
+
+    /**
+     * @param list<string> $taskIds distinct
+     *
+     * @return list<string> the task ids the user may not track
+     */
+    private function untrackableTaskIds(UserInterface $user, array $taskIds): array
+    {
+        if ($this->taskProvider instanceof BatchTaskProviderInterface) {
+            return array_values(array_diff($taskIds, $this->taskProvider->filterTrackable($user, $taskIds)));
+        }
+
+        return array_values(array_filter($taskIds, fn (string $taskId): bool => !$this->taskProvider->canUserTrack($user, $taskId)));
     }
 
     /**

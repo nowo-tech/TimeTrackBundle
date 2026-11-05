@@ -24,9 +24,11 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Translation\Loader\ArrayLoader;
+use Symfony\Component\Translation\MessageCatalogueInterface;
 use Symfony\Component\Translation\Translator;
 
 use function array_column;
+use function array_map;
 use function json_decode;
 
 use const JSON_THROW_ON_ERROR;
@@ -100,6 +102,65 @@ final class ClientApiV111Test extends TestCase
         [$controller, $token] = $this->controller($user);
 
         self::assertSame('fr', $this->body($controller->me($this->request($token, '/api/me')))['locale']);
+    }
+
+    public function testAUserGetLocaleThatNeedsArgumentsIsIgnored(): void
+    {
+        $user = new class implements UserInterface {
+            public function getId(): string
+            {
+                return 'u-3';
+            }
+
+            public function getLocale(string $fallback): string
+            {
+                return $fallback;
+            }
+
+            public function getRoles(): array
+            {
+                return ['ROLE_USER'];
+            }
+
+            public function eraseCredentials(): void
+            {
+            }
+
+            public function getUserIdentifier(): string
+            {
+                return 'args@example.com';
+            }
+        };
+        [$controller, $token] = $this->controller($user);
+
+        self::assertNull($this->body($controller->me($this->request($token, '/api/me')))['locale']);
+    }
+
+    public function testMaskedTitlesUseOnlyShippedLanguages(): void
+    {
+        $user    = new TestUser('u-1', 'u@example.com');
+        $entries = new InMemoryTimeEntryRepository();
+        $start   = new DateTimeImmutable('2026-11-01 09:00:00');
+        $entries->save(TimeEntry::imported($user, new ImportedTimeEntryData('clickup:dir-1', 'e-1', 'task-9', 'Secret title', null, $start, $start->modify('+1 hour'), 3600, null, 'Secret description')));
+        $translator = new Translator('en');
+        $translator->addLoader('array', new ArrayLoader());
+        $translator->addResource('array', ['reports.task_not_visible' => 'Tarea no visible'], 'es', 'NowoTimeTrackBundle');
+        $translator->addResource('array', ['reports.task_not_visible' => 'Task not visible (en)'], 'en', 'NowoTimeTrackBundle');
+
+        // A region of a shipped language is translated in that language.
+        [$regional, $regionalToken] = $this->controller($user, $this->localeProvider('es-MX'), $translator, $entries);
+        $body                       = $this->body($regional->entries($this->request($regionalToken, '/api/entries')));
+        self::assertSame('Tarea no visible', $body['entries'][0]['taskTitle']);
+        self::assertNull($body['entries'][0]['description']);
+
+        // Any other well-formed tag uses the default locale and never builds a catalogue of its own.
+        [$other, $otherToken] = $this->controller($user, $this->localeProvider('xx_YY'), $translator, $entries);
+        self::assertSame('xx_YY', $this->body($other->me($this->request($otherToken, '/api/me')))['locale']);
+        self::assertSame('Task not visible (en)', $this->body($other->entries($this->request($otherToken, '/api/entries')))['entries'][0]['taskTitle']);
+        $loaded = array_map(static fn (MessageCatalogueInterface $catalogue): string => $catalogue->getLocale(), $translator->getCatalogues());
+        self::assertContains('es', $loaded);
+        self::assertNotContains('xx_YY', $loaded);
+        self::assertNotContains('es-MX', $loaded);
     }
 
     public function testMaskedTitlesAreTranslatedInTheUsersLocale(): void
