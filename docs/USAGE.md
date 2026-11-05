@@ -217,8 +217,17 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 ```
 
 - Idempotent by `(externalSource, externalId)`; `upsertMany()` takes up to 500 rows with one flush, each identity
-  at most once per call (`rows` / `duplicate` otherwise). When a concurrent run inserts an identity first, the
-  unique violation is read again once and the row becomes an update (still refused for another owner).
+  at most once per call (`rows` / `duplicate` otherwise).
+- **Concurrent runs.** When another run inserts one of the identities between the read and the flush, the flush fails
+  with a unique violation and nothing of the batch is written. With the default Doctrine store and a
+  `ManagerRegistry` (the Symfony default), the store resets its closed entity manager, the writer reads the whole
+  batch again **once**, the raced row becomes an update (still refused for another owner) and the new
+  rows are created with their owners re-attached (`attachUser()`; the entries then reference the managed user, not
+  the object you passed). It **rethrows** `UniqueConstraintViolationException` instead, with nothing written, when
+  no registry is wired (the entity manager stays closed) or when the call runs **inside a transaction of yours** (its
+  snapshot may hide the other row; PostgreSQL aborts it): roll back and retry the slice. Do not wrap the writer in
+  your own transaction. A second violation on the retry is rethrown too. After a reset, user objects you hold are
+  detached: re-read them before reusing them.
 - Validation (`InvalidImportedTimeEntryException`, field and rule only, never the value): source / id / task / board
   patterns, valid UTF-8 title and description, `0 < duration ≤ end − start + 60 s`, one entry at most
   `imports.max_entry_seconds` (31 days by default). The title is cleaned to one line and cut to 255; the description
@@ -233,13 +242,22 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
   **Never** call `removeForTasks()` / `removeForBoard()` from a task or board deletion: deleting tasks keeps tracked
   time (owner rule).
 - Lists, reports and exports include imported entries. The title of an imported entry whose task its owner cannot
-  track is shown as *Task not visible*.
+  track is shown as *Task not visible* on the bundle's own surfaces (client API, export JSON / CSV, reports page).
+- **Masking is per surface.** The stored `taskTitleSnapshot` and `toArray()` without arguments keep the real title.
+  A host that overrides `reports.html.twig` (full file, or the surgical `nowo_ui_list_row` override) must keep the
+  `hidden_task_entry_ids` check; host lists and exports must call `TimerService::hiddenTaskEntryIds($entries)` and
+  print `reports.task_not_visible` / use `toArray(false, $translatedTitle)` for the returned ids.
+- The client API's own `GET entries` (without `userId`) and `GET export` **always include** the token user's imported
+  entries (flagged `readOnly`, `source: import`) and ignore `TimeEntryListQueryEvent::setIncludeImported(false)`:
+  they are the user's copy of their own data (GDPR art. 15 / 20). The team `userId` path honours it.
 
 ## Events
 
 Since 1.11: `TimeTrackEvents::TIME_ENTRY_IMPORTED` (`TimeEntryImportedEvent`) after an imported entry is created or
 changed, and `TimeTrackEvents::TIME_ENTRIES_REMOVED` (`TimeEntriesRemovedEvent`: scope, count, seconds per task, owner
-ids) after imported entries are deleted. Neither is a timer event.
+ids) after imported entries are deleted. Neither is a timer event. `TimeEntryImportedEvent::getEntry()` is the managed
+`TimeEntry` itself (duration, task, owner for task totals), so it also reaches the title snapshot and the description:
+the event adds no copy of them, and listeners must not log or forward them.
 
 - `nowo_time_track.timer.start` — `TimerStartEvent`
 - `nowo_time_track.timer.stop` — `TimerStopEvent` (TaskBoard can aggregate `time_spent`)

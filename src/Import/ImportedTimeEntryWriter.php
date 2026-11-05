@@ -23,7 +23,7 @@ use function count;
 use function mb_check_encoding;
 use function mb_substr;
 use function preg_match;
-use function str_replace;
+use function preg_replace;
 
 /**
  * Since 1.11: writes imported time entries ({@see TimeEntrySource::Import}), idempotently by
@@ -85,8 +85,11 @@ final readonly class ImportedTimeEntryWriter
     /**
      * Upserts up to {@see self::MAX_BATCH} rows with one flush. Every row is validated (and the owners checked) before
      * anything is written: one bad row refuses the whole batch, and so do two rows for one external identity
-     * (`rows` / `duplicate`). When a concurrent run inserts one of the identities first (unique violation on flush),
-     * the batch is read again once and that row becomes an update.
+     * (`rows` / `duplicate`). When a concurrent run inserts one of the identities first (unique violation on flush,
+     * nothing written), the whole batch is read again once when the store allows it
+     * ({@see ImportedTimeEntryRepositoryInterface::canRetryAfterFailedSave()}: the Doctrine store needs a
+     * `ManagerRegistry` and no open host transaction): that row becomes an update and the new rows are created with
+     * their owners re-attached. Otherwise the unique violation is rethrown and the host retries the slice.
      *
      * @param list<array{0: UserInterface, 1: ImportedTimeEntryData}> $rows
      */
@@ -110,10 +113,21 @@ final readonly class ImportedTimeEntryWriter
 
         try {
             return $this->write($valid);
-        } catch (UniqueConstraintViolationException) {
-            // A concurrent run inserted one of these identities between our read and our flush: read again, so it is
-            // an update (or unchanged) now, with the owner check applied to the stored row. One retry only.
-            return $this->write($valid);
+        } catch (UniqueConstraintViolationException $exception) {
+            // A concurrent run inserted one of these identities between our read and our flush. Nothing was written
+            // (the flush rolled back). Without a usable store (no registry reset it, or a host transaction is still
+            // open) fail closed: the host retries the slice. Otherwise read again, once: the raced identity is an
+            // update (or unchanged) now, with the owner check applied to the stored row, and the new rows reference
+            // owners re-attached to the reset store.
+            if (!$this->repository->canRetryAfterFailedSave()) {
+                throw $exception;
+            }
+            $retry = [];
+            foreach ($valid as [$user, $data]) {
+                $retry[] = [$this->repository->attachUser($user), $data];
+            }
+
+            return $this->write($retry);
         }
     }
 
@@ -246,8 +260,9 @@ final readonly class ImportedTimeEntryWriter
         if ($data->description !== null && !mb_check_encoding($data->description, 'UTF-8')) {
             throw new InvalidImportedTimeEntryException('description', 'encoding');
         }
-        // The title is one line: the description rules (controls and bidi overrides stripped), line breaks as spaces.
-        $title = str_replace("\n", ' ', ImportedDescriptionSanitizer::clean($data->taskTitle) ?? '');
+        // The title is one line: the description rules (controls and bidi overrides stripped), then every run of line
+        // breaks (LF, U+2028 line separator, U+2029 paragraph separator) and the blanks around it becomes one space.
+        $title = (string) preg_replace('/\h*[\n\x{2028}\x{2029}][\n\x{2028}\x{2029}\h]*/u', ' ', ImportedDescriptionSanitizer::clean($data->taskTitle) ?? '');
 
         return new ImportedTimeEntryData(
             $data->externalSource,

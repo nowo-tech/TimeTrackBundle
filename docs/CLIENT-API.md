@@ -64,6 +64,10 @@ Since 1.10.2 every client note (`timer/start`, `timer/stop`, `timer/switch`, `ti
   not know it. Clients may use it for their UI language instead of the system language.
 - Clients render `import` as *Imported*, never offer to edit it, and **skip `readOnly` entries for *Resume* and the
   recent / quick tasks**.
+- `GET entries` (own entries, without `userId`) and `GET export` **always include** the user's imported entries: they
+  are the user's copy of their own data (GDPR art. 15 / 20), so a host listener calling
+  `TimeEntryListQueryEvent::setIncludeImported(false)` does not remove them there (it does on the team `userId`
+  path).
 
 ## Changes in v0.3.1 (1.10.1)
 

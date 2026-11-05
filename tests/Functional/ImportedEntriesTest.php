@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\Persistence\ManagerRegistry;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
@@ -31,6 +33,7 @@ use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
@@ -39,6 +42,7 @@ use stdClass;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
+use Symfony\Component\Security\Core\User\InMemoryUser;
 
 use function array_filter;
 use function array_map;
@@ -183,6 +187,8 @@ final class ImportedEntriesTest extends FunctionalTestCase
     public function testTheTitleIsCleanedToOneLine(): void
     {
         self::assertSame('Fix login page', $this->writer()->validate($this->data('e', title: "\u{202E}Fix\r\nlogin\u{0007}page "))->taskTitle);
+        // U+2028 / U+2029 are line breaks too; a run of breaks and the blanks around it is one space (FJ-I5).
+        self::assertSame('Fix login page now', $this->writer()->validate($this->data('e', title: "\u{2029}Fix\u{2028}login \n\n\u{2029} page\u{2028}\u{2029}now\u{2028}"))->taskTitle);
     }
 
     public function testTwoRowsForOneIdentityInABatchAreRefused(): void
@@ -219,6 +225,92 @@ final class ImportedEntriesTest extends FunctionalTestCase
         $racing->staleReads(1);
         $this->expectException(ImportedEntryOwnerMismatchException::class);
         (new ImportedTimeEntryWriter($racing, $this->dispatcher))->upsert($other, $this->data('e-1', seconds: 60));
+    }
+
+    public function testAConcurrentInsertInABatchWithNewRowsCreatesThemWithTheOwnerReattached(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $this->events = [];
+
+        $racing = new RacingImportedTimeEntryRepository($this->repository());
+        $racing->staleReads(1);
+        $result = (new ImportedTimeEntryWriter($racing, $this->dispatcher))->upsertMany([
+            [$this->user, $this->data('e-1', seconds: 1800)],
+            [$this->user, $this->data('e-2', task: 'task-2')],
+            [$this->user, $this->data('e-3', task: 'task-3')],
+        ]);
+
+        self::assertSame([1, 2, 0], [$result->updated, $result->created, $result->unchanged]);
+        self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
+        self::assertCount(3, $this->events);
+        $this->entityManager()->clear();
+        self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
+        foreach (['e-2', 'e-3'] as $id) {
+            $owner = $this->repository()->findByExternal(self::SOURCE, $id)?->getUser();
+            self::assertInstanceOf(AppUser::class, $owner);
+            self::assertSame($this->user->getId(), $owner->getId());
+        }
+    }
+
+    public function testWithoutARegistryTheRaceFailsClosed(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+
+        // No ManagerRegistry: the failed flush leaves the entity manager closed, so the writer rethrows.
+        $racing = new RacingImportedTimeEntryRepository(new DoctrineOrmTimeEntryRepository($this->entityManager()));
+        $racing->staleReads(1);
+        try {
+            (new ImportedTimeEntryWriter($racing))->upsertMany([[$this->user, $this->data('e-1', seconds: 1800)], [$this->user, $this->data('e-2')]]);
+            self::fail('expected the unique violation');
+        } catch (UniqueConstraintViolationException) {
+        }
+        self::assertSame(1, $racing->saveAllCalls);
+        self::assertFalse($this->entityManager()->isOpen());
+
+        $this->resetEntityManager();
+        self::assertSame(3600, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds(), 'nothing was written');
+        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
+    }
+
+    public function testInsideAHostTransactionTheRaceFailsClosed(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+
+        $connection = $this->entityManager()->getConnection();
+        $connection->beginTransaction();
+        $racing = new RacingImportedTimeEntryRepository($this->repository());
+        $racing->staleReads(1);
+        try {
+            (new ImportedTimeEntryWriter($racing))->upsertMany([[$this->user, $this->data('e-1', seconds: 1800)], [$this->user, $this->data('e-2')]]);
+            self::fail('expected the unique violation');
+        } catch (UniqueConstraintViolationException) {
+            self::assertTrue($connection->isTransactionActive(), 'the host transaction is left to the host');
+        } finally {
+            $connection->rollBack();
+        }
+        self::assertSame(1, $racing->saveAllCalls);
+        self::assertTrue($this->repository()->canRetryAfterFailedSave());
+        self::assertSame(3600, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
+        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
+    }
+
+    public function testAttachUserReturnsAManagedUser(): void
+    {
+        $repository = $this->repository();
+        self::assertSame($this->user, $repository->attachUser($this->user), 'already managed');
+
+        $memory = new InMemoryUser('memory', null);
+        self::assertSame($memory, $repository->attachUser($memory), 'not an entity of the store');
+
+        $unsaved = new AppUser('unsaved@example.com', 'secret', ['ROLE_USER']);
+        self::assertSame($unsaved, $repository->attachUser($unsaved), 'no identifier yet');
+
+        $this->entityManager()->clear();
+        $attached = $repository->attachUser($this->user);
+        self::assertNotSame($this->user, $attached);
+        self::assertInstanceOf(AppUser::class, $attached);
+        self::assertSame($this->user->getId(), $attached->getId());
+        self::assertTrue($this->entityManager()->contains($attached));
     }
 
     public function testTimersIdleAndSwitchNeverTouchImportedEntries(): void
@@ -453,6 +545,13 @@ final class ImportedEntriesTest extends FunctionalTestCase
     public function testTheContainerWiresTheRepositoryAlias(): void
     {
         self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, self::getContainer()->get(TimeEntryRepositoryInterface::class));
+    }
+
+    private function resetEntityManager(): void
+    {
+        $registry = self::getContainer()->get('doctrine');
+        self::assertInstanceOf(ManagerRegistry::class, $registry);
+        $registry->resetManager();
     }
 
     private function writer(): ImportedTimeEntryWriter

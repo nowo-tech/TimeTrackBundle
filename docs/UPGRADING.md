@@ -99,6 +99,17 @@ A reference migration (MySQL) ships in the demo: `demo/symfony8/migrations/Versi
   implement `Client\ClientUserLocaleProviderInterface`; otherwise the user's `getLocale()` is used when it exists.
 - `upsertMany()` refuses a batch with two rows for the same `(externalSource, externalId)` (`rows` / `duplicate`):
   send each identity once per call.
+- Concurrent imports: a unique violation is retried once in the writer only with a `ManagerRegistry` and outside any
+  host transaction; otherwise `UniqueConstraintViolationException` is rethrown (nothing written) and the host retries
+  the slice. Do not call the writer inside your own transaction. A custom `ImportedTimeEntryRepositoryInterface`
+  store implements `canRetryAfterFailedSave()` and `attachUser()`.
+- **Task titles are masked per surface.** Overrides of `reports.html.twig` (including a surgical
+  `nowo_ui_list_row` override) must keep the `hidden_task_entry_ids` check; host lists and exports of entries (e.g.
+  *My time*, monthly summaries, inspection exports) must call `TimerService::hiddenTaskEntryIds()` and use
+  `toArray(false, $translatedTitle)` / `reports.task_not_visible` for those ids. `taskTitleSnapshot` and `toArray()`
+  without arguments return the real title.
+- The client API's own `GET entries` and `GET export` always include the user's imported entries (GDPR art. 15 / 20)
+  and ignore `setIncludeImported(false)`.
 - A custom `TimeEntryRepositoryInterface` store keeps working; only `ImportedTimeEntryWriter` needs
   `ImportedTimeEntryRepositoryInterface` (it throws `LogicException` otherwise).
 - Clients (Desktop, Extension): render `source: import` as *Imported*, never offer edit, and skip `readOnly` entries

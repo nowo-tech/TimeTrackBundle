@@ -61,7 +61,8 @@ additive nullable columns, one new enum case, two new indexes.
 - **`Import\ImportedTimeEntryDeleter`** and **`TeamAccessGuard::canDeleteImportedEntry()`**: deleting one imported
   entry is denied by default, the host grants it through `TimeEntryAccessCheckEvent` action `delete_imported`.
 - **`Repository\ImportedTimeEntryRepositoryInterface`** (implemented by the Doctrine store): `findByExternal()`,
-  `findByExternalSource()`, `findLiveByUserAndPeriod()`, live paging, `saveAll()`, `removeImported()`.
+  `findByExternalSource()`, `findLiveByUserAndPeriod()`, live paging, `saveAll()`, `removeImported()`,
+  `canRetryAfterFailedSave()`, `attachUser()`.
 - Events **`TIME_ENTRY_IMPORTED`** (`TimeEntryImportedEvent`: created / updated, previous duration and task) and
   **`TIME_ENTRIES_REMOVED`** (`TimeEntriesRemovedEvent`: scope, count, seconds per task, owner ids, actor).
 - `TimeEntryListQueryEvent::setIncludeImported()` (default `true`): live-time views list live entries only.
@@ -87,9 +88,22 @@ additive nullable columns, one new enum case, two new indexes.
   translator) with `taskVisible: false` in the client API, the export (JSON / CSV) and the reports page
   (`TimerService::hiddenTaskEntryIds()`).
 - **Writer hardening**: two rows for one external identity in one `upsertMany()` call are refused (`rows` /
-  `duplicate`); a unique violation on flush (a concurrent run inserted the identity first) is read again once, so the
-  row becomes an update and the owner check still applies; titles and descriptions must be valid UTF-8 (`encoding`);
-  the title is cleaned like the description and kept on one line.
+  `duplicate`); titles and descriptions must be valid UTF-8 (`encoding`); the title is cleaned like the description
+  and kept on one line (LF, U+2028 and U+2029 runs become one space).
+- **Concurrent imports** (audit FJ-L1): a unique violation on flush (a concurrent run inserted an identity first)
+  writes nothing; the whole batch is then read again once, the raced row becomes an update (owner check still
+  applied) and new rows in the same batch are created with their owners re-attached to the reset entity manager
+  (`ImportedTimeEntryRepositoryInterface::attachUser()`). Without a `ManagerRegistry`, or inside a host transaction
+  (`canRetryAfterFailedSave()` false), the unique violation is rethrown instead and the host retries the slice.
+
+### Documentation
+
+- Task title masking is per surface: host overrides of `reports.html.twig` (including `nowo_ui_list_row`) and host
+  lists / exports must apply `hiddenTaskEntryIds()` / `toArray(false, …)` (FJ-L2).
+- The client API's own `GET entries` and `GET export` always include imported entries (GDPR art. 15 / 20) and ignore
+  `setIncludeImported(false)` (FJ-I1).
+- `TimeEntryImportedEvent` carries the managed entry (title snapshot and description included); listeners must not
+  log or forward them (FJ-I2).
 
 ## [1.10.3] - 2026-11-04
 

@@ -9,6 +9,7 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Delegating store whose next {@see self::findByExternal()} misses once: as when a concurrent import inserted that
@@ -90,5 +91,15 @@ final class RacingImportedTimeEntryRepository implements ImportedTimeEntryReposi
     public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
     {
         return $this->inner->findByUserAndPeriod($userId, $from, $to);
+    }
+
+    public function canRetryAfterFailedSave(): bool
+    {
+        return $this->inner->canRetryAfterFailedSave();
+    }
+
+    public function attachUser(UserInterface $user): UserInterface
+    {
+        return $this->inner->attachUser($user);
     }
 }

@@ -10,6 +10,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Since 1.11: a time entry store that also holds imported entries ({@see TimeEntrySource::Import}).
@@ -62,4 +63,19 @@ interface ImportedTimeEntryRepositoryInterface extends PaginatedTimeEntryReposit
      * Deletes the imported entries of a scope by keyset batches (never loads entities); returns what was deleted.
      */
     public function removeImported(ImportedTimeEntryScope $scope, int $batchSize = 500): ImportedTimeEntryRemoval;
+
+    /**
+     * After a failed {@see self::saveAll()} (a unique violation from a concurrent run): whether the store can be read and
+     * written again within the same call. False when the failure left it unusable (the Doctrine store: the entity
+     * manager is still closed because no `ManagerRegistry` reset it) or when a host transaction is still open (its
+     * snapshot may hide the concurrent row, and some platforms abort it): the writer then rethrows instead of retrying.
+     */
+    public function canRetryAfterFailedSave(): bool;
+
+    /**
+     * The user as an object new entries can reference after the store was reset (the Doctrine store: the managed
+     * instance, or a reference by identifier, since a reset detaches the objects the caller passed). Returns the user
+     * unchanged when it is already managed or is not an entity of this store.
+     */
+    public function attachUser(UserInterface $user): UserInterface;
 }

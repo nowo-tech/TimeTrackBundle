@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use SortDirection;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_column;
 use function array_map;
@@ -253,6 +254,31 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
             $this->entityManager->persist($entry);
         }
         RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+    }
+
+    /**
+     * Since 1.11: the entity manager is open again (reset through the registry after the failed flush) and no host
+     * transaction is active.
+     */
+    public function canRetryAfterFailedSave(): bool
+    {
+        return $this->entityManager->isOpen() && !$this->entityManager->getConnection()->isTransactionActive();
+    }
+
+    /**
+     * Since 1.11: the managed user, or a reference by identifier when a reset detached it.
+     */
+    public function attachUser(UserInterface $user): UserInterface
+    {
+        $userClass = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
+        if (!$user instanceof $userClass || $this->entityManager->contains($user)) {
+            return $user;
+        }
+        $metadata   = $this->entityManager->getClassMetadata($userClass);
+        $identifier = $metadata->getIdentifierValues($user);
+        $reference  = $identifier === [] ? null : $this->entityManager->getReference($metadata->getName(), $identifier);
+
+        return $reference instanceof UserInterface ? $reference : $user;
     }
 
     /**
