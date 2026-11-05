@@ -97,7 +97,7 @@ final readonly class ClientResponseFactory
 
         $response->headers->set('Access-Control-Allow-Origin', $origin);
         $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-        $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Expose-Headers', 'Retry-After');
         $response->headers->set('Vary', 'Origin');
     }

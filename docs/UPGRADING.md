@@ -190,9 +190,24 @@ only events whose title carries a resolvable key or matches a user rule become s
 stored (no title, description, attendees, location, link or provider id — only keyed HMAC references). Delete the user's
 connections with their account (FK `ON DELETE CASCADE`) and call your own token revoke on account erasure.
 
-**New events**: `nowo_time_track.calendar.connection_changed` (`CalendarConnectionChangedEvent`) and
-`nowo_time_track.calendar.sync_finished` (`CalendarSyncFinishedEvent`): ids, codes, counts and the consent version only,
-for your audit rows (`time_track.calendar.*`).
+**New events**: `nowo_time_track.calendar.connection_changed` (`CalendarConnectionChangedEvent`),
+`nowo_time_track.calendar.sync_finished` (`CalendarSyncFinishedEvent`) and
+`nowo_time_track.calendar.suggestion_decided` (`CalendarSuggestionDecidedEvent`): ids, codes, counts and the consent
+version only, for your audit rows (`time_track.calendar.*`). `nowo_time_track.time_entry.created`
+(`TimeEntryCreatedEvent`) fires for entries created without a timer (`POST entries`, accepted suggestions): update the
+TaskBoard bundle to the patch that listens to it so task totals include them.
+
+**Manual entries are off by default** (`manual_entries.enabled: false`). With it on, `POST /api/time-track/entries`
+creates `manual` / `calendar` entries (≤ 24 h, not in the future, at most `manual_entries.max_age_days` old, no overlap,
+period lock). A host replacement of `TimeEntryRepositoryInterface` may implement
+`OverlappingTimeEntryRepositoryInterface` for an exact overlap query; without it the overlap check reads the two days
+before the new entry.
+
+**Client API (additive).** New scopes `entries:write`, `suggestions:read`, `suggestions:write` are never granted by
+default (as for the 1.13 scopes): request them in the device flow. New routes (404 while their feature is off):
+`calendar/connections` (GET, and DELETE `/{id}`), `suggestions`, `suggestions/accept`, `suggestions/dismiss`,
+`suggestions/resolve-keys`, `POST entries`. CORS preflights now allow `DELETE`. `GET me.features.calendar_suggestions`
+and `features.manual_entries` become real.
 
 ## To 1.13.0
 

@@ -15,7 +15,8 @@ use function is_string;
 use function sprintf;
 
 /**
- * Fixed scope set of the client API session tokens (contract v0.2 §1). `entries:write` is not part of 1.9.
+ * Fixed scope set of the client API session tokens (contract v0.2 §1). Scopes added after 1.12 always need an explicit
+ * grant ({@see self::defaults()}).
  */
 enum ClientScope: string
 {
@@ -33,6 +34,12 @@ enum ClientScope: string
     case TimesheetRead = 'timesheet:read';
     /** Since 1.13: submit / withdraw. Explicit grant only. */
     case TimesheetWrite = 'timesheet:write';
+    /** Since 1.14: `POST entries` (manual and calendar entries). Explicit grant only. */
+    case EntriesWrite = 'entries:write';
+    /** Since 1.14: calendar connections, suggestions and `resolve-keys`. Explicit grant only. */
+    case SuggestionsRead = 'suggestions:read';
+    /** Since 1.14: accept / dismiss suggestions, revoke a calendar connection. Explicit grant only. */
+    case SuggestionsWrite = 'suggestions:write';
 
     /**
      * Every scope.
@@ -47,7 +54,7 @@ enum ClientScope: string
     /**
      * Since 1.13: the default grant — the pre-1.13 scope set (`timer:read`, `timer:write`, `tasks:read`,
      * `entries:read`). A token without stored scopes (issued before 1.9) and a credential that names none get these:
-     * the 1.13 scopes always need an explicit grant (contract Q-O14).
+     * the 1.13 and 1.14 scopes always need an explicit grant (contract Q-O14).
      *
      * @return list<self>
      */

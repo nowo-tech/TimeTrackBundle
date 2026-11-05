@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Controller;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
@@ -41,12 +42,14 @@ use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Support\TimeEntryCsv;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -146,6 +149,8 @@ final readonly class TimeTrackClientApiController
      * @param IdleCheckSettingsResolver|null $idleCheckResolver Per-user idle-check settings of `me` (null = instance settings)
      * @param TranslatorInterface|null $translator Translates the masked title of imported entries (1.11; null = English)
      * @param ClientWorkingTimeContext|null $workingTime Working-time flags, `me.timesheet` and entry locks (1.13; null = all off)
+     * @param CalendarConnectionService|null $calendar Calendar suggestions (`me.features.calendar_suggestions`, 1.14; null = off)
+     * @param ManualEntryService|null $manualEntries `POST entries` (`me.features.manual_entries`, 1.14; null = off)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -167,6 +172,8 @@ final readonly class TimeTrackClientApiController
         ?IdleCheckSettingsResolver $idleCheckResolver = null,
         private ?TranslatorInterface $translator = null,
         private ?ClientWorkingTimeContext $workingTime = null,
+        private ?CalendarConnectionService $calendar = null,
+        private ?ManualEntryService $manualEntries = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -289,6 +296,9 @@ final readonly class TimeTrackClientApiController
         if ($this->workingTime instanceof ClientWorkingTimeContext) {
             $features = array_replace($features, $this->workingTime->features($user));
         }
+        // Since 1.14 (contract §10.1).
+        $features['calendar_suggestions'] = $this->calendar?->scopeOf($user, null) instanceof TimesheetScope;
+        $features['manual_entries']       = $this->manualEntries?->isEnabled() ?? false;
         foreach (self::RESERVED_FEATURES as $reserved) {
             $features[$reserved] = false;
         }

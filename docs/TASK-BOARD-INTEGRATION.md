@@ -8,6 +8,7 @@
 - [Wiring](#wiring)
 - [Recommended TaskBoard features](#recommended-taskboard-features)
 - [Imported time (1.11)](#imported-time-111)
+- [Entries without a timer (1.14)](#entries-without-a-timer-114)
 
 ## Interfaces (implemented by TaskBoard)
 
@@ -40,3 +41,12 @@ TaskBoardBundle (1.25+) keeps `total_time_seconds` for imported entries through 
 change in duration) and `TIME_ENTRIES_REMOVED` (subtracts `secondsByTask`). Its listener registers only when these
 event classes exist. Deleting tasks or boards never deletes TimeTrack entries (live or imported); imported time is
 deleted only by an explicit manager action.
+
+## Entries without a timer (1.14)
+
+`POST entries` (sources `manual` and `calendar`) and accepted calendar suggestions create entries without a timer, so no
+`TIMER_STOP` fires for them. 1.14 dispatches `TimeTrackEvents::TIME_ENTRY_CREATED` (`TimeEntryCreatedEvent`: the
+entry, `origin` `manual` / `calendar`) after the flush. TaskBoard keeps `total_time_seconds` right with a listener on it
+(guarded by `class_exists(TimeEntryCreatedEvent::class)`), released as a TaskBoard patch next to TimeTrack 1.14
+(contract §9.3).
+

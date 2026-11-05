@@ -350,7 +350,19 @@ nowo_time_track:
 - Without `timesheets.scope_provider` everybody is in one scope `''` (like `scope_mode: single`).
 - Server mode needs `symfony/http-client` (the framework `http_client`); without it a sync fails with `no_http_client`.
 - Public services for hosts: `Calendar\CalendarConnectionService`, `Calendar\CalendarRuleService`,
-  `Calendar\CalendarSyncService`.
+  `Calendar\CalendarSyncService`, `Calendar\CalendarSuggestionService`, `Service\ManualEntryService`.
+
+```yaml
+nowo_time_track:
+  manual_entries:                   # POST entries (sources manual / calendar), Q-O7
+    enabled: false
+    max_age_days: 31                # oldest start accepted (1-366); accepted suggestions use calendar.lookback_days
+```
+
+- Client routes (`clients.routes.*`): `calendar_connections`, `calendar_connection_revoke`
+  (`/api/time-track/calendar/connections/{id}`, DELETE), `suggestions`, `suggestions_accept`, `suggestions_dismiss`,
+  `suggestions_resolve_keys`, `entries_create` (`POST /api/time-track/entries`); they answer 404 while their feature is
+  off.
 
 ## Security
 

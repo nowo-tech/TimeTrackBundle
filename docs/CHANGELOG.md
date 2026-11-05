@@ -77,9 +77,25 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
   `lookback_days`, `suggestion_ttl_days`, `sync_interval_minutes`, `max_event_seconds`, `max_rules_per_user`,
   `max_pages`); incoherent combinations are refused at compile time.
 
+- **Entries without a timer** (contract §10.3, Q-O7): `Service\ManualEntryService` and `POST /api/time-track/entries`
+  (`manual_entries.enabled`, off by default; sources `manual` / `calendar`; `Idempotency-Key`; ≤ 24 h, not in the
+  future, ≤ `manual_entries.max_age_days` old, no overlap with a live entry or the running timer, period lock 409;
+  120 / h per token). Optional store capability `OverlappingTimeEntryRepositoryInterface` (the Doctrine store has it).
+- **Suggestions client API** (contract §6.4–§6.6, §10.3): `GET calendar/connections`, `DELETE
+  calendar/connections/{id}`, `GET suggestions` (groups and singles, `refresh=1` once per 5 minutes),
+  `POST suggestions/accept` (one `calendar` entry per occurrence, per-occurrence outcomes), `POST suggestions/dismiss`,
+  `POST suggestions/resolve-keys` (local mode; 60 / min) — `Controller\TimeTrackCalendarApiController`,
+  `Calendar\CalendarSuggestionService`.
+- **Scopes** `entries:write`, `suggestions:read`, `suggestions:write` (explicit grant only); `GET me`
+  `features.calendar_suggestions` and `features.manual_entries` are real.
+- **Events** `TIME_ENTRY_CREATED` (`TimeEntryCreatedEvent`, for TaskBoard's time totals) and
+  `CALENDAR_SUGGESTION_DECIDED` (ids only).
+- `Support\Rfc3339`: the strict date-time profile of the 1.14 routes.
+
 ### Changed
 
 - `symfony/http-client` is a new `suggest` (calendar server mode) and a dev dependency.
+- CORS `Access-Control-Allow-Methods` lists `DELETE` too.
 
 ## [1.13.0] - 2026-11-05
 

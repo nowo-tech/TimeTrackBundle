@@ -25,7 +25,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -245,6 +245,31 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->setParameter('import', TimeEntrySource::Import->value)
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    /**
+     * Since 1.14: live entries of the user overlapping `[from, to)` (manual entries and accepted suggestions refuse
+     * overlaps).
+     */
+    public function findLiveOverlapping(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        /** @var list<TimeEntry> $result */
+        $result = $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TimeEntry::class, 'e')
+            ->where('IDENTITY(e.user) = :userId')
+            ->andWhere('e.startedAt < :to')
+            ->andWhere('e.endedAt > :from')
+            ->andWhere('e.source <> :import')
+            ->setParameter('userId', $userId)
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->setParameter('import', TimeEntrySource::Import->value)
+            ->orderBy('e.startedAt', SortDirection::Ascending)
+            ->getQuery()
+            ->getResult();
+
+        return $result;
     }
 
     /**

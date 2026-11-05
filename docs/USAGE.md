@@ -321,6 +321,19 @@ owner's working hours: events of the primary calendar of the last `calendar.look
 carries a key your `TaskKeyResolverInterface` resolves (or that a user rule matches) and whose task the user can track.
 Recurring events of one series (or one grouping rule) in one ISO week share a `group_key`.
 
+The owner's side (also behind the client API, [CLIENT-API.md](CLIENT-API.md#changes-in-114-calendar-suggestions-manual-entries)):
+
+```php
+$list     = $calendarSuggestions->pending($user, 'org-a', $from, $to);          // {groups, singles}
+$outcomes = $calendarSuggestions->accept($user, $ids, null, null, 'note');      // one `calendar` entry per occurrence
+$calendarSuggestions->dismiss($user, null, $groupKey);
+
+// Entries without a timer (POST entries; refuses overlaps, locked periods, > 24 h, future, too old)
+$entry = $manualEntries->create($user, $taskId, $start, $end, TimeEntrySource::Manual, 'Fixed the build');
+```
+
+`TimeTrackEvents::TIME_ENTRY_CREATED` fires for each of these entries (TaskBoard aggregates it).
+
 
 Since 1.11: `TimeTrackEvents::TIME_ENTRY_IMPORTED` (`TimeEntryImportedEvent`) after an imported entry is created or
 changed, and `TimeTrackEvents::TIME_ENTRIES_REMOVED` (`TimeEntriesRemovedEvent`: scope, count, seconds per task, owner

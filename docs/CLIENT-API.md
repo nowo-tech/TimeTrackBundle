@@ -8,6 +8,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in 1.14 (calendar suggestions, manual entries)](#changes-in-114-calendar-suggestions-manual-entries)
 - [Changes in 1.13 (working time, timesheets, task effort)](#changes-in-113-working-time-timesheets-task-effort)
 - [Notes](#notes)
 - [Changes in 1.11 (imported entries)](#changes-in-111-imported-entries)
@@ -36,6 +37,30 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in 1.14 (calendar suggestions, manual entries)
+
+Additive; with `calendar` and `manual_entries` off (the default) every new route answers `404 not_found`.
+
+- **Scopes** `entries:write`, `suggestions:read`, `suggestions:write` — never part of the default grant (like the 1.13
+  ones): ask for them explicitly (device flow `scopes`); old tokens answer `403 insufficient_scope`.
+- **`GET me`**: `features.calendar_suggestions` (calendar suggestions on and the user has a tenant scope) and
+  `features.manual_entries` (`POST entries` on).
+- **CORS**: `Access-Control-Allow-Methods` now lists `DELETE` (calendar connection revoke).
+- No route ever returns an event title, description, attendee, location or provider id: suggestions carry the task id,
+  the time range and opaque ids only. Get task titles through `GET tasks` or `resolve-keys`.
+
+| Method and path | Scope | Body / query | Answers |
+| --- | --- | --- | --- |
+| `GET /api/time-track/calendar/connections` | `suggestions:read` | `scope?` | 200 `{scopeKey, connections: [{id, provider, mode, status, scopeKey, lastSyncAt, lastErrorCode, consentVersion, consentedAt}], connectUrls: {google, microsoft}}` (host https links or null); 404 |
+| `DELETE /api/time-track/calendar/connections/{id}` | `suggestions:write` | — | 204 (the host revokes the token and the grant; the connection, its suggestions and the user's rules in that scope are deleted); 404 for unknown or other users' ids |
+| `GET /api/time-track/suggestions` | `suggestions:read` | `scope?`, `from?`, `to?` (RFC 3339; default and earliest: `calendar.lookback_days` back; latest: now), `refresh?` (`1`: sync now, at most once per 5 minutes per token, else 429) | 200 `{scopeKey, from, to, groups: [item], singles: [item], ignored}`; item `{groupKey, taskId, occurrences: [{id, startsAt, endsAt, seconds}], totalSeconds}`; `ignored` = events of the refresh that matched nothing (null without `refresh`); 400 bad dates |
+| `POST /api/time-track/suggestions/accept` | `suggestions:write` **and** `entries:write` | `{ids: [1-100 ids] \| groupKey, taskId?, note?}` | 200 `{outcomes: [{id, entryId}\|{id, error}]}` with `error` `period_locked`, `period_submitted`, `overlap`, `not_trackable`, `entry_too_old`, `not_found` (unknown, another user's or already decided); one `calendar` entry per occurrence, partial success allowed |
+| `POST /api/time-track/suggestions/dismiss` | `suggestions:write` | `{ids \| groupKey}` | 200 `{dismissed: [ids]}` (dismissed suggestions are not suggested again until they expire) |
+| `POST /api/time-track/suggestions/resolve-keys` | `suggestions:read` | `{scopeKey?, keys: [1-50 strings of 1-32 characters]}` | 200 `{matches: {key: {taskId, title, boardId, trackable}}}` (title and board only when trackable; unknown keys left out); 60 / min per token; 400; 404 |
+| `POST /api/time-track/entries` | `entries:write` | header `Idempotency-Key` (1–64 visible characters, required); `{taskId, startedAt, endedAt, source: manual\|calendar, note?}` (RFC 3339 with offset) | 201 `{entry}` (`metadata.origin` = source); 400 `invalid_request`; 403 `task_forbidden`; 409 `period_locked` (+ `lockedThrough`), `period_submitted`, `overlap` (a live entry or the running timer); 422 `invalid_range` (end ≤ start), `entry_too_long` (> 24 h), `entry_in_future`, `entry_too_old` (> `manual_entries.max_age_days`), `idempotency_mismatch`; 120 / h per token; 404 when `manual_entries.enabled` is false |
+
+The same `Idempotency-Key` and body get the same answer for 24 h (201, 409 and 422 are replayed).
 
 ## Changes in 1.13 (working time, timesheets, task effort)
 
@@ -178,8 +203,8 @@ calls `ClientTokenRevoker::revokeByCredential()`.
 `timer:read`, `timer:write`, `tasks:read`, `entries:read`, and since 1.13 `workday:read`, `workday:write`,
 `balance:read`, `timesheet:read`, `timesheet:write`. A login grants what the authenticator returns
 (`ClientAuthResult::success($user, $credentialId, $scopes)`, default the first four); a device grants what it asked for
-and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 scopes always need an explicit grant.
-`entries:write` is not part of 1.13.
+and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 scopes and, since 1.14, `entries:write`,
+`suggestions:read` and `suggestions:write` always need an explicit grant.
 
 ## Errors
 
@@ -197,6 +222,8 @@ and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 s
 | 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
 | 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
+| 409 | `overlap` | Since 1.14: `POST entries` / an accepted suggestion overlaps a live entry or the running timer |
+| 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 

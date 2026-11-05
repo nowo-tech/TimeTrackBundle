@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
 use Nowo\TimeTrackBundle\Calendar\CalendarRefHasher;
 use Nowo\TimeTrackBundle\Calendar\CalendarRuleService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
+use Nowo\TimeTrackBundle\Calendar\CalendarSuggestionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
 use Nowo\TimeTrackBundle\Calendar\CalendarWorkingHours;
 use Nowo\TimeTrackBundle\Calendar\GoogleCalendarEventSource;
@@ -44,6 +45,7 @@ use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
 use Nowo\TimeTrackBundle\Command\CalendarSyncCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsPurgeCommand;
+use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
@@ -83,6 +85,7 @@ use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
+use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
@@ -502,6 +505,42 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(CalendarSyncCommand::class, (new Definition(CalendarSyncCommand::class))
             ->setArguments(['$sync' => new Reference(CalendarSyncService::class)])
             ->addTag('console.command'));
+
+        // Since 1.14: entries without a timer (POST entries, accepted suggestions) and the calendar client API.
+        /** @var array{enabled: bool, max_age_days: int} $manual */
+        $manual = $config['manual_entries'];
+        $container->setParameter('nowo_time_track.manual_entries', $manual);
+        $container->setDefinition(ManualEntryService::class, (new Definition(ManualEntryService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$timerService'    => new Reference(TimerService::class),
+                '$entries'         => new Reference(TimeEntryRepositoryInterface::class),
+                '$timers'          => new Reference(ActiveTimerRepositoryInterface::class),
+                '$taskAccess'      => new Reference(TaskAccessCheckerInterface::class),
+                '$eventDispatcher' => $dispatchRef,
+                '$enabled'         => $manual['enabled'],
+                '$maxAgeDays'      => $manual['max_age_days'],
+                '$periodLockGuard' => new Reference(PeriodLockGuard::class),
+                '$scopeProvider'   => $scopeRef,
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(CalendarSuggestionService::class, (new Definition(CalendarSuggestionService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$suggestions'     => new Reference(CalendarSuggestionRepositoryInterface::class),
+                '$entries'         => new Reference(ManualEntryService::class),
+                '$taskAccess'      => new Reference(TaskAccessCheckerInterface::class),
+                '$settings'        => new Reference(CalendarSettings::class),
+                '$resolver'        => $resolverRef,
+                '$eventDispatcher' => $dispatchRef,
+            ]));
+        $container->getDefinition(TimeTrackCalendarApiController::class)
+            ->setArgument('$clock', $clockRef);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$calendar', new Reference(CalendarConnectionService::class))
+            ->setArgument('$manualEntries', new Reference(ManualEntryService::class));
     }
 
     /**

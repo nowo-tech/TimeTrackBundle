@@ -67,4 +67,10 @@ final class TimeTrackEvents
 
     /** Since 1.14: {@see CalendarSyncFinishedEvent} — one connection was synced (counts and error code only). */
     public const CALENDAR_SYNC_FINISHED = 'nowo_time_track.calendar.sync_finished';
+
+    /** Since 1.14: {@see TimeEntryCreatedEvent} — an entry was created without a timer (`POST entries`, an accepted calendar suggestion). */
+    public const TIME_ENTRY_CREATED = 'nowo_time_track.time_entry.created';
+
+    /** Since 1.14: {@see CalendarSuggestionDecidedEvent} — calendar suggestions were accepted or dismissed (ids only). */
+    public const CALENDAR_SUGGESTION_DECIDED = 'nowo_time_track.calendar.suggestion_decided';
 }

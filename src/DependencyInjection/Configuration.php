@@ -177,6 +177,7 @@ final class Configuration implements ConfigurationInterface
                 ->append($this->workingTimeNode())
                 ->append($this->timesheetsNode())
                 ->append($this->calendarNode())
+                ->append($this->manualEntriesNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
                     ->addDefaultsIfNotSet()
@@ -443,6 +444,56 @@ final class Configuration implements ConfigurationInterface
                                     ->children()
                                         ->scalarNode('path')->defaultValue('/api/time-track/timesheets/{periodKey}/withdraw')->end()
                                         ->scalarNode('name')->defaultValue('nowo_time_track_api_timesheet_withdraw')->end()
+                                    ->end()
+                                ->end()
+                                // Since 1.14 (contract §10.3).
+                                ->arrayNode('calendar_connections')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/calendar/connections')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_calendar_connections')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('calendar_connection_revoke')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/calendar/connections/{id}')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_calendar_connection_revoke')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions_accept')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions/accept')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions_accept')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions_dismiss')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions/dismiss')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions_dismiss')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions_resolve_keys')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions/resolve-keys')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions_resolve_keys')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('entries_create')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/entries')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_entries_create')->end()
                                     ->end()
                                 ->end()
                             ->end()
@@ -861,6 +912,31 @@ final class Configuration implements ConfigurationInterface
             ->validate()
                 ->ifTrue(static fn (array $v): bool => $v['enabled'] && in_array('server', $v['modes'], true) && !is_string($v['credential_provider']))
                 ->thenInvalid('calendar.credential_provider is required when the server mode is enabled.')
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.14: `manual_entries` (contract §10.3, Q-O7): `POST entries` for past entries without a timer (sources
+     * `manual` and `calendar`). Off by default.
+     */
+    private function manualEntriesNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('manual_entries'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('POST entries on the client API (default off). Accepting calendar suggestions does not depend on it.')
+                    ->defaultFalse()
+                ->end()
+                ->integerNode('max_age_days')
+                    ->info('Oldest accepted start, in days before now.')
+                    ->defaultValue(31)
+                    ->min(1)
+                    ->max(366)
+                ->end()
             ->end();
 
         return $node;

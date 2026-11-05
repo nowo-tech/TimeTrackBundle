@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Routing;
 
+use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
@@ -100,6 +101,18 @@ final class TimeTrackRouteLoader extends Loader
                 'timesheet_submit'   => ['timesheetSubmit', ['POST', 'OPTIONS'], $workingTime],
                 'timesheet_withdraw' => ['timesheetWithdraw', ['POST', 'OPTIONS'], $workingTime],
             ];
+            // Since 1.14 (contract §10.3): calendar suggestions and entries without a timer (404 while off).
+            $calendar = TimeTrackCalendarApiController::class;
+            $apiMap += [
+                'calendar_connections'       => ['connections', ['GET', 'OPTIONS'], $calendar],
+                'calendar_connection_revoke' => ['connectionRevoke', ['DELETE', 'OPTIONS'], $calendar],
+                'suggestions'                => ['suggestions', ['GET', 'OPTIONS'], $calendar],
+                'suggestions_accept'         => ['accept', ['POST', 'OPTIONS'], $calendar],
+                'suggestions_dismiss'        => ['dismiss', ['POST', 'OPTIONS'], $calendar],
+                'suggestions_resolve_keys'   => ['resolveKeys', ['POST', 'OPTIONS'], $calendar],
+                // Same path as GET entries: POST only (the GET route answers the preflight).
+                'entries_create' => ['createEntry', ['POST'], $calendar],
+            ];
             if ($this->deviceFlowEnabled) {
                 $apiMap['device_code']  = ['code', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
                 $apiMap['device_token'] = ['token', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
@@ -129,6 +142,8 @@ final class TimeTrackRouteLoader extends Loader
     public const REQUIREMENTS = [
         'action'    => 'clock-in|break-start|break-end|clock-out',
         'periodKey' => 'current|previous|\d{4}-W\d{2}|\d{4}-\d{2}',
+        // Since 1.14: a calendar connection id.
+        'id' => '[A-Za-z0-9-]{1,36}',
     ];
 
     /**
