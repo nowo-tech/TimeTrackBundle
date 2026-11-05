@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
@@ -197,13 +198,39 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         self::assertSame([['ownerRef' => $owner, 'scopeKey' => 'org-a']], $timesheets->ledgerChains('org-a', $owner));
         self::assertCount(1, $timesheets->ledgerChains(null, null));
 
-        // Retention: everything that ended before 2026-11-02 goes (week 44 with its audit rows, the 2026-10-01 opening).
-        self::assertSame(['timesheets' => 1, 'events' => 2, 'ledger' => 1], $timesheets->purgeBefore('2026-11-02'));
-        self::assertNull($timesheets->find($week44->getId()));
-        self::assertSame([], $events->findByTimesheet($week44->getId()));
-        self::assertNull($ledger->find($created)->getTimesheet(), 'a later line keeps its row, its timesheet link is cleared');
+        // Retention: the chain prefix effective before 2026-11-02 goes (the 2026-10-01 opening); the first line kept is
+        // marked as the chain's restart, and week 44 stays while a kept ledger line still points to it.
+        self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 1], $timesheets->purgeBefore('2026-11-02'));
+        self::assertNotNull($timesheets->find($week44->getId()));
+        $kept = $ledger->find($created);
+        self::assertSame('2026-11-02', $kept->getPurgedBefore());
+        self::assertSame($kept->getHash(), $kept->computeHash(), 'the restart mark is not part of the hash');
+        self::assertNull($ledger->findReversalOf($created)->getPurgedBefore());
         self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 0], $timesheets->purgeBefore('2026-11-02'));
 
+        // A later cut-off takes the rest of the chain and then every timesheet ended before it (week 44 with its rows).
+        $first  = $timesheets->purgeBefore('2026-11-10', 2);
+        $second = $timesheets->purgeBefore('2026-11-10', 2);
+        self::assertSame(['timesheets' => 4, 'events' => 2, 'ledger' => 2], ['timesheets' => $first['timesheets'] + $second['timesheets'], 'events' => $first['events'] + $second['events'], 'ledger' => $first['ledger'] + $second['ledger']]);
+        self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 0], $timesheets->purgeBefore('2026-11-10', 2));
+        self::assertNull($timesheets->find($week44->getId()));
+        self::assertSame([], $events->findByTimesheet($week44->getId()));
+        self::assertSame([], $ledger->findByOwner($owner, 'org-a'));
+    }
+
+    public function testTheLedgerChainRefusesAFork(): void
+    {
+        $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $owner  = (string) $this->user->getId();
+        $first  = new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable('2026-11-01 08:00:00'), null, 'Opening');
+        $ledger->append($first);
+        $ledger->flush();
+        $ledger->append(new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-02', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-11-01 09:00:00'), $first->getHash(), 'One'));
+        $ledger->flush();
+
+        $this->expectException(UniqueConstraintViolationException::class);
+        $ledger->append(new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-03', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-11-01 09:00:01'), $first->getHash(), 'Two'));
+        $ledger->flush();
     }
 
     public function testAFailedTransactionIsRethrown(): void

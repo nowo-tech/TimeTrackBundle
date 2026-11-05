@@ -70,6 +70,10 @@ final class PeriodTest extends TestCase
         yield 'week 53 of a 52-week year' => [TimesheetPeriodKind::Week, '2025-W53'];
         yield 'month pattern' => [TimesheetPeriodKind::Month, '2026-W45'];
         yield 'month 13' => [TimesheetPeriodKind::Month, '2026-13'];
+        yield 'week before the window' => [TimesheetPeriodKind::Week, '1999-W52'];
+        yield 'week after the window' => [TimesheetPeriodKind::Week, '9998-W52'];
+        yield 'month before the window' => [TimesheetPeriodKind::Month, '0001-01'];
+        yield 'month after the window' => [TimesheetPeriodKind::Month, '2100-01'];
     }
 
     #[DataProvider('invalidKeys')]
@@ -85,5 +89,16 @@ final class PeriodTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         Period::date('2026-02-30');
+    }
+
+    public function testTheWindowBoundsKeysButNotStoredDates(): void
+    {
+        self::assertSame('2000-01-01', Period::fromKey(TimesheetPeriodKind::Month, '2000-01')->start);
+        self::assertSame('2099-12-31', Period::fromKey(TimesheetPeriodKind::Month, '2099-12')->end);
+        self::assertTrue(Period::inWindow('2026-11-05'));
+        self::assertFalse(Period::inWindow('1999-12-31'));
+        self::assertFalse(Period::inWindow('2100-01-01'));
+        // The period of a stored date is never refused (entries and lock checks).
+        self::assertSame('1999-W52', Period::containing(TimesheetPeriodKind::Week, '1999-12-31')->key);
     }
 }
