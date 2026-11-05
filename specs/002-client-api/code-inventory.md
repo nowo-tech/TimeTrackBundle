@@ -28,6 +28,9 @@ requirement ids.
 | `Client/ClientResponseFactory.php` | changed | JSON / error responses, exact-origin CORS | FR-API-008 |
 | `Client/ClientTokenRevoker.php` | new | Revoke by credential | FR-API-002 |
 | `Client/ClientUserProfileProviderInterface.php` | new | me.displayName / workingHours (host) | FR-API-004 |
+| `Client/ClientUserDaysOffProviderInterface.php` | new (1.12) | me.daysOff (host, optional extra of the profile provider) | FR-API-017 |
+| `Client/ClientDaysOffNormalizer.php` | new (1.12) | strict validation of me.daysOff | FR-API-017 |
+| `Client/ClientWorkingHoursNormalizer.php` | new (1.12) | me.workingHours `days` / `slots` → `slots` | FR-API-017 |
 | `Client/ConfigClientApiSettingsProvider.php` | new | Settings from config | FR-API-011 |
 | `Client/ConfigClientDistributionProvider.php` | new | Distribution from config | FR-API-012 |
 | `Client/ConfigClientMinSupportedVersionProvider.php` | new | Min supported versions from config — 1.9.1 | FR-API-015 |

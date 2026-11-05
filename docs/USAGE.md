@@ -107,7 +107,7 @@ Full reference with request / response examples: [CLIENT-API](CLIENT-API.md).
 |--------|------|-------|-------------|
 | POST | `/api/time-track/login` | — | Session token `{token, expiresAt, scopes}` |
 | POST | `/api/time-track/logout` | any | Revoke the presented token |
-| GET | `/api/time-track/me` | any | `{userId, identifier, displayName, scopes, workingHours}` |
+| GET | `/api/time-track/me` | any | `{userId, identifier, displayName, scopes, workingHours, locale, daysOff, features, limits}` (`workingHours` in the `slots` shape since 1.12) |
 | GET | `/api/time-track/tasks` | `tasks:read` | Trackable tasks; `?search=&limit=&offset=` (`limit` 1–50) |
 | GET | `/api/time-track/timer` | `timer:read` | Active timer (204 if none) |
 | POST | `/api/time-track/timer/start` | `timer:write` | `{taskId, note?, source?}`; per-request task check |
@@ -175,7 +175,10 @@ your page (the default page does): `X-Frame-Options: DENY`, `Content-Security-Po
 **`ClientApiSettingsProviderInterface::getSettings(): ClientApiSettings`** — origins and rate limits from your
 instance settings (read per request). **`ClientDistributionProviderInterface::getDistribution(): ClientDistribution`**
 — download links. **`ClientUserProfileProviderInterface`** — `getDisplayName()` / `getWorkingHours()` of `GET me`; since 1.11 the same
-service may also implement **`ClientUserLocaleProviderInterface`** (`getLocale()`, the `locale` of `GET me`).
+service may also implement **`ClientUserLocaleProviderInterface`** (`getLocale()`, the `locale` of `GET me`) and, since
+1.12, **`ClientUserDaysOffProviderInterface`** (`getDaysOff($user, $from, $to)`, the `daysOff` of `GET me`: holidays and
+vacations from today to today + 60 days). `getWorkingHours()` may return the `slots` or the 1.9 `days` shape; `GET me`
+always sends `slots` ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)).
 **`ClientMinSupportedVersionProviderInterface::getMinSupportedVersion(ClientType): ?string`** (1.9.1) — `GET me`'s
 `minSupportedVersion` for the token's client type (`null` = key absent). Default: `client_distribution.min_supported_version.*`;
 a host with a release manifest backs it there (Beacon reads its `stable.json`) and sets

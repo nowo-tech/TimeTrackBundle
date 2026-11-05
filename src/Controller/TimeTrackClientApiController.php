@@ -12,12 +12,15 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
+use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
@@ -228,7 +231,9 @@ final readonly class TimeTrackClientApiController
      * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
      * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1), and (1.10)
      * `features` (object of booleans; `workday` and `monitoring` reserved, always false) and `limits` (backdate and
-     * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null).
+     * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null), and (1.12)
+     * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
+     * shape ({@see ClientWorkingHoursNormalizer}).
      */
     public function me(Request $request): Response
     {
@@ -237,14 +242,16 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $user = $principal->user;
-        $body = [
+        $user         = $principal->user;
+        $workingHours = ClientWorkingHoursNormalizer::normalize($this->profileProvider->getWorkingHours($user));
+        $body         = [
             'userId'       => UserIdResolver::getId($user),
             'identifier'   => $user->getUserIdentifier(),
             'displayName'  => $this->profileProvider->getDisplayName($user),
             'scopes'       => ClientScope::values($principal->token->getScopes()),
-            'workingHours' => $this->profileProvider->getWorkingHours($user),
+            'workingHours' => $workingHours,
             'locale'       => $this->userLocale($user),
+            'daysOff'      => $this->daysOff($user, $workingHours['timezone'] ?? null),
         ];
         $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
         if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
@@ -624,6 +631,24 @@ final readonly class TimeTrackClientApiController
         }
 
         return is_string($locale) && preg_match(self::LOCALE_PATTERN, $locale) === 1 ? $locale : null;
+    }
+
+    /**
+     * Since 1.12: the user's days off from today to today + {@see ClientDaysOffNormalizer::HORIZON_DAYS} in the
+     * working-hours time zone (else the PHP default one) — from the profile provider when it implements
+     * {@see ClientUserDaysOffProviderInterface}, validated by {@see ClientDaysOffNormalizer} — or null when unknown.
+     *
+     * @return list<array{date: string, kind: string, label: string|null}>|null
+     */
+    private function daysOff(UserInterface $user, ?string $timezone): ?array
+    {
+        if (!$this->profileProvider instanceof ClientUserDaysOffProviderInterface) {
+            return null;
+        }
+
+        [$from, $to] = ClientDaysOffNormalizer::range($this->clock->now(), $timezone ?? date_default_timezone_get());
+
+        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'));
     }
 
     /**

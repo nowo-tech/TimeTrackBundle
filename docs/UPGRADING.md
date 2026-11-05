@@ -52,6 +52,33 @@
 
 ## Unreleased
 
+Planned **1.12.0**. No schema change, no configuration change.
+
+**`GET me.workingHours` is normalised.** If your `ClientUserProfileProviderInterface::getWorkingHours()` returns the
+documented 1.9 `days` shape, the clients now receive it as `slots` (before, they could not read it and treated it as
+"outside working hours"). The `slots` shape is also accepted and is the recommended one. Check that your value is valid:
+an unknown time zone, a bad day or time, `from` = `to`, more than 100 ranges or a missing `slots` / `days` key now makes
+`workingHours` `null` (no restriction in the clients) instead of being passed through. Overnight ranges are split at
+midnight and overlapping ones merged ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)).
+
+**`GET me.daysOff` (new, optional).** Always present, `null` by default. To publish holidays and vacations, let your
+profile provider also implement `ClientUserDaysOffProviderInterface`:
+
+```php
+public function getDaysOff(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to): ?array
+{
+    // $from = start of today, $to = end of today + 60 days, in the user's working-hours time zone.
+    return [
+        ['date' => '2026-12-08', 'kind' => 'holiday', 'label' => 'Inmaculada Concepción'],
+        ['date' => '2026-12-28', 'kind' => 'vacation'],
+    ];
+}
+```
+
+Dates are local `YYYY-MM-DD` in that time zone; `kind` is `holiday` or `vacation`; `label` is optional plain text (cut
+to 80 characters; do not HTML-escape it). One malformed entry makes `daysOff` `null`. A class implementing
+`ClientUserProfileProviderInterface` keeps working unchanged.
+
 ## To 1.11.0
 
 **Schema (every host).** Additive and nullable; existing rows are unchanged. Doctrine hosts run

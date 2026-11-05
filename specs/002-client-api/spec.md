@@ -68,6 +68,7 @@ URLs, no script / style. Test: `DeviceFlowTest::testDownloadsPartialRendersSafeL
 | FR-API-014 | Errors `{error: code, message}`. |
 | FR-API-015 | (1.9.1) `GET me` adds `minSupportedVersion` for the token's client type from `ClientMinSupportedVersionProviderInterface` (default: semver-validated `client_distribution.min_supported_version.*`); key absent when null. `ClientDistributionProviderInterface` unchanged. |
 | FR-API-016 | (1.9.1, CL-05) `TimerService::stop()` (also `timer/switch`, idle split) records an entry only when its conditional delete of the timer row affected one row (`ConditionalActiveTimerRepositoryInterface`, one transaction); concurrent stops record one entry. Stores without it keep 1.x behaviour. |
+| FR-API-017 | (1.12) `GET me.workingHours` is normalised to `{timezone, slots: [{day 1-7, from, to}]}` from the `slots` or the 1.9 `days` provider shape (`ClientWorkingHoursNormalizer`: overnight split at midnight, overlaps merged, malformed = null). `GET me.daysOff` (today → +60 days, `{date, kind holiday\|vacation, label?}`) from the optional `ClientUserDaysOffProviderInterface` on the profile provider, strictly validated (`ClientDaysOffNormalizer`; malformed = null). |
 
 ## Deviations from the contract
 

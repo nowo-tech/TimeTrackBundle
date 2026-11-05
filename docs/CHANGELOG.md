@@ -43,6 +43,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned **1.12.0** (minor, additive): days off on `GET me` and one shape for `workingHours`.
+
+### Added
+
+- **`GET me.daysOff`**: the user's holidays and vacations from today to today + 60 days, a list of
+  `{date: "YYYY-MM-DD", kind: "holiday"|"vacation", label: ?string}` (dates in the working-hours time zone), or `null`
+  when unknown. Always present. TimeTrack Desktop and the browser extension already read it.
+- **`ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to): ?array`**:
+  optional extra of the `client_api.profile_provider` service (like `ClientUserLocaleProviderInterface`).
+  `NullClientUserProfileProvider` implements it and returns `null`.
+- **`ClientDaysOffNormalizer`**: strict validation of the provider value (real dates, known kinds, labels plain text
+  ≤ 80 characters without control characters, ≤ 400 entries; out-of-range entries dropped, one per date, sorted). A
+  malformed value is sent as `null`.
+- **`ClientWorkingHoursNormalizer`**: normalises `workingHours` for `GET me`.
+
+### Changed
+
+- **`GET me.workingHours` is always `{timezone, slots: [{day: 1-7, from: "HH:MM", to: "HH:MM"}]}` or `null`.** The
+  provider may return the `slots` shape or the documented 1.9 `days` shape (`{timezone, days: {mon: [["09:00","17:00"]]}}`),
+  which the clients never understood; both are normalised to `slots`. Overnight ranges are split at midnight, overlapping
+  or touching ranges of a day are merged, `24:00` becomes `23:59`. Malformed values (unknown time zone, bad day or time,
+  empty range, more than 100 ranges, no `slots` / `days`) are sent as `null` instead of being passed through.
+
 ## [1.11.0] - 2026-11-05
 
 Imported time entries (ClickUp import, Beacon spec 208; contract `clickup-import-1.24/CONTRACT.md` v1.0 §11). Minor:

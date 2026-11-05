@@ -179,7 +179,7 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.credential_state` | `null` | `ClientCredentialStateInterface`, checked on every request (default: always active) |
 | `client_api.credential_issuer` | `null` | `ClientCredentialIssuerInterface`, called on device approval (default: opaque `device:<uuid>`) |
 | `client_api.task_access_checker` | `null` | `TaskAccessCheckerInterface` for `timer/start` / `timer/switch` (default: the task provider decides) |
-| `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`; since 1.11 also `locale` when it implements `ClientUserLocaleProviderInterface`) |
+| `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`; since 1.11 also `locale` when it implements `ClientUserLocaleProviderInterface`; since 1.12 also `daysOff` when it implements `ClientUserDaysOffProviderInterface`). `workingHours` may use the `slots` or the 1.9 `days` shape: `GET me` always sends `slots` ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)) |
 | `client_api.rate_limit.cache_pool` | `cache.app` | PSR-6 pool of the API counters, shared by all workers (Redis in production) |
 | `client_api.rate_limit.per_token` | `60` | Requests per token per window (`0` = off) |
 | `client_api.rate_limit.per_ip` | `300` | Requests per client IP per window, every API route (`0` = off) |
