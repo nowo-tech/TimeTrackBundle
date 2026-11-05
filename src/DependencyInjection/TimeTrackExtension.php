@@ -370,7 +370,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$minSupportedVersionProvider', new Reference(ClientMinSupportedVersionProviderInterface::class))
             ->setArgument('$taskPresenter', new Reference(ClientTaskPresenter::class))
             ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class))
-            ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class));
+            ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class))
+            ->setArgument('$translator', new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE));
         $container->getDefinition(TimeTrackClientDeviceController::class)
             ->setArgument('$verificationUri', $device['verification_uri'])
             ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);

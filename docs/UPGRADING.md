@@ -76,6 +76,8 @@ SQLite), or rename it when it already has the columns `(ended_at, id)` (`ALTER T
 <name> TO time_track_entries_ended_idx` on MySQL 8, `ALTER INDEX <name> RENAME TO time_track_entries_ended_idx` on
 PostgreSQL) and remove the `CREATE INDEX` line. A single-column `(ended_at)` index is covered by the new one: drop it.
 
+A reference migration (MySQL) ships in the demo: `demo/symfony8/migrations/Version20261105000000.php`.
+
 **Downgrade.** 1.10 cannot hydrate `source = 'import'` (`TimeEntrySource::from()` throws): delete the imported rows
 (`DELETE FROM time_track_entries WHERE source = 'import'`) before going back. The columns and indexes can stay.
 
@@ -93,6 +95,10 @@ PostgreSQL) and remove the `CREATE INDEX` line. A single-column `(ended_at)` ind
 - **Deleting tasks or boards never deletes tracked time** (owner rule 2026-11-05). `removeForTasks()` /
   `removeForBoard()` / `remove()` are for an **explicit manager action** on imported time only; do not call them from
   a task or board deletion. Account erasure may call `removeForUser()`.
+- `GET me` has a new key `locale` (string or null). To fill it, let your `client_api.profile_provider` service also
+  implement `Client\ClientUserLocaleProviderInterface`; otherwise the user's `getLocale()` is used when it exists.
+- `upsertMany()` refuses a batch with two rows for the same `(externalSource, externalId)` (`rows` / `duplicate`):
+  send each identity once per call.
 - A custom `TimeEntryRepositoryInterface` store keeps working; only `ImportedTimeEntryWriter` needs
   `ImportedTimeEntryRepositoryInterface` (it throws `LogicException` otherwise).
 - Clients (Desktop, Extension): render `source: import` as *Imported*, never offer edit, and skip `readOnly` entries

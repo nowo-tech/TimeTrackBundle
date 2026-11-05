@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Dto\BackdateLimits;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Event\TimeEntriesRemovedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
@@ -32,12 +33,16 @@ use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
+use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use PHPUnit\Framework\Attributes\DataProvider;
 use stdClass;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
+use function array_filter;
 use function array_map;
+use function array_values;
 use function iterator_to_array;
 use function str_repeat;
 
@@ -153,6 +158,8 @@ final class ImportedEntriesTest extends FunctionalTestCase
         yield 'zero' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $end, 0), 'durationSeconds', 'not_positive'];
         yield 'longer than the span' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $end, 3661), 'durationSeconds', 'longer_than_span'];
         yield 'over 31 days' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $start->modify('+32 days'), 3600), 'durationSeconds', 'max_entry_seconds'];
+        yield 'title not UTF-8' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', "T\xC3", null, $start, $end, 60), 'taskTitle', 'encoding'];
+        yield 'description not UTF-8' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $end, 60, null, "ok\xFF"), 'description', 'encoding'];
     }
 
     #[DataProvider('invalidData')]
@@ -164,6 +171,85 @@ final class ImportedEntriesTest extends FunctionalTestCase
         } catch (InvalidImportedTimeEntryException $exception) {
             self::assertSame([$field, $rule], [$exception->field, $exception->rule]);
         }
+    }
+
+    public function testExactlyThirtyOneDaysIsAccepted(): void
+    {
+        $start = new DateTimeImmutable('2026-01-01 00:00:00');
+        $data  = $this->writer()->validate($this->data('e', seconds: ImportedTimeEntryWriter::DEFAULT_MAX_ENTRY_SECONDS, start: $start, end: $start->modify('+31 days')));
+        self::assertSame(2_678_400, $data->durationSeconds);
+    }
+
+    public function testTheTitleIsCleanedToOneLine(): void
+    {
+        self::assertSame('Fix login page', $this->writer()->validate($this->data('e', title: "\u{202E}Fix\r\nlogin\u{0007}page "))->taskTitle);
+    }
+
+    public function testTwoRowsForOneIdentityInABatchAreRefused(): void
+    {
+        try {
+            $this->writer()->upsertMany([[$this->user, $this->data('e-1')], [$this->user, $this->data('e-1', seconds: 60)]]);
+            self::fail('expected a refusal');
+        } catch (InvalidImportedTimeEntryException $exception) {
+            self::assertSame(['rows', 'duplicate'], [$exception->field, $exception->rule]);
+        }
+        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-1'));
+        self::assertSame(2, $this->writer()->upsertMany([[$this->user, $this->data('e-1')], [$this->user, $this->data('e-1', source: 'clickup:dir-2')]])->created, 'the same id in another source is another identity');
+    }
+
+    public function testAConcurrentInsertIsReadAgainAndBecomesAnUpdate(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $this->events = [];
+
+        $racing = new RacingImportedTimeEntryRepository($this->repository());
+        $racing->staleReads(1);
+        $result = (new ImportedTimeEntryWriter($racing, $this->dispatcher))->upsert($this->user, $this->data('e-1', seconds: 1800));
+
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $result->outcome);
+        self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
+        $this->entityManager()->clear();
+        self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
+        self::assertSame(1, $this->repository()->countByUsersAndPeriod([(string) $this->user->getId()], new DateTimeImmutable('2025-12-31'), new DateTimeImmutable('2026-01-02')));
+        self::assertCount(1, $this->events);
+
+        // A concurrent insert for another owner is still refused after the re-read.
+        $other  = $this->createUser('other@example.com');
+        $racing = new RacingImportedTimeEntryRepository($this->repository());
+        $racing->staleReads(1);
+        $this->expectException(ImportedEntryOwnerMismatchException::class);
+        (new ImportedTimeEntryWriter($racing, $this->dispatcher))->upsert($other, $this->data('e-1', seconds: 60));
+    }
+
+    public function testTimersIdleAndSwitchNeverTouchImportedEntries(): void
+    {
+        $clock  = new MockClock('2026-11-02 10:00:00');
+        $memory = new InMemoryTimeEntryRepository();
+        $import = TimeEntry::imported($this->user, $this->data('e-1', seconds: 7200, start: new DateTimeImmutable('2026-11-02 09:00:00'), end: new DateTimeImmutable('2026-11-02 11:00:00')));
+        $memory->save($import);
+        $dispatcher = new EventDispatcher();
+        $fired      = [];
+        foreach ([TimeTrackEvents::TIME_ENTRY_IMPORTED, TimeTrackEvents::TIME_ENTRIES_REMOVED] as $name) {
+            $dispatcher->addListener($name, static function (object $event) use (&$fired): void {
+                $fired[] = $event;
+            });
+        }
+        $service = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), $memory, $dispatcher, $clock);
+
+        $service->start($this->user, 'task-1', ClientType::Desktop);
+        $clock->sleep(1800);
+        $service->switchTo($this->user, 'task-2', ClientType::Desktop);
+        $clock->sleep(1800);
+        $service->resolveIdle($this->user, new DateTimeImmutable('2026-11-02 10:40:00'), new DateTimeImmutable('2026-11-02 10:50:00'), IdleResolution::Discard);
+        $service->stop($this->user);
+
+        $entries = $memory->findByUserAndPeriod((string) $this->user->getId(), new DateTimeImmutable('2026-11-02 00:00:00'), new DateTimeImmutable('2026-11-03 00:00:00'));
+        $stored  = array_values(array_filter($entries, static fn (TimeEntry $e): bool => $e->isReadOnly()));
+        self::assertSame([$import], $stored);
+        self::assertSame(7200, $import->getDurationSeconds());
+        self::assertSame('2026-11-02 11:00:00', $import->getEndedAt()->format('Y-m-d H:i:s'));
+        self::assertCount(2, array_filter($entries, static fn (TimeEntry $e): bool => $e->getSource()->isLive()), 'start → switch → stop wrote two live entries');
+        self::assertSame([], $fired);
     }
 
     public function testValidateFallsBackToTheTaskIdForAnEmptyTitleAndCutsLongTitles(): void

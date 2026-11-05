@@ -174,7 +174,8 @@ your page (the default page does): `X-Frame-Options: DENY`, `Content-Security-Po
 
 **`ClientApiSettingsProviderInterface::getSettings(): ClientApiSettings`** — origins and rate limits from your
 instance settings (read per request). **`ClientDistributionProviderInterface::getDistribution(): ClientDistribution`**
-— download links. **`ClientUserProfileProviderInterface`** — `getDisplayName()` / `getWorkingHours()` of `GET me`.
+— download links. **`ClientUserProfileProviderInterface`** — `getDisplayName()` / `getWorkingHours()` of `GET me`; since 1.11 the same
+service may also implement **`ClientUserLocaleProviderInterface`** (`getLocale()`, the `locale` of `GET me`).
 **`ClientMinSupportedVersionProviderInterface::getMinSupportedVersion(ClientType): ?string`** (1.9.1) — `GET me`'s
 `minSupportedVersion` for the token's client type (`null` = key absent). Default: `client_distribution.min_supported_version.*`;
 a host with a release manifest backs it there (Beacon reads its `stable.json`) and sets
@@ -215,7 +216,13 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 // $result->outcome: created | updated | unchanged (unchanged = nothing written, no event)
 ```
 
-- Idempotent by `(externalSource, externalId)`; `upsertMany()` takes up to 500 rows with one flush.
+- Idempotent by `(externalSource, externalId)`; `upsertMany()` takes up to 500 rows with one flush, each identity
+  at most once per call (`rows` / `duplicate` otherwise). When a concurrent run inserts an identity first, the
+  unique violation is read again once and the row becomes an update (still refused for another owner).
+- Validation (`InvalidImportedTimeEntryException`, field and rule only, never the value): source / id / task / board
+  patterns, valid UTF-8 title and description, `0 < duration ≤ end − start + 60 s`, one entry at most
+  `imports.max_entry_seconds` (31 days by default). The title is cleaned to one line and cut to 255; the description
+  is cleaned (controls and bidi overrides stripped, line breaks kept) and **never truncated**.
 - **The owner never changes**: re-associating someone's time is `removeForUser()` / `remove()` then `upsert()` for
   the new user (the host audits it).
 - Imported entries are **read-only** (`TimeEntry::isReadOnly()`, `canEditEntry()` always false) and are not live

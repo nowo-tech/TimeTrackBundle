@@ -97,8 +97,10 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 | --- | --- |
 | Imported time edited into worked (payroll) time | Read-only by source; `canEditEntry()` is false before any listener runs; no timer events; excluded from the backdate overlap clamp; `isLive()` / `findLiveByUserAndPeriod()` for host registers |
 | One tenant's import overwrites another's entry, or time moves silently between users | The writer refuses an owner change (`ImportedEntryOwnerMismatchException`); the external source carries the host scope; removals match the source exactly, never by prefix |
-| Duplicates on re-sync | Unique `(external_source, external_id)`; unchanged rows are not written |
-| Task title leaked to an owner without access | Imported entries of a task the owner cannot track show *Task not visible* in the API, export and reports |
+| Duplicates on re-sync | Unique `(external_source, external_id)`; unchanged rows are not written; two rows for one identity in a batch are refused; a unique violation from a concurrent run is re-read once and becomes an update (the owner check still applies) |
+| Malformed input from the source tool | Ids pattern-checked; title and description must be valid UTF-8; controls and bidi overrides stripped (title on one line, ≤ 255); descriptions kept in full (no cap; bounded only by what the host's HTTP client accepts) |
+| Task title leaked to an owner without access | Imported entries of a task the owner cannot track show the translated *Task not visible* in the API, export (JSON / CSV) and reports |
+| Time lost when tasks or boards are deleted | `time_track_entries` has no foreign key to tasks or boards: entries keep their `task_id` and snapshots and simply stop being linked. The bundle never calls `remove*()` itself |
 | Deleting imported time without authority | Single deletion needs a `delete_imported` grant (default deny); bulk removals are host calls after its own check; never a side effect of deleting tasks or boards |
 | Personal data in logs | The writer logs counts and the scope kind only, never descriptions, titles or ids of people |
 

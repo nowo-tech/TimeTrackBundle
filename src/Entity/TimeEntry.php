@@ -29,7 +29,10 @@ use const DATE_ATOM;
 #[ORM\UniqueConstraint(name: 'uniq_time_track_entries_external', columns: ['external_source', 'external_id'])]
 class TimeEntry
 {
-    /** Title the client API shows instead of the snapshot of an imported entry whose task the owner cannot see. */
+    /**
+     * Title shown instead of the snapshot of an imported entry whose task the owner cannot see, when no translator is
+     * available (the client API translates `reports.task_not_visible` when it has one).
+     */
     public const HIDDEN_TASK_TITLE = 'Task not visible';
 
     #[ORM\Id]
@@ -272,17 +275,18 @@ class TimeEntry
 
     /**
      * Client API shape. Since 1.11 it also has `billable`, `description`, `readOnly` and `taskVisible`; with
-     * `$taskVisible` false the title is {@see self::HIDDEN_TASK_TITLE} (imported entries of a task the owner cannot see).
-     * The external identity is never exposed.
+     * `$taskVisible` false the title is `$hiddenTitle` (the translated `reports.task_not_visible` in the client API,
+     * {@see self::HIDDEN_TASK_TITLE} by default): imported entries of a task the owner cannot see. The external identity
+     * is never exposed.
      *
      * @return array<string, mixed>
      */
-    public function toArray(bool $taskVisible = true): array
+    public function toArray(bool $taskVisible = true, string $hiddenTitle = self::HIDDEN_TASK_TITLE): array
     {
         return [
             'id'              => $this->id,
             'taskId'          => $this->taskId,
-            'taskTitle'       => $taskVisible ? $this->taskTitleSnapshot : self::HIDDEN_TASK_TITLE,
+            'taskTitle'       => $taskVisible ? $this->taskTitleSnapshot : $hiddenTitle,
             'boardId'         => $this->boardIdSnapshot,
             'startedAt'       => $this->startedAt->format(DATE_ATOM),
             'endedAt'         => $this->endedAt->format(DATE_ATOM),

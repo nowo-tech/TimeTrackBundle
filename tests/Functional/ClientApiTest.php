@@ -95,6 +95,7 @@ final class ClientApiTest extends FunctionalTestCase
             'displayName'  => null,
             'scopes'       => ['timer:read', 'timer:write', 'tasks:read', 'entries:read'],
             'workingHours' => null,
+            'locale'       => null,
             'features'     => ['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'monitoring' => false],
             'limits'       => ['backdate' => ['max_seconds' => 86400, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 10, 'answer_timeout_minutes' => 5, 'user_can_disable' => false]],
         ], $me);

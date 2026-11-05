@@ -72,6 +72,10 @@ additive nullable columns, one new enum case, two new indexes.
 - Client API, export (JSON / CSV) and the reports page: `billable`, `description`, `readOnly`, `taskVisible`; CSV
   appends `billable`, `description`, `imported`. The external identity is never exposed.
 - Translations `reports.source_import` and `reports.task_not_visible` in the 7 locales.
+- **`GET me` has `locale`** (requested by TimeTrack Desktop): the user's preferred locale (`es`, `pt_BR`, …) or `null`.
+  It comes from the profile provider when it also implements the new `Client\ClientUserLocaleProviderInterface`, else
+  from the user's own `getLocale()` when the user class has one; anything that is not a locale is sent as `null`.
+- Reference migration `demo/symfony8/migrations/Version20261105000000.php` (MySQL) for the new columns and indexes.
 
 ### Changed
 
@@ -79,8 +83,13 @@ additive nullable columns, one new enum case, two new indexes.
   them.
 - `TeamAccessGuard::canEditEntry()` is always `false` for an imported entry; no access-check listener can grant it.
 - **Masked titles**: an imported entry whose task its owner cannot track (`TaskProviderInterface::canUserTrack()`)
-  shows *Task not visible* (`TimeEntry::HIDDEN_TASK_TITLE`, `taskVisible: false`) in the client API, the export and
-  the reports page (`TimerService::hiddenTaskEntryIds()`).
+  shows the translated `reports.task_not_visible` (in the user's `me` locale; `TimeEntry::HIDDEN_TASK_TITLE` without a
+  translator) with `taskVisible: false` in the client API, the export (JSON / CSV) and the reports page
+  (`TimerService::hiddenTaskEntryIds()`).
+- **Writer hardening**: two rows for one external identity in one `upsertMany()` call are refused (`rows` /
+  `duplicate`); a unique violation on flush (a concurrent run inserted the identity first) is read again once, so the
+  row becomes an update and the owner check still applies; titles and descriptions must be valid UTF-8 (`encoding`);
+  the title is cleaned like the description and kept on one line.
 
 ## [1.10.3] - 2026-11-04
 

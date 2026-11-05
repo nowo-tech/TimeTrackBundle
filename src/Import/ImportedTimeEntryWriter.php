@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Import;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
@@ -19,9 +20,10 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 use function count;
+use function mb_check_encoding;
 use function mb_substr;
 use function preg_match;
-use function trim;
+use function str_replace;
 
 /**
  * Since 1.11: writes imported time entries ({@see TimeEntrySource::Import}), idempotently by
@@ -42,6 +44,9 @@ final readonly class ImportedTimeEntryWriter
 
     /** Default longest single imported entry: 31 days. */
     public const DEFAULT_MAX_ENTRY_SECONDS = 2_678_400;
+
+    /** Longest stored task title snapshot, in code points (the column length). */
+    public const MAX_TITLE_LENGTH = 255;
 
     /** The most rows one {@see self::upsertMany()} call takes. */
     public const MAX_BATCH = 500;
@@ -79,7 +84,9 @@ final readonly class ImportedTimeEntryWriter
 
     /**
      * Upserts up to {@see self::MAX_BATCH} rows with one flush. Every row is validated (and the owners checked) before
-     * anything is written: one bad row refuses the whole batch.
+     * anything is written: one bad row refuses the whole batch, and so do two rows for one external identity
+     * (`rows` / `duplicate`). When a concurrent run inserts one of the identities first (unique violation on flush),
+     * the batch is read again once and that row becomes an update.
      *
      * @param list<array{0: UserInterface, 1: ImportedTimeEntryData}> $rows
      */
@@ -88,9 +95,35 @@ final readonly class ImportedTimeEntryWriter
         if (count($rows) > self::MAX_BATCH) {
             throw new InvalidImportedTimeEntryException('rows', 'max_batch');
         }
+        $valid = [];
+        $keys  = [];
+        foreach ($rows as [$user, $data]) {
+            $data = $this->validate($data);
+            $key  = $data->externalSource . "\0" . $data->externalId;
+            if (isset($keys[$key])) {
+                // Two rows for one external identity would insert it twice (unique violation): the host must send one.
+                throw new InvalidImportedTimeEntryException('rows', 'duplicate');
+            }
+            $keys[$key] = true;
+            $valid[]    = [$user, $data];
+        }
+
+        try {
+            return $this->write($valid);
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent run inserted one of these identities between our read and our flush: read again, so it is
+            // an update (or unchanged) now, with the owner check applied to the stored row. One retry only.
+            return $this->write($valid);
+        }
+    }
+
+    /**
+     * @param list<array{0: UserInterface, 1: ImportedTimeEntryData}> $rows validated rows
+     */
+    private function write(array $rows): ImportedTimeEntryBatchResult
+    {
         $plan = [];
         foreach ($rows as [$user, $data]) {
-            $data     = $this->validate($data);
             $existing = $this->repository->findByExternal($data->externalSource, $data->externalId);
             if ($existing instanceof TimeEntry && !$this->sameOwner($existing, $user)) {
                 throw new ImportedEntryOwnerMismatchException();
@@ -151,7 +184,8 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
-     * Removes the imported entries of the source tracked on these tasks.
+     * Removes the imported entries of the source tracked on these tasks: an explicit manager action on imported time
+     * only. Never call it from a task deletion (deleting tasks keeps all tracked time).
      *
      * @param list<string> $taskIds
      */
@@ -160,7 +194,10 @@ final readonly class ImportedTimeEntryWriter
         return $this->removeScope(ImportedTimeEntryScope::tasks($this->checkSource($externalSource), $taskIds), null);
     }
 
-    /** Removes the imported entries of the source whose board snapshot is this board (board emptied or deleted). */
+    /**
+     * Removes the imported entries of the source whose board snapshot is this board: an explicit manager action on
+     * imported time only. Never call it from a board deletion (deleting boards keeps all tracked time).
+     */
     public function removeForBoard(string $externalSource, string $boardId): int
     {
         return $this->removeScope(ImportedTimeEntryScope::board($this->checkSource($externalSource), $boardId), null);
@@ -173,8 +210,8 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
-     * The data the writer stores: patterns, span and duration checked, title cut to 255, description cleaned (kept in
-     * full, never truncated).
+     * The data the writer stores: patterns, span and duration checked, valid UTF-8 required, title cleaned to one line
+     * and cut to 255, description cleaned (kept in full, never truncated).
      *
      * @throws InvalidImportedTimeEntryException
      */
@@ -203,13 +240,20 @@ final readonly class ImportedTimeEntryWriter
         if ($data->durationSeconds > $this->maxEntrySeconds || $span > $this->maxEntrySeconds) {
             throw new InvalidImportedTimeEntryException('durationSeconds', 'max_entry_seconds');
         }
-        $title = trim($data->taskTitle);
+        if (!mb_check_encoding($data->taskTitle, 'UTF-8')) {
+            throw new InvalidImportedTimeEntryException('taskTitle', 'encoding');
+        }
+        if ($data->description !== null && !mb_check_encoding($data->description, 'UTF-8')) {
+            throw new InvalidImportedTimeEntryException('description', 'encoding');
+        }
+        // The title is one line: the description rules (controls and bidi overrides stripped), line breaks as spaces.
+        $title = str_replace("\n", ' ', ImportedDescriptionSanitizer::clean($data->taskTitle) ?? '');
 
         return new ImportedTimeEntryData(
             $data->externalSource,
             $data->externalId,
             $data->taskId,
-            mb_substr($title === '' ? $data->taskId : $title, 0, 255),
+            mb_substr($title === '' ? $data->taskId : $title, 0, self::MAX_TITLE_LENGTH),
             $data->boardId,
             $data->startedAt,
             $data->endedAt,

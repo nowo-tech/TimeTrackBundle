@@ -16,6 +16,7 @@ use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
+use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
@@ -48,6 +49,8 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 use function array_map;
 use function date_default_timezone_get;
@@ -59,6 +62,7 @@ use function json_decode;
 use function json_encode;
 use function max;
 use function mb_strlen;
+use function method_exists;
 use function min;
 use function preg_match;
 use function preg_replace;
@@ -103,6 +107,12 @@ final readonly class TimeTrackClientApiController
     /** Latest UTC offset accepted on client timestamps, in minutes (+14:00; 1.9.2). */
     public const MAX_UTC_OFFSET_MINUTES = 840;
 
+    /** `me.locale` values accepted (1.11): a language, then up to three subtags (`es`, `pt_BR`, `zh-Hant-TW`). */
+    public const LOCALE_PATTERN = '/^[A-Za-z]{2,3}(?:[_-][A-Za-z0-9]{2,8}){0,3}$/D';
+
+    /** Translation domain of the masked title (1.11). */
+    private const TRANSLATION_DOMAIN = 'NowoTimeTrackBundle';
+
     private ClockInterface $clock;
 
     private LoggerInterface $logger;
@@ -123,6 +133,7 @@ final readonly class TimeTrackClientApiController
      * @param ClientTaskPresenter|null $taskPresenter Task details of tasks and timers (null = request origin, no logging)
      * @param ClientApiSettingsProviderInterface|null $settingsProvider Backdate and idle settings (null = the defaults)
      * @param IdleCheckSettingsResolver|null $idleCheckResolver Per-user idle-check settings of `me` (null = instance settings)
+     * @param TranslatorInterface|null $translator Translates the masked title of imported entries (1.11; null = English)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -142,6 +153,7 @@ final readonly class TimeTrackClientApiController
         ?ClientTaskPresenter $taskPresenter = null,
         ?ClientApiSettingsProviderInterface $settingsProvider = null,
         ?IdleCheckSettingsResolver $idleCheckResolver = null,
+        private ?TranslatorInterface $translator = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -216,7 +228,7 @@ final readonly class TimeTrackClientApiController
      * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
      * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1), and (1.10)
      * `features` (object of booleans; `workday` and `monitoring` reserved, always false) and `limits` (backdate and
-     * idle-check settings for the token user).
+     * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null).
      */
     public function me(Request $request): Response
     {
@@ -232,6 +244,7 @@ final readonly class TimeTrackClientApiController
             'displayName'  => $this->profileProvider->getDisplayName($user),
             'scopes'       => ClientScope::values($principal->token->getScopes()),
             'workingHours' => $this->profileProvider->getWorkingHours($user),
+            'locale'       => $this->userLocale($user),
         ];
         $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
         if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
@@ -547,10 +560,11 @@ final readonly class TimeTrackClientApiController
             $list = $this->timerService->listOwnEntries($user, $period['from'], $period['to'], $limit, $offset);
         }
 
-        $hidden = $this->timerService->hiddenTaskEntryIds($list);
+        $hidden      = $this->timerService->hiddenTaskEntryIds($list);
+        $hiddenTitle = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($user);
 
         return $this->responseFactory->json([
-            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()])), $list),
+            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $hiddenTitle), $list),
             'limit'   => $limit,
             'offset'  => $offset,
         ], Response::HTTP_OK, $request);
@@ -575,15 +589,16 @@ final readonly class TimeTrackClientApiController
         $entries = $this->timerService->listOwnEntries($principal->user, $period['from'], $period['to'], self::EXPORT_MAX_ROWS);
         $name    = sprintf('time-entries-%s-%s.%s', $period['from']->format('Ymd'), $period['to']->format('Ymd'), $format);
         $hidden  = $this->timerService->hiddenTaskEntryIds($entries);
+        $masked  = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($principal->user);
 
         $response = $this->responseFactory->empty(Response::HTTP_OK, $request);
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->setContent($format === 'csv'
-            ? TimeEntryCsv::render($entries, $hidden)
+            ? TimeEntryCsv::render($entries, $hidden, $masked)
             : json_encode([
                 'from'    => $period['from']->format(DATE_ATOM),
                 'to'      => $period['to']->format(DATE_ATOM),
-                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()])), $entries),
+                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $masked), $entries),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->headers->set('Content-Type', $format === 'csv' ? 'text/csv; charset=UTF-8' : 'application/json');
@@ -593,6 +608,37 @@ final readonly class TimeTrackClientApiController
         $response->headers->set('Cache-Control', 'no-store, private');
 
         return $response;
+    }
+
+    /**
+     * Since 1.11: the user's preferred locale for `me` — the profile provider's when it implements
+     * {@see ClientUserLocaleProviderInterface}, else the user's own `getLocale()` when it has one — or null when unknown
+     * or not a locale ({@see self::LOCALE_PATTERN}).
+     */
+    private function userLocale(UserInterface $user): ?string
+    {
+        if ($this->profileProvider instanceof ClientUserLocaleProviderInterface) {
+            $locale = $this->profileProvider->getLocale($user);
+        } else {
+            $locale = method_exists($user, 'getLocale') ? $user->getLocale() : null;
+        }
+
+        return is_string($locale) && preg_match(self::LOCALE_PATTERN, $locale) === 1 ? $locale : null;
+    }
+
+    /**
+     * Since 1.11: the title of a masked imported entry (`reports.task_not_visible` in the user's locale, else the
+     * translator's default locale; English without a translator).
+     */
+    private function hiddenTaskTitle(UserInterface $user): string
+    {
+        if (!$this->translator instanceof TranslatorInterface) {
+            return TimeEntry::HIDDEN_TASK_TITLE;
+        }
+
+        $title = $this->translator->trans('reports.task_not_visible', [], self::TRANSLATION_DOMAIN, $this->userLocale($user));
+
+        return $title === '' || $title === 'reports.task_not_visible' ? TimeEntry::HIDDEN_TASK_TITLE : $title;
     }
 
     /**
