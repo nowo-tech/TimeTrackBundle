@@ -144,6 +144,15 @@ PRs). Every feature is off until configured; the schema change is required for e
   snapshots restart the running balance) or move `working_time.balance.start_date` forward (GB-M1).
 - `BalanceLedger::add()` answers `LedgerRefusedException('conflict')` when a concurrent line was appended to the same
   chain (unique chain index) instead of forking it (GB-L4).
+- REQ-SEC-004 audit GB (block 3): `TimesheetService::period()` answers `not_found` for keys outside the period window or
+  starting after the next period; `view()` creates the owner's row only for the current and the previous period
+  (contract §3.2, lazily on first view) and answers an unstored open draft (`Timesheet::isDraft()`) for any other
+  period; the new `peek()` never writes (GB-L1, GB-M1).
+- `timesheets:verify` accepts a ledger chain that restarts at the line marked by the retention purge and reports a
+  chain with more than one start (GB-L3).
+- `Timesheet\TimesheetPersonalDataExporter::export($ownerRef)` (public service): the person's timesheets with their
+  audit trail and their ledger lines, by `owner_ref`, without other people's ids, for the host's art. 15 / 20 export
+  (contract §12.4, GB-L6).
 
 ## [1.12.0] - 2026-11-05
 

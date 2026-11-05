@@ -112,30 +112,54 @@ final readonly class TimesheetService
 
     /**
      * The period of `current`, `previous`, a key (`2026-W45` / `2026-11`) or null (current) for the user and scope.
+     * Keys must lie in the period window ({@see Period::fromKey()}) and start no later than the next period.
      *
-     * @throws TimesheetException `not_found` for an invalid key
+     * @throws TimesheetException `not_found` for an invalid key, or one outside that range
      */
     public function period(UserInterface $user, string $scopeKey, ?string $key): Period
     {
-        $today = $this->today($user, $scopeKey);
+        $current = Period::containing($this->periodKind, $this->today($user, $scopeKey));
         try {
-            return match ($key) {
-                null, '', 'current' => Period::containing($this->periodKind, $today),
-                'previous'          => Period::containing($this->periodKind, $today)->previous(),
+            $period = match ($key) {
+                null, '', 'current' => $current,
+                'previous'          => $current->previous(),
                 default             => Period::fromKey($this->periodKind, $key),
             };
         } catch (InvalidArgumentException $e) {
             throw new TimesheetException('not_found', $e);
         }
+        if ($period->start > $current->next()->start) {
+            throw new TimesheetException('not_found');
+        }
+
+        return $period;
     }
 
     /**
-     * The owner's timesheet of the period (created, open, on the owner's first view), or the stored one for an
-     * authorised viewer; `not_found` when the viewer may not see it or (non-owner) it does not exist.
+     * The stored timesheet of the period for an authorised viewer; for the owner without a row, the row is created
+     * (open) when the period is the current or the previous one (contract §3.2: created lazily on first view), and any
+     * other period answers an unstored open draft ({@see Timesheet::isDraft()}): a view never creates rows for
+     * arbitrary periods. `not_found` when the viewer may not see it or (non-owner) it does not exist.
      *
      * @throws TimesheetException
      */
     public function view(UserInterface $viewer, string $ownerId, string $scopeKey, Period $period): Timesheet
+    {
+        $timesheet = $this->peek($viewer, $ownerId, $scopeKey, $period);
+        if (!$timesheet->isDraft()) {
+            return $timesheet;
+        }
+        $current = Period::containing($this->periodKind, $this->today($viewer, $scopeKey));
+
+        return $period->start === $current->start || $period->start === $current->previous()->start ? $this->create($viewer, $scopeKey, $period) : $timesheet;
+    }
+
+    /**
+     * Like {@see self::view()} but never writes: the owner's missing row is always an unstored open draft (`GET me`).
+     *
+     * @throws TimesheetException
+     */
+    public function peek(UserInterface $viewer, string $ownerId, string $scopeKey, Period $period): Timesheet
     {
         if (!$this->enabled || !$this->accessGuard->canView($viewer, $ownerId, $scopeKey)) {
             throw new TimesheetException('not_found');
@@ -148,7 +172,7 @@ final readonly class TimesheetService
             throw new TimesheetException('not_found');
         }
 
-        return $this->create($viewer, $scopeKey, $period);
+        return (new Timesheet($viewer, UserIdResolver::getId($viewer), $scopeKey, $period, $this->timezoneResolver->resolve($viewer, $scopeKey), $this->clock->now()))->markDraft();
     }
 
     /**

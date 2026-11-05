@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Exception\TimesheetException;
 use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -77,6 +78,32 @@ final class TimesheetServiceUnitTest extends TestCase
         self::assertSame(404, (new TimesheetException('not_found'))->httpStatus());
         self::assertSame(422, (new TimesheetException('comment_required'))->httpStatus());
         self::assertSame(409, (new TimesheetException('other'))->httpStatus());
+    }
+
+    public function testViewsCreateRowsOnlyForThePreviousAndCurrentPeriods(): void
+    {
+        $service = $this->service();
+
+        // GB-L1: the current and previous periods are created on the owner's first view (contract §3.2) …
+        self::assertFalse($service->view($this->owner, '7', 'org-a', $service->period($this->owner, 'org-a', 'previous'))->isDraft());
+        self::assertSame(1, $this->timesheets->saves);
+        // … any other period is an unstored open draft, and peek() never writes.
+        foreach (['2026-W30', '2026-W46', '2000-W01'] as $key) {
+            $draft = $service->view($this->owner, '7', 'org-a', $service->period($this->owner, 'org-a', $key));
+            self::assertTrue($draft->isDraft());
+            self::assertSame(TimesheetStatus::Open, $draft->getStatus());
+            self::assertSame([], $service->events($draft));
+        }
+        self::assertTrue($service->peek($this->owner, '7', 'org-a', $service->period($this->owner, 'org-a', 'current'))->isDraft());
+        self::assertSame(1, $this->timesheets->saves);
+        self::assertCount(1, $this->timesheets->timesheets);
+        // Submitting a draft period creates its row (first submit).
+        self::assertSame(TimesheetStatus::Submitted, $service->submit($this->owner, 'org-a', $service->period($this->owner, 'org-a', '2026-W30'))->getStatus());
+
+        // Keys later than the next period or outside the window are not found (nothing to compute, nothing stored).
+        foreach (['2026-W47', '2099-W01', '9998-W52', '1999-W52', '2026-11'] as $key) {
+            $this->expectError('not_found', fn (): Period => $service->period($this->owner, 'org-a', $key));
+        }
     }
 
     public function testOffAnswersNothing(): void
@@ -164,6 +191,19 @@ final class TimesheetServiceUnitTest extends TestCase
         self::assertStringContainsString('1 line(s) are not linked', $problems[1]);
         self::assertStringContainsString('line ' . $broken->getId() . ' is broken', $problems[2]);
         self::assertNull($verifier->verifyTimesheet('vanished'));
+
+        // GB-L3: after a retention purge the chain restarts at the line marked purged_before.
+        $restart = new InMemoryBalanceLedgerRepository();
+        $kept    = new BalanceLedgerLine(null, '7', 'org-a', '2026-11-02', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-11-02 10:00:00'), str_repeat('a', 64), 'x');
+        $next    = new BalanceLedgerLine(null, '7', 'org-a', '2026-11-03', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-11-03 10:00:00'), $kept->getHash(), 'x');
+        $restart->append($kept);
+        $restart->append($next);
+        $chain = new AuditChainVerifier($this->timesheets, $retention, $this->events, $restart);
+        self::assertStringContainsString('2 line(s) are not linked', (string) $chain->verifyLedger('7', 'org-a'), 'without the purge mark a missing start is tampering');
+        (new ReflectionProperty(BalanceLedgerLine::class, 'purgedBefore'))->setValue($kept, new DateTimeImmutable('2026-11-01'));
+        self::assertNull($chain->verifyLedger('7', 'org-a'));
+        $restart->append(new BalanceLedgerLine(null, '7', 'org-a', '2026-11-04', LedgerKind::Opening, 60, new DateTimeImmutable('2026-11-04 10:00:00'), null, 'x'));
+        self::assertStringContainsString('the chain has 2 starts', (string) $chain->verifyLedger('7', 'org-a'));
 
         $ok = new CommandTester(new TimesheetsVerifyCommand(new AuditChainVerifier($this->timesheets, $retention, $this->events, new InMemoryBalanceLedgerRepository())));
         self::assertSame(0, $ok->execute(['--scope' => 'org-a', '--user' => '7']));

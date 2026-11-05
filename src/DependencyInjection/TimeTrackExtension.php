@@ -71,6 +71,7 @@ use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetPersonalDataExporter;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
@@ -415,6 +416,15 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(AuditChainVerifier::class, (new Definition(AuditChainVerifier::class))
+            ->setArguments([
+                '$timesheets' => new Reference(TimesheetRepositoryInterface::class),
+                '$retention'  => new Reference(TimesheetRetentionRepositoryInterface::class),
+                '$events'     => new Reference(TimesheetEventRepositoryInterface::class),
+                '$ledger'     => new Reference(BalanceLedgerRepositoryInterface::class),
+            ]));
+        // Since the GB fixes: personal-data export of the working-time tables (contract §12.4).
+        $container->setDefinition(TimesheetPersonalDataExporter::class, (new Definition(TimesheetPersonalDataExporter::class))
+            ->setPublic(true)
             ->setArguments([
                 '$timesheets' => new Reference(TimesheetRepositoryInterface::class),
                 '$retention'  => new Reference(TimesheetRetentionRepositoryInterface::class),
