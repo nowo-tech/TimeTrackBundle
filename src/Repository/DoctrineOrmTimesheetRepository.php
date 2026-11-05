@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Repository;
 
+use DateTimeImmutable;
 use Doctrine\Common\Collections\Order as SortDirection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,6 +18,7 @@ use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Throwable;
 
+use function array_chunk;
 use function array_column;
 use function array_map;
 use function count;
@@ -27,6 +29,9 @@ use function max;
  */
 final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface
 {
+    /** Ids bound per `IN (...)` of the purge. */
+    public const IDS_PER_QUERY = 1000;
+
     /**
      * Receives the entity manager (and the registry that resets it after a failed flush in worker mode).
      */
@@ -195,45 +200,37 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
-     * Retention purge: timesheets ended before the date (audit rows first) and ledger lines effective before it.
+     * Retention purge (since the GB fixes): first, per ledger chain, the longest **prefix** (chain order) of lines
+     * effective before the date; the first line kept is marked `purged_before` so `verify` knows the chain restarts there
+     * (a line in the middle of a chain is never deleted, so the chain stays verifiable). Then up to `$batchSize`
+     * timesheets ended before the date with their audit rows, except those a kept ledger line still points to (they go
+     * with that line: the timesheet id is part of the line's hash).
      */
     public function purgeBefore(string $beforeDate, int $batchSize = 500): array
     {
         $before = Period::date($beforeDate);
-        /** @var list<array{id: string}> $rows */
-        $rows = $this->entityManager->createQueryBuilder()
-            ->select('t.id AS id')
-            ->from(Timesheet::class, 't')
-            ->where('t.periodEnd < :before')
-            ->setParameter('before', $before, Types::DATE_IMMUTABLE)
-            ->orderBy('t.id', SortDirection::Ascending->value)
-            ->setMaxResults(max(1, $batchSize))
-            ->getQuery()
-            ->getArrayResult();
-        $ids = array_map(static fn (array $row): string => $row['id'], $rows);
 
         // @igor-ignore - the closure runs once inside this call (transaction body), it is not stored.
-        return $this->entityManager->wrapInTransaction(function () use ($ids, $before): array {
-            $ledger = (int) $this->entityManager->createQueryBuilder()
-                ->delete(BalanceLedgerLine::class, 'l')
-                ->where('l.effectiveDate < :before')
+        return $this->entityManager->wrapInTransaction(function () use ($before, $batchSize): array {
+            $ledger = $this->purgeLedgerPrefixes($before);
+
+            /** @var list<array{id: string}> $rows */
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('t.id AS id')
+                ->from(Timesheet::class, 't')
+                ->where('t.periodEnd < :before')
+                ->andWhere('NOT EXISTS (SELECT k.id FROM ' . BalanceLedgerLine::class . ' k WHERE k.timesheet = t)')
                 ->setParameter('before', $before, Types::DATE_IMMUTABLE)
+                ->orderBy('t.id', SortDirection::Ascending->value)
+                ->setMaxResults(max(1, $batchSize))
                 ->getQuery()
-                ->execute();
+                ->getArrayResult();
+            $ids    = array_map(static fn (array $row): string => $row['id'], $rows);
             $events = 0;
             if ($ids !== []) {
                 $events = (int) $this->entityManager->createQueryBuilder()
                     ->delete(TimesheetEvent::class, 'e')
                     ->where('IDENTITY(e.timesheet) IN (:ids)')
-                    ->setParameter('ids', $ids)
-                    ->getQuery()
-                    ->execute();
-                // Lines of a later effective date that reference a purged timesheet keep their row (FK SET NULL).
-                $this->entityManager->createQueryBuilder()
-                    ->update(BalanceLedgerLine::class, 'l')
-                    ->set('l.timesheet', ':none')
-                    ->where('IDENTITY(l.timesheet) IN (:ids)')
-                    ->setParameter('none', null)
                     ->setParameter('ids', $ids)
                     ->getQuery()
                     ->execute();
@@ -248,6 +245,70 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
 
             return ['timesheets' => count($ids), 'events' => $events, 'ledger' => $ledger];
         });
+    }
+
+    /**
+     * Deletes, per chain with lines effective before the date, the longest chain-order prefix of such lines and marks
+     * the first line kept; returns the lines deleted.
+     */
+    private function purgeLedgerPrefixes(DateTimeImmutable $before): int
+    {
+        /** @var list<array{ownerRef: string, scopeKey: string}> $chains */
+        $chains = $this->entityManager->createQueryBuilder()
+            ->select('l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey')
+            ->distinct()
+            ->from(BalanceLedgerLine::class, 'l')
+            ->where('l.effectiveDate < :before')
+            ->setParameter('before', $before, Types::DATE_IMMUTABLE)
+            ->getQuery()
+            ->getArrayResult();
+        $deleted = 0;
+        foreach ($chains as $chain) {
+            /** @var list<array{id: string, effectiveDate: DateTimeImmutable}> $lines */
+            $lines = $this->entityManager->createQueryBuilder()
+                ->select('l.id AS id', 'l.effectiveDate AS effectiveDate')
+                ->from(BalanceLedgerLine::class, 'l')
+                ->where('l.ownerRef = :owner')
+                ->andWhere('l.scopeKey = :scope')
+                ->setParameter('owner', $chain['ownerRef'])
+                ->setParameter('scope', $chain['scopeKey'])
+                ->orderBy('l.createdAt', SortDirection::Ascending->value)
+                ->addOrderBy('l.id', SortDirection::Ascending->value)
+                ->getQuery()
+                ->getArrayResult();
+            $prefix = [];
+            $keep   = null;
+            foreach ($lines as $line) {
+                if ($line['effectiveDate']->format('Y-m-d') >= $before->format('Y-m-d')) {
+                    $keep = $line['id'];
+                    break;
+                }
+                $prefix[] = $line['id'];
+            }
+            if ($prefix === []) {
+                continue;
+            }
+            foreach (array_chunk($prefix, self::IDS_PER_QUERY) as $chunk) {
+                $deleted += (int) $this->entityManager->createQueryBuilder()
+                    ->delete(BalanceLedgerLine::class, 'l')
+                    ->where('l.id IN (:ids)')
+                    ->setParameter('ids', $chunk)
+                    ->getQuery()
+                    ->execute();
+            }
+            if ($keep !== null) {
+                $this->entityManager->createQueryBuilder()
+                    ->update(BalanceLedgerLine::class, 'l')
+                    ->set('l.purgedBefore', ':before')
+                    ->where('l.id = :id')
+                    ->setParameter('before', $before, Types::DATE_IMMUTABLE)
+                    ->setParameter('id', $keep)
+                    ->getQuery()
+                    ->execute();
+            }
+        }
+
+        return $deleted;
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Command;
 
 use Nowo\TimeTrackBundle\Repository\ScopeBackfillRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Log\LoggerInterface;
@@ -28,7 +29,8 @@ use function strlen;
  * Since 1.13: gives pre-1.13 entries their tenant scope (contract §3.1). Keyset on the entry id, the scope provider is
  * asked once per batch ({@see TimesheetScopeProviderInterface::scopeKeysForEntries()}), idempotent and resumable
  * (only entries without a scope are read). Entries the provider cannot place stay without a scope: they belong to no
- * timesheet and show as *unassigned* to their owner.
+ * timesheet and show as *unassigned* to their owner. Entries in a locked or submitted period of their owner (any
+ * scope) are left untouched and counted apart: giving them a scope would change an approved timesheet after the fact.
  */
 #[AsCommand(
     name: 'nowo:time-track:entries:backfill-scope',
@@ -41,11 +43,13 @@ final class BackfillEntryScopeCommand extends Command
     /**
      * @param TimeEntryRepositoryInterface $repository Entry store (must implement {@see ScopeBackfillRepositoryInterface})
      * @param TimesheetScopeProviderInterface|null $scopeProvider Host scope provider (null = timesheets off)
+     * @param PeriodLockGuard|null $lockGuard Skips entries of locked / submitted periods (null = no lock check)
      */
     public function __construct(
         private readonly TimeEntryRepositoryInterface $repository,
         private readonly ?TimesheetScopeProviderInterface $scopeProvider = null,
         ?LoggerInterface $logger = null,
+        private readonly ?PeriodLockGuard $lockGuard = null,
     ) {
         parent::__construct();
         $this->logger = $logger ?? new NullLogger();
@@ -72,6 +76,7 @@ final class BackfillEntryScopeCommand extends Command
         $after  = '';
         $placed = 0;
         $left   = 0;
+        $locked = 0;
         do {
             $entries = $this->repository->findScopelessAfter($after, $batch);
             if ($entries === []) {
@@ -86,11 +91,17 @@ final class BackfillEntryScopeCommand extends Command
                 }
             }
             $left += count($entries) - count($keys);
+            foreach ($entries as $entry) {
+                if (isset($keys[$entry->getId()]) && $this->lockGuard instanceof PeriodLockGuard && !$this->lockGuard->isEntryWritable($entry)) {
+                    unset($keys[$entry->getId()]);
+                    ++$locked;
+                }
+            }
             $placed += $dryRun ? count($keys) : ($keys === [] ? 0 : $this->repository->assignScopeKeys($keys));
         } while (count($entries) === $batch);
 
-        $this->logger->info('TimeTrack entry scope back-fill finished.', ['bundle' => 'time_track', 'action' => 'entries_backfill_scope', 'placed' => $placed, 'unplaced' => $left, 'dry_run' => $dryRun]);
-        $io->success(sprintf('%s %d entr%s; %d left without a scope.', $dryRun ? 'Would place' : 'Placed', $placed, $placed === 1 ? 'y' : 'ies', $left));
+        $this->logger->info('TimeTrack entry scope back-fill finished.', ['bundle' => 'time_track', 'action' => 'entries_backfill_scope', 'placed' => $placed, 'unplaced' => $left, 'locked' => $locked, 'dry_run' => $dryRun]);
+        $io->success(sprintf('%s %d entr%s; %d left without a scope; %d left in a locked or submitted period.', $dryRun ? 'Would place' : 'Placed', $placed, $placed === 1 ? 'y' : 'ies', $left, $locked));
 
         return Command::SUCCESS;
     }

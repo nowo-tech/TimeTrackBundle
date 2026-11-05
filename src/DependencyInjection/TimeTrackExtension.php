@@ -337,7 +337,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->getDefinition(TeamAccessGuard::class)
             ->setArgument('$periodLockGuard', $guardRef);
         $container->getDefinition(BackfillEntryScopeCommand::class)
-            ->setArgument('$scopeProvider', $scopeRef);
+            ->setArgument('$scopeProvider', $scopeRef)
+            ->setArgument('$lockGuard', $guardRef);
     }
 
     /**
