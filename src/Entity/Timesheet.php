@@ -45,6 +45,9 @@ class Timesheet
     #[ORM\Column(type: 'string', length: 16, enumType: TimesheetStatus::class)]
     private TimesheetStatus $status = TimesheetStatus::Open;
 
+    /** Not mapped: an unstored view ({@see self::isDraft()}). */
+    private bool $draft = false;
+
     #[ORM\Column(name: 'locked_at', type: 'datetime_immutable', nullable: true)]
     private ?DateTimeImmutable $lockedAt = null;
 
@@ -262,6 +265,29 @@ class Timesheet
     public function getUpdatedAt(): DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    /**
+     * Since the GB fixes: whether this is an unstored, open view of a period (a period the owner looked at but that has
+     * no row: viewing never creates rows outside the previous and current periods). A draft has no audit trail and is
+     * never persisted by the bundle.
+     */
+    public function isDraft(): bool
+    {
+        return $this->draft;
+    }
+
+    /**
+     * Marks a new, unstored timesheet as a draft view.
+     *
+     * @internal
+     */
+    public function markDraft(): self
+    {
+        // @igor-ignore - Doctrine entity field (not mapped); instance-scoped, not a shared service.
+        $this->draft = true;
+
+        return $this;
     }
 
     /**

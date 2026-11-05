@@ -20,11 +20,17 @@ use const DATE_ATOM;
  * Since 1.13: one append-only movement of the hours balance (contract §3.4): opening, adjustment, ratified / paid /
  * compensated overtime or a reversal of another line. Lines are never edited; each one is chained per
  * `(owner_ref, scope_key)` by `hash = sha256(prev_hash ‖ canonical_json(row without hash))`.
+ *
+ * The unique `(owner_ref, scope_key, prev_hash)` index stops two concurrent writers from forking a chain (the second
+ * append fails and is reported as a conflict). `purged_before` is set by the retention purge on the first line it keeps:
+ * the chain restarts there (its `prev_hash` names a purged line); it is not part of the hash.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_balance_ledger')]
 #[ORM\Index(name: 'idx_time_track_balance_ledger_user', columns: ['user_id', 'scope_key', 'effective_date'])]
 #[ORM\Index(name: 'idx_time_track_balance_ledger_timesheet', columns: ['timesheet_id'])]
+#[ORM\Index(name: 'idx_time_track_balance_ledger_reverses', columns: ['reverses_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_time_track_balance_ledger_chain', columns: ['owner_ref', 'scope_key', 'prev_hash'])]
 class BalanceLedgerLine
 {
     #[ORM\Id]
@@ -39,6 +45,13 @@ class BalanceLedgerLine
 
     #[ORM\Column(type: 'string', length: 64, options: ['fixed' => true])]
     private string $hash;
+
+    /**
+     * Cut-off of the retention purge that made this line the start of its chain (null = never). Not hashed; written
+     * by the purge with a DQL update only.
+     */
+    #[ORM\Column(name: 'purged_before', type: 'date_immutable', nullable: true)]
+    private ?DateTimeImmutable $purgedBefore = null; // @phpstan-ignore property.unusedType
 
     /**
      * Builds the line and computes its hash.
@@ -191,6 +204,14 @@ class BalanceLedgerLine
     public function getHash(): string
     {
         return $this->hash;
+    }
+
+    /**
+     * Cut-off (Y-m-d) of the retention purge that made this line the start of its chain, or null.
+     */
+    public function getPurgedBefore(): ?string
+    {
+        return $this->purgedBefore?->format('Y-m-d');
     }
 
     /**

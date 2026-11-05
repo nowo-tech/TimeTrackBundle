@@ -16,8 +16,9 @@ use function sprintf;
 /**
  * Since 1.13: recomputes the audit chains (contract §3.3, §3.4) and names the first broken link of each: timesheet
  * rows must be numbered 1, 2, … with `prev_hash` = the previous row's hash, every stored hash must match its row, and
- * the last hash must be the timesheet's head; ledger lines of an owner and scope must form one chain from a line
- * without `prev_hash`, each hash matching its line.
+ * the last hash must be the timesheet's head; ledger lines of an owner and scope must form one chain from its single
+ * start — the line without `prev_hash`, or after a retention purge the line marked `purged_before` (whose `prev_hash`
+ * names a purged line) — each hash matching its line.
  */
 final readonly class AuditChainVerifier
 {
@@ -90,18 +91,25 @@ final readonly class AuditChainVerifier
     public function verifyLedger(string $ownerRef, string $scopeKey): ?string
     {
         $byPrev = [];
+        $starts = [];
         foreach ($this->ledger->findByOwner($ownerRef, $scopeKey) as $line) {
             if ($line->computeHash() !== $line->getHash()) {
                 return sprintf('ledger %s / %s: line %s is broken', $ownerRef, $scopeKey, $line->getId());
             }
             $byPrev[$line->getPrevHash() ?? ''][] = $line;
+            if ($line->getPrevHash() === null || $line->getPurgedBefore() !== null) {
+                $starts[] = $line;
+            }
+        }
+        if (count($starts) > 1) {
+            return sprintf('ledger %s / %s: the chain has %d starts', $ownerRef, $scopeKey, count($starts));
         }
         $total = 0;
         foreach ($byPrev as $lines) {
             $total += count($lines);
         }
         $visited = 0;
-        $next    = '';
+        $next    = ($starts[0] ?? null)?->getPrevHash() ?? '';
         while (isset($byPrev[$next])) {
             if (count($byPrev[$next]) !== 1) {
                 return sprintf('ledger %s / %s: the chain forks after %s', $ownerRef, $scopeKey, $next === '' ? 'its start' : $next);

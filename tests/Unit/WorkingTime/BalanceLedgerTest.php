@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\WorkingTime;
 
+use Doctrine\DBAL\Driver\Exception as DriverException;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
@@ -141,6 +142,21 @@ final class BalanceLedgerTest extends TestCase
         }
         $this->ledger->add($this->approver, $this->owner, 'org-a', LedgerKind::Opening, 120, '2026-10-01', 'Second opening after the reversal');
         self::assertCount(3, $this->lines->lines);
+    }
+
+    public function testAConcurrentAppendIsAConflictNotAFork(): void
+    {
+        $racing                = new InMemoryBalanceLedgerRepository();
+        $racing->failNextFlush = $this->createStub(DriverException::class);
+        $access                = new TimesheetAccessGuard(new FixedScopeProvider(['7' => ['org-a'], '9' => ['org-a']]), new StubTimesheetApproverProvider(['org-a' => ['9' => ['7']]]));
+        $ledger                = new BalanceLedger($racing, $access, new PeriodLockGuard($this->timesheets), null, new MockClock('2026-11-05 10:00:00'));
+
+        try {
+            $ledger->add($this->approver, $this->owner, 'org-a', LedgerKind::Adjustment, 60, '2026-11-02', 'Race');
+            self::fail('conflict expected');
+        } catch (LedgerRefusedException $e) {
+            self::assertSame('conflict', $e->errorCode());
+        }
     }
 
     public function testWithTimesheetsOffNoPeriodIsLocked(): void

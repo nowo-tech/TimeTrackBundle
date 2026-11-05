@@ -20,6 +20,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryBalanceLedgerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetRepository;
+use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
@@ -198,6 +199,38 @@ final class WorkingTimeBalanceServiceTest extends TestCase
             } catch (InvalidArgumentException) {
             }
         }
+    }
+
+    public function testFarRangesAreRefusedAndLongSpansAreNeverComputed(): void
+    {
+        $logger  = new RecordingLogger();
+        $service = new WorkingTimeBalanceService($this->calendar, new TaskTimeWorkedTimeSource($this->entries, $this->timezones), new ConfigOvertimePolicy(), $this->ledger, $this->timesheets, $this->timezones, new MockClock('2026-11-02 10:00:00'), '2025-01-01', logger: $logger);
+
+        // GB-M1: years 0000–9999 used to be computed from the start date up to the requested end (one call per year).
+        foreach ([['9998-12-01', '9998-12-31'], ['1999-12-01', '1999-12-31'], ['2027-11-04', '2027-11-30']] as [$from, $to]) {
+            try {
+                $service->report($this->user, 'org-a', $from, $to);
+                self::fail('range ' . $from . ' ' . $to);
+            } catch (InvalidArgumentException) {
+            }
+        }
+        self::assertSame([], $this->calendar->calls, 'nothing is read for a refused range');
+
+        // Up to today + 366 days is fine (planned days).
+        self::assertNotNull($service->report($this->user, 'org-a', '2027-10-01', '2027-11-03'));
+
+        // A start date more than ten years before the end: no report, a warning, no calendar call.
+        $this->calendar->calls = [];
+        $old                   = new WorkingTimeBalanceService($this->calendar, new TaskTimeWorkedTimeSource($this->entries, $this->timezones), new ConfigOvertimePolicy(), $this->ledger, $this->timesheets, $this->timezones, new MockClock('2026-11-02 10:00:00'), '2015-01-01', logger: $logger);
+        self::assertNull($old->report($this->user, 'org-a', '2026-10-01', '2026-10-31'));
+        self::assertSame([], $this->calendar->calls);
+        self::assertSame('balance_span_exceeded', $logger->records[0]['context']['action'] ?? null);
+
+        // A locked timesheet after the start date brings the span back under the bound.
+        $locked = TimesheetFixtures::locked($this->user, 'org-a', '2026-W36', 'Europe/Madrid', TimesheetLockReason::Approved);
+        $locked->applyApprove(new DateTimeImmutable('2026-09-07 08:00:00'), '9', str_repeat('a', 64), ['balanceSeconds' => 0]);
+        $this->timesheets->save($locked);
+        self::assertNotNull($old->report($this->user, 'org-a', '2026-10-01', '2026-10-31'));
     }
 
     public function testDaysOutsideTheUsersTimeInTheScopeCountNowhere(): void

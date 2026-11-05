@@ -50,6 +50,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetPersonalDataExporter;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
@@ -60,7 +61,10 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
+use function array_column;
 use function array_map;
+use function count;
+use function implode;
 
 /**
  * Since 1.13 (AC-02 … AC-07, AC-13), against the test database: submit → approve hard-locks the week for every bundle
@@ -171,6 +175,17 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $verifier = self::getContainer()->get(AuditChainVerifier::class);
         self::assertInstanceOf(AuditChainVerifier::class, $verifier);
         self::assertSame([], $verifier->verify());
+
+        // GB-L6: the personal-data export holds the timesheet with its trail and the ledger, without other people's ids.
+        $exporter = self::getContainer()->get(TimesheetPersonalDataExporter::class);
+        self::assertInstanceOf(TimesheetPersonalDataExporter::class, $exporter);
+        $export = $exporter->export((string) $this->user->getId());
+        self::assertCount(1, $export['timesheets']);
+        self::assertSame($reopened->getId(), $export['timesheets'][0]['id']);
+        self::assertCount(count($trail), $export['timesheets'][0]['events']);
+        self::assertArrayNotHasKey('actorRef', $export['timesheets'][0]['events'][0]);
+        self::assertSame(['overtime_ratified', 'reversal'], array_column($export['ledger'], 'kind'));
+        self::assertSame(['timesheets' => [], 'ledger' => []], $exporter->export((string) $this->approver->getId()));
         self::assertSame(['submitted', 'approved', 'reopened'], array_map(static fn (TimesheetTransitionEvent $e): string => $e->toStatus->value === 'open' ? 'reopened' : $e->toStatus->value, $this->transitions));
         self::assertFalse($this->transitions[0]->hasComment);
         self::assertTrue($this->transitions[2]->hasComment);
@@ -311,6 +326,30 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertSame(0, $later->execute(['--batch' => '1']));
         self::assertStringContainsString('Purged 1 timesheet(s)', $later->getDisplay());
         self::assertNull($this->entityManager()->find(Timesheet::class, $locked->getId()));
+    }
+
+    public function testAPurgedLedgerChainStillVerifiesAndATruncatedOneDoesNot(): void
+    {
+        $owner  = (string) $this->user->getId();
+        $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $first  = new BalanceLedgerLine($this->user, $owner, 'org-a', '2020-01-01', LedgerKind::Opening, 3600, new DateTimeImmutable('2020-01-01 10:00:00'), null, 'Opening');
+        $second = new BalanceLedgerLine($this->user, $owner, 'org-a', '2020-02-01', LedgerKind::Adjustment, 60, new DateTimeImmutable('2020-02-01 10:00:00'), $first->getHash(), 'Two');
+        $third  = new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-01', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-10-01 10:00:00'), $second->getHash(), 'Three');
+        foreach ([$first, $second, $third] as $line) {
+            $ledger->append($line);
+        }
+        $ledger->flush();
+        $verifier = self::getContainer()->get(AuditChainVerifier::class);
+        self::assertInstanceOf(AuditChainVerifier::class, $verifier);
+
+        // GB-L3: the purge removes the old prefix; verify keeps passing (no false tamper alarm).
+        self::assertSame(2, (new DoctrineOrmTimesheetRepository($this->entityManager()))->purgeBefore('2021-01-01')['ledger']);
+        self::assertSame([], $verifier->verify());
+
+        // Removing the mark (or deleting a chain's oldest lines by hand) is reported.
+        $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_balance_ledger SET purged_before = NULL');
+        $this->entityManager()->clear();
+        self::assertStringContainsString('not linked', implode(' ', $verifier->verify()));
     }
 
     private function assertEveryWritePathRefuses(DateTimeImmutable $monday, ImportedTimeEntryWriter $writer): void

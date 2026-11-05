@@ -11,8 +11,9 @@ namespace Nowo\TimeTrackBundle\Repository;
 interface TimesheetRetentionRepositoryInterface
 {
     /**
-     * Deletes up to `$batchSize` timesheets whose period ended before `$beforeDate` (with their audit rows) and the
-     * ledger lines with an effective date before it; returns `{timesheets, events, ledger}` counts.
+     * Deletes, per ledger chain, the longest chain-order prefix of lines effective before `$beforeDate` (the first line
+     * kept is marked as the chain's restart) and up to `$batchSize` timesheets whose period ended before it (with their
+     * audit rows) that no kept ledger line points to; returns `{timesheets, events, ledger}` counts.
      *
      * @return array{timesheets: int, events: int, ledger: int}
      */
