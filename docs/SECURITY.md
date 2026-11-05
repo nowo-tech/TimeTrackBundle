@@ -7,6 +7,7 @@
 - [Threat model](#threat-model)
 - [Client API](#client-api)
 - [Reports](#reports)
+- [Imported entries (1.11)](#imported-entries-111)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -89,6 +90,19 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 - Bounded list (REQ-PERF-001): the reports page shows `reports.page_size` entries per page (default 50, max 500),
   paged in the database by `DoctrineOrmTimeEntryRepository`; out-of-range `page` values are clamped to the existing
   pages; the period is capped at 366 days
+
+## Imported entries (1.11)
+
+| Threat | Control |
+| --- | --- |
+| Imported time edited into worked (payroll) time | Read-only by source; `canEditEntry()` is false before any listener runs; no timer events; excluded from the backdate overlap clamp; `isLive()` / `findLiveByUserAndPeriod()` for host registers |
+| One tenant's import overwrites another's entry, or time moves silently between users | The writer refuses an owner change (`ImportedEntryOwnerMismatchException`); the external source carries the host scope; removals match the source exactly, never by prefix |
+| Duplicates on re-sync | Unique `(external_source, external_id)`; unchanged rows are not written; two rows for one identity in a batch are refused. A unique violation from a concurrent run rolls the whole flush back (nothing half-written); the batch is then re-read once (the raced row becomes an update, new rows are created with their owners re-attached, the owner check still applies). It fails closed instead, rethrowing the unique violation for the host to retry the slice, when no `ManagerRegistry` is wired (the entity manager stays closed) or the call runs inside a host transaction |
+| Malformed input from the source tool | Ids pattern-checked; title and description must be valid UTF-8; controls and bidi overrides stripped (title on one line, ≤ 255); descriptions kept in full (no cap; bounded only by what the host's HTTP client accepts) |
+| Task title leaked to an owner without access | Imported entries of a task the owner cannot track show the translated *Task not visible* in the API, export (JSON / CSV) and reports. The stored `taskTitleSnapshot` is never masked: host template overrides (including a surgical `nowo_ui_list_row` override) must use `hidden_task_entry_ids`, and host lists and exports must call `TimerService::hiddenTaskEntryIds()` and `toArray(false, …)` |
+| Time lost when tasks or boards are deleted | `time_track_entries` has no foreign key to tasks or boards: entries keep their `task_id` and snapshots and simply stop being linked. The bundle never calls `remove*()` itself |
+| Deleting imported time without authority | Single deletion needs a `delete_imported` grant (default deny); bulk removals are host calls after its own check; never a side effect of deleting tasks or boards |
+| Personal data in logs | The writer logs counts and the scope kind only, never descriptions, titles or ids of people |
 
 ## Secrets & cryptography
 

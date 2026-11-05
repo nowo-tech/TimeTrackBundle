@@ -42,6 +42,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Imported time entries (ClickUp import, Beacon spec 208; contract `clickup-import-1.24/CONTRACT.md` v1.0 §11). Minor:
+additive nullable columns, one new enum case, two new indexes.
+
+### Added
+
+- **`TimeEntrySource::Import`** (`import`) with `isLive()` / `isReadOnly()`. Imported entries are history: read-only,
+  never timers, never live time.
+- **External identity**: nullable `external_source` (≤ 64) and `external_id` (≤ 128) on `time_track_entries`, unique
+  together (`uniq_time_track_entries_external`); nullable `billable` and `description` (unbounded text: the full
+  description of the source tool is kept, **no length cap**).
+- **`Import\ImportedTimeEntryWriter`**: `upsert()` / `upsertMany()` (≤ 500 rows, one flush, all rows validated
+  first; unchanged entries are not written), `remove()`, `removeForUser()`, `removeForTasks()`, `removeForBoard()`,
+  `removeForSource()` (keyset batches, constant memory). It never starts or stops a timer and never fires timer
+  events. It **refuses to move an entry to another owner** (`ImportedEntryOwnerMismatchException`): re-association is
+  remove + upsert by the host. Validation: source / id patterns, `0 < duration ≤ end − start + 60 s`, at most
+  `imports.max_entry_seconds` (31 days).
+- **`Import\ImportedTimeEntryDeleter`** and **`TeamAccessGuard::canDeleteImportedEntry()`**: deleting one imported
+  entry is denied by default, the host grants it through `TimeEntryAccessCheckEvent` action `delete_imported`.
+- **`Repository\ImportedTimeEntryRepositoryInterface`** (implemented by the Doctrine store): `findByExternal()`,
+  `findByExternalSource()`, `findLiveByUserAndPeriod()`, live paging, `saveAll()`, `removeImported()`,
+  `canRetryAfterFailedSave()`, `attachUser()`.
+- Events **`TIME_ENTRY_IMPORTED`** (`TimeEntryImportedEvent`: created / updated, previous duration and task) and
+  **`TIME_ENTRIES_REMOVED`** (`TimeEntriesRemovedEvent`: scope, count, seconds per task, owner ids, actor).
+- `TimeEntryListQueryEvent::setIncludeImported()` (default `true`): live-time views list live entries only.
+- **`Retention\TimeEntryRetentionPolicy`** and `retention.include_imported` (default `false`): any retention purge
+  must skip imported entries (`excludedSources()`); the bundle itself ships no purge yet.
+- Index **`time_track_entries_ended_idx` on `(ended_at, id)`** (Beacon request `2026-11-05-timetrack-ended-at-index`,
+  PERF-TT-PURGE-FULLSCAN), same name and columns as Beacon's own migration; and `idx_time_track_entries_source`.
+- Client API, export (JSON / CSV) and the reports page: `billable`, `description`, `readOnly`, `taskVisible`; CSV
+  appends `billable`, `description`, `imported`. The external identity is never exposed.
+- Translations `reports.source_import` and `reports.task_not_visible` in the 7 locales.
+- **`GET me` has `locale`** (requested by TimeTrack Desktop): the user's preferred locale (`es`, `pt_BR`, …) or `null`.
+  It comes from the profile provider when it also implements the new `Client\ClientUserLocaleProviderInterface`, else
+  from the user's own `getLocale()` when the user class has one; anything that is not a locale is sent as `null`.
+- Reference migration `demo/symfony8/migrations/Version20261105000000.php` (MySQL) for the new columns and indexes.
+
+### Changed
+
+- **Imported entries never clamp a backdated live start**: `findLatestEndedAt()` and the in-memory fallback ignore
+  them.
+- `TeamAccessGuard::canEditEntry()` is always `false` for an imported entry; no access-check listener can grant it.
+- **Masked titles**: an imported entry whose task its owner cannot track (`TaskProviderInterface::canUserTrack()`)
+  shows the translated `reports.task_not_visible` (in the user's `me` locale; `TimeEntry::HIDDEN_TASK_TITLE` without a
+  translator) with `taskVisible: false` in the client API, the export (JSON / CSV) and the reports page
+  (`TimerService::hiddenTaskEntryIds()`).
+- **Writer hardening**: two rows for one external identity in one `upsertMany()` call are refused (`rows` /
+  `duplicate`); titles and descriptions must be valid UTF-8 (`encoding`); the title is cleaned like the description
+  and kept on one line (LF, U+2028 and U+2029 runs become one space).
+- **Concurrent imports** (audit FJ-L1): a unique violation on flush (a concurrent run inserted an identity first)
+  writes nothing; the whole batch is then read again once, the raced row becomes an update (owner check still
+  applied) and new rows in the same batch are created with their owners re-attached to the reset entity manager
+  (`ImportedTimeEntryRepositoryInterface::attachUser()`). Without a `ManagerRegistry`, or inside a host transaction
+  (`canRetryAfterFailedSave()` false), the unique violation is rethrown instead and the host retries the slice.
+
+### Documentation
+
+- Task title masking is per surface: host overrides of `reports.html.twig` (including `nowo_ui_list_row`) and host
+  lists / exports must apply `hiddenTaskEntryIds()` / `toArray(false, …)` (FJ-L2).
+- The client API's own `GET entries` and `GET export` always include imported entries (GDPR art. 15 / 20) and ignore
+  `setIncludeImported(false)` (FJ-I1).
+- `TimeEntryImportedEvent` carries the managed entry (title snapshot and description included); listeners must not
+  log or forward them (FJ-I2).
+
 ## [1.10.3] - 2026-11-04
 
 Last follow-ups of audit Appendix EF2 (Info). No API shape or schema change.

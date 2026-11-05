@@ -32,6 +32,8 @@ reports:
   source_web: Web
   source_extension: Extensão do navegador
   source_desktop: Aplicação de ambiente de trabalho
+  source_import: Importado
+  task_not_visible: Tarefa não visível
 flash:
   timer_started: Temporizador iniciado.
   timer_already_active: Já tem um temporizador ativo.

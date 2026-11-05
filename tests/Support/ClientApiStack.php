@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
+use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
@@ -35,6 +36,7 @@ use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * In-memory client API stack of the unit tests (no kernel): auth service, guard, auditor, timer service, controllers.
@@ -105,6 +107,8 @@ final readonly class ClientApiStack
         ?ClientMinSupportedVersionProviderInterface $minSupportedVersions = null,
         ?ClientTaskPresenter $taskPresenter = null,
         ?IdleCheckSettingsResolver $idleCheckResolver = null,
+        ?ClientUserProfileProviderInterface $profileProvider = null,
+        ?TranslatorInterface $translator = null,
     ): TimeTrackClientApiController {
         return new TimeTrackClientApiController(
             $this->authService,
@@ -115,7 +119,7 @@ final readonly class ClientApiStack
             300,
             $this->guard,
             $taskAccess ?? new TaskProviderTaskAccessChecker($this->taskProvider),
-            new NullClientUserProfileProvider(),
+            $profileProvider ?? new NullClientUserProfileProvider(),
             $this->auditor,
             $allowMetadata,
             $this->clock,
@@ -123,6 +127,7 @@ final readonly class ClientApiStack
             taskPresenter: $taskPresenter,
             settingsProvider: $this->settings,
             idleCheckResolver: $idleCheckResolver,
+            translator: $translator,
         );
     }
 

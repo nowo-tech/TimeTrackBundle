@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.11.0](#to-1110)
 - [To 1.10.3](#to-1103)
 - [To 1.10.2](#to-1102)
 - [To 1.10.1](#to-1101)
@@ -50,6 +51,69 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.11.0
+
+**Schema (every host).** Additive and nullable; existing rows are unchanged. Doctrine hosts run
+`doctrine:migrations:diff`; the diff must be exactly this (table name without your `table_prefix`):
+
+```sql
+-- MySQL / MariaDB
+ALTER TABLE time_track_entries
+  ADD external_source VARCHAR(64) DEFAULT NULL, ADD external_id VARCHAR(128) DEFAULT NULL,
+  ADD billable TINYINT(1) DEFAULT NULL, ADD description LONGTEXT DEFAULT NULL;
+CREATE UNIQUE INDEX uniq_time_track_entries_external ON time_track_entries (external_source, external_id);
+CREATE INDEX idx_time_track_entries_source ON time_track_entries (source);
+CREATE INDEX time_track_entries_ended_idx ON time_track_entries (ended_at, id);
+-- PostgreSQL: BOOLEAN / TEXT. SQLite: one ADD COLUMN per column, BOOLEAN / CLOB.
+```
+
+**`time_track_entries_ended_idx` already exists?** Beacon added it in its own migration (`Version20261121090000`)
+with the same name and columns, so for Beacon the diff has no `CREATE INDEX` for it: keep that migration as it is.
+If **your** host created an equivalent index under **another name**, the diff creates a second one. Either drop yours
+in the same migration (`DROP INDEX <name> ON time_track_entries;` on MySQL, `DROP INDEX <name>;` on PostgreSQL /
+SQLite), or rename it when it already has the columns `(ended_at, id)` (`ALTER TABLE time_track_entries RENAME INDEX
+<name> TO time_track_entries_ended_idx` on MySQL 8, `ALTER INDEX <name> RENAME TO time_track_entries_ended_idx` on
+PostgreSQL) and remove the `CREATE INDEX` line. A single-column `(ended_at)` index is covered by the new one: drop it.
+
+A reference migration (MySQL) ships in the demo: `demo/symfony8/migrations/Version20261105000000.php`.
+
+**Downgrade.** 1.10 cannot hydrate `source = 'import'` (`TimeEntrySource::from()` throws): delete the imported rows
+(`DELETE FROM time_track_entries WHERE source = 'import'`) before going back. The columns and indexes can stay.
+
+**Code.**
+
+- `TimeEntrySource` has a new case `Import`: an exhaustive `match` on it must handle `import`.
+- `TimeEntry::toArray()` has more keys (`billable`, `description`, `readOnly`, `taskVisible`); the CSV export has
+  three more columns at the end. Positional CSV readers keep working.
+- Live-time logic in the host (overlap checks, working-hours registers, correction windows, forgotten-timer stoppers,
+  clock-in links) must read **live entries only**: `TimeEntrySource::isLive()` or
+  `ImportedTimeEntryRepositoryInterface::findLiveByUserAndPeriod()`, or set
+  `TimeEntryListQueryEvent::setIncludeImported(false)`.
+- Retention purges (yours, or the bundle's later) must skip `TimeEntryRetentionPolicy::excludedSources()` (imported
+  entries are kept as history unless `retention.include_imported: true`).
+- **Deleting tasks or boards never deletes tracked time** (owner rule 2026-11-05). `removeForTasks()` /
+  `removeForBoard()` / `remove()` are for an **explicit manager action** on imported time only; do not call them from
+  a task or board deletion. Account erasure may call `removeForUser()`.
+- `GET me` has a new key `locale` (string or null). To fill it, let your `client_api.profile_provider` service also
+  implement `Client\ClientUserLocaleProviderInterface`; otherwise the user's `getLocale()` is used when it exists.
+- `upsertMany()` refuses a batch with two rows for the same `(externalSource, externalId)` (`rows` / `duplicate`):
+  send each identity once per call.
+- Concurrent imports: a unique violation is retried once in the writer only with a `ManagerRegistry` and outside any
+  host transaction; otherwise `UniqueConstraintViolationException` is rethrown (nothing written) and the host retries
+  the slice. Do not call the writer inside your own transaction. A custom `ImportedTimeEntryRepositoryInterface`
+  store implements `canRetryAfterFailedSave()` and `attachUser()`.
+- **Task titles are masked per surface.** Overrides of `reports.html.twig` (including a surgical
+  `nowo_ui_list_row` override) must keep the `hidden_task_entry_ids` check; host lists and exports of entries (e.g.
+  *My time*, monthly summaries, inspection exports) must call `TimerService::hiddenTaskEntryIds()` and use
+  `toArray(false, $translatedTitle)` / `reports.task_not_visible` for those ids. `taskTitleSnapshot` and `toArray()`
+  without arguments return the real title.
+- The client API's own `GET entries` and `GET export` always include the user's imported entries (GDPR art. 15 / 20)
+  and ignore `setIncludeImported(false)`.
+- A custom `TimeEntryRepositoryInterface` store keeps working; only `ImportedTimeEntryWriter` needs
+  `ImportedTimeEntryRepositoryInterface` (it throws `LogicException` otherwise).
+- Clients (Desktop, Extension): render `source: import` as *Imported*, never offer edit, and skip `readOnly` entries
+  for *Resume* and recent tasks.
 
 ## To 1.10.3
 

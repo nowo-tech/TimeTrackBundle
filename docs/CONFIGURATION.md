@@ -15,6 +15,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Client API 1.9](#client-api-19)
 - [Client API 1.10](#client-api-110)
 - [Client distribution](#client-distribution)
+- [Imported entries and retention (1.11)](#imported-entries-and-retention-111)
 - [Security](#security)
 
 ## Required
@@ -178,7 +179,7 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.credential_state` | `null` | `ClientCredentialStateInterface`, checked on every request (default: always active) |
 | `client_api.credential_issuer` | `null` | `ClientCredentialIssuerInterface`, called on device approval (default: opaque `device:<uuid>`) |
 | `client_api.task_access_checker` | `null` | `TaskAccessCheckerInterface` for `timer/start` / `timer/switch` (default: the task provider decides) |
-| `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`) |
+| `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`; since 1.11 also `locale` when it implements `ClientUserLocaleProviderInterface`) |
 | `client_api.rate_limit.cache_pool` | `cache.app` | PSR-6 pool of the API counters, shared by all workers (Redis in production) |
 | `client_api.rate_limit.per_token` | `60` | Requests per token per window (`0` = off) |
 | `client_api.rate_limit.per_ip` | `300` | Requests per client IP per window, every API route (`0` = off) |
@@ -256,6 +257,21 @@ URLs are kept.
 | `client_distribution.desktop.update_manifest_url` | `null` | Tauri `latest.json` (exposed on `ClientDistribution`, not rendered) |
 | `client_distribution.min_supported_version.provider` | `null` | `ClientMinSupportedVersionProviderInterface` service (default: the versions below) — 1.9.1 |
 | `client_distribution.min_supported_version.extension` / `.desktop` / `.web` | `null` | Oldest supported client version per type, sent by `GET me` as `minSupportedVersion` (key absent when `null`). Must be semver 2.0.0 (`1.4.0`, `2.0.0-rc.1`; no `v` prefix) — 1.9.1 |
+
+## Imported entries and retention (1.11)
+
+```yaml
+nowo_time_track:
+  imports:
+    max_entry_seconds: 2678400   # longest single imported entry (31 days); 3600–31622400
+  retention:
+    include_imported: false      # imported entries stay out of retention purges
+```
+
+- Imported entries are written by `Import\ImportedTimeEntryWriter` (host code). Their description is kept **in full**
+  (unbounded text column, no length cap).
+- `retention.include_imported` feeds `Retention\TimeEntryRetentionPolicy`; the bundle ships no purge yet, so a host
+  purge must apply `excludedSources()`.
 
 ## Security
 

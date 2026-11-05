@@ -16,6 +16,9 @@ final class TimeEntryListQueryEvent extends Event
     /** @var list<string> */
     private array $userIds = [];
 
+    /** Since 1.11: whether imported entries are listed (true by default; false for live-time views). */
+    private bool $includeImported = true;
+
     /**
      * Creates the query for a viewer and a period.
      */
@@ -65,5 +68,22 @@ final class TimeEntryListQueryEvent extends Event
     {
         // @igor-ignore - Request-scoped Event DTO; not a shared worker service.
         $this->userIds = $userIds;
+    }
+
+    /**
+     * Since 1.11: whether the list includes imported entries.
+     */
+    public function includesImported(): bool
+    {
+        return $this->includeImported;
+    }
+
+    /**
+     * Since 1.11: false keeps imported entries out of the list (live-time views).
+     */
+    public function setIncludeImported(bool $includeImported): void
+    {
+        // @igor-ignore - Request-scoped Event DTO; not a shared worker service.
+        $this->includeImported = $includeImported;
     }
 }

@@ -32,6 +32,8 @@ reports:
   source_web: Web
   source_extension: Browsererweiterung
   source_desktop: Desktop-App
+  source_import: Importiert
+  task_not_visible: Aufgabe nicht sichtbar
 flash:
   timer_started: Timer gestartet.
   timer_already_active: Sie haben bereits einen aktiven Timer.

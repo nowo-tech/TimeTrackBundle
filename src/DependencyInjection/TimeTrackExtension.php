@@ -32,6 +32,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
@@ -42,7 +43,9 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
@@ -221,6 +224,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $loader->load('services.yaml');
 
         $this->registerClientApi($container, $config);
+        $this->registerImports($container, $config);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -228,6 +232,34 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->setArgument('$cssFramework', $config['templates']['css_framework'])
                 ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
         }
+    }
+
+    /**
+     * Since 1.11: the imported-entry writer, its repository alias and the retention policy (after the resource scan, so
+     * these explicit definitions win).
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerImports(ContainerBuilder $container, array $config): void
+    {
+        /** @var array{max_entry_seconds: int} $imports */
+        $imports = $config['imports'];
+        /** @var array{include_imported: bool} $retention */
+        $retention = $config['retention'];
+
+        $container->setParameter('nowo_time_track.imports.max_entry_seconds', $imports['max_entry_seconds']);
+        $container->setParameter('nowo_time_track.retention.include_imported', $retention['include_imported']);
+        $container->setAlias(ImportedTimeEntryRepositoryInterface::class, DoctrineOrmTimeEntryRepository::class);
+        $container->setDefinition(ImportedTimeEntryWriter::class, (new Definition(ImportedTimeEntryWriter::class))
+            ->setArguments([
+                '$repository'      => new Reference(TimeEntryRepositoryInterface::class),
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$maxEntrySeconds' => $imports['max_entry_seconds'],
+                '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(TimeEntryRetentionPolicy::class, (new Definition(TimeEntryRetentionPolicy::class))
+            ->setArgument('$includeImported', $retention['include_imported']));
     }
 
     /**
@@ -338,7 +370,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$minSupportedVersionProvider', new Reference(ClientMinSupportedVersionProviderInterface::class))
             ->setArgument('$taskPresenter', new Reference(ClientTaskPresenter::class))
             ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class))
-            ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class));
+            ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class))
+            ->setArgument('$translator', new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE));
         $container->getDefinition(TimeTrackClientDeviceController::class)
             ->setArgument('$verificationUri', $device['verification_uri'])
             ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);

@@ -145,8 +145,10 @@ final class TimeTrackManageController extends AbstractController
             'page'       => $pages->reportsPage($entryPage, $from, $to, $request->attributes->getString('_route') ?: null, $query),
             'entries'    => $entryPage->entries,
             'entry_page' => $entryPage,
-            'from'       => $from,
-            'to'         => $to,
+            // Since 1.11: imported entries whose task the owner cannot see (entry id => true); the template masks them.
+            'hidden_task_entry_ids' => $this->timerService->hiddenTaskEntryIds($entryPage->entries),
+            'from'                  => $from,
+            'to'                    => $to,
         ] + $pages->layoutContext());
     }
 

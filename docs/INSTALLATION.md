@@ -15,7 +15,7 @@ The Flex recipe copies `config/packages/nowo_time_track.yaml` and `config/routes
 
 ## Database
 
-Create tables via Doctrine migrations. See demo migration `demo/symfony8/migrations/Version20250706120000.php` for reference SQL.
+Create tables via Doctrine migrations. See demo migration `demo/symfony8/migrations/Version20250706120000.php` for reference SQL, and `Version20261105000000.php` for the 1.11 imported-entry columns and the `time_track_entries_ended_idx` `(ended_at, id)` index.
 
 ## Security
 
