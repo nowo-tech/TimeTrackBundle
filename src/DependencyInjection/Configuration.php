@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\DependencyInjection;
 
+use DateTimeZone;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 use function array_key_exists;
+use function in_array;
 use function is_array;
 use function is_string;
 use function preg_match;
@@ -171,6 +174,7 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                     ->end()
                 ->end()
+                ->append($this->timesheetsNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
                     ->addDefaultsIfNotSet()
@@ -603,6 +607,100 @@ final class Configuration implements ConfigurationInterface
             ->end();
 
         return $treeBuilder;
+    }
+
+    /**
+     * Since 1.13: `timesheets` (contract §13): weekly / monthly timesheets with submit, approval, hard lock and audit
+     * trail. Off by default; incoherent combinations are refused at compile time.
+     */
+    private function timesheetsNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('timesheets'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Timesheets, period lock and the timesheet client API (default off).')
+                    ->defaultFalse()
+                ->end()
+                ->enumNode('scope_mode')
+                    ->info('provider: tenant scopes from scope_provider; single: one scope "" for everybody.')
+                    ->values(['provider', 'single'])
+                    ->defaultValue('provider')
+                ->end()
+                ->scalarNode('scope_provider')
+                    ->info('Service id implementing TimesheetScopeProviderInterface (required with scope_mode: provider).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('approver_provider')
+                    ->info('Service id implementing TimesheetApproverProviderInterface (required when enabled).')
+                    ->defaultNull()
+                ->end()
+                ->enumNode('period')
+                    ->info('week (ISO, Monday to Sunday) or month.')
+                    ->values(['week', 'month'])
+                    ->defaultValue('week')
+                ->end()
+                ->scalarNode('default_timezone')
+                    ->info('Zone a period is cut in when neither the scope nor the working hours give one.')
+                    ->defaultValue('UTC')
+                    ->validate()
+                        ->ifTrue(static fn (mixed $v): bool => !is_string($v) || !in_array($v, DateTimeZone::listIdentifiers(), true))
+                        ->thenInvalid('timesheets.default_timezone must be an IANA time zone, got %s.')
+                    ->end()
+                ->end()
+                ->booleanNode('submit_requires_period_end')
+                    ->info('Refuse a submit before the period has ended (default false: a Friday afternoon submit is allowed).')
+                    ->defaultFalse()
+                ->end()
+                ->integerNode('auto_lock_after_days')
+                    ->info('Lock every period N days after its end (nowo:time-track:timesheets:auto-lock); null = off.')
+                    ->defaultNull()
+                    ->min(1)
+                    ->max(366)
+                ->end()
+                ->booleanNode('allow_self_approval')
+                    ->info('Fixed false in 1.13: nobody approves their own timesheet, admin roles included.')
+                    ->defaultFalse()
+                    ->validate()
+                        ->ifTrue(static fn (mixed $v): bool => $v !== false)
+                        ->thenInvalid('timesheets.allow_self_approval cannot be enabled in 1.13 (no self-approval, contract Q-O2).')
+                    ->end()
+                ->end()
+                ->booleanNode('admin_roles_view')
+                    ->info('Whether security.admin_roles see timesheets of their scopes without being approvers (default false).')
+                    ->defaultFalse()
+                ->end()
+                ->arrayNode('reopen_roles')
+                    ->info('Roles that may reopen a locked period besides its approvers (default none).')
+                    ->scalarPrototype()->end()
+                    ->defaultValue([])
+                ->end()
+                ->booleanNode('approver_sees_notes')
+                    ->info('Whether approvers see entry notes and descriptions (default false: minimisation).')
+                    ->defaultFalse()
+                ->end()
+                ->booleanNode('audit_blocked_edits')
+                    ->info('Write an edit_blocked audit row per refused write (at most one per timesheet per minute).')
+                    ->defaultFalse()
+                ->end()
+                ->integerNode('retention_years')
+                    ->info('Years timesheets, their audit rows and the ledger are kept after the end of the period month (4-10).')
+                    ->defaultValue(4)
+                    ->min(4)
+                    ->max(10)
+                ->end()
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && $v['scope_mode'] === 'provider' && !is_string($v['scope_provider']))
+                ->thenInvalid('timesheets.scope_provider is required when timesheets are enabled with scope_mode: provider.')
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['approver_provider']))
+                ->thenInvalid('timesheets.approver_provider is required when timesheets are enabled (nobody could approve).')
+            ->end();
+
+        return $node;
     }
 
     /**

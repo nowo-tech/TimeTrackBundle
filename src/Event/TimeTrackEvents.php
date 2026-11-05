@@ -28,4 +28,34 @@ final class TimeTrackEvents
 
     /** {@see TimeEntriesRemovedEvent}: imported entries were deleted (one, or in bulk) (1.11). */
     public const TIME_ENTRIES_REMOVED = 'nowo_time_track.time_entries.removed';
+
+    /** {@see TimesheetTransitionEvent}: a timesheet was submitted (1.13). */
+    public const TIMESHEET_SUBMITTED = 'nowo_time_track.timesheet.submitted';
+
+    /** {@see TimesheetTransitionEvent}: a submitted timesheet was withdrawn by its owner (1.13). */
+    public const TIMESHEET_WITHDRAWN = 'nowo_time_track.timesheet.withdrawn';
+
+    /** {@see TimesheetTransitionEvent}: a timesheet was approved and locked (1.13). */
+    public const TIMESHEET_APPROVED = 'nowo_time_track.timesheet.approved';
+
+    /** {@see TimesheetTransitionEvent}: a timesheet was rejected with a comment (1.13). */
+    public const TIMESHEET_REJECTED = 'nowo_time_track.timesheet.rejected';
+
+    /** {@see TimesheetTransitionEvent}: a locked timesheet was reopened with a reason (1.13). */
+    public const TIMESHEET_REOPENED = 'nowo_time_track.timesheet.reopened';
+
+    /** {@see TimesheetTransitionEvent}: a period was auto-locked by the scheduled command (1.13). */
+    public const TIMESHEET_AUTO_LOCKED = 'nowo_time_track.timesheet.auto_locked';
+
+    /** {@see TimesheetAccessCheckEvent}: deny-only check of a timesheet action (1.13). */
+    public const TIMESHEET_ACCESS_CHECK = 'nowo_time_track.timesheet.access_check';
+
+    /** {@see TimesheetLateEntryEvent}: an entry was written into a period locked while its timer ran (1.13). */
+    public const TIMESHEET_LATE_ENTRY = 'nowo_time_track.timesheet.late_entry';
+
+    /** {@see PeriodLockRefusedEvent}: a write path was refused by a locked or submitted period (1.13). */
+    public const PERIOD_LOCK_REFUSED = 'nowo_time_track.period_lock.refused';
+
+    /** {@see BalanceLedgerLineAddedEvent}: a balance ledger line was appended (1.13). */
+    public const BALANCE_LEDGER_LINE_ADDED = 'nowo_time_track.balance_ledger.line_added';
 }

@@ -56,8 +56,13 @@ abstract class FunctionalTestCase extends WebTestCase
         $throttle = static::getContainer()->get('cache.time_track_test');
         $throttle->clear();
 
-        $em = $this->entityManager();
-        (new SchemaTool($em))->createSchema($em->getMetadataFactory()->getAllMetadata());
+        $em   = $this->entityManager();
+        $tool = new SchemaTool($em);
+        if (FunctionalKernel::databaseUrl() !== 'sqlite:///:memory:') {
+            // Since 1.13: a shared server database (MySQL / PostgreSQL runs) starts empty for every test.
+            $tool->dropDatabase();
+        }
+        $tool->createSchema($em->getMetadataFactory()->getAllMetadata());
 
         $this->user = $this->createUser('person@example.com');
     }

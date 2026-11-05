@@ -8,6 +8,7 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as Doctrine
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
 use Psr\Log\NullLogger;
@@ -24,6 +25,8 @@ use Twig\Extra\TwigExtraBundle\TwigExtraBundle;
 
 use function array_replace_recursive;
 use function dirname;
+use function getenv;
+use function is_string;
 use function md5;
 use function serialize;
 use function sys_get_temp_dir;
@@ -76,7 +79,18 @@ final class FunctionalKernel extends Kernel
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . PHP_VERSION_ID);
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . PHP_VERSION_ID . self::databaseUrl());
+    }
+
+    /**
+     * Since 1.13: the test database (`TIME_TRACK_TEST_DATABASE_URL`, e.g. a MySQL or PostgreSQL container for the
+     * migration and lock tests), in-memory SQLite by default.
+     */
+    public static function databaseUrl(): string
+    {
+        $url = getenv('TIME_TRACK_TEST_DATABASE_URL');
+
+        return is_string($url) && $url !== '' ? $url : 'sqlite:///:memory:';
     }
 
     private function configureContainer(ContainerConfigurator $container): void
@@ -95,11 +109,13 @@ final class FunctionalKernel extends Kernel
             'cache' => ['pools' => ['cache.time_track_test' => ['adapter' => 'cache.adapter.filesystem', 'public' => true]]],
         ]);
         $container->services()->set('logger', NullLogger::class);
+        // Since 1.13: approver provider of the timesheet variants (public: tests configure it per case).
+        $container->services()->set(StubTimesheetApproverProvider::class)->public();
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);
         $container->extension('doctrine', [
-            'dbal' => ['url' => 'sqlite:///:memory:'],
+            'dbal' => ['url' => self::databaseUrl()],
             'orm'  => [
                 'auto_mapping' => true,
                 'mappings'     => ['FunctionalFixtures' => [

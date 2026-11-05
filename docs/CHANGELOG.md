@@ -44,6 +44,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Working time, hours balance and timesheets (TimeTrack 1.13.0, contract `timetrack-next` v1.0 §3–§5, built as stacked
+PRs). Every feature is off until configured; the schema change is required for every host (always-mapped tables).
+
+### Added
+
+- **Entry tenant scope** `time_track_entries.scope_key` (`VARCHAR(64)` NULL) with the index
+  `idx_time_track_entries_user_scope_started (user_id, scope_key, started_at)`: with timesheets on, the timer service
+  and the import writer store the scope of the task (`TimesheetScopeProviderInterface::scopeKeyForTask()`).
+  `TimeEntry::getScopeKey()`.
+- **Timesheet model** (always mapped): `Entity\Timesheet` (`time_track_timesheets`, UUID v7, nullable owner FK
+  `ON DELETE SET NULL` + `owner_ref`, optimistic `version`), `Entity\TimesheetEvent` (`time_track_timesheet_events`,
+  append-only audit rows chained by SHA-256) and `Entity\BalanceLedgerLine` (`time_track_balance_ledger`, append-only,
+  chained per owner and scope), their repositories (`TimesheetRepositoryInterface`, `TimesheetEventRepositoryInterface`
+  — append and read only —, `BalanceLedgerRepositoryInterface`, `TimesheetRetentionRepositoryInterface`) and Doctrine
+  stores. Reference migrations for MySQL, PostgreSQL and SQLite in `docs/sql/1.13.0/` (tested against all three).
+- **`timesheets` configuration** (`enabled: false` by default; `scope_mode: provider|single`, `scope_provider`,
+  `approver_provider`, `period: week|month`, `default_timezone`, `submit_requires_period_end`, `auto_lock_after_days`,
+  `allow_self_approval` — fixed false —, `admin_roles_view`, `reopen_roles`, `approver_sees_notes`,
+  `audit_blocked_edits`, `retention_years` 4–10). Incoherent combinations fail at compile time.
+- **`Timesheet\TimesheetScopeProviderInterface`** (host tenant scopes, Beacon `org-<uuid>`), `TimesheetScope`,
+  `SingleScopeProvider` (`scope_mode: single`), **`TimesheetApproverProviderInterface`** (who approves whom, per scope).
+- **Period lock** `Timesheet\PeriodLockGuard::assertWritable($user, ?$scopeKey, $instant, WriteKind)`: hard lock
+  (`PeriodLockedException`, 409 `period_locked` with `lockedThrough`) and submitted soft lock
+  (`PeriodSubmittedException`, 409 `period_submitted`); a null scope is checked against every scope of the user.
+  Enforced on every bundle write path: `TimerService::startAt()` / `start()` / `switchTo()` / `resolveIdle()`,
+  `ImportedTimeEntryWriter` (new outcome `ImportedTimeEntryOutcome::Locked`, `ImportedTimeEntryBatchResult::$locked`),
+  imported-entry removals, `TeamAccessGuard::canEditEntry()` / `canDeleteImportedEntry()` (evaluated after the
+  listener: a grant is ignored). A stop is always allowed; an entry written into a period locked while its timer ran
+  fires `TimesheetLateEntryEvent`. Refusals fire `PeriodLockRefusedEvent` (ids only).
+- **Events** constants `TIMESHEET_SUBMITTED`, `TIMESHEET_WITHDRAWN`, `TIMESHEET_APPROVED`, `TIMESHEET_REJECTED`,
+  `TIMESHEET_REOPENED`, `TIMESHEET_AUTO_LOCKED`, `TIMESHEET_ACCESS_CHECK`, `TIMESHEET_LATE_ENTRY`,
+  `PERIOD_LOCK_REFUSED`, `BALANCE_LEDGER_LINE_ADDED`.
+- **`nowo:time-track:entries:backfill-scope [--batch=500] [--dry-run]`**: gives pre-1.13 entries their scope (keyset,
+  idempotent, resumable).
+- `TimeEntrySource::Manual` and `TimeEntrySource::Calendar` (live, editable; write paths in 1.14).
+- `Repository\FilteredImportedTimeEntryRepositoryInterface` (bulk removal that keeps locked entries) and
+  `Repository\ScopeBackfillRepositoryInterface`, both implemented by `DoctrineOrmTimeEntryRepository`.
+- `ValueObject\Uuid::generateV7()`, `Support\CanonicalJson`, `Support\StorageTime`.
+
+### Changed
+
+- `TimerService`, `ImportedTimeEntryWriter` and `TeamAccessGuard` take an optional `PeriodLockGuard` (and the first two
+  a scope provider) as their last constructor arguments; without them (or with timesheets off) they behave as in 1.12.
+- `TimeTrackMetadataListener` maps the three new tables (prefix and user class) through three optional arguments.
+
 ## [1.12.0] - 2026-11-05
 
 Minor release (additive): days off on `GET me` and one shape for `workingHours`.

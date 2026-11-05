@@ -44,6 +44,23 @@ final readonly class Uuid implements Stringable
     }
 
     /**
+     * Since 1.13: generates a time-ordered (version 7, RFC 9562) UUID: 48-bit Unix milliseconds, then random bits.
+     *
+     * @param int|null $unixMilliseconds Timestamp to embed (null = now)
+     */
+    public static function generateV7(?int $unixMilliseconds = null): self
+    {
+        $ms    = $unixMilliseconds ?? (int) floor(microtime(true) * 1000);
+        $bytes = substr(pack('J', $ms), 2, 6) . random_bytes(10);
+        // @igor-ignore - local byte buffer of this call, not shared state.
+        $bytes[6] = chr(ord($bytes[6]) & 0x0F | 0x70);
+        // @igor-ignore - local byte buffer of this call, not shared state.
+        $bytes[8] = chr(ord($bytes[8]) & 0x3F | 0x80);
+
+        return new self(vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4)));
+    }
+
+    /**
      * Canonical string form.
      */
     public function toString(): string
@@ -62,7 +79,7 @@ final readonly class Uuid implements Stringable
     private function isValid(string $value): bool
     {
         return (bool) preg_match(
-            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
             $value,
         );
     }

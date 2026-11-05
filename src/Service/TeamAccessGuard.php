@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -32,6 +33,7 @@ final readonly class TeamAccessGuard
         private bool $managerCanViewEntries,
         private bool $managerCanEditEntries,
         private ?ManagerRegistry $managerRegistry = null,
+        private ?PeriodLockGuard $periodLockGuard = null,
     ) {
     }
 
@@ -61,6 +63,8 @@ final readonly class TeamAccessGuard
     /**
      * Whether the viewer may edit the entry (host code only; the bundle ships no edit route). Since 1.11 an imported
      * (read-only) entry is never editable: the access-check event is not even dispatched, so no listener can grant it.
+     * Since 1.13 an entry of a locked or submitted period is never editable either: the period lock is checked **after**
+     * the event, so a granting listener is ignored.
      */
     public function canEditEntry(UserInterface $editor, TimeEntry $entry): bool
     {
@@ -84,13 +88,14 @@ final readonly class TeamAccessGuard
         $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
-        return $event->isGranted();
+        return $event->isGranted() && $this->isWritable($entry);
     }
 
     /**
      * Since 1.11: whether the actor may delete an imported entry. Denied by default (also for its owner); the host
      * grants it through {@see TimeEntryAccessCheckEvent} with action `delete_imported` (e.g. project managers).
-     * Always false for live entries.
+     * Always false for live entries, and (since 1.13) for entries of a locked or submitted period, whatever a listener
+     * says.
      */
     public function canDeleteImportedEntry(UserInterface $actor, TimeEntry $entry): bool
     {
@@ -101,7 +106,15 @@ final readonly class TeamAccessGuard
         $event = new TimeEntryAccessCheckEvent($actor, $entry, self::ACTION_DELETE_IMPORTED, false);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
-        return $event->isGranted();
+        return $event->isGranted() && $this->isWritable($entry);
+    }
+
+    /**
+     * Since 1.13: the period lock, evaluated after the listeners (a grant never overrides it).
+     */
+    private function isWritable(TimeEntry $entry): bool
+    {
+        return !$this->periodLockGuard instanceof PeriodLockGuard || $this->periodLockGuard->isEntryWritable($entry);
     }
 
     private function hasAdminRole(UserInterface $user): bool

@@ -48,6 +48,13 @@ services:
             - '../../Security/TimeTrackAccessCheckerInterface.php'
             - '../../Security/ConfigurableTimeTrackAccessChecker.php'
             - '../../Security/AllowAllTimeTrackAccessChecker.php'
+            # Since 1.13: value objects; the guard and the scope providers are defined by the extension.
+            - '../../Timesheet/Period.php'
+            - '../../Timesheet/TimesheetScope.php'
+            - '../../Timesheet/SingleScopeProvider.php'
+            - '../../Timesheet/PeriodLockGuard.php'
+            - '../../Support/CanonicalJson.php'
+            - '../../Support/StorageTime.php'
 
     Nowo\TimeTrackBundle\Controller\:
         resource: '../../Controller/'
@@ -78,6 +85,10 @@ services:
             - { name: monolog.logger, channel: time_track }
 
     Nowo\TimeTrackBundle\Command\PurgeExpiredClientTokensCommand:
+        tags:
+            - { name: monolog.logger, channel: time_track }
+
+    Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand:
         tags:
             - { name: monolog.logger, channel: time_track }
 

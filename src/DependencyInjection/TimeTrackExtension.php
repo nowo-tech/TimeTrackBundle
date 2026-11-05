@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
+use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
@@ -36,16 +37,23 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmBalanceLedgerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetEventRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryResolver;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimesheetRetentionRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
@@ -55,6 +63,9 @@ use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Psr\Clock\ClockInterface;
@@ -95,6 +106,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $activeTimersTable = $prefix . '_active_timers';
         $clientTokensTable = $prefix . '_client_tokens';
         $deviceCodesTable  = $prefix . '_device_codes';
+        $timesheetsTable   = $prefix . '_timesheets';
         $emName            = (string) $config['database']['entity_manager'];
         $clients           = $config['clients'];
         $security          = $config['security'];
@@ -177,6 +189,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$clientTokensTableName', $clientTokensTable)
             ->setArgument('$userClass', $config['user_class'])
             ->setArgument('$deviceCodesTableName', $deviceCodesTable)
+            ->setArgument('$timesheetsTableName', $timesheetsTable)
+            ->setArgument('$timesheetEventsTableName', $prefix . '_timesheet_events')
+            ->setArgument('$balanceLedgerTableName', $prefix . '_balance_ledger')
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
         $loginRateLimit = $clients['login_rate_limit'];
@@ -226,6 +241,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $this->registerClientApi($container, $config);
         $this->registerImports($container, $config);
+        $this->registerTimesheets($container, $config, $emRef);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -265,6 +281,63 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(TimeEntryRetentionPolicy::class, (new Definition(TimeEntryRetentionPolicy::class))
             ->setArgument('$includeImported', $retention['include_imported']));
+    }
+
+    /**
+     * Since 1.13: timesheet stores (always mapped), the tenant scope provider, the period lock guard and its wiring
+     * into every bundle write path (timer service, import writer, team access guard), the scope back-fill command.
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerTimesheets(ContainerBuilder $container, array $config, Reference $emRef): void
+    {
+        /** @var array{enabled: bool, scope_mode: string, scope_provider: string|null, approver_provider: string|null, period: string, default_timezone: string, submit_requires_period_end: bool, auto_lock_after_days: int|null, allow_self_approval: bool, admin_roles_view: bool, reopen_roles: list<string>, approver_sees_notes: bool, audit_blocked_edits: bool, retention_years: int} $timesheets */
+        $timesheets  = $config['timesheets'];
+        $enabled     = $timesheets['enabled'];
+        $registryRef = new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $container->setParameter('nowo_time_track.timesheets', $timesheets);
+        $container->setParameter('nowo_time_track.timesheets.enabled', $enabled);
+
+        $container->setDefinition(DoctrineOrmTimesheetRepository::class, (new Definition(DoctrineOrmTimesheetRepository::class))
+            ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => $registryRef]));
+        $container->setAlias(TimesheetRepositoryInterface::class, DoctrineOrmTimesheetRepository::class);
+        $container->setAlias(TimesheetRetentionRepositoryInterface::class, DoctrineOrmTimesheetRepository::class);
+        $container->setDefinition(DoctrineOrmTimesheetEventRepository::class, (new Definition(DoctrineOrmTimesheetEventRepository::class))
+            ->setArguments(['$entityManager' => $emRef]));
+        $container->setAlias(TimesheetEventRepositoryInterface::class, DoctrineOrmTimesheetEventRepository::class);
+        $container->setDefinition(DoctrineOrmBalanceLedgerRepository::class, (new Definition(DoctrineOrmBalanceLedgerRepository::class))
+            ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => $registryRef]));
+        $container->setAlias(BalanceLedgerRepositoryInterface::class, DoctrineOrmBalanceLedgerRepository::class);
+
+        if ($enabled) {
+            if ($timesheets['scope_mode'] === 'single') {
+                $container->setDefinition(SingleScopeProvider::class, new Definition(SingleScopeProvider::class));
+                $container->setAlias(TimesheetScopeProviderInterface::class, SingleScopeProvider::class);
+            } else {
+                $container->setAlias(TimesheetScopeProviderInterface::class, (string) $timesheets['scope_provider']);
+            }
+        }
+        $scopeRef = new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
+
+        $container->setDefinition(PeriodLockGuard::class, (new Definition(PeriodLockGuard::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$timesheets'      => new Reference(TimesheetRepositoryInterface::class),
+                '$enabled'         => $enabled,
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ]));
+        $guardRef = new Reference(PeriodLockGuard::class);
+
+        $container->getDefinition(TimerService::class)
+            ->setArgument('$periodLockGuard', $guardRef)
+            ->setArgument('$scopeProvider', $scopeRef);
+        $container->getDefinition(ImportedTimeEntryWriter::class)
+            ->setArgument('$periodLockGuard', $guardRef)
+            ->setArgument('$scopeProvider', $scopeRef);
+        $container->getDefinition(TeamAccessGuard::class)
+            ->setArgument('$periodLockGuard', $guardRef);
+        $container->getDefinition(BackfillEntryScopeCommand::class)
+            ->setArgument('$scopeProvider', $scopeRef);
     }
 
     /**

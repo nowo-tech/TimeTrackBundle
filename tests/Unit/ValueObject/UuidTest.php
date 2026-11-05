@@ -33,4 +33,13 @@ final class UuidTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         Uuid::fromString('not-a-uuid');
     }
+
+    public function testVersion7IsTimeOrderedAndValid(): void
+    {
+        $uuid = Uuid::generateV7(1_700_000_000_000);
+
+        self::assertMatchesRegularExpression('/^018bcfe5-6800-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $uuid->toString());
+        self::assertSame($uuid->toString(), Uuid::fromString($uuid->toString())->toString());
+        self::assertLessThan(Uuid::generateV7()->toString(), $uuid->toString());
+    }
 }
