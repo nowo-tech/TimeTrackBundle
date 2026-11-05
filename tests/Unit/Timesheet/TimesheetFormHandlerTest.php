@@ -123,6 +123,13 @@ final class TimesheetFormHandlerTest extends TestCase
         } catch (TimesheetException $e) {
             self::assertSame('not_found', $e->errorCode());
         }
+        // A period without a scope is the single scope '' (not one of this actor's scopes here): not found.
+        try {
+            $this->handler->handleDecision($this->post('time_track_submit', ['period' => '2026-W41']), $this->owner, 'submit');
+            self::fail('empty scope');
+        } catch (TimesheetException $e) {
+            self::assertSame('not_found', $e->errorCode());
+        }
         // A scope the actor is not in is not found either.
         try {
             $this->handler->handleDecision($this->post('time_track_submit', ['scope' => 'org-x', 'period' => '2026-W40']), $this->owner, 'submit');

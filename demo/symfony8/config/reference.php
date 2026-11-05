@@ -1293,6 +1293,45 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     reports?: array{ // Reports page of the manage UI (REQ-PERF-001).
  *         page_size?: int|Param, // Entries per reports page (query parameter `page`). // Default: 50
  *     },
+ *     imports?: array{ // Since 1.11: imported time entries (source "import", written by Import\ImportedTimeEntryWriter). Descriptions are kept in full (no length cap).
+ *         max_entry_seconds?: int|Param, // Longest single imported entry, in seconds (default 31 days); longer entries are refused. // Default: 2678400
+ *     },
+ *     working_time?: array{
+ *         enabled?: bool|Param, // Hours balance, overtime and the balance client API (default off). // Default: false
+ *         calendar_provider?: scalar|Param|null, // Service id implementing WorkingCalendarProviderInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off). // Default: null
+ *         worked_time_source?: scalar|Param|null, // Service id implementing WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false). // Default: null
+ *         overtime_policy?: scalar|Param|null, // Service id implementing OvertimePolicyInterface (null = ConfigOvertimePolicy with the values below). // Default: null
+ *         balance?: array{
+ *             start_date?: scalar|Param|null, // First day of the running balance (Y-m-d); null = the 366 days before the end of the asked range, or after the last locked period. // Default: null
+ *         },
+ *         overtime?: array{
+ *             daily_mode?: "expected"|"ordinary_max"|"none"|Param, // expected: above the day's expected time; ordinary_max: above the agreement cap or ordinary_max_seconds; none: weekly rule only (flexible hours). // Default: "expected"
+ *             ordinary_max_seconds?: int|Param, // 9 h, art. 34.3 ET. // Default: 32400
+ *             weekly_mode?: "expected"|"legal_max"|Param, // expected: above the week's expected time; legal_max: above weekly_max_seconds. // Default: "expected"
+ *             weekly_max_seconds?: int|Param, // 40 h, art. 34.1 ET. // Default: 144000
+ *             annual_cap_seconds?: int|Param, // 80 h, art. 35.2 ET (0 = no cap flags). // Default: 288000
+ *             ratify_on_approval?: bool|Param, // Write one overtime_ratified ledger line when a timesheet is approved. // Default: true
+ *         },
+ *     },
+ *     timesheets?: array{
+ *         enabled?: bool|Param, // Timesheets, period lock and the timesheet client API (default off). // Default: false
+ *         scope_mode?: "provider"|"single"|Param, // provider: tenant scopes from scope_provider; single: one scope "" for everybody. // Default: "provider"
+ *         scope_provider?: scalar|Param|null, // Service id implementing TimesheetScopeProviderInterface (required with scope_mode: provider). // Default: null
+ *         approver_provider?: scalar|Param|null, // Service id implementing TimesheetApproverProviderInterface (required when enabled). // Default: null
+ *         period?: "week"|"month"|Param, // week (ISO, Monday to Sunday) or month. // Default: "week"
+ *         default_timezone?: scalar|Param|null, // Zone a period is cut in when neither the scope nor the working hours give one. // Default: "UTC"
+ *         submit_requires_period_end?: bool|Param, // Refuse a submit before the period has ended (default false: a Friday afternoon submit is allowed). // Default: false
+ *         auto_lock_after_days?: int|Param, // Lock every period N days after its end (nowo:time-track:timesheets:auto-lock); null = off. // Default: null
+ *         allow_self_approval?: bool|Param, // Fixed false in 1.13: nobody approves their own timesheet, admin roles included. // Default: false
+ *         admin_roles_view?: bool|Param, // Whether security.admin_roles see timesheets of their scopes without being approvers (default false). // Default: false
+ *         reopen_roles?: list<scalar|Param|null>,
+ *         approver_sees_notes?: bool|Param, // Whether approvers see entry notes and descriptions (default false: minimisation). // Default: false
+ *         audit_blocked_edits?: bool|Param, // Write an edit_blocked audit row per refused write (at most one per timesheet per minute). // Default: false
+ *         retention_years?: int|Param, // Years timesheets, their audit rows and the ledger are kept after the end of the period month (4-10). // Default: 4
+ *     },
+ *     retention?: array{ // Since 1.11: retention policy (Retention\TimeEntryRetentionPolicy) that any purge must apply.
+ *         include_imported?: bool|Param, // false (default) = imported entries are history and stay out of retention purges. // Default: false
+ *     },
  *     web_ui?: array{ // Manage UI pages on the UiKit page contract (REQ-UI-003).
  *         layout_template?: scalar|Param|null, // Layout of the pages (passed to the UiKit scaffolds as ListPage::$layout). null = nowo_ui_kit.layouts.admin. A 1.x layout without the UiKit canonical blocks is wrapped in a deprecated bridge. // Default: null
  *         templates?: array{ // Per-page template override: a host template that extends @!NowoTimeTrackBundle/<template> and overrides a data block.
@@ -1320,6 +1359,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             max_attempts?: int|Param, // Default: 10
  *             interval_seconds?: int|Param, // Default: 900
  *             max_attempts_per_ip?: int|Param, // Failed logins per client IP (any username) within interval_seconds. null = 5 × max_attempts. // Default: null
+ *             max_attempts_per_username?: int|Param, // Failed logins per username (any client IP) within interval_seconds. null = 5 × max_attempts. // Default: null
  *         },
  *         routes?: array{
  *             login?: array{
@@ -1378,6 +1418,30 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *                 path?: scalar|Param|null, // Default: "/api/time-track/device/token"
  *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_device_token"
  *             },
+ *             workday?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/workday"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_workday"
+ *             },
+ *             workday_action?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/workday/{action}"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_workday_action"
+ *             },
+ *             balance?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/balance"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_balance"
+ *             },
+ *             timesheets?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/timesheets"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timesheets"
+ *             },
+ *             timesheet_submit?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/timesheets/{periodKey}/submit"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timesheet_submit"
+ *             },
+ *             timesheet_withdraw?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/timesheets/{periodKey}/withdraw"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timesheet_withdraw"
+ *             },
  *         },
  *     },
  *     client_api?: array{ // Client API 1.9 (contract v0.2): host interfaces, CORS, metadata, rate limits, audit and device flow. Needs clients.enabled.
@@ -1389,6 +1453,24 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         credential_issuer?: scalar|Param|null, // Service id implementing ClientCredentialIssuerInterface, called when a device is approved (null = opaque device:<uuid> ids). // Default: null
  *         task_access_checker?: scalar|Param|null, // Service id implementing TaskAccessCheckerInterface, checked on timer/start and timer/switch (null = the task provider decides). // Default: null
  *         profile_provider?: scalar|Param|null, // Service id implementing ClientUserProfileProviderInterface (displayName / workingHours of GET me; null = none). // Default: null
+ *         workday_provider?: scalar|Param|null, // Since 1.13: service id implementing Workday\WorkdayProviderInterface (R-GDPR §8; null = no workday API). // Default: null
+ *         backdate?: array{ // Client-supplied startedAt (timer/start) and endedAt (timer/stop), 1.10: clamped and reported, never rejected.
+ *             max_seconds?: int|Param, // How far back startedAt may go (default and maximum 24 h; 0 = startedAt / endedAt ignored, reason "disabled"). // Default: 86400
+ *             clock_skew_seconds?: int|Param, // Future tolerance read as "now" (beyond it the value is clamped with reason "future"). // Default: 120
+ *         },
+ *         idle?: array{
+ *             allow_reassign?: bool|Param, // Accept timer/discard-idle action "reassign" (1.10; false = 400 invalid_request and features.idle_reassign false). // Default: true
+ *         },
+ *         idle_check?: array{ // Idle-check settings published on GET me (1.10). The server only receives the user's decision (timer/discard-idle); no activity counter is sent or stored.
+ *             enabled?: bool|Param, // Default: true
+ *             threshold_minutes?: int|Param, // Idle minutes before the client asks. // Default: 10
+ *             answer_timeout_minutes?: int|Param, // Minutes the idle prompt waits for an answer. // Default: 5
+ *             user_can_disable?: bool|Param, // Whether users may turn the idle check off in the client (1.10.1; limits.idle_check.user_can_disable). // Default: false
+ *             provider?: scalar|Param|null, // Service id implementing IdleCheckSettingsProviderInterface (per-user settings; null = these values). Its values are clamped to the same ranges. // Default: null
+ *         },
+ *         task_url?: array{
+ *             origin?: scalar|Param|null, // Expected origin of task URLs on tasks / timer (exact https://host[:port]; null = the request origin). Behind a proxy set it from the public URL, e.g. "%beacon.app_url%". // Default: null
+ *         },
  *         rate_limit?: array{
  *             cache_pool?: scalar|Param|null, // PSR-6 pool shared by all workers (Redis, filesystem, APCu; not an array pool). // Default: "cache.app"
  *             per_token?: int|Param, // Requests per token per window (0 = off). // Default: 60
@@ -1407,6 +1489,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             interval?: int|Param, // Default: 5
  *             lookup_limit?: int|Param, // User code lookups per user per lookup_window_seconds. // Default: 10
  *             lookup_window_seconds?: int|Param, // Default: 900
+ *             max_pending_per_prefix?: int|Param, // Device requests created per client IPv4 /24 or IPv6 /64 within code_ttl (0 = off). // Default: 20
+ *             max_pending?: int|Param, // Pending, not expired device requests in total; device/code answers 429 above it (0 = off). // Default: 10000
  *         },
  *     },
  *     client_distribution?: array{ // Download / store links of the clients (ClientDistributionProviderInterface default). Absolute http(s) URLs only.
@@ -1422,6 +1506,12 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             linux?: scalar|Param|null, // Default: null
  *             latest_version?: scalar|Param|null, // Default: null
  *             update_manifest_url?: scalar|Param|null, // Default: null
+ *         },
+ *         min_supported_version?: array{ // Oldest supported client version per client type, returned by GET me as minSupportedVersion (semver; null = key absent).
+ *             provider?: scalar|Param|null, // Service id implementing ClientMinSupportedVersionProviderInterface (null = these versions). // Default: null
+ *             extension?: scalar|Param|null, // Default: null
+ *             desktop?: scalar|Param|null, // Default: null
+ *             web?: scalar|Param|null, // Default: null
  *         },
  *     },
  *     ...<string, mixed>
@@ -1626,6 +1716,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     css_framework?: "bootstrap"|"bootstrap5"|"bootstrap4"|"tailwind"|"foundation"|"custom"|"tabler"|"none"|Param, // Host CSS stack: bootstrap5|bootstrap4|tailwind|foundation|custom|none|tabler (bootstrap alias → bootstrap5). // Default: "bootstrap5"
  *     icon_set?: "bootstrap-icons"|"tabler-icons"|"ux_icon"|"svg_inline"|"none"|Param, // Icon rendering: bootstrap-icons|tabler-icons|ux_icon|svg_inline|none. // Default: "bootstrap-icons"
  *     row_actions_display?: "icon"|"text"|"icon_text"|Param, // Table/list row actions: icon (glyph only) | text (label only) | icon_text (both). // Default: "icon"
+ *     row_actions_confirm?: "inline"|"native"|"dialog"|Param, // confirm_message of 1.x row_actions POST hashes (2.22, REQ-UI-003): inline = onsubmit="return confirm(…)" (default, unchanged markup); native | dialog = no inline handler, the confirm-submit Stimulus peer asks (window.confirm or the kit <dialog>). native / dialog need the confirm-submit peer registered. // Default: "inline"
  *     panel_path_rewrites?: array<string, scalar|Param|null>,
  *     release_check?: array{ // Optional GitHub release-version checker (footer dialog + JSON endpoint). Off by default.
  *         enabled?: bool|Param, // Register the checker service + controller. Also import @NowoUiKitBundle/Resources/config/routes/release_check.yaml. // Default: false
@@ -1634,6 +1725,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         cache_ttl?: int|Param, // Seconds to cache the GitHub answer (cache.app). Default 12h. // Default: 43200
  *         default_branch?: scalar|Param|null, // Branch used as compare target when the installed version is already the latest. // Default: "main"
  *         user_agent?: scalar|Param|null, // User-Agent sent to api.github.com. // Default: "nowo-ui-kit-release-check"
+ *         timeout?: float|Param, // Idle timeout in seconds of the GitHub "releases/latest" request (HttpClient "timeout"). Keep it below PHP max_execution_time (REQ-RUNTIME-001). // Default: 5.0
+ *         releases_timeout?: float|Param, // Idle timeout in seconds of the GitHub "releases" listing used to count versions behind. Keep it below PHP max_execution_time (REQ-RUNTIME-001). // Default: 8.0
  *     },
  *     route_links?: array{ // Route (or route prefix) → link map read by nowo_ui_route_link(), e.g. for the page-edge "manual" tab (partials/_edge_tab.html.twig). A prefix matches the route itself or any route starting with "<prefix>_"; the longest prefix wins.
  *         base_url?: scalar|Param|null, // Prepended to every relative path (paths starting with "/", "//", "http://" or "https://" are used as is). // Default: ""
@@ -1704,6 +1797,13 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         collection?: scalar|Param|null, // BreadcrumbKit collection code (null = its default collection). PageHeader::breadcrumbCollection overrides it. // Default: null
  *         enabled?: bool|Param, // 2.3.1: false drops the breadcrumb trail (BreadcrumbKit and PageHeader::breadcrumbs) from every page header, e.g. when the host layout renders its own. // Default: true
  *     },
+ *     header?: array{ // 2.27 compact header: the default page-header presentation (a request attribute _nowo_ui_header_presentation overrides it per request) and where PageHeader::actions go in the compact presentation.
+ *         presentation?: "standard"|"compact"|Param, // standard (default) | compact: in compact the page header keeps a visually hidden h1 and leaves its intro, breadcrumbs and back link to the top bar (header_context). // Default: "standard"
+ *         compact_actions?: "page"|"bar"|Param, // page (default): header.actions stay in the page header; bar: in the compact presentation the page header leaves them out (the host shows them in the top bar through the page_actions partial). extra_actions always stay. // Default: "page"
+ *     },
+ *     remote_dialog?: array{ // 2.28 remote form dialog (X-Nowo-Dialog requests).
+ *         convert_redirects?: bool|Param, // Turn a RedirectResponse answered to a dialog request (X-Nowo-Dialog: 1, main request) into 204 + X-Nowo-Redirect when its Location is a same-origin path, so redirectToRoute() controllers work in the dialog without code changes. // Default: false
+ *     },
  *     theme?: array{ // Global theme (REQ-UI-003): semantic slot classes / attributes, partial overrides and --nowo-ui-* tokens, configured once for every bundle.
  *         framework_defaults?: bool|Param, // false = slots print the semantic nowo-ui-* class and the host classes only (no UiKit framework defaults such as btn / badge / card). Per slot: classes.<slot>: {value: …, framework_defaults: false}. // Default: true
  *         classes?: array<string, mixed>,
@@ -1714,6 +1814,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         confirm_message_in_header?: bool|Param, // Confirm dialogs and the full-page confirm render the message inside the header, under the title (hosts whose dialog header is title + message). View\Confirm::messageInHeader wins when set. // Default: false
  *         popover_menus?: bool|Param, // 2.4: menu / kebab / row-action menus render their panel as a native [popover] (browser top layer: never clipped by table scrollers or cards; nowo-ui-popover.js places it). The partial option `popover` wins. // Default: false
  *         form_errors_after_widget?: bool|Param, // 2.10: the UiKit form theme (form/nowo_ui_layout.html.twig) prints a field's errors after its widget (and before the help), instead of Symfony's order (label, errors, widget, help). // Default: false
+ *         menu_semantics?: null|"menu"|"disclosure"|Param, // 2.28: ARIA of popover menus with items. null (default) = as 2.27; menu = APG menu button (role="menu" / menuitem, arrow keys in nowo-ui-popover.js); disclosure = no aria-haspopup. The menu partial option `menu_semantics` wins. // Default: null
  *         bundles?: array<string, array{ // Default: []
  *             framework_defaults?: bool|Param, // Override of theme.framework_defaults for this bundle (unset = inherit).
  *             classes?: array<string, mixed>,
@@ -1732,6 +1833,25 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             classes?: array<string, mixed>,
  *             attributes?: array<string, array<string, mixed>>,
  *             header_actions_in_filters?: bool|Param, // list only: render the page-header actions at the end of the filter row instead of the page header (ListPage::headerActionsInFilters wins when set; unset = false).
+ *             filters?: array{ // list only (2.30): host options of the list scaffold filters (page/_list_filters.html.twig). Unset = the 2.29 output.
+ *                 display?: null|"text"|"icon"|"icon_text"|Param, // Default display of the apply / clear / extra filter buttons (ListPage::filtersDisplay and Action::display win; set, the plain clear link follows it too). null = the 2.29 behaviour. // Default: null
+ *                 submit_icon?: scalar|Param|null, // Icon of the apply button when it shows one (components/_icon.html.twig name; null = filter). ListPage::filtersSubmit->icon wins. // Default: null
+ *                 clear_icon?: scalar|Param|null, // Icon of the plain clear link (ListPage::filtersClearHref) when it shows one (null = filter_off). // Default: null
+ *                 submit_class?: scalar|Param|null, // Host classes of the apply button, replacing its btn_<variant> slot classes (nowo-ui-filters__submit and, icon-only, the btn_icon slot stay). null = the slot classes. // Default: null
+ *                 clear_class?: scalar|Param|null, // Host classes of the clear button (plain link or ListPage::filtersClear Action), replacing its btn_<variant> slot classes. null = the slot classes. // Default: null
+ *                 grid?: scalar|Param|null, // Grid tracks of the filter fields: auto-fit (default: a lone filter stretches across the card), auto-fill (empty tracks keep their width) or a grid-template-columns track list such as "repeat(auto-fill, minmax(min(100%, 13rem), 1fr))" (printed as the --nowo-ui-filters-grid-columns token by nowo_ui_tokens(); no inline style). // Default: "auto-fit"
+ *                 fold?: array{ // Fold toggle of the filters card (partials/_filters_collapse.html.twig, Stimulus peer filters-collapse). ListPage::filtersFold wins.
+ *                     enabled?: bool|Param, // Render the fold toggle (the card renders open unless the cookie remembers it folded). // Default: false
+ *                     cookie?: scalar|Param|null, // Cookie remembering the folded pages (comma-separated page keys; SameSite=Lax, no secrets). // Default: "nowo_ui_filters_collapsed"
+ *                     cookie_path?: scalar|Param|null, // Path of that cookie. // Default: "/"
+ *                     icons?: array{
+ *                         expanded?: scalar|Param|null, // Icon while the card is open. // Default: "chevron_up"
+ *                         collapsed?: scalar|Param|null, // Icon while the card is folded. // Default: "chevron_down"
+ *                     },
+ *                     testids?: bool|Param, // data-testid filters-collapse-toggle / filters-collapse-summary. // Default: false
+ *                     morph?: bool|Param, // Add the <morph-icon> of assets/morphicons to the toggle. // Default: false
+ *                 },
+ *             },
  *         }>,
  *     },
  *     error_pages?: array{ // Kit error pages (2.6): templates/bundles/TwigBundle/Exception/error.html.twig = {% extends '@NowoUiKit/error/status.html.twig' %}.

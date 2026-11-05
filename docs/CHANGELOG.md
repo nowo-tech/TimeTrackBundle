@@ -199,6 +199,8 @@ PRs). Every feature is off until configured; the schema change is required for e
   scope (GB-I2).
 - Docs: no web ledger rate limit in 1.13 (hosts must rate-limit), workday providers deduplicate on the idempotency key,
   unscoped timers and submit, `TimesheetPersonalDataExporter`, ledger tail not anchored (GB-L6, GB-I4, GB-I6, GB-L4).
+- Demo: `nowo-tech/ui-kit-bundle` 2.30 (lock refreshed with Symfony 8.1.11, no advisories) and a minimal 1.13 showcase
+  page `/timesheet` (week grid + balance card, submit / withdraw through `TimesheetFormHandler`).
 
 ## [1.12.0] - 2026-11-05
 

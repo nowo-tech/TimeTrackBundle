@@ -1,0 +1,8 @@
+demo:
+  nav:
+    timesheet: "Timesheet"
+  timesheet:
+    current: "This week"
+    flash:
+      submit: "Timesheet submitted for approval."
+      withdraw: "Timesheet withdrawn."

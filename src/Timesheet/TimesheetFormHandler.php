@@ -96,7 +96,7 @@ final readonly class TimesheetFormHandler
             'approve' => $this->timesheets->approve($actor, $id),
             'reject'  => $this->timesheets->reject($actor, $id, $comment),
             'reopen'  => $this->timesheets->reopen($actor, $id, $comment),
-            default   => $this->ownerAction($actor, $id, is_string($data['scope'] ?? null) ? $data['scope'] : '', is_string($data['period'] ?? null) ? $data['period'] : '', $action === 'submit'),
+            default   => $this->ownerAction($actor, $id, is_string($data['scope'] ?? null) ? $data['scope'] : '', is_string($data['period'] ?? null) ? $data['period'] : null, $action === 'submit'),
         };
     }
 
@@ -151,12 +151,13 @@ final readonly class TimesheetFormHandler
     }
 
     /**
-     * Submit / withdraw of the actor's own period: by the posted scope and period key, else by the posted id of one of
-     * the actor's own timesheets.
+     * Submit / withdraw of the actor's own period: by the posted period key and scope (an empty scope is the single
+     * scope `''`; the service checks it is one of the actor's), else by the posted id of one of the actor's own
+     * timesheets.
      */
-    private function ownerAction(UserInterface $owner, string $timesheetId, string $scopeKey, string $periodKey, bool $submit): Timesheet
+    private function ownerAction(UserInterface $owner, string $timesheetId, string $scopeKey, ?string $periodKey, bool $submit): Timesheet
     {
-        if ($scopeKey === '' || $periodKey === '') {
+        if ($periodKey === null || $periodKey === '') {
             $timesheet = $this->timesheets->find($owner, $timesheetId);
             if (!$this->timesheets->accessGuard()->isOwner($owner, $timesheet->getOwnerRef())) {
                 throw new TimesheetException('not_found');
