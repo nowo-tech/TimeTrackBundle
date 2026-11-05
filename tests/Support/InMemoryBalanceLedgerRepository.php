@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Doctrine\DBAL\Driver\Exception as DriverException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 
@@ -16,6 +18,9 @@ use function end;
  */
 final class InMemoryBalanceLedgerRepository implements BalanceLedgerRepositoryInterface
 {
+    /** Since the GB fixes: the next flush fails like a concurrent append to the same chain. */
+    public ?DriverException $failNextFlush = null;
+
     /** @var list<BalanceLedgerLine> */
     public array $lines = [];
 
@@ -28,6 +33,12 @@ final class InMemoryBalanceLedgerRepository implements BalanceLedgerRepositoryIn
 
     public function flush(): void
     {
+        if ($this->failNextFlush instanceof DriverException) {
+            $driverException     = $this->failNextFlush;
+            $this->failNextFlush = null;
+
+            throw new UniqueConstraintViolationException($driverException, null);
+        }
         ++$this->flushes;
     }
 

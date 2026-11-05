@@ -120,6 +120,13 @@ PRs). Every feature is off until configured; the schema change is required for e
 - `nowo:time-track:entries:backfill-scope` leaves entries of a locked or submitted period without a scope and reports
   them (`… left in a locked or submitted period`): an approved timesheet no longer gains entries after approval (GB-L5).
 - CI: the whole functional suite also runs on MySQL 8.0 and PostgreSQL 16 (`functional-databases` job).
+- REQ-SEC-004 audit GB (block 2): `WorkingTimeBalanceService::report()` has hard bounds — dates inside the period
+  window, the range ending at most `MAX_FUTURE_DAYS` (366) days after today (`InvalidArgumentException` otherwise), and a
+  computed span (running-balance start to the end of the range) of at most `MAX_SPAN_DAYS` (3660 days, ten calls):
+  beyond it no report is computed (null) and a `balance_span_exceeded` warning is logged; lock timesheets (their
+  snapshots restart the running balance) or move `working_time.balance.start_date` forward (GB-M1).
+- `BalanceLedger::add()` answers `LedgerRefusedException('conflict')` when a concurrent line was appended to the same
+  chain (unique chain index) instead of forking it (GB-L4).
 
 ## [1.12.0] - 2026-11-05
 

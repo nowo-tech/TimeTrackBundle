@@ -8,8 +8,8 @@ use RuntimeException;
 
 /**
  * Since 1.13: a balance ledger line was refused (`forbidden`, `reason_required`, `invalid_seconds`, `invalid_date`,
- * `opening_exists`, `not_found`, `already_reversed`, `not_reversible`, `ratify_only`). The message carries no personal
- * data.
+ * `opening_exists`, `not_found`, `already_reversed`, `not_reversible`, `ratify_only`, `conflict`). The message carries
+ * no personal data.
  */
 final class LedgerRefusedException extends RuntimeException
 {
