@@ -17,6 +17,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Client distribution](#client-distribution)
 - [Imported entries and retention (1.11)](#imported-entries-and-retention-111)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
+- [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Security](#security)
 
 ## Required
@@ -323,6 +324,33 @@ nowo_time_track:
   they answer 404 while their feature is off.
 - Public services for hosts: `PeriodLockGuard`, `TimesheetService`, `TimesheetFormHandler`, `TimesheetAccessGuard`,
   `WorkingTimeBalanceService`, `BalanceLedger`, `Ui\TimesheetViewBuilder`.
+
+## Calendar suggestions (1.14)
+
+Off by default; see [USAGE.md](USAGE.md#calendar-suggestions-114) for the flow and [SECURITY.md](SECURITY.md#calendar-suggestions-and-meetings-114) for what is read and stored.
+
+```yaml
+nowo_time_track:
+  calendar:
+    enabled: false
+    credential_provider: ~          # CalendarCredentialProviderInterface (host tokens; required for server mode)
+    task_key_resolver: ~            # TaskKeyResolverInterface (host task keys; required when enabled)
+    providers: [google, microsoft]
+    modes: [server]                 # server | local
+    lookback_days: 14               # 1-14; events must have ended
+    suggestion_ttl_days: 14         # kept after the event ends (1-31)
+    sync_interval_minutes: 60       # 5-1440, between two scheduled syncs of one connection
+    max_event_seconds: 28800        # longer events are ignored
+    max_rules_per_user: 20          # per scope (0-100)
+    max_pages: 10                   # provider pages per sync (1-50)
+```
+
+- Refused at compile time: `enabled` without `task_key_resolver`, `server` in `modes` without `credential_provider`,
+  unknown providers or modes, values outside the ranges above.
+- Without `timesheets.scope_provider` everybody is in one scope `''` (like `scope_mode: single`).
+- Server mode needs `symfony/http-client` (the framework `http_client`); without it a sync fails with `no_http_client`.
+- Public services for hosts: `Calendar\CalendarConnectionService`, `Calendar\CalendarRuleService`,
+  `Calendar\CalendarSyncService`.
 
 ## Security
 

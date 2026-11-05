@@ -10,6 +10,7 @@
 - [Imported entries (1.11)](#imported-entries-111)
 - [Timesheets, balance and lock (1.13)](#timesheets-balance-and-lock-113)
 - [Task effort on the client API (1.13)](#task-effort-on-the-client-api-113)
+- [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -145,6 +146,21 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   is why it is limited to managers. A provider that fills `TaskReference::$loggedSeconds` itself must apply the same rule
   (the value is shown as given, labelled by that rule).
 - `loggedSecondsScope` (`own` / `all`) tells clients which of the two the figure is.
+
+## Calendar suggestions and meetings (1.14)
+
+| Threat | Control |
+| --- | --- |
+| Reading more of a calendar than needed | Primary calendar only, `[now − lookback_days, now]`; Google `fields` / Graph `$select` masks with no description, location, organiser, attendee identity or conference data; least-privilege scopes (`calendar.events.readonly`, `Calendars.ReadBasic`) |
+| Storing event data | Events live only in memory during a sync (`CalendarEventView`: redacted debug output, serialization throws). A suggestion keeps the task, the time range and keyed HMAC references (`event_ref`, `series_ref`; per-user key derived from the kernel secret) — never a title, attendee, location, link, calendar name or provider id. Unmatched events are only counted |
+| Tokens leaking | No token in the bundle: the host returns a `CalendarCredential` per sync (`#[SensitiveParameter]`, redacted, not serializable); `credential_ref` is an opaque host id and never leaves the API |
+| Hostile or compromised provider responses | GET only, constant base URIs (Graph next links only under the same base), no redirects, 10 s timeout, 2 MB per page, `max_pages`; errors stored as codes (`last_error_code`), never provider messages |
+| Rate limits / provider abuse | A 429 waits once for a short `Retry-After` (≤ 5 s), then the sync stops with `rate_limited` until the next interval |
+| Night-time processing (LOPDGDD art. 88) | The scheduled sync reads a calendar only inside its owner's working hours; unknown hours are never inside |
+| Other people seeing calendar data | Connections, rules and suggestions are owner-only services; no approver, manager or admin path exists |
+| Regex denial of service in user rules | Rules are literal substrings (`mb_stripos`), at most 120 characters and `max_rules_per_user` per scope; control and format characters refused |
+| Leaving data behind | Revoke calls the host `revoke()` (token and grant) first, then deletes the connection, its suggestions and the user's rules in that scope; account deletion cascades; suggestions expire `suggestion_ttl_days` after the event |
+| Titles in logs, events or exceptions | Logs and events carry ids, codes and counts only (marker-string tests over rows, logs and events) |
 
 ## Secrets & cryptography
 

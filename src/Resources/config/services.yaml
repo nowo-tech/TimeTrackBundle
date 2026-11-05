@@ -57,6 +57,8 @@ services:
             - '../../Support/StorageTime.php'
             # Since 1.13: working time — value objects; the services are defined by the extension.
             - '../../WorkingTime/'
+            # Since 1.14: calendar suggestions are defined by the extension (value objects excluded too).
+            - '../../Calendar/'
 
     Nowo\TimeTrackBundle\Controller\:
         resource: '../../Controller/'

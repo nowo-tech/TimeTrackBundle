@@ -45,6 +45,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, contract `timetrack-next` v1.1 §6, §10.3,
+§22, built as stacked PRs). Every feature is off until configured; the schema change is required for every host
+(always-mapped tables).
+
+### Added
+
+- **Calendar model** (always mapped, contract §3.5–§3.7): `Entity\CalendarConnection`
+  (`time_track_calendar_connections`: opt-in per user, scope and provider, `mode` server / local, opaque host
+  `credential_ref`, `consent_version` / `consented_at`, error **codes** only), `Entity\CalendarSuggestion`
+  (`time_track_calendar_suggestions`: keyed HMAC `event_ref` / `series_ref`, `group_key`, task, `match_kind`, time range,
+  status, entry link, expiry — no title, attendee, location, link or provider id), `Entity\CalendarRule`
+  (`time_track_calendar_rules`: literal case-insensitive patterns for keyless events, `group_matches`). Reference SQL in
+  `docs/sql/1.14.0/` and the demo migration `Version20261107000000`.
+- **Provider adapters** (read-only, primary calendar, contract §6.2): `Calendar\GoogleCalendarEventSource` (`fields`
+  mask `items(id,summary,start,end,status,recurringEventId,transparency,eventType,attendees(self,responseStatus)),nextPageToken`)
+  and `Calendar\MicrosoftCalendarEventSource` (`$select=subject,start,end,isAllDay,isCancelled,showAs,type,seriesMasterId,responseStatus`,
+  UTC), behind `Calendar\CalendarEventSourceInterface`; one HTTP path `Calendar\CalendarHttpClient` (GET only, constant
+  base URIs, no redirects, 10 s timeout, 2 MB per page, bounded inline wait on 429, then `rate_limited`; error codes only).
+- **Host interfaces**: `Calendar\TaskKeyResolverInterface` (task keys, Q-O8) and
+  `Calendar\CalendarCredentialProviderInterface` (tokens, revoke, connect URL; Q-B9). `Calendar\CalendarCredential`
+  and `Calendar\CalendarEventView` are redacted in debug output and refuse serialization.
+- **Matching and sync** (contract §6.3–§6.7): `Calendar\CalendarEventMatcher` (drops cancelled / all-day / free /
+  declined / non-default / too long / outside the look-back or not yet ended events; keys first, then user rules; one
+  resolver call per sync; the user must be able to track the task), `Calendar\CalendarSyncService` (upsert by
+  `event_ref`, decisions kept, dailies grouped per series or rule and ISO week, expiry purge, `status = error` + code),
+  `Calendar\CalendarConnectionService` (connect / reconnect / pause / revoke with the host revoke first, owner only) and
+  `Calendar\CalendarRuleService`; command `nowo:time-track:calendar:sync` (inside working hours only, AC-19).
+- **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only).
+- **Configuration** `calendar.*` (`enabled`, `credential_provider`, `task_key_resolver`, `providers`, `modes`,
+  `lookback_days`, `suggestion_ttl_days`, `sync_interval_minutes`, `max_event_seconds`, `max_rules_per_user`,
+  `max_pages`); incoherent combinations are refused at compile time.
+
+### Changed
+
+- `symfony/http-client` is a new `suggest` (calendar server mode) and a dev dependency.
+
 ## [1.13.0] - 2026-11-05
 
 Working time, hours balance and timesheets (TimeTrack 1.13.0, contract `timetrack-next` v1.0 §3–§5, built as stacked

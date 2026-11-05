@@ -176,6 +176,7 @@ final class Configuration implements ConfigurationInterface
                 ->end()
                 ->append($this->workingTimeNode())
                 ->append($this->timesheetsNode())
+                ->append($this->calendarNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
                     ->addDefaultsIfNotSet()
@@ -809,6 +810,57 @@ final class Configuration implements ConfigurationInterface
             ->validate()
                 ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['approver_provider']))
                 ->thenInvalid('timesheets.approver_provider is required when timesheets are enabled (nobody could approve).')
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.14: `calendar` (contract §6, §13): calendar suggestions from Google / Microsoft 365 events whose title
+     * carries a task key. Off by default; on needs a task-key resolver, and server mode a credential provider.
+     */
+    private function calendarNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('calendar'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Calendar suggestions, their client API and the sync command (default off).')
+                    ->defaultFalse()
+                ->end()
+                ->scalarNode('credential_provider')
+                    ->info('Service id implementing CalendarCredentialProviderInterface (host OAuth tokens; required for server mode).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('task_key_resolver')
+                    ->info('Service id implementing TaskKeyResolverInterface (host task keys; required when enabled).')
+                    ->defaultNull()
+                ->end()
+                ->arrayNode('providers')
+                    ->info('Enabled providers.')
+                    ->enumPrototype()->values(['google', 'microsoft'])->end()
+                    ->defaultValue(['google', 'microsoft'])
+                ->end()
+                ->arrayNode('modes')
+                    ->info('Enabled modes: server (bundle adapters, host tokens) and/or local (the desktop reads the calendar).')
+                    ->enumPrototype()->values(['server', 'local'])->end()
+                    ->defaultValue(['server'])
+                ->end()
+                ->integerNode('lookback_days')->info('Past days read per sync (events end before now; future events are never suggested).')->defaultValue(14)->min(1)->max(14)->end()
+                ->integerNode('suggestion_ttl_days')->info('Days a suggestion is kept after its event ends.')->defaultValue(14)->min(1)->max(31)->end()
+                ->integerNode('sync_interval_minutes')->info('Minutes between two scheduled syncs of one connection.')->defaultValue(60)->min(5)->max(1440)->end()
+                ->integerNode('max_event_seconds')->info('Longer events are ignored (default 8 h).')->defaultValue(28_800)->min(60)->max(86_400)->end()
+                ->integerNode('max_rules_per_user')->info('User rules per scope.')->defaultValue(20)->min(0)->max(100)->end()
+                ->integerNode('max_pages')->info('Provider pages read per sync.')->defaultValue(10)->min(1)->max(50)->end()
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['task_key_resolver']))
+                ->thenInvalid('calendar.task_key_resolver is required when calendar suggestions are enabled.')
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && in_array('server', $v['modes'], true) && !is_string($v['credential_provider']))
+                ->thenInvalid('calendar.credential_provider is required when the server mode is enabled.')
             ->end();
 
         return $node;

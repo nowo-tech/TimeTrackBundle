@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+  - [To 1.14.0](#to-1140)
 - [To 1.13.0](#to-1130)
 - [To 1.12.0](#to-1120)
 - [To 1.11.0](#to-1110)
@@ -53,6 +54,145 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+### To 1.14.0
+
+From **1.13.0** (contract `timetrack-next` v1.1: calendar suggestions §6, `POST entries` and `resolve-keys` §6.6 / §10.3,
+meetings API §22):
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+**Schema migration required (every host).** 1.14 adds three tables that are always mapped, whatever the configuration
+(empty until calendar suggestions are enabled): `time_track_calendar_connections`, `time_track_calendar_suggestions` and
+`time_track_calendar_rules`. Run `doctrine:migrations:diff` (the diff is exactly the statements below for the default
+prefix) or apply the reference SQL of your platform. Replace `users` and `INT` with your user table and its primary-key
+type (Beacon: `INT`). No data is rewritten; the files are also in `docs/sql/1.14.0/`, and the demo ships the MySQL one as
+`demo/symfony8/migrations/Version20261107000000.php`. The meetings API adds no table.
+
+<details><summary>MySQL 8 / MariaDB (docs/sql/1.14.0/mysql-up.sql)</summary>
+
+```sql
+-- TimeTrackBundle 1.14.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type). Calendar suggestions (always mapped); the meetings API adds no table.
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, UNIQUE INDEX uniq_time_track_calendar_connections (user_id, scope_key, provider), INDEX IDX_12CE44F6A76ED395 (user_id), PRIMARY KEY (id));
+CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_suggestions_user (user_id, status, starts_at), UNIQUE INDEX uniq_time_track_calendar_suggestions_ref (connection_id, event_ref), INDEX IDX_3C8E3EF7BA364942 (entry_id), INDEX IDX_3C8E3EF7DD03F01 (connection_id), INDEX IDX_3C8E3EF7A76ED395 (user_id), PRIMARY KEY (id));
+CREATE TABLE time_track_calendar_rules (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, pattern VARCHAR(120) NOT NULL, task_id VARCHAR(36) NOT NULL, group_matches TINYINT DEFAULT 1 NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_rules_user (user_id, scope_key), INDEX IDX_84F867CAA76ED395 (user_id), PRIMARY KEY (id));
+ALTER TABLE time_track_calendar_connections ADD CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
+ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7BA364942 FOREIGN KEY (entry_id) REFERENCES time_track_entries (id) ON DELETE SET NULL;
+ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7DD03F01 FOREIGN KEY (connection_id) REFERENCES time_track_calendar_connections (id) ON DELETE CASCADE;
+ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
+ALTER TABLE time_track_calendar_rules ADD CONSTRAINT FK_84F867CAA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
+```
+
+Rollback:
+
+```sql
+-- Rollback to 1.13 (MySQL / MariaDB): drops the 1.14 calendar tables; 1.13 ignores them otherwise.
+ALTER TABLE time_track_calendar_suggestions DROP FOREIGN KEY FK_3C8E3EF7BA364942;
+ALTER TABLE time_track_calendar_suggestions DROP FOREIGN KEY FK_3C8E3EF7DD03F01;
+ALTER TABLE time_track_calendar_suggestions DROP FOREIGN KEY FK_3C8E3EF7A76ED395;
+ALTER TABLE time_track_calendar_rules DROP FOREIGN KEY FK_84F867CAA76ED395;
+ALTER TABLE time_track_calendar_connections DROP FOREIGN KEY FK_12CE44F6A76ED395;
+DROP TABLE time_track_calendar_suggestions;
+DROP TABLE time_track_calendar_rules;
+DROP TABLE time_track_calendar_connections;
+```
+
+</details>
+
+<details><summary>PostgreSQL 13+ (docs/sql/1.14.0/postgresql-up.sql)</summary>
+
+```sql
+-- TimeTrackBundle 1.14.0, PostgreSQL 13+ (default table prefix; replace `users` and INT with your user table and PK type). Calendar suggestions (always mapped); the meetings API adds no table.
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, last_sync_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
+CREATE UNIQUE INDEX uniq_time_track_calendar_connections ON time_track_calendar_connections (user_id, scope_key, provider);
+CREATE INDEX IDX_12CE44F6A76ED395 ON time_track_calendar_connections (user_id);
+CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, starts_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, ends_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, expires_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
+CREATE INDEX idx_time_track_calendar_suggestions_user ON time_track_calendar_suggestions (user_id, status, starts_at);
+CREATE UNIQUE INDEX uniq_time_track_calendar_suggestions_ref ON time_track_calendar_suggestions (connection_id, event_ref);
+CREATE INDEX IDX_3C8E3EF7BA364942 ON time_track_calendar_suggestions (entry_id);
+CREATE INDEX IDX_3C8E3EF7DD03F01 ON time_track_calendar_suggestions (connection_id);
+CREATE INDEX IDX_3C8E3EF7A76ED395 ON time_track_calendar_suggestions (user_id);
+CREATE TABLE time_track_calendar_rules (id VARCHAR(36) NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, scope_key VARCHAR(64) NOT NULL, pattern VARCHAR(120) NOT NULL, task_id VARCHAR(36) NOT NULL, group_matches BOOLEAN DEFAULT true NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
+CREATE INDEX idx_time_track_calendar_rules_user ON time_track_calendar_rules (user_id, scope_key);
+CREATE INDEX IDX_84F867CAA76ED395 ON time_track_calendar_rules (user_id);
+ALTER TABLE time_track_calendar_connections ADD CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE;
+ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7BA364942 FOREIGN KEY (entry_id) REFERENCES time_track_entries (id) ON DELETE SET NULL NOT DEFERRABLE;
+ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7DD03F01 FOREIGN KEY (connection_id) REFERENCES time_track_calendar_connections (id) ON DELETE CASCADE NOT DEFERRABLE;
+ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE;
+ALTER TABLE time_track_calendar_rules ADD CONSTRAINT FK_84F867CAA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE;
+```
+
+Rollback:
+
+```sql
+-- Rollback to 1.13 (PostgreSQL): drops the 1.14 calendar tables; 1.13 ignores them otherwise.
+ALTER TABLE time_track_calendar_suggestions DROP CONSTRAINT FK_3C8E3EF7BA364942;
+ALTER TABLE time_track_calendar_suggestions DROP CONSTRAINT FK_3C8E3EF7DD03F01;
+ALTER TABLE time_track_calendar_suggestions DROP CONSTRAINT FK_3C8E3EF7A76ED395;
+ALTER TABLE time_track_calendar_rules DROP CONSTRAINT FK_84F867CAA76ED395;
+ALTER TABLE time_track_calendar_connections DROP CONSTRAINT FK_12CE44F6A76ED395;
+DROP TABLE time_track_calendar_suggestions;
+DROP TABLE time_track_calendar_rules;
+DROP TABLE time_track_calendar_connections;
+```
+
+</details>
+
+<details><summary>SQLite 3.35+ (docs/sql/1.14.0/sqlite-up.sql)</summary>
+
+```sql
+-- TimeTrackBundle 1.14.0, SQLite 3.35+ (default table prefix; replace `users` with your user table). Foreign keys are declared inline. Calendar suggestions (always mapped); the meetings API adds no table.
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE UNIQUE INDEX uniq_time_track_calendar_connections ON time_track_calendar_connections (user_id, scope_key, provider);
+CREATE INDEX IDX_12CE44F6A76ED395 ON time_track_calendar_connections (user_id);
+CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_3C8E3EF7BA364942 FOREIGN KEY (entry_id) REFERENCES time_track_entries (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_3C8E3EF7DD03F01 FOREIGN KEY (connection_id) REFERENCES time_track_calendar_connections (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_3C8E3EF7A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE INDEX idx_time_track_calendar_suggestions_user ON time_track_calendar_suggestions (user_id, status, starts_at);
+CREATE UNIQUE INDEX uniq_time_track_calendar_suggestions_ref ON time_track_calendar_suggestions (connection_id, event_ref);
+CREATE INDEX IDX_3C8E3EF7BA364942 ON time_track_calendar_suggestions (entry_id);
+CREATE INDEX IDX_3C8E3EF7DD03F01 ON time_track_calendar_suggestions (connection_id);
+CREATE INDEX IDX_3C8E3EF7A76ED395 ON time_track_calendar_suggestions (user_id);
+CREATE TABLE time_track_calendar_rules (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, pattern VARCHAR(120) NOT NULL, task_id VARCHAR(36) NOT NULL, group_matches BOOLEAN DEFAULT 1 NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_84F867CAA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE INDEX idx_time_track_calendar_rules_user ON time_track_calendar_rules (user_id, scope_key);
+CREATE INDEX IDX_84F867CAA76ED395 ON time_track_calendar_rules (user_id);
+```
+
+Rollback:
+
+```sql
+-- Rollback to 1.13 (SQLite 3.35+): drops the 1.14 calendar tables; 1.13 ignores them otherwise.
+DROP TABLE time_track_calendar_suggestions;
+DROP TABLE time_track_calendar_rules;
+DROP TABLE time_track_calendar_connections;
+```
+
+</details>
+
+**Calendar suggestions are off by default** (`calendar.enabled: false`). To turn them on, implement and configure:
+
+- `Calendar\TaskKeyResolverInterface` (`calendar.task_key_resolver`, required): which task keys a title carries and the
+  tasks they mean in a tenant scope (Beacon: `#<first 8 hex of the task UUID>` and task URLs, Q-B8);
+- `Calendar\CalendarCredentialProviderInterface` (`calendar.credential_provider`, required for `modes: [server]`): a
+  short-lived access token per sync from your encrypted store, `revoke()` (delete the token, revoke the grant) and the
+  *Connect* URL of your OAuth flow (Q-B9). The bundle never stores a token;
+- record each user's consent with `Calendar\CalendarConnectionService::connect()` after your OAuth flow (and revoke it
+  with `revoke()`, which calls your `revoke()` first);
+- install `symfony/http-client` (now a `suggest`): the Google / Microsoft adapters use the framework `http_client`
+  (without it a sync fails with `no_http_client`);
+- schedule `nowo:time-track:calendar:sync` (e.g. every 15 minutes): it syncs due connections only inside their owner's
+  working hours (`ClientUserProfileProviderInterface::getWorkingHours()`; unknown hours are never inside) and purges
+  expired suggestions.
+
+OAuth scopes (least privilege): Google `https://www.googleapis.com/auth/calendar.events.readonly`, Microsoft
+`Calendars.ReadBasic` + `offline_access`. Only the **primary** calendar is read, `calendar.lookback_days` (14) back, and
+only events whose title carries a resolvable key or matches a user rule become suggestions; nothing else of an event is
+stored (no title, description, attendees, location, link or provider id — only keyed HMAC references). Delete the user's
+connections with their account (FK `ON DELETE CASCADE`) and call your own token revoke on account erasure.
+
+**New events**: `nowo_time_track.calendar.connection_changed` (`CalendarConnectionChangedEvent`) and
+`nowo_time_track.calendar.sync_finished` (`CalendarSyncFinishedEvent`): ids, codes, counts and the consent version only,
+for your audit rows (`time_track.calendar.*`).
 
 ## To 1.13.0
 
