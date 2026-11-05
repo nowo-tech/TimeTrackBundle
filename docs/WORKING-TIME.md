@@ -187,7 +187,7 @@ $line      = $formHandler->handleLedger($request, $this->getUser(), $owner, $sco
 The handler checks the form and the CSRF token itself (ids `nowo_time_track_timesheet` / `nowo_time_track_ledger`;
 every post is refused without a CSRF token manager, whatever `framework.form.csrf_protection` says) and runs the action
 through the service, which applies the guard; owner actions use the posted `scope` + `period` of the actor's own period; catch `TimesheetException` / `LedgerRefusedException` and show the translated
-`timesheet.error.<code>`.
+`timesheet.error.<code>` (every ledger refusal code has a message too).
 
 ## Commands
 

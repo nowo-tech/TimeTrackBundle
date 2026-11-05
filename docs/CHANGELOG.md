@@ -187,7 +187,11 @@ PRs). Every feature is off until configured; the schema change is required for e
 - **Task effort** (owner decision 2026-11-05, GB-M3): `loggedSeconds` is the caller's own total; the total of every user
   only for users the host lets manage the task — new deny-by-default event `nowo_time_track.task_effort.access_check`
   (`Event\TaskEffortAccessCheckEvent`, `TeamAccessGuard::canSeeTaskEffortTotal()`);
-  `TaskEffortRepositoryInterface::loggedSecondsByTask($taskIds, ?$userId)`.
+  `TaskEffortRepositoryInterface::loggedSecondsByTask($taskIds, ?$userId)`. Tasks and timers gain
+  `loggedSecondsScope` (`own` / `all`, null without a figure) so clients can label the figure.
+- `timesheet.error.*` messages for every ledger refusal code (`forbidden`, `reason_required`, `invalid_seconds`,
+  `invalid_date`, `opening_exists`, `already_reversed`, `not_reversible`, `ratify_only`; `conflict`, `not_found` and
+  `invalid_request` shared, `conflict` reworded for both) in the seven locales.
 - `GET me` never creates a timesheet row (`TimesheetService::peek()`); `GET timesheets` answers `id: null` for an
   unstored draft period, 404 for keys after the next period or outside 2000–2099; `GET balance` answers 400 for ranges
   outside the window or ending more than 366 days after today (GB-L1, GB-M1).

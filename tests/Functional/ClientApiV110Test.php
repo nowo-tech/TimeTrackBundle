@@ -37,7 +37,7 @@ final class ClientApiV110Test extends FunctionalTestCase
         $token = $this->login();
 
         $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);
-        self::assertSame(['id' => 'task-1', 'title' => 'Implement login API', 'boardId' => 'board-1', 'boardTitle' => 'Sprint 1', 'projectId' => 'project-1', 'projectTitle' => 'Demo project', 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'remainingSeconds' => null], $tasks['tasks'][0] ?? null);
+        self::assertSame(['id' => 'task-1', 'title' => 'Implement login API', 'boardId' => 'board-1', 'boardTitle' => 'Sprint 1', 'projectId' => 'project-1', 'projectTitle' => 'Demo project', 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'loggedSecondsScope' => null, 'remainingSeconds' => null], $tasks['tasks'][0] ?? null);
 
         $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1'], $token);
         $timer = $this->api('GET', '/api/time-track/timer', null, $token);

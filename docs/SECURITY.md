@@ -143,7 +143,8 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   `nowo_time_track.task_effort.access_check` (`TaskEffortAccessCheckEvent::grant()`; `TeamAccessGuard::canSeeTaskEffortTotal()`).
 - A total over several people can still reveal one person's effort when only one other person tracked the task, which
   is why it is limited to managers. A provider that fills `TaskReference::$loggedSeconds` itself must apply the same rule
-  (the value is shown as given).
+  (the value is shown as given, labelled by that rule).
+- `loggedSecondsScope` (`own` / `all`) tells clients which of the two the figure is.
 
 ## Secrets & cryptography
 

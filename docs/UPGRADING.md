@@ -222,7 +222,9 @@ there) and implement `Workday\WorkdayProviderInterface` for spec 198 (`client_ap
 **Task effort.** Let your task provider fill `TaskReference::$estimateSeconds` (TaskBoard `estimatedMinutes × 60`); the
 bundle sums `loggedSeconds` from its entries unless the provider gives `TaskReference::$loggedSeconds`. It is the caller's
 own time; the total of every user is shown only to users your listener on `nowo_time_track.task_effort.access_check`
-grants (those who can manage the task; denied by default, see SECURITY).
+grants (those who can manage the task; denied by default, see SECURITY). Tasks and timers carry `loggedSecondsScope`
+(`own` / `all`) so clients can say whose time the figure counts; a provider that fills `loggedSeconds` is labelled by the
+same rule. Ledger refusals (`LedgerRefusedException::errorCode()`) now have `timesheet.error.<code>` messages too.
 
 **Timesheet web actions (CSRF).** `TimesheetFormHandler` verifies the CSRF token itself and refuses every post when no
 CSRF token manager exists: keep `framework.csrf_protection` enabled (`symfony/security-csrf`). The decision forms now

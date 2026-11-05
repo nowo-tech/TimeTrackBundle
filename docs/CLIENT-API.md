@@ -58,7 +58,9 @@ Additive; with the features off every existing route answers as in 1.12 apart fr
   `estimateSeconds` (TaskBoard estimate × 60, from the task provider's `TaskReference::$estimateSeconds`),
   `loggedSeconds` (the user's **own** closed time on the task; the total of **every** user only for users the host lets
   manage the task — `nowo_time_track.task_effort.access_check`, denied by default; the provider may give its own
-  `TaskReference::$loggedSeconds`) and `remainingSeconds` (`max(0, estimate − logged)`); each null when unknown.
+  `TaskReference::$loggedSeconds`), `loggedSecondsScope` (`"own"`: `loggedSeconds` is the user's own time; `"all"`:
+  every user's time — label it accordingly; null when `loggedSeconds` is null) and `remainingSeconds`
+  (`max(0, estimate − logged)`); each null when unknown.
 
 ### Workday (R-GDPR §8)
 

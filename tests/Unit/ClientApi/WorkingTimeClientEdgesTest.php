@@ -80,12 +80,16 @@ final class WorkingTimeClientEdgesTest extends TestCase
         $timer     = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), new InMemoryTimeEntryRepository(), new EventDispatcher());
         $presenter = new ClientTaskPresenter($timer, null, $logger, $failing);
 
-        $task = $presenter->task(new TaskReference('t', 'T', estimateSeconds: 3600), Request::create('https://host.example/'), null, new TestUser('7', 'ana@example.com'));
+        $task = $presenter->task(new TaskReference('t', 'T', estimateSeconds: 3600), Request::create('https://host.example/'), new TestUser('7', 'ana@example.com'));
         self::assertSame(3600, $task['estimateSeconds']);
         self::assertNull($task['loggedSeconds']);
         self::assertSame(['task_effort_failed'], array_column(array_column($logger->records, 'context'), 'action'));
         $given = $presenter->task(new TaskReference('t', 'T', estimateSeconds: 3600, loggedSeconds: 5000), Request::create('https://host.example/'));
         self::assertSame(0, $given['remainingSeconds'], 'a provider total wins and remaining never goes below zero');
+        self::assertNull($task['loggedSecondsScope'], 'no figure, no audience');
+        self::assertNull($given['loggedSecondsScope'], 'without the user the audience is unknown');
+        $mine = $presenter->task(new TaskReference('t', 'T', loggedSeconds: 5000), Request::create('https://host.example/'), new TestUser('7', 'ana@example.com'));
+        self::assertSame(['loggedSeconds' => 5000, 'loggedSecondsScope' => 'own'], ['loggedSeconds' => $mine['loggedSeconds'], 'loggedSecondsScope' => $mine['loggedSecondsScope']], 'a provider figure follows the same audience rule');
         self::assertNull($presenter->task(new TaskReference('t', 'T', estimateSeconds: -1, loggedSeconds: -5), Request::create('https://host.example/'))['estimateSeconds']);
     }
 

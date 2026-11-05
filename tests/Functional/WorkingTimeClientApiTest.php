@@ -220,7 +220,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertSame('org-a', $me['timesheet']['scopeKey'] ?? null);
         self::assertSame('open', $me['timesheet']['status'] ?? null);
         $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);
-        self::assertSame(['estimateSeconds' => null, 'loggedSeconds' => 32_400, 'remainingSeconds' => null], array_slice($tasks['tasks'][0] ?? [], -3));
+        self::assertSame(['estimateSeconds' => null, 'loggedSeconds' => 32_400, 'loggedSecondsScope' => 'own', 'remainingSeconds' => null], array_slice($tasks['tasks'][0] ?? [], -4));
     }
 
     public function testAuditGbMaskingDraftsBoundsAndTaskEffort(): void
@@ -272,6 +272,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         // GB-M3: loggedSeconds is the user's own total; the all-users total only for users who can manage the task.
         $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);
         self::assertSame(7200, $tasks['tasks'][0]['loggedSeconds'] ?? null);
+        self::assertSame('own', $tasks['tasks'][0]['loggedSecondsScope'] ?? null);
         $dispatcher = self::getContainer()->get('event_dispatcher');
         self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
         $dispatcher->addListener(TimeTrackEvents::TASK_EFFORT_ACCESS_CHECK, static function (TaskEffortAccessCheckEvent $event): void {
@@ -281,7 +282,10 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         });
         $managed = $this->api('GET', '/api/time-track/tasks', null, $token);
         self::assertSame(10_800, $managed['tasks'][0]['loggedSeconds'] ?? null);
+        self::assertSame('all', $managed['tasks'][0]['loggedSecondsScope'] ?? null);
         self::assertNull($managed['tasks'][1]['loggedSeconds'] ?? null, 'no time on task-2');
+        self::assertArrayHasKey('loggedSecondsScope', $managed['tasks'][1] ?? []);
+        self::assertNull($managed['tasks'][1]['loggedSecondsScope'] ?? null, 'no scope without a figure');
     }
 
     public function testRunningTimersAndLockedSwitches(): void
