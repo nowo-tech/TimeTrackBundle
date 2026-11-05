@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.12.0](#to-1120)
 - [To 1.11.0](#to-1110)
 - [To 1.10.3](#to-1103)
 - [To 1.10.2](#to-1102)
@@ -52,7 +53,15 @@
 
 ## Unreleased
 
-Planned **1.12.0**. No schema change, no configuration change.
+## To 1.12.0
+
+From **1.11.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+No schema change, no configuration change.
 
 **`GET me.workingHours` is normalised.** If your `ClientUserProfileProviderInterface::getWorkingHours()` returns the
 documented 1.9 `days` shape, the clients now receive it as `slots` (before, they could not read it and treated it as
