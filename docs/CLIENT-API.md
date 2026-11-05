@@ -192,7 +192,10 @@ instance settings) and is present even when `features.idle_check` is false.
 Since 1.11 the body also carries `"locale": "es"` (always present, string or `null`): the user's preferred locale, from
 the profile provider when it also implements `ClientUserLocaleProviderInterface`, else the user's own `getLocale()`
 when the user class has one. Values that are not a locale (`^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8}){0,3}$`) are sent as
-`null`. The masked title of imported entries is translated into this locale.
+`null`. The masked title of imported entries is translated into this locale's language when the bundle ships it
+(`de`, `en`, `es`, `fr`, `it`, `nl`, `pt`; since 1.12), else into the host's default locale. Since 1.12 a user
+`getLocale()` that needs arguments is ignored. A masked entry (`taskVisible: false`) has `description: null` (and an
+empty CSV `description` cell) since 1.12.
 
 #### Working hours (normalised since 1.12)
 

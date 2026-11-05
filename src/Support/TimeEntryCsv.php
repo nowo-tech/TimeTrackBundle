@@ -33,6 +33,7 @@ final class TimeEntryCsv
      * CSV text of the entries (header first, RFC 4180 quoting). Since 1.11 the columns `billable`, `description` and
      * `imported` are appended, and the title of an entry listed in `$hiddenTaskEntryIds` is `$hiddenTitle` (the
      * translated `reports.task_not_visible` in the client API export; {@see TimeEntry::HIDDEN_TASK_TITLE} by default).
+     * Since 1.12 the `description` of such an entry is empty as well.
      *
      * @param list<TimeEntry> $entries
      * @param array<string, true> $hiddenTaskEntryIds entry id => true ({@see TimerService::hiddenTaskEntryIds()})
@@ -43,11 +44,12 @@ final class TimeEntryCsv
         $stream = fopen('php://temp', 'r+');
         fputcsv($stream, self::HEADER, ',', '"', '');
         foreach ($entries as $entry) {
-            $note = ($entry->getMetadata() ?? [])['note'] ?? null;
+            $note   = ($entry->getMetadata() ?? [])['note'] ?? null;
+            $hidden = isset($hiddenTaskEntryIds[$entry->getId()]);
             fputcsv($stream, [
                 self::cell($entry->getId()),
                 self::cell($entry->getTaskId()),
-                self::cell(isset($hiddenTaskEntryIds[$entry->getId()]) ? $hiddenTitle : $entry->getTaskTitleSnapshot()),
+                self::cell($hidden ? $hiddenTitle : $entry->getTaskTitleSnapshot()),
                 self::cell($entry->getBoardIdSnapshot() ?? ''),
                 $entry->getStartedAt()->format(DATE_ATOM),
                 $entry->getEndedAt()->format(DATE_ATOM),
@@ -59,7 +61,7 @@ final class TimeEntryCsv
                     false   => 'no',
                     default => '',
                 },
-                self::cell($entry->getDescription() ?? ''),
+                self::cell($hidden ? '' : $entry->getDescription() ?? ''),
                 $entry->isReadOnly() ? 'yes' : 'no',
             ], ',', '"', '');
         }

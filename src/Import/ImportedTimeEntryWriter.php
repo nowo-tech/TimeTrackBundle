@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Import;
 
+use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -14,6 +15,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -51,6 +53,12 @@ final readonly class ImportedTimeEntryWriter
     /** The most rows one {@see self::upsertMany()} call takes. */
     public const MAX_BATCH = 500;
 
+    /** Since 1.12: earliest year of an imported start (no epoch-0 or pre-1970 dates from a broken source). */
+    public const MIN_YEAR = 1970;
+
+    /** Since 1.12: how far after now an imported entry may end (clock skew and time zones of the source). */
+    public const MAX_FUTURE_SECONDS = 86_400;
+
     /** Tolerance between the duration and the span start → end (the source rounds). */
     private const SPAN_TOLERANCE_SECONDS = 60;
 
@@ -64,6 +72,7 @@ final readonly class ImportedTimeEntryWriter
         private ?EventDispatcherInterface $eventDispatcher = null,
         private int $maxEntrySeconds = self::DEFAULT_MAX_ENTRY_SECONDS,
         private LoggerInterface $logger = new NullLogger(),
+        private ?ClockInterface $clock = null,
     ) {
         if (!$repository instanceof ImportedTimeEntryRepositoryInterface) {
             throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryRepositoryInterface.');
@@ -224,7 +233,8 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
-     * The data the writer stores: patterns, span and duration checked, valid UTF-8 required, title cleaned to one line
+     * The data the writer stores: patterns, timestamps (since 1.12: start year ≥ {@see self::MIN_YEAR}, end at most
+     * {@see self::MAX_FUTURE_SECONDS} after now), span and duration checked, valid UTF-8 required, title cleaned to one line
      * and cut to 255, description cleaned (kept in full, never truncated).
      *
      * @throws InvalidImportedTimeEntryException
@@ -240,6 +250,14 @@ final readonly class ImportedTimeEntryWriter
         }
         if ($data->boardId !== null && preg_match(self::TASK_ID_PATTERN, $data->boardId) !== 1) {
             throw new InvalidImportedTimeEntryException('boardId', 'pattern');
+        }
+        // Since 1.12 (FJ-I6): a plausibility window, so one absurd timestamp (epoch 0, year 0001 or 9999, far future)
+        // is refused with a field and rule instead of failing the whole batch at the database.
+        if ((int) $data->startedAt->format('Y') < self::MIN_YEAR) {
+            throw new InvalidImportedTimeEntryException('startedAt', 'too_old');
+        }
+        if ($data->endedAt->getTimestamp() > ($this->clock?->now() ?? new DateTimeImmutable())->getTimestamp() + self::MAX_FUTURE_SECONDS) {
+            throw new InvalidImportedTimeEntryException('endedAt', 'future');
         }
         $span = $data->endedAt->getTimestamp() - $data->startedAt->getTimestamp();
         if ($span < 0) {

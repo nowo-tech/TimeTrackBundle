@@ -48,6 +48,7 @@ use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use ReflectionMethod;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -70,6 +71,7 @@ use function min;
 use function preg_match;
 use function preg_replace;
 use function sprintf;
+use function strtolower;
 use function trim;
 
 use const DATE_ATOM;
@@ -115,6 +117,9 @@ final readonly class TimeTrackClientApiController
 
     /** Translation domain of the masked title (1.11). */
     private const TRANSLATION_DOMAIN = 'NowoTimeTrackBundle';
+
+    /** Since 1.12: languages the bundle ships translations for; the masked title is translated only into these. */
+    public const TRANSLATION_LOCALES = ['de', 'en', 'es', 'fr', 'it', 'nl', 'pt'];
 
     private ClockInterface $clock;
 
@@ -619,15 +624,15 @@ final readonly class TimeTrackClientApiController
 
     /**
      * Since 1.11: the user's preferred locale for `me` — the profile provider's when it implements
-     * {@see ClientUserLocaleProviderInterface}, else the user's own `getLocale()` when it has one — or null when unknown
-     * or not a locale ({@see self::LOCALE_PATTERN}).
+     * {@see ClientUserLocaleProviderInterface}, else the user's own `getLocale()` when it has one callable without
+     * arguments (since 1.12) — or null when unknown or not a locale ({@see self::LOCALE_PATTERN}).
      */
     private function userLocale(UserInterface $user): ?string
     {
         if ($this->profileProvider instanceof ClientUserLocaleProviderInterface) {
             $locale = $this->profileProvider->getLocale($user);
         } else {
-            $locale = method_exists($user, 'getLocale') ? $user->getLocale() : null;
+            $locale = method_exists($user, 'getLocale') && $this->isArgumentless(new ReflectionMethod($user, 'getLocale')) ? $user->getLocale() : null;
         }
 
         return is_string($locale) && preg_match(self::LOCALE_PATTERN, $locale) === 1 ? $locale : null;
@@ -652,7 +657,8 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * Since 1.11: the title of a masked imported entry (`reports.task_not_visible` in the user's locale, else the
+     * Since 1.11: the title of a masked imported entry (`reports.task_not_visible` in the user's language when the
+     * bundle ships it — since 1.12, so an arbitrary tag never makes the translator build a catalogue — else the
      * translator's default locale; English without a translator).
      */
     private function hiddenTaskTitle(UserInterface $user): string
@@ -661,9 +667,31 @@ final readonly class TimeTrackClientApiController
             return TimeEntry::HIDDEN_TASK_TITLE;
         }
 
-        $title = $this->translator->trans('reports.task_not_visible', [], self::TRANSLATION_DOMAIN, $this->userLocale($user));
+        $title = $this->translator->trans('reports.task_not_visible', [], self::TRANSLATION_DOMAIN, $this->translationLocale($this->userLocale($user)));
 
         return $title === '' || $title === 'reports.task_not_visible' ? TimeEntry::HIDDEN_TASK_TITLE : $title;
+    }
+
+    /**
+     * Since 1.12: the shipped language of a `me.locale` value (`pt_BR` → `pt`), or null (the translator's default).
+     */
+    private function translationLocale(?string $locale): ?string
+    {
+        if ($locale === null) {
+            return null;
+        }
+        $language = strtolower((string) preg_replace('/[_-].*$/s', '', $locale));
+
+        return in_array($language, self::TRANSLATION_LOCALES, true) ? $language : null;
+    }
+
+    /**
+     * Since 1.12: whether a method is public, non-static and needs no argument (a user `getLocale()` that takes
+     * arguments would otherwise make `GET me` fail).
+     */
+    private function isArgumentless(ReflectionMethod $method): bool
+    {
+        return $method->isPublic() && !$method->isStatic() && $method->getNumberOfRequiredParameters() === 0;
     }
 
     /**

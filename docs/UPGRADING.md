@@ -79,6 +79,23 @@ Dates are local `YYYY-MM-DD` in that time zone; `kind` is `holiday` or `vacation
 to 80 characters; do not HTML-escape it). One malformed entry makes `daysOff` `null`. A class implementing
 `ClientUserProfileProviderInterface` keeps working unchanged.
 
+**Imported entries (audit follow-ups).**
+
+- `ImportedTimeEntryRepositoryInterface` is now the service `TimeEntryRepositoryInterface` resolves to (your
+  replacement or decorator), no longer the raw Doctrine store. If you replace or decorate `TimeEntryRepositoryInterface`
+  and read imported entries, implement `ImportedTimeEntryRepositoryInterface` on that service (a decorator delegates
+  the methods) — getting the interface otherwise throws `LogicException` — or alias the interface yourself.
+- A masked imported entry (`taskVisible: false`) now has `description: null` in the client API and an empty CSV
+  `description` cell. Host lists that call `toArray(false, …)` get the same.
+- The writer refuses `startedAt` before 1970 (`startedAt` / `too_old`) and `endedAt` more than one day in the future
+  (`endedAt` / `future`). Skip or fix such rows before `upsertMany()`.
+- After `remove*()` (DQL bulk deletes), entries of the removed rows that your entity manager had loaded are detached.
+  Do not keep using `TimeEntry` objects of removed rows.
+- The masked title is translated into the user's language only when the bundle ships it (`de`, `en`, `es`, `fr`, `it`,
+  `nl`, `pt`); otherwise the translator's default locale is used.
+- Optional: let your task provider implement `Integration\BatchTaskProviderInterface::filterTrackable()` so masking
+  makes one call per entry owner (large exports).
+
 ## To 1.11.0
 
 **Schema (every host).** Additive and nullable; existing rows are unchanged. Doctrine hosts run

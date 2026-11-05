@@ -57,6 +57,11 @@ Planned **1.12.0** (minor, additive): days off on `GET me` and one shape for `wo
   ≤ 80 characters without control characters, ≤ 400 entries; out-of-range entries dropped, one per date, sorted). A
   malformed value is sent as `null`.
 - **`ClientWorkingHoursNormalizer`**: normalises `workingHours` for `GET me`.
+- **`Integration\BatchTaskProviderInterface`** (optional): a task provider may answer `filterTrackable(user, taskIds)`
+  for many tasks at once; `TimerService::hiddenTaskEntryIds()` then makes one call per entry owner instead of one per
+  (owner, task) (audit FJ-I8).
+- **`ImportedTimeEntryWriter::MIN_YEAR` / `MAX_FUTURE_SECONDS`** and an optional `$clock` argument (PSR-20, wired to
+  `ClockInterface` when the host has one).
 
 ### Changed
 
@@ -65,6 +70,26 @@ Planned **1.12.0** (minor, additive): days off on `GET me` and one shape for `wo
   which the clients never understood; both are normalised to `slots`. Overnight ranges are split at midnight, overlapping
   or touching ranges of a day are merged, `24:00` becomes `23:59`. Malformed values (unknown time zone, bad day or time,
   empty range, more than 100 ranges, no `slots` / `days`) are sent as `null` instead of being passed through.
+- **`ImportedTimeEntryRepositoryInterface` follows the configured store** (audit FJ-L3): the service is now whatever
+  `TimeEntryRepositoryInterface` resolves to (a host replacement or decorator included), built by
+  `Repository\ImportedTimeEntryRepositoryResolver`, instead of an alias to the raw Doctrine store. When the configured
+  store does not implement the interface, getting the service throws `LogicException` instead of silently reading
+  another data set.
+- **Masked imported entries hide their description too** (audit FJ-I3): with `taskVisible: false`, `toArray()` returns
+  `description: null` and the CSV `description` cell is empty (client API `GET entries` / `GET export`).
+- **Imported timestamps have a plausibility window** (audit FJ-I6): `startedAt` before 1970 (`startedAt` / `too_old`)
+  or `endedAt` more than one day after now (`endedAt` / `future`) is refused before anything is written, instead of
+  failing the whole batch at the database (MySQL `DATETIME` range).
+- **Task-scope removals bind at most 1 000 task ids per query** (`DoctrineOrmTimeEntryRepository::TASK_IDS_PER_QUERY`,
+  driver parameter limits), and removed entries that the entity manager had loaded are detached (audit FJ-I7).
+- **Masked titles are translated only into shipped languages** (audit FJ-I9): `de`, `en`, `es`, `fr`, `it`, `nl`,
+  `pt` (a region such as `pt_BR` uses its language); any other `me.locale` uses the translator's default locale, so an
+  arbitrary tag never makes the translator build a catalogue. `GET me.locale` itself is unchanged. A user
+  `getLocale()` that needs arguments (or is not public / is static) is ignored instead of making `GET me` fail.
+
+### Documentation
+
+- USAGE / TASK-BOARD-INTEGRATION: masking asks what the entry **owner** may track, not the viewer (audit FJ-I4).
 
 ## [1.11.0] - 2026-11-05
 

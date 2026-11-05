@@ -48,6 +48,7 @@ use function array_filter;
 use function array_map;
 use function array_values;
 use function iterator_to_array;
+use function ksort;
 use function str_repeat;
 
 /**
@@ -163,6 +164,10 @@ final class ImportedEntriesTest extends FunctionalTestCase
         yield 'longer than the span' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $end, 3661), 'durationSeconds', 'longer_than_span'];
         yield 'over 31 days' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $start->modify('+32 days'), 3600), 'durationSeconds', 'max_entry_seconds'];
         yield 'title not UTF-8' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', "T\xC3", null, $start, $end, 60), 'taskTitle', 'encoding'];
+        yield 'before 1970' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, new DateTimeImmutable('1969-12-31 23:00:00'), new DateTimeImmutable('1970-01-01 00:00:00'), 60), 'startedAt', 'too_old'];
+        yield 'year 1' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, new DateTimeImmutable('0001-01-01 10:00:00'), new DateTimeImmutable('0001-01-01 11:00:00'), 60), 'startedAt', 'too_old'];
+        yield 'ends in the future' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, new DateTimeImmutable('+2 days'), new DateTimeImmutable('+2 days +1 hour'), 60), 'endedAt', 'future'];
+        yield 'year 9999' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, new DateTimeImmutable('9999-12-31 10:00:00'), new DateTimeImmutable('9999-12-31 11:00:00'), 60), 'endedAt', 'future'];
         yield 'description not UTF-8' => [new ImportedTimeEntryData(self::SOURCE, 'e', 'task-1', 'T', null, $start, $end, 60, null, "ok\xFF"), 'description', 'encoding'];
     }
 
@@ -175,6 +180,17 @@ final class ImportedEntriesTest extends FunctionalTestCase
         } catch (InvalidImportedTimeEntryException $exception) {
             self::assertSame([$field, $rule], [$exception->field, $exception->rule]);
         }
+    }
+
+    public function testTheFutureLimitIsOneDayAfterTheClock(): void
+    {
+        $clock  = new MockClock('2026-06-01 12:00:00');
+        $writer = new ImportedTimeEntryWriter($this->repository(), $this->dispatcher, clock: $clock);
+        $end    = $clock->now()->modify('+1 day');
+
+        self::assertSame($end, $writer->validate($this->data('e', start: $end->modify('-1 hour'), end: $end))->endedAt);
+        $this->expectExceptionObject(new InvalidImportedTimeEntryException('endedAt', 'future'));
+        $writer->validate($this->data('e', start: $end->modify('-1 hour'), end: $end->modify('+1 second')));
     }
 
     public function testExactlyThirtyOneDaysIsAccepted(): void
@@ -396,6 +412,28 @@ final class ImportedEntriesTest extends FunctionalTestCase
         self::assertSame(0, $repository->removeImported(ImportedTimeEntryScope::tasks(self::SOURCE, []))->count);
     }
 
+    public function testATaskRemovalOverManyIdsIsChunkedAndDetachesLoadedEntries(): void
+    {
+        $writer = $this->writer();
+        $writer->upsertMany([
+            [$this->user, $this->data('e-1', task: 'task-1')],
+            [$this->user, $this->data('e-2', task: 'task-1500')],
+            [$this->user, $this->data('e-3', task: 'task-2500')],
+        ]);
+        $repository = $this->repository();
+        $loaded     = $repository->findByExternal(self::SOURCE, 'e-2');
+        self::assertInstanceOf(TimeEntry::class, $loaded);
+
+        $taskIds = array_map(static fn (int $i): string => 'task-' . $i, range(1, 2 * DoctrineOrmTimeEntryRepository::TASK_IDS_PER_QUERY + 1));
+        $removal = $repository->removeImported(ImportedTimeEntryScope::tasks(self::SOURCE, $taskIds));
+
+        self::assertSame(2, $removal->count);
+        self::assertSame(['task-1' => 3600, 'task-1500' => 3600], $removal->secondsByTask);
+        self::assertFalse($this->entityManager()->contains($loaded));
+        self::assertNull($repository->findByExternal(self::SOURCE, 'e-2'));
+        self::assertNotNull($repository->findByExternal(self::SOURCE, 'e-3'));
+    }
+
     public function testImportedEntriesNeverClampALiveStartAndAreExcludedFromLiveQueries(): void
     {
         $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
@@ -453,7 +491,11 @@ final class ImportedEntriesTest extends FunctionalTestCase
         $live    = new TimeEntry($this->user, 'task-9', 'T', null, new DateTimeImmutable('-1 hour'), new DateTimeImmutable(), 3600, TimeEntrySource::Web);
         $orphan  = TimeEntry::imported(new stdClass(), $this->data('e-4'));
 
-        self::assertSame([$hidden->getId() => true, $again->getId() => true, $orphan->getId() => true], $service->hiddenTaskEntryIds([$visible, $hidden, $again, $live, $orphan]));
+        $expected = [$hidden->getId() => true, $again->getId() => true, $orphan->getId() => true];
+        $actual   = $service->hiddenTaskEntryIds([$visible, $hidden, $again, $live, $orphan]);
+        ksort($expected);
+        ksort($actual);
+        self::assertSame($expected, $actual);
     }
 
     public function testClientApiAndReportsShowImportedEntriesReadOnlyWithMaskedTitles(): void

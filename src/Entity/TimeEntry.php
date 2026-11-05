@@ -276,8 +276,9 @@ class TimeEntry
     /**
      * Client API shape. Since 1.11 it also has `billable`, `description`, `readOnly` and `taskVisible`; with
      * `$taskVisible` false the title is `$hiddenTitle` (the translated `reports.task_not_visible` in the client API,
-     * {@see self::HIDDEN_TASK_TITLE} by default): imported entries of a task the owner cannot see. The external identity
-     * is never exposed.
+     * {@see self::HIDDEN_TASK_TITLE} by default): imported entries of a task the owner cannot see. Since 1.12 the
+     * `description` of such an entry is null too (it is copied from the source and may repeat task content). The
+     * external identity is never exposed.
      *
      * @return array<string, mixed>
      */
@@ -294,7 +295,7 @@ class TimeEntry
             'source'          => $this->source->value,
             'metadata'        => $this->metadata,
             'billable'        => $this->billable,
-            'description'     => $this->description,
+            'description'     => $taskVisible ? $this->description : null,
             'readOnly'        => $this->isReadOnly(),
             'taskVisible'     => $taskVisible,
         ];
