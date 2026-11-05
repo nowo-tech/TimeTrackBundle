@@ -1,0 +1,235 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Nowo\TimeTrackBundle\Tests\Unit\Timesheet;
+
+use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
+use Nowo\TimeTrackBundle\Command\TimesheetsVerifyCommand;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Enum\LedgerKind;
+use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Exception\TimesheetException;
+use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimesheetRetentionRepositoryInterface;
+use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
+use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryBalanceLedgerRepository;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetEventRepository;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetRepository;
+use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
+use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
+use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Console\Tester\CommandTester;
+
+use function str_repeat;
+
+/**
+ * Since 1.13: state machine branches that the database tests do not reach.
+ */
+final class TimesheetServiceUnitTest extends TestCase
+{
+    private TestUser $owner;
+
+    private InMemoryTimesheetRepository $timesheets;
+
+    private InMemoryTimesheetEventRepository $events;
+
+    private InMemoryTimeEntryRepository $entries;
+
+    protected function setUp(): void
+    {
+        $this->owner      = new TestUser('7', 'ana@example.com');
+        $this->timesheets = new InMemoryTimesheetRepository();
+        $this->events     = new InMemoryTimesheetEventRepository();
+        $this->entries    = new InMemoryTimeEntryRepository();
+    }
+
+    public function testOwnersGetARowOnTheirFirstViewAndSubmitWaitsForThePeriodEnd(): void
+    {
+        $service = $this->service(submitRequiresEnd: true);
+        $week    = $service->period($this->owner, 'org-a', 'current');
+
+        $created = $service->view($this->owner, '7', 'org-a', $week);
+        self::assertSame($week->key, $created->getPeriod()->key);
+        self::assertSame($created, $service->view($this->owner, '7', 'org-a', $week));
+        self::assertTrue($service->accessGuard()->hasScope($this->owner, 'org-a'));
+        self::assertTrue($service->isEnabled());
+
+        $this->expectError('not_ended', fn (): Timesheet => $service->submit($this->owner, 'org-a', $week));
+        $this->expectError('not_found', fn (): Timesheet => $service->withdraw($this->owner, 'org-x', $week));
+        self::assertSame(404, (new TimesheetException('not_found'))->httpStatus());
+        self::assertSame(422, (new TimesheetException('comment_required'))->httpStatus());
+        self::assertSame(409, (new TimesheetException('other'))->httpStatus());
+    }
+
+    public function testOffAnswersNothing(): void
+    {
+        $service = $this->service(enabled: false);
+        $week    = Period::fromKey(TimesheetPeriodKind::Week, '2026-W45');
+
+        self::assertFalse($service->isEnabled());
+        self::assertSame([], $service->queue(new TestUser('9', 'b@example.com'), 'org-a'));
+        $this->expectError('not_found', fn (): Timesheet => $service->view($this->owner, '7', 'org-a', $week));
+        $this->expectError('not_found', fn (): Timesheet => $service->find($this->owner, 'x'));
+    }
+
+    public function testAConcurrentFirstViewIsAConflict(): void
+    {
+        $this->timesheets->failSave = $this->createStub(UniqueConstraintViolationException::class);
+        $service                    = $this->service();
+
+        $this->expectError('conflict', fn (): Timesheet => $service->view($this->owner, '7', 'org-a', Period::fromKey(TimesheetPeriodKind::Week, '2026-W45')));
+    }
+
+    public function testSnapshotsListUnassignedEntriesAndIgnoreOtherDays(): void
+    {
+        $period  = Period::fromKey(TimesheetPeriodKind::Week, '2026-W45');
+        $outside = new TimeEntry($this->owner, 'task-1', 'T', null, new DateTimeImmutable('2026-11-09 00:30:00Z'), new DateTimeImmutable('2026-11-09 01:00:00Z'), 1800, TimeEntrySource::Web);
+        $none    = new TimeEntry($this->owner, 'task-1', 'T', null, new DateTimeImmutable('2026-11-03 09:00:00Z'), new DateTimeImmutable('2026-11-03 10:00:00Z'), 3600, TimeEntrySource::Web);
+        $store   = new class([$outside->assignScopeKey('org-a'), $none]) implements TimeEntryRepositoryInterface {
+            /** @param list<TimeEntry> $list */
+            public function __construct(private readonly array $list)
+            {
+            }
+
+            public function save(TimeEntry $entry): void
+            {
+            }
+
+            public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return $this->list;
+            }
+        };
+
+        $snapshot = (new TimesheetSnapshotBuilder($store))->build(null, '7', 'org-a', $period, 'UTC');
+
+        self::assertSame([], $snapshot->entries);
+        self::assertSame([$none], $snapshot->unassigned);
+        self::assertSame(1, $snapshot->totals['unassignedEntries']);
+        self::assertNull($snapshot->balance);
+        self::assertNull($snapshot->totals['balanceSeconds']);
+    }
+
+    public function testTheVerifierReportsBrokenLedgerChainsAndVanishedTimesheets(): void
+    {
+        $ledger = new InMemoryBalanceLedgerRepository();
+        $first  = new BalanceLedgerLine(null, '7', 'org-a', '2026-11-01', LedgerKind::Opening, 60, new DateTimeImmutable(), null, 'x');
+        $fork1  = new BalanceLedgerLine(null, '7', 'org-a', '2026-11-02', LedgerKind::Adjustment, 60, new DateTimeImmutable(), $first->getHash(), 'x');
+        $fork2  = new BalanceLedgerLine(null, '7', 'org-a', '2026-11-03', LedgerKind::Adjustment, 60, new DateTimeImmutable(), $first->getHash(), 'x');
+        $orphan = new BalanceLedgerLine(null, '8', 'org-a', '2026-11-03', LedgerKind::Adjustment, 60, new DateTimeImmutable(), str_repeat('f', 64), 'x');
+        $broken = new BalanceLedgerLine(null, '9', 'org-a', '2026-11-03', LedgerKind::Adjustment, 60, new DateTimeImmutable(), null, 'x');
+        (new ReflectionProperty(BalanceLedgerLine::class, 'seconds'))->setValue($broken, 61);
+        foreach ([$first, $fork1, $fork2, $orphan, $broken] as $line) {
+            $ledger->append($line);
+        }
+        $retention = new class implements TimesheetRetentionRepositoryInterface {
+            public function purgeBefore(string $beforeDate, int $batchSize = 500): array
+            {
+                return ['timesheets' => 0, 'events' => 0, 'ledger' => 0];
+            }
+
+            public function timesheetIds(?string $scopeKey, ?string $ownerRef, string $afterId, int $limit): array
+            {
+                return $afterId === '' ? ['vanished'] : [];
+            }
+
+            public function ledgerChains(?string $scopeKey, ?string $ownerRef): array
+            {
+                return [['ownerRef' => '7', 'scopeKey' => 'org-a'], ['ownerRef' => '8', 'scopeKey' => 'org-a'], ['ownerRef' => '9', 'scopeKey' => 'org-a']];
+            }
+        };
+        $verifier = new AuditChainVerifier($this->timesheets, $retention, $this->events, $ledger);
+
+        $problems = $verifier->verify();
+        self::assertCount(3, $problems);
+        self::assertStringContainsString('forks after ' . $first->getHash(), $problems[0]);
+        self::assertStringContainsString('1 line(s) are not linked', $problems[1]);
+        self::assertStringContainsString('line ' . $broken->getId() . ' is broken', $problems[2]);
+        self::assertNull($verifier->verifyTimesheet('vanished'));
+
+        $ok = new CommandTester(new TimesheetsVerifyCommand(new AuditChainVerifier($this->timesheets, $retention, $this->events, new InMemoryBalanceLedgerRepository())));
+        self::assertSame(0, $ok->execute(['--scope' => 'org-a', '--user' => '7']));
+        self::assertStringContainsString('Every audit chain is intact.', $ok->getDisplay());
+    }
+
+    public function testAutoLockSkipsEntriesOfOtherScopes(): void
+    {
+        $user  = $this->owner;
+        $store = new class($user) implements TimeEntryRepositoryInterface, EntryOwnersRepositoryInterface {
+            public function __construct(private readonly TestUser $user)
+            {
+            }
+
+            public function save(TimeEntry $entry): void
+            {
+            }
+
+            public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return [(new TimeEntry($this->user, 'task-1', 'T', null, new DateTimeImmutable('2026-10-06 09:00:00Z'), new DateTimeImmutable('2026-10-06 10:00:00Z'), 3600, TimeEntrySource::Web))->assignScopeKey('org-b')];
+            }
+
+            public function ownersWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return [['user' => $this->user, 'scopeKey' => 'org-a']];
+            }
+        };
+        $command = new TimesheetsAutoLockCommand($this->service(), $store, new TimesheetTimezoneResolver(), 3, new MockClock('2026-11-05 10:00:00'));
+        $tester  = new CommandTester($command);
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringContainsString('Locked 0 period(s).', $tester->getDisplay());
+        self::assertSame([], $this->timesheets->timesheets);
+    }
+
+    private function service(bool $enabled = true, bool $submitRequiresEnd = false): TimesheetService
+    {
+        $timesheets = $this->timesheets;
+        $scopes     = new FixedScopeProvider(['7' => ['org-a'], '9' => ['org-a']]);
+        $guard      = new TimesheetAccessGuard($scopes, new StubTimesheetApproverProvider(['org-a' => ['9' => ['7']]]));
+
+        return new TimesheetService(
+            $timesheets,
+            $this->events,
+            new TimesheetAuditTrail($this->events, $timesheets),
+            $guard,
+            new TimesheetSnapshotBuilder($this->entries),
+            new TimesheetTimezoneResolver($scopes),
+            new InMemoryActiveTimerRepository(),
+            null,
+            null,
+            new MockClock('2026-11-05 10:00:00'),
+            $enabled,
+            TimesheetPeriodKind::Week,
+            $submitRequiresEnd,
+        );
+    }
+
+    private function expectError(string $code, callable $action): void
+    {
+        try {
+            $action();
+            self::fail('expected ' . $code);
+        } catch (TimesheetException $e) {
+            self::assertSame($code, $e->errorCode());
+        }
+    }
+}

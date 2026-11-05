@@ -111,6 +111,8 @@ final class FunctionalKernel extends Kernel
         $container->services()->set('logger', NullLogger::class);
         // Since 1.13: approver provider of the timesheet variants (public: tests configure it per case).
         $container->services()->set(StubTimesheetApproverProvider::class)->public();
+        $container->services()->set(FixedScopeProvider::class)->public();
+        $container->services()->set(FixedWorkingCalendar::class)->args(['UTC'])->public();
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);

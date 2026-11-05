@@ -48,15 +48,10 @@ services:
             - '../../Security/TimeTrackAccessCheckerInterface.php'
             - '../../Security/ConfigurableTimeTrackAccessChecker.php'
             - '../../Security/AllowAllTimeTrackAccessChecker.php'
-            # Since 1.13: value objects; the guard and the scope providers are defined by the extension.
-            - '../../Timesheet/Period.php'
-            - '../../Timesheet/TimesheetScope.php'
-            - '../../Timesheet/SingleScopeProvider.php'
-            - '../../Timesheet/PeriodLockGuard.php'
+            # Since 1.13: timesheets and working time are defined by the extension (value objects excluded too).
+            - '../../Timesheet/'
             - '../../Support/CanonicalJson.php'
             - '../../Support/StorageTime.php'
-            - '../../Timesheet/TimesheetAccessGuard.php'
-            - '../../Timesheet/TimesheetTimezoneResolver.php'
             # Since 1.13: working time — value objects; the services are defined by the extension.
             - '../../WorkingTime/'
 

@@ -28,10 +28,13 @@ use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
+use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
+use Nowo\TimeTrackBundle\Command\TimesheetsPurgeCommand;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
+use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
@@ -63,10 +66,14 @@ use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
@@ -354,6 +361,73 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$scopeProvider', $scopeRef);
 
         $this->registerWorkingTime($container, $config, $scopeRef, $guardRef);
+        $this->registerTimesheetWorkflow($container, $config, $scopeRef);
+    }
+
+    /**
+     * Since 1.13: audit trail, snapshot builder, the timesheet state machine, the chain verifier and the commands.
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerTimesheetWorkflow(ContainerBuilder $container, array $config, Reference $scopeRef): void
+    {
+        /** @var array{enabled: bool, period: string, submit_requires_period_end: bool, auto_lock_after_days: int|null, audit_blocked_edits: bool, retention_years: int} $timesheets */
+        $timesheets = $config['timesheets'];
+        /** @var array{enabled: bool, overtime: array{ratify_on_approval: bool}} $workingTime */
+        $workingTime = $config['working_time'];
+        $clockRef    = new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $loggerRef   = new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
+
+        $container->setDefinition(TimesheetAuditTrail::class, (new Definition(TimesheetAuditTrail::class))
+            ->setArguments([
+                '$events'     => new Reference(TimesheetEventRepositoryInterface::class),
+                '$timesheets' => new Reference(TimesheetRepositoryInterface::class),
+                '$clock'      => $clockRef,
+            ]));
+        if ($timesheets['audit_blocked_edits']) {
+            $container->getDefinition(PeriodLockGuard::class)->setArgument('$blockedEditRecorder', new Reference(TimesheetAuditTrail::class));
+        }
+        $container->setDefinition(TimesheetSnapshotBuilder::class, (new Definition(TimesheetSnapshotBuilder::class))
+            ->setArguments([
+                '$entries' => new Reference(TimeEntryRepositoryInterface::class),
+                '$balance' => new Reference(WorkingTimeBalanceService::class),
+            ]));
+        $container->setDefinition(TimesheetService::class, (new Definition(TimesheetService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$timesheets'              => new Reference(TimesheetRepositoryInterface::class),
+                '$events'                  => new Reference(TimesheetEventRepositoryInterface::class),
+                '$auditTrail'              => new Reference(TimesheetAuditTrail::class),
+                '$accessGuard'             => new Reference(TimesheetAccessGuard::class),
+                '$snapshots'               => new Reference(TimesheetSnapshotBuilder::class),
+                '$timezoneResolver'        => new Reference(TimesheetTimezoneResolver::class),
+                '$activeTimers'            => new Reference(ActiveTimerRepositoryInterface::class),
+                '$ledger'                  => $workingTime['enabled'] ? new Reference(BalanceLedger::class) : null,
+                '$eventDispatcher'         => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'                   => $clockRef,
+                '$enabled'                 => $timesheets['enabled'],
+                '$periodKind'              => TimesheetPeriodKind::from($timesheets['period']),
+                '$submitRequiresPeriodEnd' => $timesheets['submit_requires_period_end'],
+                '$ratifyOnApproval'        => $workingTime['overtime']['ratify_on_approval'],
+                '$logger'                  => $loggerRef,
+                '$scopeProvider'           => $scopeRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(AuditChainVerifier::class, (new Definition(AuditChainVerifier::class))
+            ->setArguments([
+                '$timesheets' => new Reference(TimesheetRepositoryInterface::class),
+                '$retention'  => new Reference(TimesheetRetentionRepositoryInterface::class),
+                '$events'     => new Reference(TimesheetEventRepositoryInterface::class),
+                '$ledger'     => new Reference(BalanceLedgerRepositoryInterface::class),
+            ]));
+        $container->getDefinition(TimesheetsAutoLockCommand::class)
+            ->setArgument('$afterDays', $timesheets['auto_lock_after_days'])
+            ->setArgument('$clock', $clockRef)
+            ->setArgument('$logger', $loggerRef);
+        $container->getDefinition(TimesheetsPurgeCommand::class)
+            ->setArgument('$retentionYears', $timesheets['retention_years'])
+            ->setArgument('$clock', $clockRef)
+            ->setArgument('$logger', $loggerRef);
     }
 
     /**

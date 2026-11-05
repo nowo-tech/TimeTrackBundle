@@ -95,6 +95,23 @@ PRs). Every feature is off until configured; the schema change is required for e
 - **`Timesheet\TimesheetAccessGuard`**: tenant-aware view / submit / approve / reject / reopen / adjust decisions (no
   self-approval, admin roles only with `timesheets.admin_roles_view` or `reopen_roles`), deny-only
   `TimesheetAccessCheckEvent`; `TimesheetTimezoneResolver` (scope zone → working-hours zone → default).
+- **Timesheets** `Timesheet\TimesheetService` (contract §5): `submit` (owner only; refused with `timer_running`,
+  `not_started`, `not_ended` with `submit_requires_period_end`), `withdraw`, `approve` (approvers only, never the owner —
+  admins included —, entries hash re-checked → `stale`, hard lock, final snapshot, one `overtime_ratified` ledger line
+  with `working_time.overtime.ratify_on_approval`), `approveMany` (per-id outcomes), `reject` (comment 10–1000
+  characters, kept for the owner until the next submit), `reopen` (approver or `reopen_roles`, reason required, lock
+  cleared, ratified overtime reversed), `autoLock`, `queue`, `view` (row created on the owner's first view). Each
+  transition is one transaction with its audit row; concurrent decisions fail with `conflict` (optimistic `version`).
+  Other users' timesheets answer `not_found` (no existence oracle). `TimesheetException` (stable codes + HTTP status),
+  `TimesheetTransitionEvent` (ids only; comment presence flag).
+- **Audit trail** `TimesheetAuditTrail` (seq, `prev_hash`, head hash; `edit_blocked` rows with
+  `timesheets.audit_blocked_edits`, one per timesheet per minute) and `TimesheetSnapshotBuilder` (snapshot totals of
+  contract §5.8 and the canonical entries hash; imported entries counted apart, unassigned entries listed for the owner).
+- **Commands** `nowo:time-track:timesheets:auto-lock [--lookback-days=62]` (with `timesheets.auto_lock_after_days`;
+  rows only for users with entries), `nowo:time-track:timesheets:purge [--batch=500]` (retention: `retention_years`
+  after the end of the period's month; the only delete path) and `nowo:time-track:timesheets:verify [--scope] [--user]`
+  (`AuditChainVerifier`: names the first broken link of every timesheet and ledger chain).
+- `Repository\EntryOwnersRepositoryInterface` (implemented by `DoctrineOrmTimeEntryRepository`).
 - `TimeEntrySource::Manual` and `TimeEntrySource::Calendar` (live, editable; write paths in 1.14).
 - `Repository\FilteredImportedTimeEntryRepositoryInterface` (bulk removal that keeps locked entries) and
   `Repository\ScopeBackfillRepositoryInterface`, both implemented by `DoctrineOrmTimeEntryRepository`.

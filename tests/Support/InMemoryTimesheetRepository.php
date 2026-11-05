@@ -8,6 +8,7 @@ use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
+use Throwable;
 
 use function array_filter;
 use function array_slice;
@@ -27,8 +28,14 @@ final class InMemoryTimesheetRepository implements TimesheetRepositoryInterface
 
     public int $transactions = 0;
 
+    /** Thrown by the next save (race simulations). */
+    public ?Throwable $failSave = null;
+
     public function save(Timesheet $timesheet): void
     {
+        if ($this->failSave instanceof Throwable) {
+            throw $this->failSave;
+        }
         $this->timesheets[$timesheet->getId()] = $timesheet;
         ++$this->saves;
     }

@@ -25,7 +25,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -361,6 +361,35 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         } while (count($batch) === $batchSize);
 
         return $removal;
+    }
+
+    /**
+     * Since 1.13: distinct (owner, scope) pairs with scoped entries started in the window.
+     */
+    public function ownersWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        /** @var list<array{userId: int|string, scopeKey: string}> $rows */
+        $rows = $this->entityManager->createQueryBuilder()
+            ->select('IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey')
+            ->distinct()
+            ->from(TimeEntry::class, 'e')
+            ->where('e.scopeKey IS NOT NULL')
+            ->andWhere('e.startedAt >= :from')
+            ->andWhere('e.startedAt <= :to')
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->getQuery()
+            ->getArrayResult();
+        $userClass = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
+        $owners    = [];
+        foreach ($rows as $row) {
+            $user = $this->entityManager->find($userClass, $row['userId']);
+            if ($user instanceof UserInterface) {
+                $owners[] = ['user' => $user, 'scopeKey' => $row['scopeKey']];
+            }
+        }
+
+        return $owners;
     }
 
     /**
