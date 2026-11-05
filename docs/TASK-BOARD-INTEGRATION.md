@@ -14,6 +14,7 @@
 | Interface | Purpose |
 |-----------|---------|
 | `TaskProviderInterface` | List/find tasks, `canUserTrack()`; since 1.10 the returned `TaskReference` may carry `projectId`, `projectTitle` and the task page `url` for the clients |
+| `BatchTaskProviderInterface` (optional, since 1.12) | `filterTrackable(user, taskIds)`: the subset the user may track, so masking imported titles makes one call per entry owner. Masking asks what the entry **owner** may track, not the viewer |
 | `TeamContextProviderInterface` | Teams, `isManagerOf()`, `getManagedUserIds()` |
 
 ## Wiring

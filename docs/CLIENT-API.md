@@ -161,9 +161,11 @@ Revokes the presented token. Always `204`.
 
 ### GET me
 
-Scope: any. `200 {"userId": "42", "identifier": "person@example.com", "displayName": null, "scopes": [...], "workingHours": null}`
+Scope: any. `200 {"userId": "42", "identifier": "person@example.com", "displayName": null, "scopes": [...], "workingHours": null, "locale": null, "daysOff": null, ...}`
 (`displayName` / `workingHours` from `ClientUserProfileProviderInterface`; clients suppress reminders outside the
-working hours — the API never pushes).
+working hours and on days off — the API never pushes). Since 1.12 `workingHours` is always in the `slots` shape and
+`daysOff` lists holidays and vacations: see [Working hours](#working-hours-normalised-since-112) and
+[Days off](#days-off-since-112).
 
 Since 1.9.1 the body also carries `"minSupportedVersion": "1.4.0"` — the oldest version of the **calling token's**
 client type (`extension`, `desktop` or `web`) the host still supports, from `ClientMinSupportedVersionProviderInterface`.
@@ -190,7 +192,77 @@ instance settings) and is present even when `features.idle_check` is false.
 Since 1.11 the body also carries `"locale": "es"` (always present, string or `null`): the user's preferred locale, from
 the profile provider when it also implements `ClientUserLocaleProviderInterface`, else the user's own `getLocale()`
 when the user class has one. Values that are not a locale (`^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8}){0,3}$`) are sent as
-`null`. The masked title of imported entries is translated into this locale.
+`null`. The masked title of imported entries is translated into this locale's language when the bundle ships it
+(`de`, `en`, `es`, `fr`, `it`, `nl`, `pt`; since 1.12), else into the host's default locale. Since 1.12 a user
+`getLocale()` that needs arguments is ignored. A masked entry (`taskVisible: false`) has `description: null` (and an
+empty CSV `description` cell) since 1.12.
+
+#### Working hours (normalised since 1.12)
+
+`workingHours` is `null` only when the provider returns `null` (unknown: TimeTrack Desktop then notifies at any time),
+otherwise always this shape:
+
+```json
+"workingHours": {"timezone": "Europe/Madrid",
+                 "slots": [{"day": 1, "from": "09:00", "to": "14:00"}, {"day": 1, "from": "15:00", "to": "18:00"}]}
+```
+
+`day` is the ISO weekday (1 = Monday … 7 = Sunday); `from` (inclusive) and `to` (exclusive) are `HH:MM` local time in
+`timezone` (an IANA identifier, or `null` = the client's local time). A weekday without slots is not a working day.
+Slots are sorted by day, then start.
+
+`ClientUserProfileProviderInterface::getWorkingHours()` may return either shape; the bundle normalises it:
+
+| Provider returns | `GET me` sends |
+|------------------|----------------|
+| `{timezone, slots: [{day: 1-7, from, to}]}` | the same, sorted |
+| `{timezone, days: {mon: [["09:00","17:00"]], ...}}` (the 1.9 documented shape; keys `mon`…`sun` or `monday`…`sunday`, any case; a range is `[from, to]` or `{from, to}`) | `slots` |
+| both keys | `slots` wins, `days` is ignored |
+| an overnight range, e.g. Fri `22:00`–`06:00` | split at midnight: `{day: 5, from: "22:00", to: "23:59"}`, `{day: 6, from: "00:00", to: "06:00"}` (Sunday wraps to Monday; `to: "00:00"` = until midnight) |
+| overlapping or touching ranges of one day | merged into one slot |
+| `to: "24:00"` | `"23:59"` (clients only parse `00:00`–`23:59`) |
+| anything else: no `slots` / `days`, unknown or non-canonical time zone (`europe/madrid`), day not an int 1-7 (`"1"`) or unknown day key, time not `H:MM`/`HH:MM` (`" 9:00"`, `09:00:00`), `from` = `to` (`00:00`–`00:00` is not "all day"), more than 100 ranges | **fail closed**: `{timezone: <the given zone when valid, else null>, slots: []}` — never inside working hours, so the clients send no notifications limited to working hours — and a `warning` log (`reason`, no user data) |
+
+Before 1.12 the provider value was passed through unchanged, so a host returning the documented `days` shape sent a
+value TimeTrack Desktop 0.4 could not read (0.5.0 reads both shapes).
+
+#### Days off (since 1.12)
+
+```json
+"daysOff": [{"date": "2026-12-08", "kind": "holiday", "label": "Inmaculada Concepción"},
+            {"date": "2026-12-28", "kind": "vacation", "label": null}]
+```
+
+Always present: a list, or `null` when unknown (no provider, the provider returns `null`, or its value is not a list).
+TimeTrack Desktop 0.5.0+ (unreleased; desktop PRs #14 / #15) reads it, merges it with the user's local days off and
+sends no schedule reminders on those days; the browser extension ignores it.
+
+- `date`: `YYYY-MM-DD` local date in the working-hours `timezone` (the server's PHP time zone when there is none).
+- `kind`: `holiday` or `vacation`.
+- `label`: plain text or `null`, at most 80 characters (grapheme clusters). It is JSON, not HTML: the server escapes
+  nothing and the clients render it as text.
+- Range: today → today + 60 days in that time zone; entries outside it are dropped, one entry per date (the first the
+  provider lists), sorted by date.
+
+Source: the profile provider when it also implements `ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user,
+DateTimeImmutable $from, DateTimeImmutable $to): ?array` (`$from` = start of today, `$to` = end of today + 60, both in
+that time zone). Validation, entry by entry:
+
+- The value must be a list (else `null`); only its first 400 entries are read.
+- An entry without a real `YYYY-MM-DD` `date` or with a `kind` other than `holiday` / `vacation` (any case: `Holiday`
+  is accepted) is **dropped alone**; the other entries are still sent.
+- `label`: control characters (line breaks, tabs, DEL, C1) become one space; bidi controls, zero-width characters,
+  BOM and soft hyphens are removed (ZWJ is kept for emoji); Unicode blanks (NBSP included) are trimmed; empty = `null`;
+  cut to 80 grapheme clusters. A label that is not a string or not valid UTF-8 becomes `null` (the day off is kept).
+- Dropped entries and cleaned labels are logged once per request as a `warning` (counts and reasons, no dates, labels
+  or user data).
+
+The provider runs on every `GET me` (each client polls it): if it reads a calendar service, cache the result (for
+example per user and day).
+
+**Privacy.** Labels reach the user's devices and are stored there (the desktop keeps them for its reminders). Send
+public holiday names only (`"Inmaculada Concepción"`), `null` for vacations, and never a leave reason (illness, family
+or any personal detail) in a label.
 
 ### GET tasks
 

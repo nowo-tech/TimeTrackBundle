@@ -12,12 +12,15 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
+use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
@@ -45,6 +48,7 @@ use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use ReflectionMethod;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -67,6 +71,7 @@ use function min;
 use function preg_match;
 use function preg_replace;
 use function sprintf;
+use function strtolower;
 use function trim;
 
 use const DATE_ATOM;
@@ -113,6 +118,9 @@ final readonly class TimeTrackClientApiController
     /** Translation domain of the masked title (1.11). */
     private const TRANSLATION_DOMAIN = 'NowoTimeTrackBundle';
 
+    /** Since 1.12: languages the bundle ships translations for; the masked title is translated only into these. */
+    public const TRANSLATION_LOCALES = ['de', 'en', 'es', 'fr', 'it', 'nl', 'pt'];
+
     private ClockInterface $clock;
 
     private LoggerInterface $logger;
@@ -128,7 +136,7 @@ final readonly class TimeTrackClientApiController
      *
      * @param bool $allowMetadata `client_api.allow_metadata`: accept free `metadata` on timer start (default false)
      * @param ClockInterface|null $clock Reference time of the default periods (defaults to the system clock)
-     * @param LoggerInterface|null $logger Logs throttled logins without username or IP (defaults to no logging)
+     * @param LoggerInterface|null $logger Logs throttled logins without username or IP and (1.12) malformed working hours / days off without user data (defaults to no logging)
      * @param ClientMinSupportedVersionProviderInterface|null $minSupportedVersionProvider `me.minSupportedVersion` source (null = key never sent)
      * @param ClientTaskPresenter|null $taskPresenter Task details of tasks and timers (null = request origin, no logging)
      * @param ClientApiSettingsProviderInterface|null $settingsProvider Backdate and idle settings (null = the defaults)
@@ -228,7 +236,9 @@ final readonly class TimeTrackClientApiController
      * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
      * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1), and (1.10)
      * `features` (object of booleans; `workday` and `monitoring` reserved, always false) and `limits` (backdate and
-     * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null).
+     * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null), and (1.12)
+     * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
+     * shape ({@see ClientWorkingHoursNormalizer}).
      */
     public function me(Request $request): Response
     {
@@ -237,14 +247,16 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $user = $principal->user;
-        $body = [
+        $user         = $principal->user;
+        $workingHours = ClientWorkingHoursNormalizer::normalize($this->profileProvider->getWorkingHours($user), $this->logger);
+        $body         = [
             'userId'       => UserIdResolver::getId($user),
             'identifier'   => $user->getUserIdentifier(),
             'displayName'  => $this->profileProvider->getDisplayName($user),
             'scopes'       => ClientScope::values($principal->token->getScopes()),
-            'workingHours' => $this->profileProvider->getWorkingHours($user),
+            'workingHours' => $workingHours,
             'locale'       => $this->userLocale($user),
+            'daysOff'      => $this->daysOff($user, $workingHours['timezone'] ?? null),
         ];
         $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
         if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
@@ -612,22 +624,41 @@ final readonly class TimeTrackClientApiController
 
     /**
      * Since 1.11: the user's preferred locale for `me` — the profile provider's when it implements
-     * {@see ClientUserLocaleProviderInterface}, else the user's own `getLocale()` when it has one — or null when unknown
-     * or not a locale ({@see self::LOCALE_PATTERN}).
+     * {@see ClientUserLocaleProviderInterface}, else the user's own `getLocale()` when it has one callable without
+     * arguments (since 1.12) — or null when unknown or not a locale ({@see self::LOCALE_PATTERN}).
      */
     private function userLocale(UserInterface $user): ?string
     {
         if ($this->profileProvider instanceof ClientUserLocaleProviderInterface) {
             $locale = $this->profileProvider->getLocale($user);
         } else {
-            $locale = method_exists($user, 'getLocale') ? $user->getLocale() : null;
+            $locale = method_exists($user, 'getLocale') && $this->isArgumentless(new ReflectionMethod($user, 'getLocale')) ? $user->getLocale() : null;
         }
 
         return is_string($locale) && preg_match(self::LOCALE_PATTERN, $locale) === 1 ? $locale : null;
     }
 
     /**
-     * Since 1.11: the title of a masked imported entry (`reports.task_not_visible` in the user's locale, else the
+     * Since 1.12: the user's days off from today to today + {@see ClientDaysOffNormalizer::HORIZON_DAYS} in the
+     * working-hours time zone (else the PHP default one) — from the profile provider when it implements
+     * {@see ClientUserDaysOffProviderInterface}, validated by {@see ClientDaysOffNormalizer} — or null when unknown.
+     *
+     * @return list<array{date: string, kind: string, label: string|null}>|null
+     */
+    private function daysOff(UserInterface $user, ?string $timezone): ?array
+    {
+        if (!$this->profileProvider instanceof ClientUserDaysOffProviderInterface) {
+            return null;
+        }
+
+        [$from, $to] = ClientDaysOffNormalizer::range($this->clock->now(), $timezone ?? date_default_timezone_get());
+
+        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'), $this->logger);
+    }
+
+    /**
+     * Since 1.11: the title of a masked imported entry (`reports.task_not_visible` in the user's language when the
+     * bundle ships it — since 1.12, so an arbitrary tag never makes the translator build a catalogue — else the
      * translator's default locale; English without a translator).
      */
     private function hiddenTaskTitle(UserInterface $user): string
@@ -636,9 +667,31 @@ final readonly class TimeTrackClientApiController
             return TimeEntry::HIDDEN_TASK_TITLE;
         }
 
-        $title = $this->translator->trans('reports.task_not_visible', [], self::TRANSLATION_DOMAIN, $this->userLocale($user));
+        $title = $this->translator->trans('reports.task_not_visible', [], self::TRANSLATION_DOMAIN, $this->translationLocale($this->userLocale($user)));
 
         return $title === '' || $title === 'reports.task_not_visible' ? TimeEntry::HIDDEN_TASK_TITLE : $title;
+    }
+
+    /**
+     * Since 1.12: the shipped language of a `me.locale` value (`pt_BR` → `pt`), or null (the translator's default).
+     */
+    private function translationLocale(?string $locale): ?string
+    {
+        if ($locale === null) {
+            return null;
+        }
+        $language = strtolower((string) preg_replace('/[_-].*$/s', '', $locale));
+
+        return in_array($language, self::TRANSLATION_LOCALES, true) ? $language : null;
+    }
+
+    /**
+     * Since 1.12: whether a method is public, non-static and needs no argument (a user `getLocale()` that takes
+     * arguments would otherwise make `GET me` fail).
+     */
+    private function isArgumentless(ReflectionMethod $method): bool
+    {
+        return $method->isPublic() && !$method->isStatic() && $method->getNumberOfRequiredParameters() === 0;
     }
 
     /**

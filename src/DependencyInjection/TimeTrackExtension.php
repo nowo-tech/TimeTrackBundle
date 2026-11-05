@@ -44,6 +44,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryResolver;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
@@ -249,13 +250,17 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $container->setParameter('nowo_time_track.imports.max_entry_seconds', $imports['max_entry_seconds']);
         $container->setParameter('nowo_time_track.retention.include_imported', $retention['include_imported']);
-        $container->setAlias(ImportedTimeEntryRepositoryInterface::class, DoctrineOrmTimeEntryRepository::class);
+        // Since 1.12 (FJ-L3): follows TimeEntryRepositoryInterface (host replacement or decorator), never the raw store.
+        $container->setDefinition(ImportedTimeEntryRepositoryInterface::class, (new Definition(ImportedTimeEntryRepositoryInterface::class))
+            ->setFactory([ImportedTimeEntryRepositoryResolver::class, 'resolve'])
+            ->setArguments([new Reference(TimeEntryRepositoryInterface::class)]));
         $container->setDefinition(ImportedTimeEntryWriter::class, (new Definition(ImportedTimeEntryWriter::class))
             ->setArguments([
                 '$repository'      => new Reference(TimeEntryRepositoryInterface::class),
                 '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$maxEntrySeconds' => $imports['max_entry_seconds'],
                 '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+                '$clock'           => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(TimeEntryRetentionPolicy::class, (new Definition(TimeEntryRetentionPolicy::class))

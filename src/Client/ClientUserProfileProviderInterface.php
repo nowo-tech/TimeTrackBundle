@@ -19,7 +19,15 @@ interface ClientUserProfileProviderInterface
     public function getDisplayName(UserInterface $user): ?string;
 
     /**
-     * Working hours, e.g. `{timezone: "Europe/Madrid", days: {mon: [["09:00", "17:00"]], ...}}` (null = unknown).
+     * Working hours (null = unknown), in either shape:
+     *
+     * - `{timezone: "Europe/Madrid", slots: [{day: 1, from: "09:00", to: "17:00"}, ...]}` (`day`: ISO weekday,
+     *   1 = Monday; since 1.12 the shape `GET me` sends), or
+     * - `{timezone: "Europe/Madrid", days: {mon: [["09:00", "17:00"]], ...}}` (the 1.9 shape, still accepted).
+     *
+     * Since 1.12 `GET me` normalises the value into the `slots` shape ({@see ClientWorkingHoursNormalizer}: overnight
+     * ranges split at midnight, overlaps merged); a malformed value fails closed as `{timezone, slots: []}` (never inside
+     * working hours) with a warning log. Return null only when the hours are unknown.
      *
      * @return array<string, mixed>|null
      */

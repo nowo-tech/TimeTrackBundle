@@ -43,6 +43,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned **1.12.0** (minor, additive): days off on `GET me` and one shape for `workingHours`.
+
+### Added
+
+- **`GET me.daysOff`**: the user's holidays and vacations from today to today + 60 days, a list of
+  `{date: "YYYY-MM-DD", kind: "holiday"|"vacation", label: ?string}` (dates in the working-hours time zone), or `null`
+  when unknown. Always present. TimeTrack Desktop 0.5.0+ (unreleased; desktop PRs #14 / #15) reads it; the browser
+  extension ignores it. Labels reach the user's devices: public holiday names only, `null` for vacations.
+- **`ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to): ?array`**:
+  optional extra of the `client_api.profile_provider` service (like `ClientUserLocaleProviderInterface`).
+  `NullClientUserProfileProvider` implements it and returns `null`.
+- **`ClientDaysOffNormalizer`**: validates the provider value entry by entry. An entry with a bad date or an unknown
+  kind (`kind` is matched case-insensitively) is dropped alone and logged as a warning; labels are cleaned (control
+  characters → space, bidi / zero-width removed, Unicode trim) and cut to 80 grapheme clusters; only the first 400
+  entries are read; out-of-range entries dropped, one per date, sorted. A value that is not a list is sent as `null`.
+- **`ClientWorkingHoursNormalizer`**: normalises `workingHours` for `GET me`.
+- **`Integration\BatchTaskProviderInterface`** (optional): a task provider may answer `filterTrackable(user, taskIds)`
+  for many tasks at once; `TimerService::hiddenTaskEntryIds()` then makes one call per entry owner instead of one per
+  (owner, task) (audit FJ-I8).
+- **`ImportedTimeEntryWriter::MIN_YEAR` / `MAX_FUTURE_SECONDS`** and an optional `$clock` argument (PSR-20, wired to
+  `ClockInterface` when the host has one).
+
+### Changed
+
+- **`GET me.workingHours` is always `{timezone, slots: [{day: 1-7, from: "HH:MM", to: "HH:MM"}]}` or `null`.** The
+  provider may return the `slots` shape or the documented 1.9 `days` shape (`{timezone, days: {mon: [["09:00","17:00"]]}}`),
+  which TimeTrack Desktop 0.4 could not read; both are normalised to `slots`. Overnight ranges are split at midnight, overlapping
+  or touching ranges of a day are merged, `24:00` becomes `23:59`. Malformed values (unknown time zone, bad day or time,
+  empty range, more than 100 ranges, no `slots` / `days`) fail closed as `{timezone, slots: []}` (never inside working
+  hours) with a warning log instead of being passed through; `null` stays "the provider returned null".
+- **`ImportedTimeEntryRepositoryInterface` follows the configured store** (audit FJ-L3): the service is now whatever
+  `TimeEntryRepositoryInterface` resolves to (a host replacement or decorator included), built by
+  `Repository\ImportedTimeEntryRepositoryResolver`, instead of an alias to the raw Doctrine store. When the configured
+  store does not implement the interface, getting the service throws `LogicException` instead of silently reading
+  another data set.
+- **Masked imported entries hide their description too** (audit FJ-I3): with `taskVisible: false`, `toArray()` returns
+  `description: null` and the CSV `description` cell is empty (client API `GET entries` / `GET export`).
+- **Imported timestamps have a plausibility window** (audit FJ-I6): `startedAt` before 1970 (`startedAt` / `too_old`)
+  or `endedAt` more than one day after now (`endedAt` / `future`) is refused before anything is written, instead of
+  failing the whole batch at the database (MySQL `DATETIME` range).
+- **Task-scope removals bind at most 1 000 task ids per query** (`DoctrineOrmTimeEntryRepository::TASK_IDS_PER_QUERY`,
+  driver parameter limits), and removed entries that the entity manager had loaded are detached (audit FJ-I7).
+- **Masked titles are translated only into shipped languages** (audit FJ-I9): `de`, `en`, `es`, `fr`, `it`, `nl`,
+  `pt` (a region such as `pt_BR` uses its language); any other `me.locale` uses the translator's default locale, so an
+  arbitrary tag never makes the translator build a catalogue. `GET me.locale` itself is unchanged. A user
+  `getLocale()` that needs arguments (or is not public / is static) is ignored instead of making `GET me` fail.
+
+### Documentation
+
+- USAGE / TASK-BOARD-INTEGRATION: masking asks what the entry **owner** may track, not the viewer (audit FJ-I4).
+
 ## [1.11.0] - 2026-11-05
 
 Imported time entries (ClickUp import, Beacon spec 208; contract `clickup-import-1.24/CONTRACT.md` v1.0 §11). Minor:
