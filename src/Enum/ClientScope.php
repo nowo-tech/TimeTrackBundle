@@ -23,9 +23,19 @@ enum ClientScope: string
     case TimerWrite  = 'timer:write';
     case TasksRead   = 'tasks:read';
     case EntriesRead = 'entries:read';
+    /** Since 1.13: `GET workday` (R-GDPR §8). Explicit grant only. */
+    case WorkdayRead = 'workday:read';
+    /** Since 1.13: workday actions. Explicit grant only. */
+    case WorkdayWrite = 'workday:write';
+    /** Since 1.13: `GET balance`. Explicit grant only. */
+    case BalanceRead = 'balance:read';
+    /** Since 1.13: `GET timesheets`. Explicit grant only. */
+    case TimesheetRead = 'timesheet:read';
+    /** Since 1.13: submit / withdraw. Explicit grant only. */
+    case TimesheetWrite = 'timesheet:write';
 
     /**
-     * Every scope (the default grant of a credential and of a 1.8 token without stored scopes).
+     * Every scope.
      *
      * @return list<self>
      */
@@ -35,18 +45,30 @@ enum ClientScope: string
     }
 
     /**
+     * Since 1.13: the default grant — the pre-1.13 scope set (`timer:read`, `timer:write`, `tasks:read`,
+     * `entries:read`). A token without stored scopes (issued before 1.9) and a credential that names none get these:
+     * the 1.13 scopes always need an explicit grant (contract Q-O14).
+     *
+     * @return list<self>
+     */
+    public static function defaults(): array
+    {
+        return [self::TimerRead, self::TimerWrite, self::TasksRead, self::EntriesRead];
+    }
+
+    /**
      * Known scopes of a stored list (token, device request): unknown values are dropped, duplicates removed, order of
-     * {@see self::cases()}. Only an absent list (null, a token issued before 1.9) means every scope: a list that holds
+     * {@see self::cases()}. Only an absent list (null, a token issued before 1.9) means the default scopes ({@see self::defaults()}, the pre-1.13 set since 1.13): a list that holds
      * no known scope grants none, never every scope.
      *
-     * @param iterable<mixed>|null $values Scope strings (or enum cases); null = every scope
+     * @param iterable<mixed>|null $values Scope strings (or enum cases); null = the default scopes
      *
      * @return list<self>
      */
     public static function normalize(?iterable $values): array
     {
         if ($values === null) {
-            return self::all();
+            return self::defaults();
         }
 
         $wanted = [];
@@ -61,10 +83,10 @@ enum ClientScope: string
     }
 
     /**
-     * Scopes of a requested list (device flow, host {@see ClientAuthResult}): null means
-     * every scope; an empty list, or any unknown value, is rejected so a misspelled or future scope never widens a grant.
+     * Scopes of a requested list (device flow, host {@see ClientAuthResult}): null means the
+     * default scopes (since 1.13 the pre-1.13 set); an empty list, or any unknown value, is rejected so a misspelled or future scope never widens a grant.
      *
-     * @param array<mixed>|null $values Scope strings (or enum cases); null = every scope
+     * @param array<mixed>|null $values Scope strings (or enum cases); null = the default scopes
      *
      * @throws InvalidArgumentException When the list is empty or holds an unknown value
      *
@@ -73,7 +95,7 @@ enum ClientScope: string
     public static function fromRequested(?array $values): array
     {
         if ($values === null) {
-            return self::all();
+            return self::defaults();
         }
 
         foreach ($values as $value) {
@@ -83,7 +105,7 @@ enum ClientScope: string
         }
 
         if ($values === []) {
-            throw new InvalidArgumentException('The client API scope list is empty (omit it to grant every scope).');
+            throw new InvalidArgumentException('The client API scope list is empty (omit it to grant the default scopes).');
         }
 
         return self::normalize($values);

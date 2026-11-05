@@ -66,7 +66,7 @@ final readonly class TimeTrackClientDeviceController
             }
             $scopes = ClientScope::fromRequested($scopes);
         } catch (InvalidArgumentException) {
-            return $this->responseFactory->error('invalid_scope', 'scopes must be a non-empty list of known scopes (or omitted for every scope).', Response::HTTP_BAD_REQUEST, $request);
+            return $this->responseFactory->error('invalid_scope', 'scopes must be a non-empty list of known scopes (or omitted for the default scopes).', Response::HTTP_BAD_REQUEST, $request);
         }
 
         try {

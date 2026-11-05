@@ -36,14 +36,14 @@ class ClientToken
     #[ORM\Column(name: 'last_used_at', type: 'datetime_immutable', nullable: true)]
     private ?DateTimeImmutable $lastUsedAt = null;
 
-    /** @var list<string>|null Scope values; null = issued before 1.9 (every scope) */
+    /** @var list<string>|null Scope values; null = issued before 1.9 (the default scopes, {@see ClientScope::defaults()}) */
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $scopes;
 
     /**
      * Creates a token (only the SHA-256 hash is stored).
      *
-     * @param list<ClientScope|string>|null $scopes Granted scopes (null = every scope, the 1.x behaviour; unknown values are dropped)
+     * @param list<ClientScope|string>|null $scopes Granted scopes (null = the default scopes, the pre-1.13 set; unknown values are dropped)
      */
     public function __construct(
         #[ORM\Column(name: 'token_hash', type: 'string', length: 64, unique: true)]
@@ -74,13 +74,13 @@ class ClientToken
     }
 
     /**
-     * Granted scopes (a token issued before 1.9 has every scope).
+     * Granted scopes (a token issued before 1.9 has the default scopes).
      *
      * @return list<ClientScope>
      */
     public function getScopes(): array
     {
-        return $this->scopes === null ? ClientScope::all() : ClientScope::normalize($this->scopes);
+        return $this->scopes === null ? ClientScope::defaults() : ClientScope::normalize($this->scopes);
     }
 
     /**

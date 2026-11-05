@@ -33,6 +33,8 @@ reports:
   source_extension: Estensione del browser
   source_desktop: App desktop
   source_import: Importato
+  source_manual: "Manuale"
+  source_calendar: "Calendario"
   task_not_visible: Attività non visibile
 flash:
   timer_started: Timer avviato.
@@ -72,3 +74,101 @@ downloads:
   macos: "App desktop per macOS"
   linux: "App desktop per Linux"
   latest_version: "Ultima versione desktop"
+timesheet:
+  title: "Foglio ore %period%"
+  task: "Attività"
+  total: "Totale"
+  expected: "Previsto"
+  diff: "Differenza"
+  empty: "Nessun tempo in questo periodo."
+  unassigned: "%count% voci senza organizzazione non fanno parte di questo foglio."
+  locked_through: "Bloccato fino al %date%"
+  decision_comment: "Commento del revisore:"
+  comment: "Commento"
+  status:
+    open: "Aperto"
+    submitted: "Inviato"
+    approved: "Approvato"
+    rejected: "Respinto"
+  action:
+    submit: "Invia settimana"
+    withdraw: "Ritira"
+    approve: "Approva"
+    reject: "Respingi"
+    reopen: "Riapri"
+  dialog:
+    cancel: "Annulla"
+    submit_title: "Invia la settimana"
+    withdraw_title: "Ritira l’invio"
+    approve_title: "Approva il foglio ore"
+    reject_title: "Respingi il foglio ore"
+    reopen_title: "Riapri il periodo"
+  error:
+    not_found: "Foglio ore non trovato."
+    invalid_transition: "Questa azione non è possibile nello stato attuale."
+    timer_running: "Ferma prima il timer in corso di questo periodo."
+    not_started: "Il periodo non è ancora iniziato."
+    not_ended: "Il periodo non è ancora terminato."
+    stale: "Le voci sono cambiate dall’invio. Ricarica e ricontrolla."
+    conflict: "Qualcun altro ha modificato questo foglio nello stesso momento. Ricarica."
+    comment_required: "Scrivi un commento da 10 a 1000 caratteri."
+    invalid_request: "Il modulo non è valido o è scaduto. Ricarica e riprova."
+    period_locked: "Questo periodo è bloccato."
+    period_submitted: "Questo periodo è stato inviato per l’approvazione."
+  weekday:
+    "1": "Lun"
+    "2": "Mar"
+    "3": "Mer"
+    "4": "Gio"
+    "5": "Ven"
+    "6": "Sab"
+    "7": "Dom"
+balance:
+  title: "Saldo ore"
+  balance: "Saldo"
+  expected: "Previsto"
+  worked: "Lavorato"
+  diff: "Differenza"
+  overtime: "Straordinari"
+  overtime_year: "Straordinari %year% (conteggiati / limite)"
+  legal_notice: "Tempo delle attività, non è un registro dell’orario di lavoro"
+  source:
+    register: "Registro dell’orario di lavoro"
+    task_time: "Tempo delle attività"
+  range:
+    week: "Settimana %from% – %to%"
+    month: "Mese %from% – %to%"
+    year: "Anno %from% – %to%"
+    custom: "%from% – %to%"
+  flag:
+    overtime_cap_near: "Vicino al limite annuale di straordinari"
+    overtime_cap_exceeded: "Limite annuale di straordinari superato"
+ledger:
+  title: "Movimenti del saldo"
+  empty: "Nessun movimento."
+  reversed: "Stornato"
+  kind_label: "Tipo"
+  minutes: "Minuti"
+  minutes_help: "Con segno: i minuti negativi riducono il saldo."
+  effective_date: "Data di efficacia"
+  reason: "Motivo"
+  kind:
+    opening: "Saldo iniziale"
+    adjustment: "Rettifica"
+    overtime_ratified: "Straordinari ratificati"
+    overtime_paid: "Straordinari pagati"
+    overtime_compensated: "Straordinari compensati con riposo"
+    reversal: "Storno"
+  column:
+    effectiveDate: "Data"
+    kind: "Tipo"
+    seconds: "Importo"
+    reason: "Motivo"
+    createdAt: "Registrato"
+    actions: "Azioni"
+  action:
+    add_adjustment: "Aggiungi rettifica"
+    reversal: "Storna"
+  dialog:
+    add_title: "Aggiungi un movimento al saldo"
+    reversal_title: "Storna questo movimento"

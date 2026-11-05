@@ -205,6 +205,27 @@ entries; `removeForUser()` — account erasure — is not blocked), `TeamAccessG
 `TimeEntry` rows directly must call `PeriodLockGuard::assertWritable($user, $scopeKey, $instant, WriteKind::…)` first.
 Retention purges are never blocked. With timesheets off nothing changes and no query is made.
 
+**Client API (additive).** New scopes `workday:read`, `workday:write`, `balance:read`, `timesheet:read`,
+`timesheet:write` are never granted by default: a token without stored scopes (issued before 1.9) and a login whose
+`ClientAuthResult` names none keep the four pre-1.13 scopes (before 1.13 "no scopes" meant "every scope"; with the new
+scopes that would have widened old tokens). Grant them explicitly (device flow `scopes`, or your authenticator). `GET me`
+gains `features.timesheets`, `balance`, `calendar_suggestions`, `manual_entries`, `task_effort` and `timesheet`;
+`features.workday` is real. Entries gain `scopeKey` and `locked`, the CSV export gains `scope_key` and `locked` columns
+(appended), tasks and timers gain `estimateSeconds`, `loggedSeconds`, `remainingSeconds`. Clients that compare whole
+payloads must accept the new keys. Beacon: wire the new routes (`config/routes.yaml` imports the loader, nothing to do
+there) and implement `Workday\WorkdayProviderInterface` for spec 198 (`client_api.workday_provider`).
+
+**Task effort.** Let your task provider fill `TaskReference::$estimateSeconds` (TaskBoard `estimatedMinutes × 60`); the
+bundle sums `loggedSeconds` from its entries unless the provider gives `TaskReference::$loggedSeconds`. The total is the
+effort of every user on the task (see SECURITY).
+
+**UiKit 2.29.** `nowo-tech/ui-kit-bundle` is now `^2.29` (dialog anatomy of the components). Run
+`composer update nowo-tech/ui-kit-bundle` if your lock is older.
+
+**Components instead of overrides.** Build the *My timesheet*, *Approvals* and *Balance* pages from
+`nowo_time_track_component()` and post their forms to your routes, handled by `Timesheet\TimesheetFormHandler`
+([WORKING-TIME.md](WORKING-TIME.md#components-no-template-overrides)).
+
 **`TimeEntrySource` has two new cases**, `manual` and `calendar` (live, editable; their write paths arrive in 1.14). A
 host `match` over the enum without a default arm must add them.
 

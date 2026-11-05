@@ -20,6 +20,8 @@ final readonly class TaskReference
      * @param string|null $projectId Project of the task (since 1.10)
      * @param string|null $projectTitle Project name of the task (since 1.10)
      * @param string|null $url Absolute https URL of the task page in the host (since 1.10)
+     * @param int|null $estimateSeconds Since 1.13: the task's estimate (TaskBoard `estimatedMinutes × 60`), null = unknown
+     * @param int|null $loggedSeconds Since 1.13: closed time of every user on the task; null = the bundle sums its entries
      */
     public function __construct(
         public string $id,
@@ -29,6 +31,8 @@ final readonly class TaskReference
         public ?string $projectId = null,
         public ?string $projectTitle = null,
         public ?string $url = null,
+        public ?int $estimateSeconds = null,
+        public ?int $loggedSeconds = null,
     ) {
     }
 
@@ -47,6 +51,9 @@ final readonly class TaskReference
             'projectId'    => $this->projectId,
             'projectTitle' => $this->projectTitle,
             'url'          => $this->url,
+            // Since 1.13.
+            'estimateSeconds' => $this->estimateSeconds,
+            'loggedSeconds'   => $this->loggedSeconds,
         ];
     }
 }

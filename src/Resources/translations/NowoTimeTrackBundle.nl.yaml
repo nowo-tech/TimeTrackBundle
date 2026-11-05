@@ -33,6 +33,8 @@ reports:
   source_extension: Browserextensie
   source_desktop: Desktop-app
   source_import: Geïmporteerd
+  source_manual: "Handmatig"
+  source_calendar: "Agenda"
   task_not_visible: Taak niet zichtbaar
 flash:
   timer_started: Timer gestart.
@@ -72,3 +74,101 @@ downloads:
   macos: "Desktopapp voor macOS"
   linux: "Desktopapp voor Linux"
   latest_version: "Nieuwste desktopversie"
+timesheet:
+  title: "Urenstaat %period%"
+  task: "Taak"
+  total: "Totaal"
+  expected: "Verwacht"
+  diff: "Verschil"
+  empty: "Geen tijd in deze periode."
+  unassigned: "%count% registraties zonder organisatie horen niet bij deze urenstaat."
+  locked_through: "Vergrendeld tot en met %date%"
+  decision_comment: "Opmerking van de beoordelaar:"
+  comment: "Opmerking"
+  status:
+    open: "Open"
+    submitted: "Ingediend"
+    approved: "Goedgekeurd"
+    rejected: "Afgewezen"
+  action:
+    submit: "Week indienen"
+    withdraw: "Intrekken"
+    approve: "Goedkeuren"
+    reject: "Afwijzen"
+    reopen: "Heropenen"
+  dialog:
+    cancel: "Annuleren"
+    submit_title: "Week indienen"
+    withdraw_title: "Indiening intrekken"
+    approve_title: "Urenstaat goedkeuren"
+    reject_title: "Urenstaat afwijzen"
+    reopen_title: "Periode heropenen"
+  error:
+    not_found: "Urenstaat niet gevonden."
+    invalid_transition: "Deze actie is in de huidige status niet mogelijk."
+    timer_running: "Stop eerst de lopende timer van deze periode."
+    not_started: "De periode is nog niet begonnen."
+    not_ended: "De periode is nog niet afgelopen."
+    stale: "De registraties zijn sinds het indienen gewijzigd. Herlaad en controleer opnieuw."
+    conflict: "Iemand anders heeft deze urenstaat tegelijk gewijzigd. Herlaad."
+    comment_required: "Schrijf een opmerking van 10 tot 1000 tekens."
+    invalid_request: "Het formulier is ongeldig of verlopen. Herlaad en probeer opnieuw."
+    period_locked: "Deze periode is vergrendeld."
+    period_submitted: "Deze periode is ingediend ter goedkeuring."
+  weekday:
+    "1": "Ma"
+    "2": "Di"
+    "3": "Wo"
+    "4": "Do"
+    "5": "Vr"
+    "6": "Za"
+    "7": "Zo"
+balance:
+  title: "Urensaldo"
+  balance: "Saldo"
+  expected: "Verwacht"
+  worked: "Gewerkt"
+  diff: "Verschil"
+  overtime: "Overuren"
+  overtime_year: "Overuren %year% (geteld / maximum)"
+  legal_notice: "Taaktijd, geen arbeidstijdregistratie"
+  source:
+    register: "Arbeidstijdregistratie"
+    task_time: "Taaktijd"
+  range:
+    week: "Week %from% – %to%"
+    month: "Maand %from% – %to%"
+    year: "Jaar %from% – %to%"
+    custom: "%from% – %to%"
+  flag:
+    overtime_cap_near: "Dicht bij het jaarlijkse maximum aan overuren"
+    overtime_cap_exceeded: "Jaarlijks maximum aan overuren overschreden"
+ledger:
+  title: "Saldomutaties"
+  empty: "Geen mutaties."
+  reversed: "Teruggedraaid"
+  kind_label: "Soort"
+  minutes: "Minuten"
+  minutes_help: "Met teken: negatieve minuten verlagen het saldo."
+  effective_date: "Ingangsdatum"
+  reason: "Reden"
+  kind:
+    opening: "Beginsaldo"
+    adjustment: "Correctie"
+    overtime_ratified: "Bekrachtigde overuren"
+    overtime_paid: "Uitbetaalde overuren"
+    overtime_compensated: "Overuren gecompenseerd met rust"
+    reversal: "Terugdraaiing"
+  column:
+    effectiveDate: "Datum"
+    kind: "Soort"
+    seconds: "Bedrag"
+    reason: "Reden"
+    createdAt: "Vastgelegd"
+    actions: "Acties"
+  action:
+    add_adjustment: "Correctie toevoegen"
+    reversal: "Terugdraaien"
+  dialog:
+    add_title: "Saldomutatie toevoegen"
+    reversal_title: "Deze mutatie terugdraaien"

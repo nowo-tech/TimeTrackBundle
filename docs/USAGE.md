@@ -8,6 +8,7 @@
 - [API (clients)](#api-clients)
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
 - [Imported entries (1.11)](#imported-entries-111)
+- [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Events](#events)
 
 ## Web UI
@@ -264,6 +265,37 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 - The client API's own `GET entries` (without `userId`) and `GET export` **always include** the token user's imported
   entries (flagged `readOnly`, `source: import`) and ignore `TimeEntryListQueryEvent::setIncludeImported(false)`:
   they are the user's copy of their own data (GDPR art. 15 / 20). The team `userId` path honours it.
+
+## Working time and timesheets (1.13)
+
+Full guide: [WORKING-TIME.md](WORKING-TIME.md).
+
+```php
+// A period, its timesheet and the owner's actions
+$week      = $timesheets->period($user, 'org-a', 'previous');            // 'current', 'previous', '2026-W45'
+$timesheet = $timesheets->view($user, $userId, 'org-a', $week);
+$timesheets->submit($user, 'org-a', $week);
+$timesheets->approve($approver, $timesheet->getId());                    // TimesheetException: stale, conflict, not_found…
+
+// The balance of a range
+$report = $balance->report($user, 'org-a', '2026-11-01', '2026-11-30');  // BalanceReport, null when off
+$report->balanceSeconds; $report->legalRecord;                           // show "Task time…" when false
+
+// Host code that writes entries itself must respect the lock
+$periodLockGuard->assertWritable($user, $scopeKey, $entryStart, WriteKind::Edit);
+```
+
+Components for host pages (no template overrides):
+
+```twig
+{{ nowo_time_track_component('TimeTrack:TimesheetWeekGrid', {timesheet: timesheet, viewer: app.user, options: {action_urls: urls}}) }}
+{{ nowo_time_track_component('TimeTrack:BalanceCard', {report: report, options: {range: 'month'}}) }}
+{{ nowo_time_track_component('TimeTrack:LedgerTable', {lines: lines, viewer: app.user, owner_id: ownerId, scope_key: scope}) }}
+```
+
+The posted forms go to your routes; hand the request to `Timesheet\TimesheetFormHandler::handleDecision()` /
+`handleLedger()`. The `nowo_time_track_duration` filter formats seconds as `H:MM` (`|nowo_time_track_duration(true)` adds
+the sign).
 
 ## Events
 

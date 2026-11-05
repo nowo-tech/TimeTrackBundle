@@ -167,7 +167,7 @@ final readonly class ClientAuthService
      * @param UserInterface $user Token owner
      * @param ClientType $clientType Client holding the token
      * @param string|null $credentialId Host credential the token comes from
-     * @param list<ClientScope>|null $scopes Granted scopes (null = every scope; an empty list grants none)
+     * @param list<ClientScope>|null $scopes Granted scopes (null = the default scopes; an empty list grants none)
      *
      * @return array{token: string, expiresAt: string, scopes: list<string>}
      */

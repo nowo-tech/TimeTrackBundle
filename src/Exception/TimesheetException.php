@@ -11,7 +11,7 @@ use Throwable;
  * Since 1.13: a timesheet action was refused, with a stable client error code and its HTTP status:
  * `not_found` (404, also for other users' timesheets: no existence oracle), `invalid_transition`, `timer_running`,
  * `not_started`, `not_ended`, `stale` (the entries changed since submit), `conflict` (a concurrent change won) — 409 —
- * and `comment_required` (422). The message carries no personal data.
+ * `comment_required` (422) and `invalid_request` (400, an invalid or forged form). The message carries no personal data.
  */
 final class TimesheetException extends RuntimeException
 {
@@ -25,6 +25,7 @@ final class TimesheetException extends RuntimeException
         'stale'              => 409,
         'conflict'           => 409,
         'comment_required'   => 422,
+        'invalid_request'    => 400,
     ];
 
     /**

@@ -28,4 +28,13 @@ enum ClientApiAuditAction: string
 
     /** A request was refused (401 / 403 / 429); see the event reason. Rate limited per credential. */
     case RequestDenied = 'request_denied';
+
+    /** Since 1.13: a workday action was applied or refused as a conflict (the reason is the action). */
+    case WorkdayAction = 'workday_action';
+
+    /** Since 1.13: the owner submitted a timesheet through the client API. */
+    case TimesheetSubmitted = 'timesheet_submitted';
+
+    /** Since 1.13: the owner withdrew a timesheet through the client API. */
+    case TimesheetWithdrawn = 'timesheet_withdrawn';
 }

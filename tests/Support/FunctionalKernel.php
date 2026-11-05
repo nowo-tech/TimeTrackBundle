@@ -9,6 +9,7 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
 use Psr\Log\NullLogger;
@@ -113,6 +114,7 @@ final class FunctionalKernel extends Kernel
         $container->services()->set(StubTimesheetApproverProvider::class)->public();
         $container->services()->set(FixedScopeProvider::class)->public();
         $container->services()->set(FixedWorkingCalendar::class)->args(['UTC'])->public();
+        $container->services()->set(StubWorkdayProvider::class)->public();
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);

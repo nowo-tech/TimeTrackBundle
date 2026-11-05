@@ -21,6 +21,10 @@ use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
+use function gmdate;
+use function max;
+use function min;
+
 /**
  * Since 1.13: the period lock (contract §5.6). A period is **locked** for `(user, scope)` when a timesheet covering
  * the instant's local date has `locked_at` set; it is **submitted** (soft lock of the owner) while the timesheet waits
@@ -166,6 +170,54 @@ final readonly class PeriodLockGuard
         }
 
         return !$this->blockingTimesheet($owner, $entry->getScopeKey(), $entry->getStartedAt()) instanceof Timesheet;
+    }
+
+    /**
+     * Ids of the entries no bundle path may change (their period is locked or submitted, or their owner is unknown):
+     * one query per owner for the whole list (client API `entries` / `export`: `locked`).
+     *
+     * @param list<TimeEntry> $entries
+     *
+     * @return array<string, true>
+     */
+    public function blockedEntryIds(array $entries): array
+    {
+        if (!$this->enabled || $entries === []) {
+            return [];
+        }
+        $byOwner = [];
+        $blocked = [];
+        foreach ($entries as $entry) {
+            $owner = $entry->getUser();
+            if (!$owner instanceof UserInterface) {
+                $blocked[$entry->getId()] = true;
+                continue;
+            }
+            // Keyed by a prefix: numeric ids would become integer keys.
+            $ownerId                           = UserIdResolver::getId($owner);
+            $byOwner['o' . $ownerId]['id']     = $ownerId;
+            $byOwner['o' . $ownerId]['list'][] = $entry;
+        }
+        foreach ($byOwner as ['id' => $ownerId, 'list' => $list]) {
+            $min = null;
+            $max = null;
+            foreach ($list as $entry) {
+                $ts  = $entry->getStartedAt()->getTimestamp();
+                $min = $min === null ? $ts : min($min, $ts);
+                $max = $max === null ? $ts : max($max, $ts);
+            }
+            $timesheets = $this->timesheets->findGuarding($ownerId, null, gmdate('Y-m-d', (int) $min - 86_400), gmdate('Y-m-d', (int) $max + 86_400));
+            foreach ($list as $entry) {
+                foreach ($timesheets as $timesheet) {
+                    if (($entry->getScopeKey() === null || $entry->getScopeKey() === $timesheet->getScopeKey()) && $timesheet->covers($entry->getStartedAt())) {
+                        $blocked[$entry->getId()] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $blocked;
     }
 
     /**

@@ -19,6 +19,10 @@ This bundle is **FrankenPHP worker mode friendly**.
 - Task integration via `TaskProviderInterface` (designed for `nowo-tech/task-board-bundle`)
 - Symfony events for timer start/stop and entry ACL
 - **Ops:** `nowo:time-track:client-tokens:purge` for expired browser/desktop tokens
+- **Working time and timesheets (1.13, opt-in)**: hours balance and overtime from a host working calendar and worked
+  time (register or task time, labelled), an append-only balance ledger, weekly timesheets with submit / approve /
+  reject and an audited reopen, a hard period lock on every write path, SHA-256 chained audit trails, tenant scopes,
+  the workday / balance / timesheet client API and configurable Twig components ([WORKING-TIME.md](docs/WORKING-TIME.md)).
 
 ## Installation
 
@@ -98,6 +102,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [GitHub Actions CI requirements](docs/GITHUB_CI.md)
 - [PSR evaluation (REQ-CS-007)](docs/PSR.md)
 - [Client API reference](docs/CLIENT-API.md)
+- [Working time, balance and timesheets](docs/WORKING-TIME.md)
 - [Browser extension](docs/BROWSER-EXTENSION.md)
 - [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)

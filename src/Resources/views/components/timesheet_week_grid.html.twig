@@ -1,0 +1,68 @@
+{#
+  TimeTrack:TimesheetWeekGrid (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::weekGrid()):
+  dates, rows [{taskId, title|null (masked), imported, days{date: seconds}, total, notes}], daily, total,
+  expected / diff per date (null = hidden or no balance), status, locked, lockReason, decisionComment, legalRecord,
+  unassigned (owner only), actions {name: {form, dialog}}, labels, density, readOnly.
+  Labels: view.labels.<slot> overrides the translation key (title, task, total, expected, diff, legal_notice, …).
+#}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
+{% set _l = view.labels %}
+{% set _b = 'time_track' %}
+<section class="{{ nowo_ui_class('card', _b) }} nowo-time-track-week-grid nowo-time-track--{{ view.density }}" data-testid="time-track-week-grid" data-timesheet="{{ view.id }}" data-status="{{ view.status }}">
+    <header class="{{ nowo_ui_class('card_header', _b) }}">
+        <h2 class="{{ nowo_ui_class('card_title', _b) }}">{{ (_l.title ?? 'timesheet.title')|trans({'%period%': view.period.key}) }}</h2>
+        <span class="{{ nowo_ui_class(view.status == 'approved' ? 'badge_success' : (view.status == 'rejected' ? 'badge_danger' : (view.status == 'submitted' ? 'badge_info' : 'badge_neutral')), _b) }}" data-testid="time-track-week-status">{{ ('timesheet.status.' ~ view.status)|trans }}</span>
+        {% if view.locked %}<span class="{{ nowo_ui_class('badge_warning', _b) }}" data-testid="time-track-week-locked">{{ 'timesheet.locked_through'|trans({'%date%': view.period.end}) }}</span>{% endif %}
+    </header>
+    <div class="{{ nowo_ui_class('card_body', _b) }}">
+        {% if view.legalRecord is same as(false) %}<p class="{{ nowo_ui_class('muted', _b) }}" data-testid="time-track-week-legal">{{ (_l.legal_notice ?? 'balance.legal_notice')|trans }}</p>{% endif %}
+        {% if view.decisionComment %}<p class="{{ nowo_ui_class('flash_warning', _b) }}" data-testid="time-track-week-comment"><strong>{{ (_l.decision_comment ?? 'timesheet.decision_comment')|trans }}</strong> {{ view.decisionComment }}</p>{% endif %}
+        <div class="{{ nowo_ui_class('table_wrap', _b) }}">
+            <table class="{{ nowo_ui_class('table', _b) }}">
+                <thead class="{{ nowo_ui_class('table_head', _b) }}">
+                    <tr class="{{ nowo_ui_class('table_head_row', _b) }}">
+                        <th class="{{ nowo_ui_class('table_head_cell', _b) }}" scope="col">{{ (_l.task ?? 'timesheet.task')|trans }}</th>
+                        {% for date in view.dates %}<th class="{{ nowo_ui_class('table_head_cell', _b) }} nowo-ui-cell--end" scope="col"><time datetime="{{ date }}">{{ ('timesheet.weekday.' ~ date|date('N'))|trans }} {{ date|date('d') }}</time></th>{% endfor %}
+                        <th class="{{ nowo_ui_class('table_head_cell', _b) }} nowo-ui-cell--end" scope="col">{{ (_l.total ?? 'timesheet.total')|trans }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in view.rows %}
+                        <tr class="{{ nowo_ui_class('table_row', _b) }}" data-task="{{ row.taskId }}">
+                            <th class="{{ nowo_ui_class('table_cell', _b) }}" scope="row">{{ row.title ?? 'reports.task_not_visible'|trans }}{% if row.imported %} <span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ 'reports.source_import'|trans }}</span>{% endif %}
+                                {% for note in row.notes %}<br><small class="{{ nowo_ui_class('muted', _b) }}">{{ note }}</small>{% endfor %}</th>
+                            {% for date in view.dates %}<td class="{{ nowo_ui_class('table_cell', _b) }} nowo-ui-cell--end">{{ row.days[date] > 0 ? row.days[date]|nowo_time_track_duration : '' }}</td>{% endfor %}
+                            <td class="{{ nowo_ui_class('table_cell', _b) }} nowo-ui-cell--end">{{ row.total|nowo_time_track_duration }}</td>
+                        </tr>
+                    {% else %}
+                        <tr class="{{ nowo_ui_class('table_row', _b) }}"><td class="{{ nowo_ui_class('table_cell_muted', _b) }}" colspan="{{ view.dates|length + 2 }}">{{ (_l.empty ?? 'timesheet.empty')|trans }}</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="{{ nowo_ui_class('table_row', _b) }}" data-testid="time-track-week-total">
+                        <th class="{{ nowo_ui_class('table_cell', _b) }}" scope="row">{{ (_l.total ?? 'timesheet.total')|trans }}</th>
+                        {% for date in view.dates %}<td class="{{ nowo_ui_class('table_cell', _b) }} nowo-ui-cell--end">{{ view.daily[date]|nowo_time_track_duration }}</td>{% endfor %}
+                        <td class="{{ nowo_ui_class('table_cell', _b) }} nowo-ui-cell--end">{{ view.total|nowo_time_track_duration }}</td>
+                    </tr>
+                    {% for key, values in {expected: view.expected, diff: view.diff} %}
+                        {% if values is not null %}
+                            <tr class="{{ nowo_ui_class('table_row', _b) }}" data-testid="time-track-week-{{ key }}">
+                                <th class="{{ nowo_ui_class('table_cell_muted', _b) }}" scope="row">{{ (_l[key] ?? ('timesheet.' ~ key))|trans }}</th>
+                                {% for date in view.dates %}<td class="{{ nowo_ui_class('table_cell_muted', _b) }} nowo-ui-cell--end">{{ (values[date] ?? 0)|nowo_time_track_duration(key == 'diff') }}</td>{% endfor %}
+                                <td class="{{ nowo_ui_class('table_cell_muted', _b) }}"></td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tfoot>
+            </table>
+        </div>
+        {% if view.unassigned > 0 %}<p class="{{ nowo_ui_class('muted', _b) }}" data-testid="time-track-week-unassigned">{{ 'timesheet.unassigned'|trans({'%count%': view.unassigned}) }}</p>{% endif %}
+    </div>
+    {% if view.actions is not empty %}
+        <footer class="{{ nowo_ui_class('card_footer', _b) }}" data-testid="time-track-week-actions">
+            {% for name, action in view.actions %}
+                {{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: action.form, label: (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans, dialog: action.dialog, dialog_id: 'time-track-' ~ name ~ '-' ~ view.id, title: ('timesheet.dialog.' ~ name ~ '_title')|trans, primary: name in ['submit', 'approve']}) }}
+            {% endfor %}
+        </footer>
+    {% endif %}
+</section>

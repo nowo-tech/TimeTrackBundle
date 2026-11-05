@@ -8,6 +8,8 @@
 - [Client API](#client-api)
 - [Reports](#reports)
 - [Imported entries (1.11)](#imported-entries-111)
+- [Timesheets, balance and lock (1.13)](#timesheets-balance-and-lock-113)
+- [Task effort on the client API (1.13)](#task-effort-on-the-client-api-113)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -104,6 +106,28 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 | Time lost when tasks or boards are deleted | `time_track_entries` has no foreign key to tasks or boards: entries keep their `task_id` and snapshots and simply stop being linked. The bundle never calls `remove*()` itself |
 | Deleting imported time without authority | Single deletion needs a `delete_imported` grant (default deny); bulk removals are host calls after its own check; never a side effect of deleting tasks or boards |
 | Personal data in logs | The writer logs counts and the scope kind only, never descriptions, titles or ids of people |
+
+## Timesheets, balance and lock (1.13)
+
+| Threat | Control |
+| --- | --- |
+| An approved period changed afterwards (listener, admin, import, host shortcut) | `PeriodLockGuard` on every bundle write path (timer start / switch / idle, import writer outcome `locked`, imported removals, ledger); `canEditEntry()` / `canDeleteImportedEntry()` re-check the lock **after** the listener; null-scope entries are checked against every scope; only an audited reopen with a reason unlocks. Host code that writes entries must call the guard (UPGRADING) |
+| Self-approval | Refused for everybody, `security.admin_roles` included; `allow_self_approval` cannot be enabled |
+| Approving something else than what was submitted | Entries hash at submit, recomputed at approve (`stale`); the submitted period is soft-locked for the owner; optimistic `version` + unique `(timesheet_id, seq)` make concurrent decisions fail (`conflict`) |
+| Cross-tenant leaks (approver in A, member in B) | Every decision goes through `TimesheetAccessGuard`: scope must be one of the actor's scopes, approvers per scope from the host provider, admin roles see nothing unless `admin_roles_view` or approver; others' timesheets answer `not_found` exactly like non-existent ids; the approval queue lists `reviewableUserIds()` of a scope of the approver only |
+| Audit tampering | Timesheet events and ledger lines are append-only (no update / delete in the repositories, only the retention purge), SHA-256 chained over canonical JSON; `timesheets:verify` names the first broken link; hosts may add triggers |
+| Approvers seeing more than needed | Totals per task; task titles masked when the approver cannot see the task; notes only with `approver_sees_notes`; no activity, idle or device data in timesheets |
+| Personal data in logs / events | Ids, codes and counts only; comments and reasons never in events or logs (a `hasComment` flag) |
+| Task time presented as the legal register | `legalRecord: false` / `source: task_time` on every balance payload and component unless the host source is its register |
+| Workday replay / forged times | `Idempotency-Key` required (24 h replay, `idempotency_mismatch` for another body), `occurredAt` not in the future and at most 72 h old; the register logic stays in the host |
+| Old tokens gaining new powers | `workday:*`, `balance:read`, `timesheet:*` are never granted by default (a token without stored scopes keeps the pre-1.13 set) |
+
+## Task effort on the client API (1.13)
+
+`GET tasks` and the timer payloads carry `estimateSeconds`, `loggedSeconds` and `remainingSeconds`. `loggedSeconds` is
+the **total** closed time of every user on the task (live and imported entries): it reveals the aggregate effort on a
+task to anyone who can track that task, never who tracked it or how much each person did. Hosts that consider the
+aggregate sensitive can return their own value (or 0) through `TaskReference::$loggedSeconds`.
 
 ## Secrets & cryptography
 

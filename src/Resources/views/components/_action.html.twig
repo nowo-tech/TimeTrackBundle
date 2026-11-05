@@ -1,0 +1,27 @@
+{#
+  One timesheet / ledger action (since 1.13): a plain form button, or (dialog) a UiKit 2.29 confirm dialog with the
+  anatomy (header, body with the form, footer with Cancel then the primary submit bound by form="…").
+  Variables: form (FormView), label (translated text), dialog (bool), dialog_id, title (translated text), primary (bool).
+#}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
+{% if dialog %}
+    {% set _form_id = dialog_id ~ '-form' %}
+    {% embed nowo_ui_partial('confirm_dialog') with {anatomy: true, trigger_label: label, title: title, dialog_id: dialog_id, dialog_testid: dialog_id, bundle: 'time_track', form: form, label: label, _form_id: _form_id} only %}
+        {% block body %}
+            {{ form_start(form, {attr: {id: _form_id, 'data-testid': dialog_id ~ '-form'}}) }}
+            {{ form_errors(form) }}
+            <div class="nowo-ui-dialog__error" role="alert" aria-live="polite" data-nowo-time-track-dialog-error></div>
+            {{ form_widget(form) }}
+            {{ form_end(form, {render_rest: false}) }}
+        {% endblock %}
+        {% block footer %}
+            <button type="button" class="{{ nowo_ui_class('btn_secondary', 'time_track') }}" data-confirm-dialog-close data-nowo-confirm-close>{{ 'timesheet.dialog.cancel'|trans({}, 'NowoTimeTrackBundle') }}</button>
+            <button type="submit" form="{{ _form_id }}" class="{{ nowo_ui_class('btn_primary', 'time_track') }}">{{ label }}</button>
+        {% endblock %}
+    {% endembed %}
+{% else %}
+    {{ form_start(form, {attr: {class: 'nowo-time-track-action'}}) }}
+    {{ form_widget(form) }}
+    <button type="submit" class="{{ nowo_ui_class(primary|default(false) ? 'btn_primary' : 'btn_secondary', 'time_track') }}">{{ label }}</button>
+    {{ form_end(form, {render_rest: false}) }}
+{% endif %}

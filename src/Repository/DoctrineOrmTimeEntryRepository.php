@@ -25,7 +25,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -361,6 +361,30 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         } while (count($batch) === $batchSize);
 
         return $removal;
+    }
+
+    /**
+     * Since 1.13: total closed seconds per task (every user), the ids bound {@see self::TASK_IDS_PER_QUERY} at a time.
+     */
+    public function loggedSecondsByTask(array $taskIds): array
+    {
+        $totals = [];
+        foreach (array_chunk($taskIds, self::TASK_IDS_PER_QUERY) as $chunk) {
+            /** @var list<array{taskId: string, seconds: int|string}> $rows */
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('e.taskId AS taskId', 'SUM(e.durationSeconds) AS seconds')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.taskId IN (:ids)')
+                ->setParameter('ids', $chunk)
+                ->groupBy('e.taskId')
+                ->getQuery()
+                ->getArrayResult();
+            foreach ($rows as $row) {
+                $totals[$row['taskId']] = (int) $row['seconds'];
+            }
+        }
+
+        return $totals;
     }
 
     /**

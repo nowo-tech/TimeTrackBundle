@@ -340,6 +340,8 @@ class TimeEntry
             'description'     => $taskVisible ? $this->description : null,
             'readOnly'        => $this->isReadOnly(),
             'taskVisible'     => $taskVisible,
+            // Since 1.13: tenant scope (null = unassigned).
+            'scopeKey' => $this->scopeKey,
         ];
     }
 }

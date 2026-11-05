@@ -33,6 +33,8 @@ reports:
   source_extension: Browser extension
   source_desktop: Desktop app
   source_import: Imported
+  source_manual: "Manual"
+  source_calendar: "Calendar"
   task_not_visible: Task not visible
 flash:
   timer_started: Timer started.
@@ -72,3 +74,101 @@ downloads:
   macos: "Desktop app for macOS"
   linux: "Desktop app for Linux"
   latest_version: "Latest desktop version"
+timesheet:
+  title: "Timesheet %period%"
+  task: "Task"
+  total: "Total"
+  expected: "Expected"
+  diff: "Difference"
+  empty: "No time in this period."
+  unassigned: "%count% entries without an organisation are not part of this timesheet."
+  locked_through: "Locked through %date%"
+  decision_comment: "Reviewer comment:"
+  comment: "Comment"
+  status:
+    open: "Open"
+    submitted: "Submitted"
+    approved: "Approved"
+    rejected: "Rejected"
+  action:
+    submit: "Submit week"
+    withdraw: "Withdraw"
+    approve: "Approve"
+    reject: "Reject"
+    reopen: "Reopen"
+  dialog:
+    cancel: "Cancel"
+    submit_title: "Submit the week"
+    withdraw_title: "Withdraw the week"
+    approve_title: "Approve the timesheet"
+    reject_title: "Reject the timesheet"
+    reopen_title: "Reopen the period"
+  error:
+    not_found: "Timesheet not found."
+    invalid_transition: "This action is not possible in the current status."
+    timer_running: "Stop the running timer of this period first."
+    not_started: "The period has not started yet."
+    not_ended: "The period has not ended yet."
+    stale: "The entries changed since the submit. Reload and check again."
+    conflict: "Someone else changed this timesheet at the same time. Reload."
+    comment_required: "Write a comment of 10 to 1000 characters."
+    invalid_request: "The form is invalid or expired. Reload and try again."
+    period_locked: "This period is locked."
+    period_submitted: "This period is submitted for approval."
+  weekday:
+    "1": "Mon"
+    "2": "Tue"
+    "3": "Wed"
+    "4": "Thu"
+    "5": "Fri"
+    "6": "Sat"
+    "7": "Sun"
+balance:
+  title: "Hours balance"
+  balance: "Balance"
+  expected: "Expected"
+  worked: "Worked"
+  diff: "Difference"
+  overtime: "Overtime"
+  overtime_year: "Overtime %year% (counted / cap)"
+  legal_notice: "Task time, not a working-time record"
+  source:
+    register: "Working-time register"
+    task_time: "Task time"
+  range:
+    week: "Week %from% – %to%"
+    month: "Month %from% – %to%"
+    year: "Year %from% – %to%"
+    custom: "%from% – %to%"
+  flag:
+    overtime_cap_near: "Near the annual overtime cap"
+    overtime_cap_exceeded: "Annual overtime cap exceeded"
+ledger:
+  title: "Balance ledger"
+  empty: "No movements."
+  reversed: "Reversed"
+  kind_label: "Kind"
+  minutes: "Minutes"
+  minutes_help: "Signed: negative minutes reduce the balance."
+  effective_date: "Effective date"
+  reason: "Reason"
+  kind:
+    opening: "Opening balance"
+    adjustment: "Adjustment"
+    overtime_ratified: "Ratified overtime"
+    overtime_paid: "Overtime paid"
+    overtime_compensated: "Overtime compensated with rest"
+    reversal: "Reversal"
+  column:
+    effectiveDate: "Date"
+    kind: "Kind"
+    seconds: "Amount"
+    reason: "Reason"
+    createdAt: "Recorded"
+    actions: "Actions"
+  action:
+    add_adjustment: "Add adjustment"
+    reversal: "Reverse"
+  dialog:
+    add_title: "Add a balance movement"
+    reversal_title: "Reverse this movement"

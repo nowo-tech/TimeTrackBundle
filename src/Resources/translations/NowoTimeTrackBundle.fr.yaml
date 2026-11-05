@@ -33,6 +33,8 @@ reports:
   source_extension: Extension du navigateur
   source_desktop: Application de bureau
   source_import: Importé
+  source_manual: "Manuel"
+  source_calendar: "Calendrier"
   task_not_visible: Tâche non visible
 flash:
   timer_started: Minuteur démarré.
@@ -72,3 +74,101 @@ downloads:
   macos: "Application de bureau pour macOS"
   linux: "Application de bureau pour Linux"
   latest_version: "Dernière version de bureau"
+timesheet:
+  title: "Feuille de temps %period%"
+  task: "Tâche"
+  total: "Total"
+  expected: "Prévu"
+  diff: "Écart"
+  empty: "Aucun temps sur cette période."
+  unassigned: "%count% entrées sans organisation ne font pas partie de cette feuille."
+  locked_through: "Verrouillée jusqu’au %date%"
+  decision_comment: "Commentaire du valideur :"
+  comment: "Commentaire"
+  status:
+    open: "Ouverte"
+    submitted: "Soumise"
+    approved: "Approuvée"
+    rejected: "Refusée"
+  action:
+    submit: "Soumettre la semaine"
+    withdraw: "Retirer"
+    approve: "Approuver"
+    reject: "Refuser"
+    reopen: "Rouvrir"
+  dialog:
+    cancel: "Annuler"
+    submit_title: "Soumettre la semaine"
+    withdraw_title: "Retirer la soumission"
+    approve_title: "Approuver la feuille de temps"
+    reject_title: "Refuser la feuille de temps"
+    reopen_title: "Rouvrir la période"
+  error:
+    not_found: "Feuille de temps introuvable."
+    invalid_transition: "Cette action n’est pas possible dans l’état actuel."
+    timer_running: "Arrêtez d’abord le minuteur en cours de cette période."
+    not_started: "La période n’a pas encore commencé."
+    not_ended: "La période n’est pas encore terminée."
+    stale: "Les entrées ont changé depuis la soumission. Rechargez et vérifiez à nouveau."
+    conflict: "Quelqu’un d’autre a modifié cette feuille en même temps. Rechargez."
+    comment_required: "Écrivez un commentaire de 10 à 1000 caractères."
+    invalid_request: "Le formulaire est invalide ou expiré. Rechargez et réessayez."
+    period_locked: "Cette période est verrouillée."
+    period_submitted: "Cette période est soumise pour approbation."
+  weekday:
+    "1": "Lun"
+    "2": "Mar"
+    "3": "Mer"
+    "4": "Jeu"
+    "5": "Ven"
+    "6": "Sam"
+    "7": "Dim"
+balance:
+  title: "Solde d’heures"
+  balance: "Solde"
+  expected: "Prévu"
+  worked: "Travaillé"
+  diff: "Écart"
+  overtime: "Heures supplémentaires"
+  overtime_year: "Heures sup. %year% (comptées / plafond)"
+  legal_notice: "Temps des tâches, pas un registre du temps de travail"
+  source:
+    register: "Registre du temps de travail"
+    task_time: "Temps des tâches"
+  range:
+    week: "Semaine %from% – %to%"
+    month: "Mois %from% – %to%"
+    year: "Année %from% – %to%"
+    custom: "%from% – %to%"
+  flag:
+    overtime_cap_near: "Proche du plafond annuel d’heures sup."
+    overtime_cap_exceeded: "Plafond annuel d’heures sup. dépassé"
+ledger:
+  title: "Mouvements du solde"
+  empty: "Aucun mouvement."
+  reversed: "Annulé"
+  kind_label: "Type"
+  minutes: "Minutes"
+  minutes_help: "Signé : des minutes négatives réduisent le solde."
+  effective_date: "Date d’effet"
+  reason: "Motif"
+  kind:
+    opening: "Solde initial"
+    adjustment: "Ajustement"
+    overtime_ratified: "Heures sup. validées"
+    overtime_paid: "Heures sup. payées"
+    overtime_compensated: "Heures sup. compensées par du repos"
+    reversal: "Annulation"
+  column:
+    effectiveDate: "Date"
+    kind: "Type"
+    seconds: "Montant"
+    reason: "Motif"
+    createdAt: "Enregistré"
+    actions: "Actions"
+  action:
+    add_adjustment: "Ajouter un ajustement"
+    reversal: "Annuler le mouvement"
+  dialog:
+    add_title: "Ajouter un mouvement au solde"
+    reversal_title: "Annuler ce mouvement"

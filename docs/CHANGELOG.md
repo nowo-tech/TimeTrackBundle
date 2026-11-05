@@ -112,6 +112,27 @@ PRs). Every feature is off until configured; the schema change is required for e
   after the end of the period's month; the only delete path) and `nowo:time-track:timesheets:verify [--scope] [--user]`
   (`AuditChainVerifier`: names the first broken link of every timesheet and ledger chain).
 - `Repository\EntryOwnersRepositoryInterface` (implemented by `DoctrineOrmTimeEntryRepository`).
+- **Client API** (contract §10.1–§10.2, `TimeTrackWorkingTimeApiController`): `GET workday` and
+  `POST workday/{clock-in|break-start|break-end|clock-out}` (R-GDPR §8: `Workday\WorkdayProviderInterface`,
+  `WorkdayAction`, `WorkdayState`, `WorkdayConflictException`, `WorkdayForbiddenException`; `Idempotency-Key` replays for
+  24 h through `ClientIdempotencyStore`, `idempotency_mismatch`, `occurredAt` window), `GET balance`, `GET timesheets`,
+  `POST timesheets/{periodKey}/submit|withdraw`. New scopes `workday:read`, `workday:write`, `balance:read`,
+  `timesheet:read`, `timesheet:write` (explicit grant only, `ClientScope::defaults()`). `client_api.workday_provider`
+  and the `clients.routes` keys `workday`, `workday_action`, `balance`, `timesheets`, `timesheet_submit`,
+  `timesheet_withdraw`. Audit actions `workday_action`, `timesheet_submitted`, `timesheet_withdrawn`.
+- **`GET me`**: `features.workday` (real), `timesheets`, `balance`, `calendar_suggestions` / `manual_entries` (false
+  until 1.14), `task_effort`; `timesheet` summary of the current period (`Client\ClientWorkingTimeContext`).
+- **Task effort** (TimeTrackDesktop recommendation 4): `estimateSeconds`, `loggedSeconds` (total of every user, never
+  per user) and `remainingSeconds` on `GET tasks` and every timer payload; `TaskReference::$estimateSeconds` /
+  `$loggedSeconds` (optional), `Repository\TaskEffortRepositoryInterface` (Doctrine store implements it).
+- **Components** (contract §16a, no template overrides): `nowo_time_track_component('TimeTrack:TimesheetWeekGrid' |
+  'TimeTrack:BalanceCard' | 'TimeTrack:LedgerTable', props)` backed by `Ui\TimesheetViewBuilder`, with labels, visible
+  actions and their host URLs, density and row options; reject / reopen / adjustment / reversal dialogs follow the
+  UiKit 2.29 anatomy. `Timesheet\TimesheetFormHandler`, `Form\TimesheetDecisionType`, `Form\LedgerLineType`, the
+  `nowo_time_track_duration` filter. Translations in the 7 locales (`timesheet.*`, `balance.*`, `ledger.*`,
+  `reports.source_manual` / `source_calendar`).
+- `PeriodLockGuard::blockedEntryIds()` (one query per owner for lists).
+- `docs/WORKING-TIME.md`.
 - `TimeEntrySource::Manual` and `TimeEntrySource::Calendar` (live, editable; write paths in 1.14).
 - `Repository\FilteredImportedTimeEntryRepositoryInterface` (bulk removal that keeps locked entries) and
   `Repository\ScopeBackfillRepositoryInterface`, both implemented by `DoctrineOrmTimeEntryRepository`.
@@ -119,6 +140,14 @@ PRs). Every feature is off until configured; the schema change is required for e
 
 ### Changed
 
+- **Default client scopes**: a token without stored scopes, a login whose authenticator names none and a device request
+  without `scopes` get `ClientScope::defaults()` (the four pre-1.13 scopes) instead of every scope. `ClientScope::all()`
+  still lists every case.
+- `GET me.features` gains keys and `GET me` gains `timesheet`; `RESERVED_FEATURES` is `['monitoring']`.
+- Entries (`GET entries`, `GET export` JSON) gain `scopeKey` (in `TimeEntry::toArray()`) and `locked`; the CSV gains
+  the columns `scope_key` and `locked` (appended; `TimeEntryCsv::render()` takes the locked ids as a 4th argument).
+- Timer routes answer `409 period_locked` (with `lockedThrough`) / `period_submitted` when timesheets are on.
+- `nowo-tech/ui-kit-bundle` constraint `^2.29` (was `^2.20`): the dialogs use the 2.29 anatomy.
 - `TimerService`, `ImportedTimeEntryWriter` and `TeamAccessGuard` take an optional `PeriodLockGuard` (and the first two
   a scope provider) as their last constructor arguments; without them (or with timesheets off) they behave as in 1.12.
 - `TimeTrackMetadataListener` maps the three new tables (prefix and user class) through three optional arguments.

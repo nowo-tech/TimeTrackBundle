@@ -15,11 +15,13 @@ use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientMinSupportedVersionProvider;
@@ -33,6 +35,7 @@ use Nowo\TimeTrackBundle\Command\TimesheetsPurgeCommand;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
@@ -71,12 +74,14 @@ use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetFormHandler;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
+use Nowo\TimeTrackBundle\Ui\TimesheetViewBuilder;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
 use Nowo\TimeTrackBundle\WorkingTime\ConfigOvertimePolicy;
 use Nowo\TimeTrackBundle\WorkingTime\DerivedWorkingCalendar;
@@ -371,7 +376,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerTimesheetWorkflow(ContainerBuilder $container, array $config, Reference $scopeRef): void
     {
-        /** @var array{enabled: bool, period: string, submit_requires_period_end: bool, auto_lock_after_days: int|null, audit_blocked_edits: bool, retention_years: int} $timesheets */
+        /** @var array{enabled: bool, period: string, submit_requires_period_end: bool, auto_lock_after_days: int|null, audit_blocked_edits: bool, retention_years: int, approver_sees_notes: bool} $timesheets */
         $timesheets = $config['timesheets'];
         /** @var array{enabled: bool, overtime: array{ratify_on_approval: bool}} $workingTime */
         $workingTime = $config['working_time'];
@@ -424,6 +429,44 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$afterDays', $timesheets['auto_lock_after_days'])
             ->setArgument('$clock', $clockRef)
             ->setArgument('$logger', $loggerRef);
+        // Since 1.13: client API working-time routes.
+        /** @var array{workday_provider: string|null, rate_limit: array{cache_pool: string}} $api */
+        $api     = $config['client_api'];
+        $workday = $api['workday_provider'];
+        $container->setDefinition(ClientIdempotencyStore::class, (new Definition(ClientIdempotencyStore::class))
+            ->setArguments(['$cache' => new Reference($api['rate_limit']['cache_pool'])]));
+        $container->setDefinition(ClientWorkingTimeContext::class, (new Definition(ClientWorkingTimeContext::class))
+            ->setArguments([
+                '$timesheets'      => new Reference(TimesheetService::class),
+                '$balance'         => new Reference(WorkingTimeBalanceService::class),
+                '$accessGuard'     => new Reference(TimesheetAccessGuard::class),
+                '$lockGuard'       => new Reference(PeriodLockGuard::class),
+                '$workdayProvider' => is_string($workday) && $workday !== '' ? new Reference($workday) : null,
+            ]));
+        $container->getDefinition(TimeTrackWorkingTimeApiController::class)
+            ->setArgument('$clock', $clockRef);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$workingTime', new Reference(ClientWorkingTimeContext::class));
+        $container->getDefinition(ClientTaskPresenter::class)
+            ->setArgument('$effort', new Reference(TimeEntryRepositoryInterface::class));
+
+        // Since 1.13: the web side of the components (contract §16a).
+        $container->setDefinition(TimesheetFormHandler::class, (new Definition(TimesheetFormHandler::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$forms'      => new Reference('form.factory'),
+                '$timesheets' => new Reference(TimesheetService::class),
+                '$ledger'     => $workingTime['enabled'] ? new Reference(BalanceLedger::class) : null,
+            ]));
+        $container->setDefinition(TimesheetViewBuilder::class, (new Definition(TimesheetViewBuilder::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$timesheets'        => new Reference(TimesheetService::class),
+                '$forms'             => new Reference(TimesheetFormHandler::class),
+                '$taskAccess'        => new Reference(TaskAccessCheckerInterface::class),
+                '$approverSeesNotes' => $timesheets['approver_sees_notes'],
+            ]));
+
         $container->getDefinition(TimesheetsPurgeCommand::class)
             ->setArgument('$retentionYears', $timesheets['retention_years'])
             ->setArgument('$clock', $clockRef)

@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Client;
 
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Repository\TaskEffortRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -15,6 +16,7 @@ use Throwable;
 
 use function is_int;
 use function is_string;
+use function max;
 use function mb_strlen;
 use function mb_substr;
 use function parse_url;
@@ -49,11 +51,13 @@ final readonly class ClientTaskPresenter
      * @param TimerService $timerService Resolves the timer's task for the token user (through the task provider)
      * @param string|null $taskUrlOrigin `client_api.task_url.origin`: exact `https://host[:port]` (null = the request origin)
      * @param LoggerInterface|null $logger Logs dropped URLs and provider failures without data (defaults to no logging)
+     * @param TaskEffortRepositoryInterface|null $effort Logged time per task (since 1.13; null = unknown unless the provider gives it)
      */
     public function __construct(
         private TimerService $timerService,
         private ?string $taskUrlOrigin = null,
         ?LoggerInterface $logger = null,
+        private ?TaskEffortRepositoryInterface $effort = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -61,16 +65,34 @@ final readonly class ClientTaskPresenter
     /**
      * Wire shape of a task in `GET tasks`.
      *
-     * @return array{id: string, title: string, boardId: string|null, boardTitle: string|null, projectId: string|null, projectTitle: string|null, url: string|null}
+     * @return array{id: string, title: string, boardId: string|null, boardTitle: string|null, projectId: string|null, projectTitle: string|null, url: string|null, estimateSeconds: int|null, loggedSeconds: int|null, remainingSeconds: int|null}
      */
-    public function task(TaskReference $task, Request $request): array
+    public function task(TaskReference $task, Request $request, ?int $logged = null): array
     {
         return [
             'id'         => $task->id,
             'title'      => $task->title,
             'boardId'    => $task->boardId,
             'boardTitle' => $task->boardTitle,
-        ] + $this->details($task, $request);
+        ] + $this->details($task, $request) + $this->effort($task, $logged ?? $this->loggedOf([$task])[$task->id] ?? null);
+    }
+
+    /**
+     * Since 1.13: the wire shape of a list of tasks, with one logged-time query for the whole list.
+     *
+     * @param list<TaskReference> $tasks
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function tasks(array $tasks, Request $request): array
+    {
+        $logged = $this->loggedOf($tasks);
+        $out    = [];
+        foreach ($tasks as $task) {
+            $out[] = $this->task($task, $request, $logged[$task->id] ?? null);
+        }
+
+        return $out;
     }
 
     /**
@@ -87,10 +109,10 @@ final readonly class ClientTaskPresenter
         $body = $timer->toArray();
 
         if (!$task instanceof TaskReference) {
-            return $body + ['boardTitle' => null, 'projectId' => null, 'projectTitle' => null, 'url' => null];
+            return $body + ['boardTitle' => null, 'projectId' => null, 'projectTitle' => null, 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'remainingSeconds' => null];
         }
 
-        return $body + ['boardTitle' => $task->boardTitle] + $this->details($task, $request);
+        return $body + ['boardTitle' => $task->boardTitle] + $this->details($task, $request) + $this->effort($task, $this->loggedOf([$task])[$task->id] ?? null);
     }
 
     /**
@@ -140,6 +162,51 @@ final readonly class ClientTaskPresenter
             'projectTitle' => $title !== '' ? mb_substr($title, 0, self::PROJECT_TITLE_MAX_LENGTH) : null,
             'url'          => $this->safeUrl($task->url, $request),
         ];
+    }
+
+    /**
+     * Since 1.13: `estimateSeconds`, `loggedSeconds` (a total of every user's closed time on the task, never a per-user
+     * figure) and `remainingSeconds = max(0, estimate − logged)`; each null when unknown.
+     *
+     * @return array{estimateSeconds: int|null, loggedSeconds: int|null, remainingSeconds: int|null}
+     */
+    private function effort(TaskReference $task, ?int $logged): array
+    {
+        $estimate = is_int($task->estimateSeconds) && $task->estimateSeconds >= 0 ? $task->estimateSeconds : null;
+        $logged   = is_int($task->loggedSeconds) && $task->loggedSeconds >= 0 ? $task->loggedSeconds : $logged;
+
+        return [
+            'estimateSeconds'  => $estimate,
+            'loggedSeconds'    => $logged,
+            'remainingSeconds' => $estimate !== null && $logged !== null ? max(0, $estimate - $logged) : null,
+        ];
+    }
+
+    /**
+     * Logged seconds of the tasks the provider did not total itself (one query).
+     *
+     * @param list<TaskReference> $tasks
+     *
+     * @return array<string, int>
+     */
+    private function loggedOf(array $tasks): array
+    {
+        $ids = [];
+        foreach ($tasks as $task) {
+            if ($task->loggedSeconds === null) {
+                $ids[] = $task->id;
+            }
+        }
+        if ($ids === [] || !$this->effort instanceof TaskEffortRepositoryInterface) {
+            return [];
+        }
+        try {
+            return $this->effort->loggedSecondsByTask($ids);
+        } catch (Throwable) {
+            $this->logger->warning('TimeTrack task effort could not be read.', ['bundle' => 'time_track', 'action' => 'task_effort_failed']);
+
+            return [];
+        }
     }
 
     private function resolve(string $taskId, UserInterface $user): ?TaskReference

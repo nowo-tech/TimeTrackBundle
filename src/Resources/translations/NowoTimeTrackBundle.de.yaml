@@ -33,6 +33,8 @@ reports:
   source_extension: Browsererweiterung
   source_desktop: Desktop-App
   source_import: Importiert
+  source_manual: "Manuell"
+  source_calendar: "Kalender"
   task_not_visible: Aufgabe nicht sichtbar
 flash:
   timer_started: Timer gestartet.
@@ -72,3 +74,101 @@ downloads:
   macos: "Desktop-App für macOS"
   linux: "Desktop-App für Linux"
   latest_version: "Neueste Desktop-Version"
+timesheet:
+  title: "Stundenzettel %period%"
+  task: "Aufgabe"
+  total: "Summe"
+  expected: "Soll"
+  diff: "Differenz"
+  empty: "Keine Zeit in diesem Zeitraum."
+  unassigned: "%count% Einträge ohne Organisation gehören nicht zu diesem Stundenzettel."
+  locked_through: "Gesperrt bis %date%"
+  decision_comment: "Kommentar der Prüfung:"
+  comment: "Kommentar"
+  status:
+    open: "Offen"
+    submitted: "Eingereicht"
+    approved: "Genehmigt"
+    rejected: "Abgelehnt"
+  action:
+    submit: "Woche einreichen"
+    withdraw: "Zurückziehen"
+    approve: "Genehmigen"
+    reject: "Ablehnen"
+    reopen: "Wieder öffnen"
+  dialog:
+    cancel: "Abbrechen"
+    submit_title: "Woche einreichen"
+    withdraw_title: "Einreichung zurückziehen"
+    approve_title: "Stundenzettel genehmigen"
+    reject_title: "Stundenzettel ablehnen"
+    reopen_title: "Zeitraum wieder öffnen"
+  error:
+    not_found: "Stundenzettel nicht gefunden."
+    invalid_transition: "Diese Aktion ist im aktuellen Status nicht möglich."
+    timer_running: "Stoppen Sie zuerst den laufenden Timer dieses Zeitraums."
+    not_started: "Der Zeitraum hat noch nicht begonnen."
+    not_ended: "Der Zeitraum ist noch nicht zu Ende."
+    stale: "Die Einträge haben sich seit dem Einreichen geändert. Neu laden und erneut prüfen."
+    conflict: "Jemand anderes hat diesen Stundenzettel gleichzeitig geändert. Neu laden."
+    comment_required: "Schreiben Sie einen Kommentar mit 10 bis 1000 Zeichen."
+    invalid_request: "Das Formular ist ungültig oder abgelaufen. Neu laden und erneut versuchen."
+    period_locked: "Dieser Zeitraum ist gesperrt."
+    period_submitted: "Dieser Zeitraum ist zur Genehmigung eingereicht."
+  weekday:
+    "1": "Mo"
+    "2": "Di"
+    "3": "Mi"
+    "4": "Do"
+    "5": "Fr"
+    "6": "Sa"
+    "7": "So"
+balance:
+  title: "Stundensaldo"
+  balance: "Saldo"
+  expected: "Soll"
+  worked: "Gearbeitet"
+  diff: "Differenz"
+  overtime: "Überstunden"
+  overtime_year: "Überstunden %year% (gezählt / Grenze)"
+  legal_notice: "Aufgabenzeit, keine Arbeitszeiterfassung"
+  source:
+    register: "Arbeitszeiterfassung"
+    task_time: "Aufgabenzeit"
+  range:
+    week: "Woche %from% – %to%"
+    month: "Monat %from% – %to%"
+    year: "Jahr %from% – %to%"
+    custom: "%from% – %to%"
+  flag:
+    overtime_cap_near: "Nahe der jährlichen Überstundengrenze"
+    overtime_cap_exceeded: "Jährliche Überstundengrenze überschritten"
+ledger:
+  title: "Saldobuchungen"
+  empty: "Keine Buchungen."
+  reversed: "Storniert"
+  kind_label: "Art"
+  minutes: "Minuten"
+  minutes_help: "Mit Vorzeichen: negative Minuten verringern den Saldo."
+  effective_date: "Wirksam ab"
+  reason: "Grund"
+  kind:
+    opening: "Anfangssaldo"
+    adjustment: "Korrektur"
+    overtime_ratified: "Bestätigte Überstunden"
+    overtime_paid: "Ausbezahlte Überstunden"
+    overtime_compensated: "Durch Freizeit ausgeglichene Überstunden"
+    reversal: "Stornierung"
+  column:
+    effectiveDate: "Datum"
+    kind: "Art"
+    seconds: "Betrag"
+    reason: "Grund"
+    createdAt: "Erfasst"
+    actions: "Aktionen"
+  action:
+    add_adjustment: "Korrektur hinzufügen"
+    reversal: "Stornieren"
+  dialog:
+    add_title: "Saldobuchung hinzufügen"
+    reversal_title: "Diese Buchung stornieren"
