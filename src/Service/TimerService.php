@@ -15,16 +15,21 @@ use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Dto\TimeEntryPage;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\IdleResolvedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartEvent;
 use Nowo\TimeTrackBundle\Event\TimerStopEvent;
+use Nowo\TimeTrackBundle\Event\TimesheetLateEntryEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
+use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
@@ -36,6 +41,8 @@ use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -64,6 +71,12 @@ use function usort;
  *
  * Logging (REQ-OBS-001): time entries are personal data (GDPR), so log records carry the action and the client type
  * only — never the user, the task, its title, the board, the duration or the metadata.
+ *
+ * Since 1.13 (timesheets on): every entry gets the host tenant scope of its task (`scope_key`), and the period lock
+ * ({@see PeriodLockGuard}) refuses a start or an idle decision in a locked or submitted period (409 `period_locked` /
+ * `period_submitted`). A stop is always allowed: an entry belongs to its start date, which was writable at start;
+ * when that period was locked while the timer ran (manual lock), the entry is written and
+ * {@see TimesheetLateEntryEvent} fires.
  */
 final readonly class TimerService
 {
@@ -81,6 +94,8 @@ final readonly class TimerService
      * @param EventDispatcherInterface $eventDispatcher Dispatches the timer and list-query events
      * @param ClockInterface|null $clock Time source (defaults to the system clock)
      * @param LoggerInterface|null $logger Operational log (defaults to no logging)
+     * @param PeriodLockGuard|null $periodLockGuard Period lock (since 1.13; null = no timesheets)
+     * @param TimesheetScopeProviderInterface|null $scopeProvider Tenant scope of new entries (since 1.13; null = none)
      */
     public function __construct(
         private TaskProviderInterface $taskProvider,
@@ -89,6 +104,8 @@ final readonly class TimerService
         private EventDispatcherInterface $eventDispatcher,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        private ?PeriodLockGuard $periodLockGuard = null,
+        private ?TimesheetScopeProviderInterface $scopeProvider = null,
     ) {
         $this->clock  = $clock ?? new NativeClock();
         $this->logger = $logger ?? new NullLogger();
@@ -138,6 +155,8 @@ final readonly class TimerService
      *
      * @throws ActiveTimerConflictException When the user already has a running timer
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     * @throws PeriodLockedException When the (applied) start is in a locked period (since 1.13)
+     * @throws PeriodSubmittedException When the (applied) start is in a submitted period (since 1.13)
      *
      * @return array{timer: ActiveTimer, task: TaskReference, startTime: ClampedTime|null} The timer, its task and the clamp result (null without a requested start)
      */
@@ -152,6 +171,8 @@ final readonly class TimerService
         $metadata  = $this->startMetadata($metadata);
         $now       = $this->clock->now();
         $startTime = $requestedStart instanceof DateTimeImmutable ? $this->clampStart($user, $requestedStart, $limits ?? new BackdateLimits(), $now) : null;
+        $startedAt = $startTime instanceof ClampedTime ? $startTime->applied : $now;
+        $this->periodLockGuard?->assertWritable($user, $this->scopeKeyFor($user, $task->id, $task->boardId), $startedAt, WriteKind::TimerStart);
 
         $timer = new ActiveTimer(
             $user,
@@ -160,7 +181,7 @@ final readonly class TimerService
             $task->boardId,
             $clientType,
             $metadata,
-            $startTime instanceof ClampedTime ? $startTime->applied : $now,
+            $startedAt,
         );
 
         try {
@@ -244,12 +265,16 @@ final readonly class TimerService
      *
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
      * @throws ActiveTimerConflictException When a concurrent start won the race
+     * @throws PeriodLockedException When the current period is locked (since 1.13; the running timer is left untouched)
+     * @throws PeriodSubmittedException When the current period is submitted (since 1.13)
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer} The entry of the stopped timer and the new timer
      */
     public function switchTo(UserInterface $user, string $taskId, ClientType $clientType, ?string $note = null): array
     {
-        $this->resolveTrackable($user, $taskId);
+        $task = $this->resolveTrackable($user, $taskId);
+        // Since 1.13: refused before the running timer stops, so a locked period leaves it untouched.
+        $this->periodLockGuard?->assertWritable($user, $this->scopeKeyFor($user, $task->id, $task->boardId), $this->clock->now(), WriteKind::TimerStart);
 
         $entry = $this->stop($user, null, $note);
 
@@ -277,6 +302,8 @@ final readonly class TimerService
      * @throws ActiveTimerConflictException When a concurrent start took the timer slot before the follow-up timer started
      * @throws TaskNotTrackableException When the reassign target is unknown or not trackable by the user
      * @throws InvalidArgumentException When the span is not inside the running timer, or the target is the timer's task
+     * @throws PeriodLockedException When the idle span starts in a locked period (discard, split, reassign; since 1.13)
+     * @throws PeriodSubmittedException When the idle span starts in a submitted period (since 1.13)
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer|null, reassigned: TimeEntry|null}|null Recorded entries and running timer, or null when no timer runs
      */
@@ -317,6 +344,13 @@ final readonly class TimerService
 
         $clientType ??= $timer->getClientType();
         $note = $note !== null ? NoteSanitizer::cleanAndCut($note) : null;
+
+        if ($resolution !== IdleResolution::Keep && $this->periodLockGuard instanceof PeriodLockGuard) {
+            $this->periodLockGuard->assertWritable($user, $this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()), $from, WriteKind::IdleResolve);
+            if ($target instanceof TaskReference) {
+                $this->periodLockGuard->assertWritable($user, $this->scopeKeyFor($user, $target->id, $target->boardId), $from, WriteKind::IdleResolve);
+            }
+        }
 
         if ($resolution === IdleResolution::Keep) {
             if ($note !== null) {
@@ -633,6 +667,7 @@ final readonly class TimerService
             $this->entryMetadata($timer->getMetadata(), $note),
             $endedAt,
         );
+        $entry->assignScopeKey($this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()));
         $entries = $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries;
 
         if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
@@ -655,6 +690,11 @@ final readonly class TimerService
 
         foreach ($entries as $recorded) {
             $this->eventDispatcher->dispatch(new TimerStopEvent($user, $recorded, $recorded === $entry ? $endTime : null), TimeTrackEvents::TIMER_STOP);
+            $locked = $this->periodLockGuard?->lockingTimesheet($user, $recorded->getScopeKey(), $recorded->getStartedAt());
+            if ($locked instanceof Timesheet) {
+                // The period was locked while the timer ran (manual lock): the entry is written, the approver is told.
+                $this->eventDispatcher->dispatch(new TimesheetLateEntryEvent($locked->getId(), $recorded->getId()), TimeTrackEvents::TIMESHEET_LATE_ENTRY);
+            }
         }
         $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
 
@@ -742,6 +782,7 @@ final readonly class TimerService
             $note !== null ? ['note' => $note] : null,
             $this->clock->now(),
         );
+        $reassigned->assignScopeKey($this->scopeKeyFor($user, $target->id, $target->boardId));
         $hasOwnEntry = $from > $timer->getStartedAt();
 
         $entry = $this->closeTimer($user, $timer, $from, null, null, [$reassigned], $hasOwnEntry);
@@ -871,6 +912,14 @@ final readonly class TimerService
     private function toSecond(DateTimeImmutable $time): DateTimeImmutable
     {
         return (new DateTimeImmutable('@' . $time->getTimestamp()))->setTimezone(new DateTimeZone(date_default_timezone_get()));
+    }
+
+    /**
+     * Since 1.13: tenant scope of a task for a new entry (null without timesheets).
+     */
+    private function scopeKeyFor(UserInterface $user, string $taskId, ?string $boardId): ?string
+    {
+        return $this->scopeProvider?->scopeKeyForTask($user, $taskId, $boardId);
     }
 
     /**

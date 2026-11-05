@@ -21,12 +21,12 @@ use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
+use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
-use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -36,6 +36,8 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
+use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -57,6 +59,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 use function array_map;
+use function array_replace;
 use function date_default_timezone_get;
 use function in_array;
 use function intdiv;
@@ -103,8 +106,8 @@ final readonly class TimeTrackClientApiController
     /** Max length of a timer note, in code points ({@see NoteSanitizer::MAX_LENGTH}). */
     public const NOTE_MAX_LENGTH = NoteSanitizer::MAX_LENGTH;
 
-    /** Features of `GET me` reserved for later releases; always false in 1.10. */
-    public const RESERVED_FEATURES = ['workday', 'monitoring'];
+    /** Features of `GET me` reserved for later releases; always false (1.13: `workday` became real). */
+    public const RESERVED_FEATURES = ['monitoring'];
 
     /** Earliest UTC offset accepted on client timestamps, in minutes (-12:00; 1.9.2). */
     public const MIN_UTC_OFFSET_MINUTES = -720;
@@ -142,6 +145,7 @@ final readonly class TimeTrackClientApiController
      * @param ClientApiSettingsProviderInterface|null $settingsProvider Backdate and idle settings (null = the defaults)
      * @param IdleCheckSettingsResolver|null $idleCheckResolver Per-user idle-check settings of `me` (null = instance settings)
      * @param TranslatorInterface|null $translator Translates the masked title of imported entries (1.11; null = English)
+     * @param ClientWorkingTimeContext|null $workingTime Working-time flags, `me.timesheet` and entry locks (1.13; null = all off)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -162,6 +166,7 @@ final readonly class TimeTrackClientApiController
         ?ClientApiSettingsProviderInterface $settingsProvider = null,
         ?IdleCheckSettingsResolver $idleCheckResolver = null,
         private ?TranslatorInterface $translator = null,
+        private ?ClientWorkingTimeContext $workingTime = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -273,7 +278,17 @@ final readonly class TimeTrackClientApiController
             'idle_reassign'  => $settings->allowIdleReassign,
             'idle_keep_note' => true,
             'idle_check'     => $idleCheck->enabled,
+            // Since 1.13 (contract §10.1).
+            'workday'              => false,
+            'timesheets'           => false,
+            'balance'              => false,
+            'calendar_suggestions' => false,
+            'manual_entries'       => false,
+            'task_effort'          => true,
         ];
+        if ($this->workingTime instanceof ClientWorkingTimeContext) {
+            $features = array_replace($features, $this->workingTime->features($user));
+        }
         foreach (self::RESERVED_FEATURES as $reserved) {
             $features[$reserved] = false;
         }
@@ -283,6 +298,8 @@ final readonly class TimeTrackClientApiController
             'backdate'   => ['max_seconds' => $settings->backdate->maxSeconds, 'clock_skew_seconds' => $settings->backdate->clockSkewSeconds],
             'idle_check' => $idleCheck->limitsToArray(),
         ];
+        // Since 1.13: the current period of the current scope (null without timesheets).
+        $body['timesheet'] = $this->workingTime?->timesheetSummary($user);
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }
@@ -304,7 +321,7 @@ final readonly class TimeTrackClientApiController
         );
 
         return $this->responseFactory->json([
-            'tasks' => array_map(fn (TaskReference $task): array => $this->taskPresenter->task($task, $request), $this->timerService->listTasks($principal->user, $query)),
+            'tasks' => $this->taskPresenter->tasks($this->timerService->listTasks($principal->user, $query), $request, $principal->user),
         ], Response::HTTP_OK, $request);
     }
 
@@ -368,6 +385,8 @@ final readonly class TimeTrackClientApiController
             return $this->timerRunning($request);
         } catch (InvalidArgumentException) {
             return $this->taskForbidden($principal, $request);
+        } catch (PeriodWriteRefusedException $e) {
+            return $this->periodRefused($e, $request);
         }
 
         $body = ['timer' => $this->taskPresenter->timer($result['timer'], $principal->user, $request, $result['task'])];
@@ -440,6 +459,8 @@ final readonly class TimeTrackClientApiController
             return $this->timerRunning($request);
         } catch (InvalidArgumentException) {
             return $this->taskForbidden($principal, $request);
+        } catch (PeriodWriteRefusedException $e) {
+            return $this->periodRefused($e, $request);
         }
 
         return $this->responseFactory->json([
@@ -505,6 +526,8 @@ final readonly class TimeTrackClientApiController
             return $this->taskForbidden($principal, $request);
         } catch (InvalidArgumentException $e) {
             return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
+        } catch (PeriodWriteRefusedException $e) {
+            return $this->periodRefused($e, $request);
         }
 
         if ($result === null) {
@@ -574,9 +597,10 @@ final readonly class TimeTrackClientApiController
 
         $hidden      = $this->timerService->hiddenTaskEntryIds($list);
         $hiddenTitle = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($user);
+        $locked      = $this->workingTime?->blockedEntryIds($list) ?? [];
 
         return $this->responseFactory->json([
-            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $hiddenTitle), $list),
+            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $hiddenTitle) + ['locked' => isset($locked[$entry->getId()])], $list),
             'limit'   => $limit,
             'offset'  => $offset,
         ], Response::HTTP_OK, $request);
@@ -602,15 +626,16 @@ final readonly class TimeTrackClientApiController
         $name    = sprintf('time-entries-%s-%s.%s', $period['from']->format('Ymd'), $period['to']->format('Ymd'), $format);
         $hidden  = $this->timerService->hiddenTaskEntryIds($entries);
         $masked  = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($principal->user);
+        $locked  = $this->workingTime?->blockedEntryIds($entries) ?? [];
 
         $response = $this->responseFactory->empty(Response::HTTP_OK, $request);
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->setContent($format === 'csv'
-            ? TimeEntryCsv::render($entries, $hidden, $masked)
+            ? TimeEntryCsv::render($entries, $hidden, $masked, $locked)
             : json_encode([
                 'from'    => $period['from']->format(DATE_ATOM),
                 'to'      => $period['to']->format(DATE_ATOM),
-                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $masked), $entries),
+                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $masked) + ['locked' => isset($locked[$entry->getId()])], $entries),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->headers->set('Content-Type', $format === 'csv' ? 'text/csv; charset=UTF-8' : 'application/json');
@@ -723,6 +748,19 @@ final readonly class TimeTrackClientApiController
         $this->auditor->denied('task_forbidden', $principal->token, $request->getClientIp());
 
         return $this->responseFactory->error('task_forbidden', 'You may not track time on this task.', Response::HTTP_FORBIDDEN, $request);
+    }
+
+    /**
+     * Since 1.13: 409 `period_locked` (with `lockedThrough`) or `period_submitted`.
+     */
+    private function periodRefused(PeriodWriteRefusedException $e, Request $request): JsonResponse
+    {
+        $body = ['error' => $e->errorCode(), 'message' => $e instanceof PeriodLockedException ? 'The period is locked.' : 'The period is submitted for approval.'];
+        if ($e instanceof PeriodLockedException) {
+            $body['lockedThrough'] = $e->getLockedThrough();
+        }
+
+        return $this->responseFactory->json($body, Response::HTTP_CONFLICT, $request);
     }
 
     private function timerRunning(Request $request): JsonResponse

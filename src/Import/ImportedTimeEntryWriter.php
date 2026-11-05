@@ -8,13 +8,21 @@ use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\TimeEntriesRemovedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryImportedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
+use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
+use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -31,6 +39,11 @@ use function preg_replace;
  * Since 1.11: writes imported time entries ({@see TimeEntrySource::Import}), idempotently by
  * (externalSource, externalId). It never starts or stops a timer and never fires timer events; it never moves an entry
  * to another owner (remove, then upsert). The host authorises every call (who may import or delete).
+ *
+ * Since 1.13 (timesheets on): every written entry gets the tenant scope of its task, and a row whose entry is (or
+ * would move) into a locked or submitted period is skipped with {@see ImportedTimeEntryOutcome::Locked} (contract
+ * Q-O13); removals never delete an entry of such a period ({@see self::remove()} refuses, the bulk removals skip it),
+ * except {@see self::removeForUser()} (account erasure outranks the lock, like retention).
  *
  * Owner rule (2026-11-05): deleting tasks or boards never deletes tracked time. `remove*()` are for an explicit
  * manager action on imported time (and `removeForUser()` for account erasure), never a side effect of deleting a task
@@ -73,6 +86,8 @@ final readonly class ImportedTimeEntryWriter
         private int $maxEntrySeconds = self::DEFAULT_MAX_ENTRY_SECONDS,
         private LoggerInterface $logger = new NullLogger(),
         private ?ClockInterface $clock = null,
+        private ?PeriodLockGuard $periodLockGuard = null,
+        private ?TimesheetScopeProviderInterface $scopeProvider = null,
     ) {
         if (!$repository instanceof ImportedTimeEntryRepositoryInterface) {
             throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryRepositoryInterface.');
@@ -157,10 +172,16 @@ final readonly class ImportedTimeEntryWriter
         $results = [];
         $write   = [];
         $events  = [];
-        $counts  = ['created' => 0, 'updated' => 0, 'unchanged' => 0];
+        $counts  = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'locked' => 0];
         foreach ($plan as [$user, $data, $existing]) {
+            $scopeKey = $this->scopeProvider?->scopeKeyForTask($user, $data->taskId, $data->boardId);
             if (!$existing instanceof TimeEntry) {
-                $entry     = TimeEntry::imported($user, $data);
+                $entry = TimeEntry::imported($user, $data)->assignScopeKey($scopeKey);
+                if ($this->isLocked($user, $scopeKey, $data->startedAt)) {
+                    $results[] = new ImportedTimeEntryResult($entry, ImportedTimeEntryOutcome::Locked);
+                    ++$counts['locked'];
+                    continue;
+                }
                 $write[]   = $entry;
                 $results[] = new ImportedTimeEntryResult($entry, ImportedTimeEntryOutcome::Created);
                 $events[]  = new TimeEntryImportedEvent($entry, ImportedTimeEntryOutcome::Created);
@@ -169,10 +190,20 @@ final readonly class ImportedTimeEntryWriter
             }
             $previousSeconds = $existing->getDurationSeconds();
             $previousTask    = $existing->getTaskId();
-            if (!$existing->applyImport($data)) {
+            if (!$existing->differsFromImport($data)) {
                 $results[] = new ImportedTimeEntryResult($existing, ImportedTimeEntryOutcome::Unchanged);
                 ++$counts['unchanged'];
                 continue;
+            }
+            // The stored entry may not leave a locked period, and the new data may not enter one.
+            if ($this->isLocked($user, $existing->getScopeKey(), $existing->getStartedAt()) || $this->isLocked($user, $scopeKey, $data->startedAt)) {
+                $results[] = new ImportedTimeEntryResult($existing, ImportedTimeEntryOutcome::Locked);
+                ++$counts['locked'];
+                continue;
+            }
+            $existing->applyImport($data);
+            if ($this->scopeProvider instanceof TimesheetScopeProviderInterface) {
+                $existing->assignScopeKey($scopeKey);
             }
             $write[]   = $existing;
             $results[] = new ImportedTimeEntryResult($existing, ImportedTimeEntryOutcome::Updated);
@@ -188,27 +219,53 @@ final readonly class ImportedTimeEntryWriter
             $this->eventDispatcher?->dispatch($event, TimeTrackEvents::TIME_ENTRY_IMPORTED);
         }
         if ($write !== []) {
-            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged']]);
+            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked']]);
         }
 
-        return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged']);
+        return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged'], $counts['locked']);
     }
 
-    /** Removes one imported entry; returns the count (0 or 1). */
+    /**
+     * Since 1.13: whether the period lock refuses a write of the user's time at `$instant` (the refusal event fires).
+     */
+    private function isLocked(UserInterface $user, ?string $scopeKey, DateTimeImmutable $instant): bool
+    {
+        return $this->periodLockGuard?->refusal($user, $scopeKey, $instant, WriteKind::Import) instanceof PeriodWriteRefusedException;
+    }
+
+    /**
+     * Removes one imported entry; returns the count (0 or 1).
+     *
+     * @throws PeriodLockedException When the entry is in a locked period (since 1.13)
+     * @throws PeriodSubmittedException When the entry is in a submitted period (since 1.13)
+     */
     public function remove(string $externalSource, string $externalId, ?string $actorId = null): int
     {
-        return $this->removeScope(ImportedTimeEntryScope::entry($this->checkSource($externalSource), $externalId), $actorId);
+        $this->checkSource($externalSource);
+        if ($this->periodLockGuard?->isEnabled() === true) {
+            $entry = $this->repository->findByExternal($externalSource, $externalId);
+            $owner = $entry?->getUser();
+            if ($entry instanceof TimeEntry && $owner instanceof UserInterface) {
+                $this->periodLockGuard->assertWritable($owner, $entry->getScopeKey(), $entry->getStartedAt(), WriteKind::Delete);
+            }
+        }
+
+        return $this->removeScope(ImportedTimeEntryScope::entry($externalSource, $externalId), $actorId);
     }
 
-    /** Removes every imported entry of the source owned by the user (account erasure, re-association). */
+    /**
+     * Removes every imported entry of the source owned by the user (account erasure, re-association). Since 1.13 this
+     * is the one removal the period lock does not stop: erasure outranks the lock, like retention.
+     */
     public function removeForUser(string $externalSource, UserInterface $user): int
     {
-        return $this->removeScope(ImportedTimeEntryScope::user($this->checkSource($externalSource), UserIdResolver::getId($user)), null);
+        return $this->removeScope(ImportedTimeEntryScope::user($this->checkSource($externalSource), UserIdResolver::getId($user)), null, false);
     }
 
     /**
      * Removes the imported entries of the source tracked on these tasks: an explicit manager action on imported time
-     * only. Never call it from a task deletion (deleting tasks keeps all tracked time).
+     * only. Never call it from a task deletion (deleting tasks keeps all tracked time). Since 1.13 entries of locked or
+     * submitted periods are kept (not counted).
      *
      * @param list<string> $taskIds
      */
@@ -219,14 +276,15 @@ final readonly class ImportedTimeEntryWriter
 
     /**
      * Removes the imported entries of the source whose board snapshot is this board: an explicit manager action on
-     * imported time only. Never call it from a board deletion (deleting boards keeps all tracked time).
+     * imported time only. Never call it from a board deletion (deleting boards keeps all tracked time). Since 1.13
+     * entries of locked or submitted periods are kept (not counted).
      */
     public function removeForBoard(string $externalSource, string $boardId): int
     {
         return $this->removeScope(ImportedTimeEntryScope::board($this->checkSource($externalSource), $boardId), null);
     }
 
-    /** Removes every imported entry of exactly this source (never a prefix match). */
+    /** Removes every imported entry of exactly this source (never a prefix match); since 1.13 locked periods are kept. */
     public function removeForSource(string $externalSource): int
     {
         return $this->removeScope(ImportedTimeEntryScope::source($this->checkSource($externalSource)), null);
@@ -296,10 +354,22 @@ final readonly class ImportedTimeEntryWriter
         );
     }
 
-    private function removeScope(ImportedTimeEntryScope $scope, ?string $actorId): int
+    private function removeScope(ImportedTimeEntryScope $scope, ?string $actorId, bool $respectLocks = true): int
     {
-        // @igor-ignore - I/O delegate (repository / writer call); no worker state.
-        $removal = $this->repository->removeImported($scope);
+        $guard = $this->periodLockGuard;
+        if ($respectLocks && $guard?->isEnabled() === true) {
+            if (!$this->repository instanceof FilteredImportedTimeEntryRepositoryInterface) {
+                throw new LogicException('With timesheets on, removing imported entries requires a repository implementing FilteredImportedTimeEntryRepositoryInterface.');
+            }
+            // @igor-ignore - I/O delegate (repository / writer call); no worker state.
+            $removal = $this->repository->removeImportedWhere(
+                $scope,
+                static fn (array $row): bool => $guard->blockingTimesheetOf($row['userId'], $row['scopeKey'], $row['startedAt']) instanceof Timesheet,
+            );
+        } else {
+            // @igor-ignore - I/O delegate (repository / writer call); no worker state.
+            $removal = $this->repository->removeImported($scope);
+        }
         if ($removal->count > 0) {
             $this->eventDispatcher?->dispatch(new TimeEntriesRemovedEvent($scope->externalSource, $scope->kind, $removal, $actorId), TimeTrackEvents::TIME_ENTRIES_REMOVED);
             $this->logger->info('TimeTrack imported entries removed.', ['bundle' => 'nowo_time_track', 'scope' => $scope->kind, 'count' => $removal->count]);

@@ -25,6 +25,10 @@ Current release **v1.7.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
+- **1.13 (unreleased)**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with
+  approval and a hard period lock, audit chains, workday client API (R-GDPR §8). Next: **1.14** calendar suggestions
+  (Google / Microsoft 365, read-only, opt-in) and `POST entries`; **1.15** budget versus actual with TaskBoard.
+
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 
 Target: **TimeTrack 1.8 / 2.0**, with the extension and the desktop app in two private repositories. Requested by the

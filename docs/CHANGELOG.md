@@ -44,6 +44,168 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Working time, hours balance and timesheets (TimeTrack 1.13.0, contract `timetrack-next` v1.0 §3–§5, built as stacked
+PRs). Every feature is off until configured; the schema change is required for every host (always-mapped tables).
+
+### Added
+
+- **Entry tenant scope** `time_track_entries.scope_key` (`VARCHAR(64)` NULL) with the index
+  `idx_time_track_entries_user_scope_started (user_id, scope_key, started_at)`: with timesheets on, the timer service
+  and the import writer store the scope of the task (`TimesheetScopeProviderInterface::scopeKeyForTask()`).
+  `TimeEntry::getScopeKey()`.
+- **Timesheet model** (always mapped): `Entity\Timesheet` (`time_track_timesheets`, UUID v7, nullable owner FK
+  `ON DELETE SET NULL` + `owner_ref`, optimistic `version`), `Entity\TimesheetEvent` (`time_track_timesheet_events`,
+  append-only audit rows chained by SHA-256) and `Entity\BalanceLedgerLine` (`time_track_balance_ledger`, append-only,
+  chained per owner and scope), their repositories (`TimesheetRepositoryInterface`, `TimesheetEventRepositoryInterface`
+  — append and read only —, `BalanceLedgerRepositoryInterface`, `TimesheetRetentionRepositoryInterface`) and Doctrine
+  stores. Reference migrations for MySQL, PostgreSQL and SQLite in `docs/sql/1.13.0/` (tested against all three).
+- **`timesheets` configuration** (`enabled: false` by default; `scope_mode: provider|single`, `scope_provider`,
+  `approver_provider`, `period: week|month`, `default_timezone`, `submit_requires_period_end`, `auto_lock_after_days`,
+  `allow_self_approval` — fixed false —, `admin_roles_view`, `reopen_roles`, `approver_sees_notes`,
+  `audit_blocked_edits`, `retention_years` 4–10). Incoherent combinations fail at compile time.
+- **`Timesheet\TimesheetScopeProviderInterface`** (host tenant scopes, Beacon `org-<uuid>`), `TimesheetScope`,
+  `SingleScopeProvider` (`scope_mode: single`), **`TimesheetApproverProviderInterface`** (who approves whom, per scope).
+- **Period lock** `Timesheet\PeriodLockGuard::assertWritable($user, ?$scopeKey, $instant, WriteKind)`: hard lock
+  (`PeriodLockedException`, 409 `period_locked` with `lockedThrough`) and submitted soft lock
+  (`PeriodSubmittedException`, 409 `period_submitted`); a null scope is checked against every scope of the user.
+  Enforced on every bundle write path: `TimerService::startAt()` / `start()` / `switchTo()` / `resolveIdle()`,
+  `ImportedTimeEntryWriter` (new outcome `ImportedTimeEntryOutcome::Locked`, `ImportedTimeEntryBatchResult::$locked`),
+  imported-entry removals, `TeamAccessGuard::canEditEntry()` / `canDeleteImportedEntry()` (evaluated after the
+  listener: a grant is ignored). A stop is always allowed; an entry written into a period locked while its timer ran
+  fires `TimesheetLateEntryEvent`. Refusals fire `PeriodLockRefusedEvent` (ids only).
+- **Events** constants `TIMESHEET_SUBMITTED`, `TIMESHEET_WITHDRAWN`, `TIMESHEET_APPROVED`, `TIMESHEET_REJECTED`,
+  `TIMESHEET_REOPENED`, `TIMESHEET_AUTO_LOCKED`, `TIMESHEET_ACCESS_CHECK`, `TIMESHEET_LATE_ENTRY`,
+  `PERIOD_LOCK_REFUSED`, `BALANCE_LEDGER_LINE_ADDED`.
+- **`nowo:time-track:entries:backfill-scope [--batch=500] [--dry-run]`**: gives pre-1.13 entries their scope (keyset,
+  idempotent, resumable).
+- **Working time and hours balance** (`working_time`, off by default; contract §4): `WorkingTime\WorkingCalendarProviderInterface`
+  (`CalendarDay`, `CalendarDayKind`; default `DerivedWorkingCalendar` from the 1.12 working hours and days off; every
+  day validated by `CalendarDayNormalizer`, failing closed to `none`), `WorkedTimeSourceInterface` (`WorkedDay`; default
+  `TaskTimeWorkedTimeSource`: live task time of the scope, overlaps merged, `legalRecord: false`),
+  `OvertimePolicyInterface` (`OvertimeInput`, `OvertimeResult`; default `ConfigOvertimePolicy`: daily `expected` /
+  `ordinary_max` / `none`, weekly `expected` / `legal_max`, annual counter of ratified minus compensated-within-4-months
+  overtime with `overtime_cap_near` / `overtime_cap_exceeded` flags, informational `rest_short`, `break_missing`,
+  `long_day` flags), the pure `WorkingTimeBalanceCalculator` and `WorkingTimeBalanceService::report()` →
+  `BalanceReport` (days, ISO weeks, totals, running balance, ledger, `source: register|task_time`, `legalRecord`,
+  policy id + version). The running balance continues from the last locked timesheet's approved snapshot.
+- **Balance ledger** `WorkingTime\BalanceLedger::add()`: `opening` (once), `adjustment`, `overtime_paid` (negative),
+  `overtime_compensated` (positive), `reversal` (never edited, chained per owner and scope); approvers only, never the
+  owner; reasons required and sanitised; refused in a locked period; `overtime_ratified` only from the approval.
+  `BalanceLedgerLineAddedEvent`, `LedgerRefusedException` (stable codes).
+- **`Timesheet\TimesheetAccessGuard`**: tenant-aware view / submit / approve / reject / reopen / adjust decisions (no
+  self-approval, admin roles only with `timesheets.admin_roles_view` or `reopen_roles`), deny-only
+  `TimesheetAccessCheckEvent`; `TimesheetTimezoneResolver` (scope zone → working-hours zone → default).
+- **Timesheets** `Timesheet\TimesheetService` (contract §5): `submit` (owner only; refused with `timer_running`,
+  `not_started`, `not_ended` with `submit_requires_period_end`), `withdraw`, `approve` (approvers only, never the owner —
+  admins included —, entries hash re-checked → `stale`, hard lock, final snapshot, one `overtime_ratified` ledger line
+  with `working_time.overtime.ratify_on_approval`), `approveMany` (per-id outcomes), `reject` (comment 10–1000
+  characters, kept for the owner until the next submit), `reopen` (approver or `reopen_roles`, reason required, lock
+  cleared, ratified overtime reversed), `autoLock`, `queue`, `view` (row created on the owner's first view). Each
+  transition is one transaction with its audit row; concurrent decisions fail with `conflict` (optimistic `version`).
+  Other users' timesheets answer `not_found` (no existence oracle). `TimesheetException` (stable codes + HTTP status),
+  `TimesheetTransitionEvent` (ids only; comment presence flag).
+- **Audit trail** `TimesheetAuditTrail` (seq, `prev_hash`, head hash; `edit_blocked` rows with
+  `timesheets.audit_blocked_edits`, one per timesheet per minute) and `TimesheetSnapshotBuilder` (snapshot totals of
+  contract §5.8 and the canonical entries hash; imported entries counted apart, unassigned entries listed for the owner).
+- **Commands** `nowo:time-track:timesheets:auto-lock [--lookback-days=62]` (with `timesheets.auto_lock_after_days`;
+  rows only for users with entries), `nowo:time-track:timesheets:purge [--batch=500]` (retention: `retention_years`
+  after the end of the period's month; the only delete path) and `nowo:time-track:timesheets:verify [--scope] [--user]`
+  (`AuditChainVerifier`: names the first broken link of every timesheet and ledger chain).
+- `Repository\EntryOwnersRepositoryInterface` (implemented by `DoctrineOrmTimeEntryRepository`).
+- **Client API** (contract §10.1–§10.2, `TimeTrackWorkingTimeApiController`): `GET workday` and
+  `POST workday/{clock-in|break-start|break-end|clock-out}` (R-GDPR §8: `Workday\WorkdayProviderInterface`,
+  `WorkdayAction`, `WorkdayState`, `WorkdayConflictException`, `WorkdayForbiddenException`; `Idempotency-Key` replays for
+  24 h through `ClientIdempotencyStore`, `idempotency_mismatch`, `occurredAt` window), `GET balance`, `GET timesheets`,
+  `POST timesheets/{periodKey}/submit|withdraw`. New scopes `workday:read`, `workday:write`, `balance:read`,
+  `timesheet:read`, `timesheet:write` (explicit grant only, `ClientScope::defaults()`). `client_api.workday_provider`
+  and the `clients.routes` keys `workday`, `workday_action`, `balance`, `timesheets`, `timesheet_submit`,
+  `timesheet_withdraw`. Audit actions `workday_action`, `timesheet_submitted`, `timesheet_withdrawn`.
+- **`GET me`**: `features.workday` (real), `timesheets`, `balance`, `calendar_suggestions` / `manual_entries` (false
+  until 1.14), `task_effort`; `timesheet` summary of the current period (`Client\ClientWorkingTimeContext`).
+- **Task effort** (TimeTrackDesktop recommendation 4): `estimateSeconds`, `loggedSeconds` (total of every user, never
+  per user) and `remainingSeconds` on `GET tasks` and every timer payload; `TaskReference::$estimateSeconds` /
+  `$loggedSeconds` (optional), `Repository\TaskEffortRepositoryInterface` (Doctrine store implements it).
+- **Components** (contract §16a, no template overrides): `nowo_time_track_component('TimeTrack:TimesheetWeekGrid' |
+  'TimeTrack:BalanceCard' | 'TimeTrack:LedgerTable', props)` backed by `Ui\TimesheetViewBuilder`, with labels, visible
+  actions and their host URLs, density and row options; reject / reopen / adjustment / reversal dialogs follow the
+  UiKit 2.29 anatomy. `Timesheet\TimesheetFormHandler`, `Form\TimesheetDecisionType`, `Form\LedgerLineType`, the
+  `nowo_time_track_duration` filter. Translations in the 7 locales (`timesheet.*`, `balance.*`, `ledger.*`,
+  `reports.source_manual` / `source_calendar`).
+- `PeriodLockGuard::blockedEntryIds()` (one query per owner for lists).
+- `docs/WORKING-TIME.md`.
+- `TimeEntrySource::Manual` and `TimeEntrySource::Calendar` (live, editable; write paths in 1.14).
+- `Repository\FilteredImportedTimeEntryRepositoryInterface` (bulk removal that keeps locked entries) and
+  `Repository\ScopeBackfillRepositoryInterface`, both implemented by `DoctrineOrmTimeEntryRepository`.
+- `ValueObject\Uuid::generateV7()`, `Support\CanonicalJson`, `Support\StorageTime`.
+
+### Changed
+
+- **Default client scopes**: a token without stored scopes, a login whose authenticator names none and a device request
+  without `scopes` get `ClientScope::defaults()` (the four pre-1.13 scopes) instead of every scope. `ClientScope::all()`
+  still lists every case.
+- `GET me.features` gains keys and `GET me` gains `timesheet`; `RESERVED_FEATURES` is `['monitoring']`.
+- Entries (`GET entries`, `GET export` JSON) gain `scopeKey` (in `TimeEntry::toArray()`) and `locked`; the CSV gains
+  the columns `scope_key` and `locked` (appended; `TimeEntryCsv::render()` takes the locked ids as a 4th argument).
+- Timer routes answer `409 period_locked` (with `lockedThrough`) / `period_submitted` when timesheets are on.
+- `nowo-tech/ui-kit-bundle` constraint `^2.29` (was `^2.20`): the dialogs use the 2.29 anatomy.
+- `TimerService`, `ImportedTimeEntryWriter` and `TeamAccessGuard` take an optional `PeriodLockGuard` (and the first two
+  a scope provider) as their last constructor arguments; without them (or with timesheets off) they behave as in 1.12.
+- `TimeTrackMetadataListener` maps the three new tables (prefix and user class) through three optional arguments.
+
+### Security
+
+- REQ-SEC-004 audit GB (block 1): period keys are limited to a sane window (`Period::MIN_DATE` 2000-01-01 –
+  `Period::MAX_DATE` 2099-12-31; `Period::fromKey()` refuses keys outside it, `Period::inWindow()`; periods of stored
+  dates are unaffected) (GB-M1).
+- The ledger gets the unique index `uniq_time_track_balance_ledger_chain (owner_ref, scope_key, prev_hash)`: two
+  concurrent writers can no longer fork a chain (the second append fails) (GB-L4), the index
+  `idx_time_track_balance_ledger_reverses (reverses_id)` (GB-I8) and the column `purged_before` (DATE NULL, not hashed).
+- The retention purge deletes, per ledger chain, only the chain-order **prefix** of lines effective before the cut-off
+  and marks the first line kept (`purged_before`), so `timesheets:verify` keeps verifying the rest of the chain instead
+  of reporting it as broken; a timesheet still referenced by a kept ledger line is kept with it (GB-L3).
+- `nowo:time-track:entries:backfill-scope` leaves entries of a locked or submitted period without a scope and reports
+  them (`… left in a locked or submitted period`): an approved timesheet no longer gains entries after approval (GB-L5).
+- CI: the whole functional suite also runs on MySQL 8.0 and PostgreSQL 16 (`functional-databases` job).
+- REQ-SEC-004 audit GB (block 2): `WorkingTimeBalanceService::report()` has hard bounds — dates inside the period
+  window, the range ending at most `MAX_FUTURE_DAYS` (366) days after today (`InvalidArgumentException` otherwise), and a
+  computed span (running-balance start to the end of the range) of at most `MAX_SPAN_DAYS` (3660 days, ten calls):
+  beyond it no report is computed (null) and a `balance_span_exceeded` warning is logged; lock timesheets (their
+  snapshots restart the running balance) or move `working_time.balance.start_date` forward (GB-M1).
+- `BalanceLedger::add()` answers `LedgerRefusedException('conflict')` when a concurrent line was appended to the same
+  chain (unique chain index) instead of forking it (GB-L4).
+- REQ-SEC-004 audit GB (block 3): `TimesheetService::period()` answers `not_found` for keys outside the period window or
+  starting after the next period; `view()` creates the owner's row only for the current and the previous period
+  (contract §3.2, lazily on first view) and answers an unstored open draft (`Timesheet::isDraft()`) for any other
+  period; the new `peek()` never writes (GB-L1, GB-M1).
+- `timesheets:verify` accepts a ledger chain that restarts at the line marked by the retention purge and reports a
+  chain with more than one start (GB-L3).
+- `Timesheet\TimesheetPersonalDataExporter::export($ownerRef)` (public service): the person's timesheets with their
+  audit trail and their ledger lines, by `owner_ref`, without other people's ids, for the host's art. 15 / 20 export
+  (contract §12.4, GB-L6).
+- REQ-SEC-004 audit GB (block 4): `GET timesheets` and the week-grid component mask imported entries whose task the
+  owner can no longer see (title and description), as `GET entries` / `GET export` do since 1.11 (GB-M2).
+- **Task effort** (owner decision 2026-11-05, GB-M3): `loggedSeconds` is the caller's own total; the total of every user
+  only for users the host lets manage the task — new deny-by-default event `nowo_time_track.task_effort.access_check`
+  (`Event\TaskEffortAccessCheckEvent`, `TeamAccessGuard::canSeeTaskEffortTotal()`);
+  `TaskEffortRepositoryInterface::loggedSecondsByTask($taskIds, ?$userId)`. Tasks and timers gain
+  `loggedSecondsScope` (`own` / `all`, null without a figure) so clients can label the figure.
+- `timesheet.error.*` messages for every ledger refusal code (`forbidden`, `reason_required`, `invalid_seconds`,
+  `invalid_date`, `opening_exists`, `already_reversed`, `not_reversible`, `ratify_only`; `conflict`, `not_found` and
+  `invalid_request` shared, `conflict` reworded for both) in the seven locales.
+- `GET me` never creates a timesheet row (`TimesheetService::peek()`); `GET timesheets` answers `id: null` for an
+  unstored draft period, 404 for keys after the next period or outside 2000–2099; `GET balance` answers 400 for ranges
+  outside the window or ending more than 366 days after today (GB-L1, GB-M1).
+- `TimesheetFormHandler` checks the CSRF token itself (fails closed without a token manager) (GB-L2); owner actions
+  use the posted `scope` + `period` (new hidden fields of `TimesheetDecisionType`; drafts can be submitted) and a
+  foreign timesheet id is `not_found` (GB-I3); ledger minutes beyond ±527 040 are `invalid_seconds` instead of an
+  integer overflow (GB-I9).
+- The week grid and the ledger table check `canView()` for the viewer; the ledger table drops lines of another owner or
+  scope (GB-I2).
+- Docs: no web ledger rate limit in 1.13 (hosts must rate-limit), workday providers deduplicate on the idempotency key,
+  unscoped timers and submit, `TimesheetPersonalDataExporter`, ledger tail not anchored (GB-L6, GB-I4, GB-I6, GB-L4).
+- Demo: `nowo-tech/ui-kit-bundle` 2.30 (lock refreshed with Symfony 8.1.11, no advisories) and a minimal 1.13 showcase
+  page `/timesheet` (week grid + balance card, submit / withdraw through `TimesheetFormHandler`).
+
 ## [1.12.0] - 2026-11-05
 
 Minor release (additive): days off on `GET me` and one shape for `workingHours`.

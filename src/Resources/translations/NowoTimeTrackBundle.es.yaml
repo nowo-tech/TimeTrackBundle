@@ -33,6 +33,8 @@ reports:
   source_extension: Extensión del navegador
   source_desktop: Aplicación de escritorio
   source_import: Importado
+  source_manual: "Manual"
+  source_calendar: "Calendario"
   task_not_visible: Tarea no visible
 flash:
   timer_started: Temporizador iniciado.
@@ -72,3 +74,109 @@ downloads:
   macos: "App de escritorio para macOS"
   linux: "App de escritorio para Linux"
   latest_version: "Última versión de escritorio"
+timesheet:
+  title: "Hoja de horas %period%"
+  task: "Tarea"
+  total: "Total"
+  expected: "Previsto"
+  diff: "Diferencia"
+  empty: "No hay tiempo en este periodo."
+  unassigned: "%count% entradas sin organización no forman parte de esta hoja."
+  locked_through: "Bloqueada hasta el %date%"
+  decision_comment: "Comentario de la revisión:"
+  comment: "Comentario"
+  status:
+    open: "Abierta"
+    submitted: "Enviada"
+    approved: "Aprobada"
+    rejected: "Rechazada"
+  action:
+    submit: "Enviar semana"
+    withdraw: "Retirar envío"
+    approve: "Aprobar"
+    reject: "Rechazar"
+    reopen: "Reabrir"
+  dialog:
+    cancel: "Cancelar"
+    submit_title: "Enviar la semana"
+    withdraw_title: "Retirar el envío"
+    approve_title: "Aprobar la hoja de horas"
+    reject_title: "Rechazar la hoja de horas"
+    reopen_title: "Reabrir el periodo"
+  error:
+    not_found: "Hoja de horas no encontrada."
+    invalid_transition: "Esta acción no es posible en el estado actual."
+    timer_running: "Detén primero el temporizador en marcha de este periodo."
+    not_started: "El periodo aún no ha empezado."
+    not_ended: "El periodo aún no ha terminado."
+    stale: "Las entradas han cambiado desde el envío. Recarga y revisa de nuevo."
+    conflict: "Otra persona ha hecho un cambio a la vez. Recarga y vuelve a intentarlo."
+    comment_required: "Escribe un comentario de 10 a 1000 caracteres."
+    invalid_request: "El formulario no es válido o ha caducado. Recarga e inténtalo de nuevo."
+    period_locked: "Este periodo está bloqueado."
+    period_submitted: "Este periodo está enviado para aprobación."
+    forbidden: "No puedes cambiar este saldo."
+    reason_required: "Este movimiento necesita un motivo."
+    invalid_seconds: "La cantidad no es válida para este tipo de movimiento."
+    invalid_date: "La fecha de efecto no es válida."
+    opening_exists: "Este saldo ya tiene una línea de apertura."
+    already_reversed: "Este movimiento ya está revertido."
+    not_reversible: "Una reversión no se puede revertir."
+    ratify_only: "Las horas extra ratificadas solo las escribe la aprobación."
+  weekday:
+    "1": "Lun"
+    "2": "Mar"
+    "3": "Mié"
+    "4": "Jue"
+    "5": "Vie"
+    "6": "Sáb"
+    "7": "Dom"
+balance:
+  title: "Saldo de horas"
+  balance: "Saldo"
+  expected: "Previsto"
+  worked: "Trabajado"
+  diff: "Diferencia"
+  overtime: "Horas extra"
+  overtime_year: "Horas extra %year% (computadas / tope)"
+  legal_notice: "Tiempo de tareas, no es un registro de jornada"
+  source:
+    register: "Registro de jornada"
+    task_time: "Tiempo de tareas"
+  range:
+    week: "Semana %from% – %to%"
+    month: "Mes %from% – %to%"
+    year: "Año %from% – %to%"
+    custom: "%from% – %to%"
+  flag:
+    overtime_cap_near: "Cerca del tope anual de horas extra"
+    overtime_cap_exceeded: "Tope anual de horas extra superado"
+ledger:
+  title: "Movimientos del saldo"
+  empty: "Sin movimientos."
+  reversed: "Anulado"
+  kind_label: "Tipo"
+  minutes: "Minutos"
+  minutes_help: "Con signo: los minutos negativos restan del saldo."
+  effective_date: "Fecha de efecto"
+  reason: "Motivo"
+  kind:
+    opening: "Saldo inicial"
+    adjustment: "Ajuste"
+    overtime_ratified: "Horas extra ratificadas"
+    overtime_paid: "Horas extra pagadas"
+    overtime_compensated: "Horas extra compensadas con descanso"
+    reversal: "Anulación"
+  column:
+    effectiveDate: "Fecha"
+    kind: "Tipo"
+    seconds: "Importe"
+    reason: "Motivo"
+    createdAt: "Registrado"
+    actions: "Acciones"
+  action:
+    add_adjustment: "Añadir ajuste"
+    reversal: "Anular"
+  dialog:
+    add_title: "Añadir un movimiento al saldo"
+    reversal_title: "Anular este movimiento"

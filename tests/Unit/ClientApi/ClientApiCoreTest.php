@@ -112,7 +112,7 @@ final class ClientApiCoreTest extends TestCase
 
     public function testScopesAuthResultAndTokens(): void
     {
-        self::assertSame(ClientScope::all(), ClientScope::normalize(null));
+        self::assertSame(ClientScope::defaults(), ClientScope::normalize(null));
         self::assertSame([ClientScope::TimerRead, ClientScope::EntriesRead], ClientScope::normalize(['entries:read', ClientScope::TimerRead, 'admin', 7, 'entries:read']));
         self::assertSame([], ClientScope::normalize(['admin']));
 
@@ -121,13 +121,13 @@ final class ClientApiCoreTest extends TestCase
         self::assertSame('pw-1', $result->getCredentialId());
         self::assertSame([ClientScope::TasksRead], $result->getScopes());
         self::assertNull(ClientAuthResult::success($user, '')->getCredentialId());
-        self::assertSame(ClientScope::all(), ClientAuthResult::success($user)->getScopes());
+        self::assertSame(ClientScope::defaults(), ClientAuthResult::success($user)->getScopes());
         self::assertSame([], ClientAuthResult::failure()->getScopes());
 
         $issued = new DateTimeImmutable('2026-11-01 08:00:00');
         $legacy = new ClientToken('h', new DateTimeImmutable('+1 hour'), $user, ClientType::Desktop, $issued);
         self::assertNull($legacy->getCredentialId());
-        self::assertSame(ClientScope::all(), $legacy->getScopes(), '1.8 tokens keep every scope');
+        self::assertSame(ClientScope::defaults(), $legacy->getScopes(), '1.8 tokens keep the pre-1.13 scopes');
         self::assertSame($issued, $legacy->getIssuedAt());
         $scoped = new ClientToken('h2', new DateTimeImmutable('+1 hour'), $user, ClientType::Desktop, null, 'pw', ['timer:read']);
         self::assertTrue($scoped->hasScope(ClientScope::TimerRead));

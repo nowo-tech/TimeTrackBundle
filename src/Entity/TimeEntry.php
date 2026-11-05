@@ -27,6 +27,8 @@ use const DATE_ATOM;
 #[ORM\Index(name: 'time_track_entries_ended_idx', columns: ['ended_at', 'id'])]
 #[ORM\Index(name: 'idx_time_track_entries_source', columns: ['source'])]
 #[ORM\UniqueConstraint(name: 'uniq_time_track_entries_external', columns: ['external_source', 'external_id'])]
+// Since 1.13: period queries and lock checks per tenant scope.
+#[ORM\Index(name: 'idx_time_track_entries_user_scope_started', columns: ['user_id', 'scope_key', 'started_at'])]
 class TimeEntry
 {
     /**
@@ -57,6 +59,13 @@ class TimeEntry
     /** Since 1.11: plain-text description, kept in full (no length cap). */
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $description = null;
+
+    /**
+     * Since 1.13: host tenant scope at write time (timesheets); null = unknown (pre-1.13 rows until back-filled, or
+     * timesheets off). A null-scope entry belongs to no timesheet.
+     */
+    #[ORM\Column(name: 'scope_key', type: 'string', length: 64, nullable: true)]
+    private ?string $scopeKey = null;
 
     /**
      * Creates a time entry.
@@ -116,9 +125,7 @@ class TimeEntry
      */
     public function applyImport(ImportedTimeEntryData $data): bool
     {
-        $before = [$this->taskId, $this->taskTitleSnapshot, $this->boardIdSnapshot, $this->startedAt->getTimestamp(), $this->endedAt->getTimestamp(), $this->durationSeconds, $this->billable, $this->description];
-        $after  = [$data->taskId, $data->taskTitle, $data->boardId, $data->startedAt->getTimestamp(), $data->endedAt->getTimestamp(), $data->durationSeconds, $data->billable, $data->description];
-        if ($before === $after) {
+        if (!$this->differsFromImport($data)) {
             return false;
         }
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
@@ -143,6 +150,19 @@ class TimeEntry
         $this->description = $data->description;
 
         return true;
+    }
+
+    /**
+     * Since 1.13: whether {@see self::applyImport()} would change a field (checked before the period lock).
+     *
+     * @internal used by the imported-entry writer only
+     */
+    public function differsFromImport(ImportedTimeEntryData $data): bool
+    {
+        $before = [$this->taskId, $this->taskTitleSnapshot, $this->boardIdSnapshot, $this->startedAt->getTimestamp(), $this->endedAt->getTimestamp(), $this->durationSeconds, $this->billable, $this->description];
+        $after  = [$data->taskId, $data->taskTitle, $data->boardId, $data->startedAt->getTimestamp(), $data->endedAt->getTimestamp(), $data->durationSeconds, $data->billable, $data->description];
+
+        return $before !== $after;
     }
 
     /**
@@ -266,6 +286,28 @@ class TimeEntry
     }
 
     /**
+     * Since 1.13: tenant scope of the entry (null = unknown, belongs to no timesheet).
+     */
+    public function getScopeKey(): ?string
+    {
+        return $this->scopeKey;
+    }
+
+    /**
+     * Since 1.13: sets the tenant scope (the timer service and the import writer at write time, the back-fill command
+     * afterwards). At most 64 characters.
+     *
+     * @internal
+     */
+    public function assignScopeKey(?string $scopeKey): self
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->scopeKey = $scopeKey;
+
+        return $this;
+    }
+
+    /**
      * Creation time.
      */
     public function getCreatedAt(): DateTimeImmutable
@@ -298,6 +340,8 @@ class TimeEntry
             'description'     => $taskVisible ? $this->description : null,
             'readOnly'        => $this->isReadOnly(),
             'taskVisible'     => $taskVisible,
+            // Since 1.13: tenant scope (null = unassigned).
+            'scopeKey' => $this->scopeKey,
         ];
     }
 }

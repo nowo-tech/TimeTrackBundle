@@ -1,0 +1,26 @@
+{#
+  TimeTrack 1.13 showcase: the bundle's configurable components inside the demo layout (no template override).
+#}
+{% extends nowo_ui_layout.admin %}
+
+{% block nowo_ui_document_title %}{{ 'timesheet.title'|trans({'%period%': timesheet.period.key}, 'NowoTimeTrackBundle') }}{% endblock %}
+
+{% block nowo_ui_content %}
+    <div data-testid="demo-timesheet">
+        {# Flash messages (already translated) are rendered by the UiKit admin layout. #}
+        <nav class="d-flex gap-2 mb-3" aria-label="Periods">
+            <a class="btn btn-outline-secondary btn-sm" href="{{ path('app_timesheet', {period: previous}) }}">&larr; {{ previous }}</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ path('app_timesheet') }}">{{ 'demo.timesheet.current'|trans }}</a>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ path('app_timesheet', {period: next}) }}">{{ next }} &rarr;</a>
+        </nav>
+        {{ nowo_time_track_component('TimeTrack:TimesheetWeekGrid', {timesheet: timesheet, viewer: app.user, options: {
+            action_urls: {submit: path('app_timesheet_action', {action: 'submit'}), withdraw: path('app_timesheet_action', {action: 'withdraw'})},
+            density: 'compact',
+        }}) }}
+        {% if report %}
+            <div class="mt-4">
+                {{ nowo_time_track_component('TimeTrack:BalanceCard', {report: report, options: {range: 'week'}}) }}
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

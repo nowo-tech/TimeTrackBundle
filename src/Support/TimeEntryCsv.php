@@ -27,7 +27,7 @@ use const DATE_ATOM;
 final class TimeEntryCsv
 {
     /** Header row. */
-    public const HEADER = ['id', 'taskId', 'taskTitle', 'boardId', 'startedAt', 'endedAt', 'durationSeconds', 'source', 'note', 'billable', 'description', 'imported'];
+    public const HEADER = ['id', 'taskId', 'taskTitle', 'boardId', 'startedAt', 'endedAt', 'durationSeconds', 'source', 'note', 'billable', 'description', 'imported', 'scope_key', 'locked'];
 
     /**
      * CSV text of the entries (header first, RFC 4180 quoting). Since 1.11 the columns `billable`, `description` and
@@ -37,8 +37,9 @@ final class TimeEntryCsv
      *
      * @param list<TimeEntry> $entries
      * @param array<string, true> $hiddenTaskEntryIds entry id => true ({@see TimerService::hiddenTaskEntryIds()})
+     * @param array<string, true> $lockedEntryIds Since 1.13: entry id => true for entries of a locked or submitted period (`locked` column; `scope_key` is appended too)
      */
-    public static function render(array $entries, array $hiddenTaskEntryIds = [], string $hiddenTitle = TimeEntry::HIDDEN_TASK_TITLE): string
+    public static function render(array $entries, array $hiddenTaskEntryIds = [], string $hiddenTitle = TimeEntry::HIDDEN_TASK_TITLE, array $lockedEntryIds = []): string
     {
         /** @var resource $stream php://temp always opens */
         $stream = fopen('php://temp', 'r+');
@@ -63,6 +64,8 @@ final class TimeEntryCsv
                 },
                 self::cell($hidden ? '' : $entry->getDescription() ?? ''),
                 $entry->isReadOnly() ? 'yes' : 'no',
+                self::cell($entry->getScopeKey() ?? ''),
+                isset($lockedEntryIds[$entry->getId()]) ? 'yes' : 'no',
             ], ',', '"', '');
         }
         rewind($stream);

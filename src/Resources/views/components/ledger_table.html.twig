@@ -1,0 +1,41 @@
+{#
+  TimeTrack:LedgerTable (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::ledgerTable()): rows (ledger
+  lines + reversed + reversalForm), columns (effectiveDate, kind, seconds, reason, createdAt), addForm (null = not
+  allowed or no URL), labels, density. Reversal and adjustment dialogs follow the UiKit 2.29 anatomy.
+#}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
+{% set _l = view.labels %}
+{% set _b = 'time_track' %}
+<section class="{{ nowo_ui_class('card', _b) }} nowo-time-track-ledger nowo-time-track--{{ view.density }}" data-testid="time-track-ledger">
+    <header class="{{ nowo_ui_class('card_header', _b) }}">
+        <h2 class="{{ nowo_ui_class('card_title', _b) }}">{{ (_l.title ?? 'ledger.title')|trans }}</h2>
+        {% if view.addForm %}{{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: view.addForm, label: (_l.action_add_adjustment ?? 'ledger.action.add_adjustment')|trans, dialog: true, dialog_id: 'time-track-ledger-add', title: 'ledger.dialog.add_title'|trans, primary: true}) }}{% endif %}
+    </header>
+    <div class="{{ nowo_ui_class('table_wrap', _b) }}">
+        <table class="{{ nowo_ui_class('table', _b) }}">
+            <thead class="{{ nowo_ui_class('table_head', _b) }}">
+                <tr class="{{ nowo_ui_class('table_head_row', _b) }}">
+                    {% for column in view.columns %}<th class="{{ nowo_ui_class('table_head_cell', _b) }}" scope="col">{{ (_l[column] ?? ('ledger.column.' ~ column))|trans }}</th>{% endfor %}
+                    <th class="{{ nowo_ui_class('table_actions_head', _b) }}" scope="col"><span class="nowo-ui-visually-hidden">{{ 'ledger.column.actions'|trans }}</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in view.rows %}
+                    <tr class="{{ nowo_ui_class('table_row', _b) }}" data-line="{{ row.id }}"{% if row.reversed %} data-reversed="1"{% endif %}>
+                        {% for column in view.columns %}
+                            <td class="{{ nowo_ui_class('table_cell', _b) }}">
+                                {%- if column == 'kind' -%}{{ ('ledger.kind.' ~ row.kind)|trans }}{% if row.reversed %} <span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ 'ledger.reversed'|trans }}</span>{% endif %}
+                                {%- elseif column == 'seconds' -%}{{ row.seconds|nowo_time_track_duration(true) }}
+                                {%- elseif column == 'createdAt' -%}<time datetime="{{ row.createdAt }}">{{ row.createdAt|date('Y-m-d H:i') }}</time>
+                                {%- else -%}{{ attribute(row, column) ?? '' }}{%- endif -%}
+                            </td>
+                        {% endfor %}
+                        <td class="{{ nowo_ui_class('table_actions_cell', _b) }}">{% if row.reversalForm %}{{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: row.reversalForm, label: (_l.action_reversal ?? 'ledger.action.reversal')|trans, dialog: true, dialog_id: 'time-track-ledger-reverse-' ~ row.id, title: 'ledger.dialog.reversal_title'|trans, primary: false}) }}{% endif %}</td>
+                    </tr>
+                {% else %}
+                    <tr class="{{ nowo_ui_class('table_row', _b) }}"><td class="{{ nowo_ui_class('table_cell_muted', _b) }}" colspan="{{ view.columns|length + 1 }}">{{ (_l.empty ?? 'ledger.empty')|trans }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>

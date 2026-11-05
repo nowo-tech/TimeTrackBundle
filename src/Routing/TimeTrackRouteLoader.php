@@ -8,6 +8,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackManageController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
@@ -89,6 +90,16 @@ final class TimeTrackRouteLoader extends Loader
                 'timer_discard_idle' => ['timerDiscardIdle', ['POST', 'OPTIONS']],
                 'export'             => ['export', ['GET', 'OPTIONS']],
             ];
+            // Since 1.13 (contract §10.2): the working-time routes (404 while their feature is off).
+            $workingTime = TimeTrackWorkingTimeApiController::class;
+            $apiMap += [
+                'workday'            => ['workday', ['GET', 'OPTIONS'], $workingTime],
+                'workday_action'     => ['workdayAction', ['POST', 'OPTIONS'], $workingTime],
+                'balance'            => ['balance', ['GET', 'OPTIONS'], $workingTime],
+                'timesheets'         => ['timesheet', ['GET', 'OPTIONS'], $workingTime],
+                'timesheet_submit'   => ['timesheetSubmit', ['POST', 'OPTIONS'], $workingTime],
+                'timesheet_withdraw' => ['timesheetWithdraw', ['POST', 'OPTIONS'], $workingTime],
+            ];
             if ($this->deviceFlowEnabled) {
                 $apiMap['device_code']  = ['code', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
                 $apiMap['device_token'] = ['token', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
@@ -105,6 +116,7 @@ final class TimeTrackRouteLoader extends Loader
                         $this->clientRoutes[$key]['path'],
                         ['_controller' => ($route[2] ?? $apiController) . '::' . $route[0]],
                         $route[1],
+                        self::REQUIREMENTS,
                     ),
                 );
             }
@@ -112,6 +124,12 @@ final class TimeTrackRouteLoader extends Loader
 
         return $collection;
     }
+
+    /** Since 1.13: placeholders of the working-time routes. */
+    public const REQUIREMENTS = [
+        'action'    => 'clock-in|break-start|break-end|clock-out',
+        'periodKey' => 'current|previous|\d{4}-W\d{2}|\d{4}-\d{2}',
+    ];
 
     /**
      * Whether the resource is the `nowo_time_track` route import.

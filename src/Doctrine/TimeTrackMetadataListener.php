@@ -8,9 +8,12 @@ use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
 
 use function array_replace_recursive;
 use function in_array;
@@ -31,6 +34,9 @@ final readonly class TimeTrackMetadataListener
         private string $clientTokensTableName,
         private string $userClass,
         private string $deviceCodesTableName = 'time_track_device_codes',
+        private string $timesheetsTableName = 'time_track_timesheets',
+        private string $timesheetEventsTableName = 'time_track_timesheet_events',
+        private string $balanceLedgerTableName = 'time_track_balance_ledger',
     ) {
     }
 
@@ -47,10 +53,13 @@ final readonly class TimeTrackMetadataListener
             ActiveTimer::class         => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->activeTimersTableName])),
             ClientToken::class         => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->clientTokensTableName])),
             DeviceAuthorization::class => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->deviceCodesTableName])),
+            Timesheet::class           => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->timesheetsTableName])),
+            TimesheetEvent::class      => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->timesheetEventsTableName])),
+            BalanceLedgerLine::class   => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->balanceLedgerTableName])),
             default                    => null,
         };
 
-        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class], true)) {
+        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class, Timesheet::class, BalanceLedgerLine::class], true)) {
             return;
         }
 

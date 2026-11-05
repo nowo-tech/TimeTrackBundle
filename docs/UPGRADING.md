@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.13.0](#to-1130)
 - [To 1.12.0](#to-1120)
 - [To 1.11.0](#to-1110)
 - [To 1.10.3](#to-1103)
@@ -52,6 +53,206 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.13.0
+
+From **1.12.0** (unreleased; built as stacked PRs, contract `timetrack-next` v1.0):
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+**Schema migration required (every host).** 1.13 adds one nullable column to `time_track_entries` and three tables
+that are always mapped, whatever the configuration (empty until timesheets are enabled): `time_track_timesheets`,
+`time_track_timesheet_events` (audit trail) and `time_track_balance_ledger`. Run `doctrine:migrations:diff` (the diff
+is exactly the statements below for the default prefix) or apply the reference SQL of your platform. Replace `users`
+and `INT` with your user table and its primary-key type (Beacon: `INT`). The names `IDX_…` / `FK_…` are the ones
+Doctrine derives for the default `time_track_` prefix; with another prefix, let `doctrine:migrations:diff` name them.
+No data is rewritten; the files are also in `docs/sql/1.13.0/`, and the demo ships the MySQL one as
+`demo/symfony8/migrations/Version20261106000000.php`.
+
+<details><summary>MySQL 8 / MariaDB (docs/sql/1.13.0/mysql-up.sql)</summary>
+
+```sql
+-- TimeTrackBundle 1.13.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type).
+ALTER TABLE time_track_entries ADD scope_key VARCHAR(64) DEFAULT NULL;
+CREATE INDEX idx_time_track_entries_user_scope_started ON time_track_entries (user_id, scope_key, started_at);
+CREATE TABLE time_track_timesheets (id VARCHAR(36) NOT NULL, period_kind VARCHAR(8) NOT NULL, period_start DATE NOT NULL, period_end DATE NOT NULL, status VARCHAR(16) NOT NULL, locked_at DATETIME DEFAULT NULL, lock_reason VARCHAR(16) DEFAULT NULL, submitted_at DATETIME DEFAULT NULL, submitted_by_ref VARCHAR(64) DEFAULT NULL, decided_at DATETIME DEFAULT NULL, decided_by_ref VARCHAR(64) DEFAULT NULL, decision_comment VARCHAR(1000) DEFAULT NULL, totals JSON DEFAULT NULL, entries_hash CHAR(64) DEFAULT NULL, head_hash CHAR(64) DEFAULT NULL, version INT DEFAULT 1 NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, owner_ref VARCHAR(64) NOT NULL, scope_key VARCHAR(64) NOT NULL, timezone VARCHAR(64) NOT NULL, user_id INT DEFAULT NULL, INDEX idx_time_track_timesheets_queue (scope_key, status, period_start), INDEX idx_time_track_timesheets_lock (user_id, scope_key, locked_at, period_end), UNIQUE INDEX uniq_time_track_timesheets_period (user_id, scope_key, period_kind, period_start), INDEX IDX_B3267224A76ED395 (user_id), PRIMARY KEY (id));
+CREATE TABLE time_track_timesheet_events (id VARCHAR(36) NOT NULL, occurred_at DATETIME NOT NULL, hash CHAR(64) NOT NULL, seq INT NOT NULL, action VARCHAR(24) NOT NULL, from_status VARCHAR(16) NOT NULL, to_status VARCHAR(16) NOT NULL, actor_ref VARCHAR(64) DEFAULT NULL, actor_role VARCHAR(16) NOT NULL, client VARCHAR(16) NOT NULL, prev_hash CHAR(64) DEFAULT NULL, comment VARCHAR(1000) DEFAULT NULL, entries_hash CHAR(64) DEFAULT NULL, totals JSON DEFAULT NULL, timesheet_id VARCHAR(36) NOT NULL, UNIQUE INDEX uniq_time_track_timesheet_events_seq (timesheet_id, seq), INDEX IDX_6F44086ABDD46BE (timesheet_id), PRIMARY KEY (id));
+CREATE TABLE time_track_balance_ledger (id VARCHAR(36) NOT NULL, effective_date DATE NOT NULL, created_at DATETIME NOT NULL, hash CHAR(64) NOT NULL, purged_before DATE DEFAULT NULL, owner_ref VARCHAR(64) NOT NULL, scope_key VARCHAR(64) NOT NULL, kind VARCHAR(24) NOT NULL, seconds INT NOT NULL, prev_hash CHAR(64) DEFAULT NULL, reason VARCHAR(500) DEFAULT NULL, reverses_id VARCHAR(36) DEFAULT NULL, actor_ref VARCHAR(64) DEFAULT NULL, timesheet_id VARCHAR(36) DEFAULT NULL, user_id INT DEFAULT NULL, INDEX idx_time_track_balance_ledger_user (user_id, scope_key, effective_date), INDEX idx_time_track_balance_ledger_timesheet (timesheet_id), INDEX idx_time_track_balance_ledger_reverses (reverses_id), UNIQUE INDEX uniq_time_track_balance_ledger_chain (owner_ref, scope_key, prev_hash), INDEX IDX_24B61F4DA76ED395 (user_id), PRIMARY KEY (id));
+ALTER TABLE time_track_timesheets ADD CONSTRAINT FK_B3267224A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL;
+ALTER TABLE time_track_timesheet_events ADD CONSTRAINT FK_6F44086ABDD46BE FOREIGN KEY (timesheet_id) REFERENCES time_track_timesheets (id) ON DELETE CASCADE;
+ALTER TABLE time_track_balance_ledger ADD CONSTRAINT FK_24B61F4DABDD46BE FOREIGN KEY (timesheet_id) REFERENCES time_track_timesheets (id) ON DELETE SET NULL;
+ALTER TABLE time_track_balance_ledger ADD CONSTRAINT FK_24B61F4DA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL;
+```
+
+Rollback:
+
+```sql
+-- Rollback to 1.12 (MySQL / MariaDB): drops the 1.13 tables and the entry scope; 1.12 ignores them otherwise.
+ALTER TABLE time_track_balance_ledger DROP FOREIGN KEY FK_24B61F4DABDD46BE;
+ALTER TABLE time_track_balance_ledger DROP FOREIGN KEY FK_24B61F4DA76ED395;
+ALTER TABLE time_track_timesheet_events DROP FOREIGN KEY FK_6F44086ABDD46BE;
+ALTER TABLE time_track_timesheets DROP FOREIGN KEY FK_B3267224A76ED395;
+DROP TABLE time_track_balance_ledger;
+DROP TABLE time_track_timesheet_events;
+DROP TABLE time_track_timesheets;
+DROP INDEX idx_time_track_entries_user_scope_started ON time_track_entries;
+ALTER TABLE time_track_entries DROP scope_key;
+```
+
+</details>
+
+<details><summary>PostgreSQL 13+ (docs/sql/1.13.0/postgresql-up.sql)</summary>
+
+```sql
+-- TimeTrackBundle 1.13.0, PostgreSQL 13+ (default table prefix; replace `users` and INT with your user table and PK type).
+ALTER TABLE time_track_entries ADD scope_key VARCHAR(64) DEFAULT NULL;
+CREATE INDEX idx_time_track_entries_user_scope_started ON time_track_entries (user_id, scope_key, started_at);
+CREATE TABLE time_track_timesheets (id VARCHAR(36) NOT NULL, period_kind VARCHAR(8) NOT NULL, period_start DATE NOT NULL, period_end DATE NOT NULL, status VARCHAR(16) NOT NULL, locked_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, lock_reason VARCHAR(16) DEFAULT NULL, submitted_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, submitted_by_ref VARCHAR(64) DEFAULT NULL, decided_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, decided_by_ref VARCHAR(64) DEFAULT NULL, decision_comment VARCHAR(1000) DEFAULT NULL, totals JSON DEFAULT NULL, entries_hash CHAR(64) DEFAULT NULL, head_hash CHAR(64) DEFAULT NULL, version INT DEFAULT 1 NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, owner_ref VARCHAR(64) NOT NULL, scope_key VARCHAR(64) NOT NULL, timezone VARCHAR(64) NOT NULL, user_id INT DEFAULT NULL, PRIMARY KEY (id));
+CREATE INDEX idx_time_track_timesheets_queue ON time_track_timesheets (scope_key, status, period_start);
+CREATE INDEX idx_time_track_timesheets_lock ON time_track_timesheets (user_id, scope_key, locked_at, period_end);
+CREATE UNIQUE INDEX uniq_time_track_timesheets_period ON time_track_timesheets (user_id, scope_key, period_kind, period_start);
+CREATE INDEX IDX_B3267224A76ED395 ON time_track_timesheets (user_id);
+CREATE TABLE time_track_timesheet_events (id VARCHAR(36) NOT NULL, occurred_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, hash CHAR(64) NOT NULL, seq INT NOT NULL, action VARCHAR(24) NOT NULL, from_status VARCHAR(16) NOT NULL, to_status VARCHAR(16) NOT NULL, actor_ref VARCHAR(64) DEFAULT NULL, actor_role VARCHAR(16) NOT NULL, client VARCHAR(16) NOT NULL, prev_hash CHAR(64) DEFAULT NULL, comment VARCHAR(1000) DEFAULT NULL, entries_hash CHAR(64) DEFAULT NULL, totals JSON DEFAULT NULL, timesheet_id VARCHAR(36) NOT NULL, PRIMARY KEY (id));
+CREATE UNIQUE INDEX uniq_time_track_timesheet_events_seq ON time_track_timesheet_events (timesheet_id, seq);
+CREATE INDEX IDX_6F44086ABDD46BE ON time_track_timesheet_events (timesheet_id);
+CREATE TABLE time_track_balance_ledger (id VARCHAR(36) NOT NULL, effective_date DATE NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, hash CHAR(64) NOT NULL, purged_before DATE DEFAULT NULL, owner_ref VARCHAR(64) NOT NULL, scope_key VARCHAR(64) NOT NULL, kind VARCHAR(24) NOT NULL, seconds INT NOT NULL, prev_hash CHAR(64) DEFAULT NULL, reason VARCHAR(500) DEFAULT NULL, reverses_id VARCHAR(36) DEFAULT NULL, actor_ref VARCHAR(64) DEFAULT NULL, timesheet_id VARCHAR(36) DEFAULT NULL, user_id INT DEFAULT NULL, PRIMARY KEY (id));
+CREATE INDEX idx_time_track_balance_ledger_user ON time_track_balance_ledger (user_id, scope_key, effective_date);
+CREATE INDEX idx_time_track_balance_ledger_timesheet ON time_track_balance_ledger (timesheet_id);
+CREATE INDEX idx_time_track_balance_ledger_reverses ON time_track_balance_ledger (reverses_id);
+CREATE UNIQUE INDEX uniq_time_track_balance_ledger_chain ON time_track_balance_ledger (owner_ref, scope_key, prev_hash);
+CREATE INDEX IDX_24B61F4DA76ED395 ON time_track_balance_ledger (user_id);
+ALTER TABLE time_track_timesheets ADD CONSTRAINT FK_B3267224A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE;
+ALTER TABLE time_track_timesheet_events ADD CONSTRAINT FK_6F44086ABDD46BE FOREIGN KEY (timesheet_id) REFERENCES time_track_timesheets (id) ON DELETE CASCADE NOT DEFERRABLE;
+ALTER TABLE time_track_balance_ledger ADD CONSTRAINT FK_24B61F4DABDD46BE FOREIGN KEY (timesheet_id) REFERENCES time_track_timesheets (id) ON DELETE SET NULL NOT DEFERRABLE;
+ALTER TABLE time_track_balance_ledger ADD CONSTRAINT FK_24B61F4DA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE;
+```
+
+Rollback:
+
+```sql
+-- Rollback to 1.12 (PostgreSQL): drops the 1.13 tables and the entry scope; 1.12 ignores them otherwise.
+ALTER TABLE time_track_balance_ledger DROP CONSTRAINT FK_24B61F4DABDD46BE;
+ALTER TABLE time_track_balance_ledger DROP CONSTRAINT FK_24B61F4DA76ED395;
+ALTER TABLE time_track_timesheet_events DROP CONSTRAINT FK_6F44086ABDD46BE;
+ALTER TABLE time_track_timesheets DROP CONSTRAINT FK_B3267224A76ED395;
+DROP TABLE time_track_balance_ledger;
+DROP TABLE time_track_timesheet_events;
+DROP TABLE time_track_timesheets;
+DROP INDEX idx_time_track_entries_user_scope_started;
+ALTER TABLE time_track_entries DROP scope_key;
+```
+
+</details>
+
+<details><summary>SQLite 3.35+ (docs/sql/1.13.0/sqlite-up.sql)</summary>
+
+```sql
+-- TimeTrackBundle 1.13.0, SQLite 3.35+ (default table prefix; replace `users` with your user table). Foreign keys are declared inline.
+ALTER TABLE time_track_entries ADD COLUMN scope_key VARCHAR(64) DEFAULT NULL;
+CREATE INDEX idx_time_track_entries_user_scope_started ON time_track_entries (user_id, scope_key, started_at);
+CREATE TABLE time_track_timesheets (id VARCHAR(36) NOT NULL, period_kind VARCHAR(8) NOT NULL, period_start DATE NOT NULL, period_end DATE NOT NULL, status VARCHAR(16) NOT NULL, locked_at DATETIME DEFAULT NULL, lock_reason VARCHAR(16) DEFAULT NULL, submitted_at DATETIME DEFAULT NULL, submitted_by_ref VARCHAR(64) DEFAULT NULL, decided_at DATETIME DEFAULT NULL, decided_by_ref VARCHAR(64) DEFAULT NULL, decision_comment VARCHAR(1000) DEFAULT NULL, totals CLOB DEFAULT NULL, entries_hash CHAR(64) DEFAULT NULL, head_hash CHAR(64) DEFAULT NULL, version INTEGER DEFAULT 1 NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, owner_ref VARCHAR(64) NOT NULL, scope_key VARCHAR(64) NOT NULL, timezone VARCHAR(64) NOT NULL, user_id INTEGER DEFAULT NULL, PRIMARY KEY (id), CONSTRAINT FK_B3267224A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE INDEX idx_time_track_timesheets_queue ON time_track_timesheets (scope_key, status, period_start);
+CREATE INDEX idx_time_track_timesheets_lock ON time_track_timesheets (user_id, scope_key, locked_at, period_end);
+CREATE UNIQUE INDEX uniq_time_track_timesheets_period ON time_track_timesheets (user_id, scope_key, period_kind, period_start);
+CREATE INDEX IDX_B3267224A76ED395 ON time_track_timesheets (user_id);
+CREATE TABLE time_track_timesheet_events (id VARCHAR(36) NOT NULL, occurred_at DATETIME NOT NULL, hash CHAR(64) NOT NULL, seq INTEGER NOT NULL, "action" VARCHAR(24) NOT NULL, from_status VARCHAR(16) NOT NULL, to_status VARCHAR(16) NOT NULL, actor_ref VARCHAR(64) DEFAULT NULL, actor_role VARCHAR(16) NOT NULL, client VARCHAR(16) NOT NULL, prev_hash CHAR(64) DEFAULT NULL, comment VARCHAR(1000) DEFAULT NULL, entries_hash CHAR(64) DEFAULT NULL, totals CLOB DEFAULT NULL, timesheet_id VARCHAR(36) NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_6F44086ABDD46BE FOREIGN KEY (timesheet_id) REFERENCES time_track_timesheets (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE UNIQUE INDEX uniq_time_track_timesheet_events_seq ON time_track_timesheet_events (timesheet_id, seq);
+CREATE INDEX IDX_6F44086ABDD46BE ON time_track_timesheet_events (timesheet_id);
+CREATE TABLE time_track_balance_ledger (id VARCHAR(36) NOT NULL, effective_date DATE NOT NULL, created_at DATETIME NOT NULL, hash CHAR(64) NOT NULL, purged_before DATE DEFAULT NULL, owner_ref VARCHAR(64) NOT NULL, scope_key VARCHAR(64) NOT NULL, kind VARCHAR(24) NOT NULL, seconds INTEGER NOT NULL, prev_hash CHAR(64) DEFAULT NULL, reason VARCHAR(500) DEFAULT NULL, reverses_id VARCHAR(36) DEFAULT NULL, actor_ref VARCHAR(64) DEFAULT NULL, timesheet_id VARCHAR(36) DEFAULT NULL, user_id INTEGER DEFAULT NULL, PRIMARY KEY (id), CONSTRAINT FK_24B61F4DABDD46BE FOREIGN KEY (timesheet_id) REFERENCES time_track_timesheets (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_24B61F4DA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE INDEX idx_time_track_balance_ledger_user ON time_track_balance_ledger (user_id, scope_key, effective_date);
+CREATE INDEX idx_time_track_balance_ledger_timesheet ON time_track_balance_ledger (timesheet_id);
+CREATE INDEX idx_time_track_balance_ledger_reverses ON time_track_balance_ledger (reverses_id);
+CREATE UNIQUE INDEX uniq_time_track_balance_ledger_chain ON time_track_balance_ledger (owner_ref, scope_key, prev_hash);
+CREATE INDEX IDX_24B61F4DA76ED395 ON time_track_balance_ledger (user_id);
+```
+
+Rollback:
+
+```sql
+-- Rollback to 1.12 (SQLite 3.35+): drops the 1.13 tables and the entry scope; 1.12 ignores them otherwise.
+DROP TABLE time_track_balance_ledger;
+DROP TABLE time_track_timesheet_events;
+DROP TABLE time_track_timesheets;
+DROP INDEX idx_time_track_entries_user_scope_started;
+ALTER TABLE time_track_entries DROP COLUMN scope_key;
+```
+
+</details>
+
+Rollback in general: drop the three tables and the column; 1.12 ignores them otherwise.
+
+**Optional triggers (append-only audit).** The bundle never updates or deletes audit rows except through the retention
+purge. Hosts that want the database to enforce it (spec `198` FR-017 pattern) MAY add triggers that refuse `UPDATE` on
+`time_track_timesheet_events` / `time_track_balance_ledger` and `DELETE` for every database user but the one that runs
+`nowo:time-track:timesheets:purge`. The bundle does not create them (privileges vary).
+
+**`scope_key` back-fill (with timesheets on).** New entries get the tenant scope of their task at write time. Entries
+recorded before 1.13 have none until you run (idempotent, resumable, keyset by id):
+
+```bash
+php bin/console nowo:time-track:entries:backfill-scope --dry-run
+php bin/console nowo:time-track:entries:backfill-scope --batch=500
+```
+
+Entries the scope provider cannot place stay without a scope: they belong to no timesheet and are shown to their owner
+only, as *unassigned*.
+
+**Hosts that write entries themselves MUST call the period lock.** With timesheets on, every bundle write path refuses
+time in a locked or submitted period (`PeriodLockedException` → 409 `period_locked` with `lockedThrough`,
+`PeriodSubmittedException` → 409 `period_submitted`): backdated `timer/start`, `timer/switch`, idle decisions,
+`ImportedTimeEntryWriter` (new outcome `locked`, counted in `ImportedTimeEntryBatchResult::$locked`), imported-entry
+removals (single `remove()` throws; bulk `removeForTasks()` / `removeForBoard()` / `removeForSource()` keep the locked
+entries; `removeForUser()` — account erasure — is not blocked), `TeamAccessGuard::canEditEntry()` /
+`canDeleteImportedEntry()` (false whatever a `TimeEntryAccessCheckEvent` listener grants). Code that inserts or edits
+`TimeEntry` rows directly must call `PeriodLockGuard::assertWritable($user, $scopeKey, $instant, WriteKind::…)` first.
+Retention purges are never blocked. With timesheets off nothing changes and no query is made.
+
+**Client API (additive).** New scopes `workday:read`, `workday:write`, `balance:read`, `timesheet:read`,
+`timesheet:write` are never granted by default: a token without stored scopes (issued before 1.9) and a login whose
+`ClientAuthResult` names none keep the four pre-1.13 scopes (before 1.13 "no scopes" meant "every scope"; with the new
+scopes that would have widened old tokens). Grant them explicitly (device flow `scopes`, or your authenticator). `GET me`
+gains `features.timesheets`, `balance`, `calendar_suggestions`, `manual_entries`, `task_effort` and `timesheet`;
+`features.workday` is real. Entries gain `scopeKey` and `locked`, the CSV export gains `scope_key` and `locked` columns
+(appended), tasks and timers gain `estimateSeconds`, `loggedSeconds`, `remainingSeconds`. Clients that compare whole
+payloads must accept the new keys. Beacon: wire the new routes (`config/routes.yaml` imports the loader, nothing to do
+there) and implement `Workday\WorkdayProviderInterface` for spec 198 (`client_api.workday_provider`).
+
+**Task effort.** Let your task provider fill `TaskReference::$estimateSeconds` (TaskBoard `estimatedMinutes × 60`); the
+bundle sums `loggedSeconds` from its entries unless the provider gives `TaskReference::$loggedSeconds`. It is the caller's
+own time; the total of every user is shown only to users your listener on `nowo_time_track.task_effort.access_check`
+grants (those who can manage the task; denied by default, see SECURITY). Tasks and timers carry `loggedSecondsScope`
+(`own` / `all`) so clients can say whose time the figure counts; a provider that fills `loggedSeconds` is labelled by the
+same rule. Ledger refusals (`LedgerRefusedException::errorCode()`) now have `timesheet.error.<code>` messages too.
+
+**Timesheet web actions (CSRF).** `TimesheetFormHandler` verifies the CSRF token itself and refuses every post when no
+CSRF token manager exists: keep `framework.csrf_protection` enabled (`symfony/security-csrf`). The decision forms now
+carry hidden `scope` and `period` fields; owner submit / withdraw act on the actor's own period.
+
+**Rate limits and personal data.** Put a per-actor `RateLimiter` on your ledger (and decision) routes: the bundle does not
+limit web ledger writes in 1.13. Add `Timesheet\TimesheetPersonalDataExporter::export($ownerRef)` to your personal-data
+export (timesheets, their audit rows and the ledger).
+
+**Balance bounds.** `working_time.balance.start_date` is honoured for at most 3660 days before the end of a range; beyond
+that no balance is computed (warning `balance_span_exceeded`) until a locked timesheet or a later start date shortens the
+span. `GET timesheets?period=` answers 404 for keys after the next period or outside 2000–2099, and only the current and
+previous periods get a stored row when viewed.
+
+**UiKit 2.29.** `nowo-tech/ui-kit-bundle` is now `^2.29` (dialog anatomy of the components). Run
+`composer update nowo-tech/ui-kit-bundle` if your lock is older.
+
+**Components instead of overrides.** Build the *My timesheet*, *Approvals* and *Balance* pages from
+`nowo_time_track_component()` and post their forms to your routes, handled by `Timesheet\TimesheetFormHandler`
+([WORKING-TIME.md](WORKING-TIME.md#components-no-template-overrides)).
+
+**`TimeEntrySource` has two new cases**, `manual` and `calendar` (live, editable; their write paths arrive in 1.14). A
+host `match` over the enum without a default arm must add them.
+
+**Bulk removals with timesheets on** need the entry store to implement `FilteredImportedTimeEntryRepositoryInterface`
+(the bundle's Doctrine store does). A host replacement of `TimeEntryRepositoryInterface` that only implements
+`ImportedTimeEntryRepositoryInterface` makes `removeForTasks()` / `removeForBoard()` / `removeForSource()` throw
+`LogicException` (fail closed) while timesheets are on.
 
 ## To 1.12.0
 

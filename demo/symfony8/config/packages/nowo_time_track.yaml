@@ -17,3 +17,11 @@ nowo_time_track:
             linux: 'https://github.com/nowo-tech/time-track-desktop/releases/latest'
             windows: 'https://github.com/nowo-tech/time-track-desktop/releases/latest'
             macos: 'https://github.com/nowo-tech/time-track-desktop/releases/latest'
+    # TimeTrack 1.13 showcase (/timesheet): one tenant scope, the hours balance from the working hours, task time as the
+    # worked time (not a legal register). The demo user cannot approve their own timesheet (nobody can).
+    timesheets:
+        enabled: true
+        scope_mode: single
+        approver_provider: App\Timesheet\DemoApproverProvider
+    working_time:
+        enabled: true

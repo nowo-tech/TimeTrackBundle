@@ -16,6 +16,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Client API 1.10](#client-api-110)
 - [Client distribution](#client-distribution)
 - [Imported entries and retention (1.11)](#imported-entries-and-retention-111)
+- [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Security](#security)
 
 ## Required
@@ -272,6 +273,56 @@ nowo_time_track:
   (unbounded text column, no length cap).
 - `retention.include_imported` feeds `Retention\TimeEntryRetentionPolicy`; the bundle ships no purge yet, so a host
   purge must apply `excludedSources()`.
+
+## Working time and timesheets (1.13)
+
+Everything is off by default; see [WORKING-TIME.md](WORKING-TIME.md) for the model.
+
+```yaml
+nowo_time_track:
+  working_time:
+    enabled: false
+    calendar_provider: ~            # WorkingCalendarProviderInterface service id (null = DerivedWorkingCalendar)
+    worked_time_source: ~           # WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource, legalRecord false)
+    overtime_policy: ~              # OvertimePolicyInterface (null = ConfigOvertimePolicy)
+    balance:
+      start_date: ~                 # Y-m-d; null = after the last locked period, else the last 366 days
+    overtime:
+      daily_mode: expected          # expected | ordinary_max | none
+      ordinary_max_seconds: 32400   # 9 h, art. 34.3 ET
+      weekly_mode: expected         # expected | legal_max
+      weekly_max_seconds: 144000    # 40 h
+      annual_cap_seconds: 288000    # 80 h, art. 35.2 ET (0 = no cap flags)
+      ratify_on_approval: true
+  timesheets:
+    enabled: false
+    scope_mode: provider            # provider | single
+    scope_provider: ~               # TimesheetScopeProviderInterface (required with scope_mode: provider)
+    approver_provider: ~            # TimesheetApproverProviderInterface (required when enabled)
+    period: week                    # week | month
+    default_timezone: 'UTC'
+    submit_requires_period_end: false
+    auto_lock_after_days: ~         # null = off
+    allow_self_approval: false      # fixed false in 1.13
+    admin_roles_view: false
+    reopen_roles: []
+    approver_sees_notes: false
+    audit_blocked_edits: false
+    retention_years: 4              # 4-10
+  client_api:
+    workday_provider: ~             # Workday\WorkdayProviderInterface (R-GDPR §8); null = no workday API
+```
+
+- Refused at compile time: `timesheets.enabled` without `approver_provider`, `scope_mode: provider` without
+  `scope_provider`, `allow_self_approval: true`, an unknown `default_timezone`, `retention_years` outside 4–10, a bad
+  `balance.start_date`.
+- With `working_time.enabled` and no scope provider, everybody is in one scope `''` (like `scope_mode: single`).
+- Period zone: the scope's `TimesheetScope::$timezone`, else the user's working-hours zone, else `default_timezone`.
+- Client routes (`clients.routes.*`): `workday`, `workday_action` (`/api/time-track/workday/{action}`), `balance`,
+  `timesheets`, `timesheet_submit`, `timesheet_withdraw` (`/api/time-track/timesheets/{periodKey}/submit|withdraw`);
+  they answer 404 while their feature is off.
+- Public services for hosts: `PeriodLockGuard`, `TimesheetService`, `TimesheetFormHandler`, `TimesheetAccessGuard`,
+  `WorkingTimeBalanceService`, `BalanceLedger`, `Ui\TimesheetViewBuilder`.
 
 ## Security
 

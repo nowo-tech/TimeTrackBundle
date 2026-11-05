@@ -21,6 +21,7 @@
         <a class="nav-link{{ _route starts with 'nowo_task_board' ? ' active' }}" href="{{ path('nowo_task_board_index') }}">{{ 'nav.board'|trans({}, 'NowoTaskBoardBundle') }}</a>
         <a class="nav-link{{ _route == 'nowo_time_track_index' ? ' active' }}" href="{{ path('nowo_time_track_index') }}">{{ 'nav.timer'|trans({}, 'NowoTimeTrackBundle') }}</a>
         <a class="nav-link{{ _route == 'nowo_time_track_reports' ? ' active' }}" href="{{ path('nowo_time_track_reports') }}">{{ 'nav.reports'|trans({}, 'NowoTimeTrackBundle') }}</a>
+        <a class="nav-link{{ _route starts with 'app_timesheet' ? ' active' }}" href="{{ path('app_timesheet') }}">{{ 'demo.nav.timesheet'|trans }}</a>
     </nav>
 {% endblock %}
 

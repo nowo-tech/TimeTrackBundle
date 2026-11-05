@@ -470,7 +470,8 @@ final class ImportedEntriesTest extends FunctionalTestCase
             $event->setIncludeImported(false);
         });
         self::assertSame(1, $service->listEntriesPage($this->user, $from, $to, 1, 10)->total);
-        self::assertSame(0, $service->listEntriesPage($this->user, $from, $to, 1, 10, 'nobody')->total);
+        // An id nobody has (numeric: PostgreSQL refuses a non-numeric value for an integer user id).
+        self::assertSame(0, $service->listEntriesPage($this->user, $from, $to, 1, 10, '999999')->total);
         self::assertCount(1, $service->listEntries($this->user, $from, $to));
 
         // A store without the imported-entry interface filters in memory.

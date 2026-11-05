@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\DependencyInjection;
 
+use DateTimeZone;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 use function array_key_exists;
+use function in_array;
 use function is_array;
 use function is_string;
 use function preg_match;
@@ -171,6 +174,8 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                     ->end()
                 ->end()
+                ->append($this->workingTimeNode())
+                ->append($this->timesheetsNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
                     ->addDefaultsIfNotSet()
@@ -396,6 +401,49 @@ final class Configuration implements ConfigurationInterface
                                         ->scalarNode('name')->defaultValue('nowo_time_track_api_device_token')->end()
                                     ->end()
                                 ->end()
+                                // Since 1.13 (contract §10.2): working time.
+                                ->arrayNode('workday')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/workday')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_workday')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('workday_action')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/workday/{action}')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_workday_action')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('balance')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/balance')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_balance')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('timesheets')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/timesheets')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_timesheets')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('timesheet_submit')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/timesheets/{periodKey}/submit')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_timesheet_submit')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('timesheet_withdraw')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/timesheets/{periodKey}/withdraw')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_timesheet_withdraw')->end()
+                                    ->end()
+                                ->end()
                             ->end()
                         ->end()
                     ->end()
@@ -440,6 +488,10 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                         ->scalarNode('profile_provider')
                             ->info('Service id implementing ClientUserProfileProviderInterface (displayName / workingHours of GET me; null = none).')
+                            ->defaultNull()
+                        ->end()
+                        ->scalarNode('workday_provider')
+                            ->info('Since 1.13: service id implementing Workday\\WorkdayProviderInterface (R-GDPR §8; null = no workday API).')
                             ->defaultNull()
                         ->end()
                         ->arrayNode('backdate')
@@ -603,6 +655,163 @@ final class Configuration implements ConfigurationInterface
             ->end();
 
         return $treeBuilder;
+    }
+
+    /**
+     * Since 1.13: `working_time` (contract §4, §13): working calendar, worked-time source, overtime policy and the
+     * hours balance. Off by default.
+     */
+    private function workingTimeNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('working_time'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Hours balance, overtime and the balance client API (default off).')
+                    ->defaultFalse()
+                ->end()
+                ->scalarNode('calendar_provider')
+                    ->info('Service id implementing WorkingCalendarProviderInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('worked_time_source')
+                    ->info('Service id implementing WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('overtime_policy')
+                    ->info('Service id implementing OvertimePolicyInterface (null = ConfigOvertimePolicy with the values below).')
+                    ->defaultNull()
+                ->end()
+                ->arrayNode('balance')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('start_date')
+                            ->info('First day of the running balance (Y-m-d); null = the 366 days before the end of the asked range, or after the last locked period.')
+                            ->defaultNull()
+                            ->validate()
+                                ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || preg_match('/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/D', $v) !== 1))
+                                ->thenInvalid('working_time.balance.start_date must be a Y-m-d date or null, got %s.')
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('overtime')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->enumNode('daily_mode')
+                            ->info('expected: above the day\'s expected time; ordinary_max: above the agreement cap or ordinary_max_seconds; none: weekly rule only (flexible hours).')
+                            ->values(['expected', 'ordinary_max', 'none'])
+                            ->defaultValue('expected')
+                        ->end()
+                        ->integerNode('ordinary_max_seconds')->info('9 h, art. 34.3 ET.')->defaultValue(32_400)->min(0)->max(86_400)->end()
+                        ->enumNode('weekly_mode')
+                            ->info('expected: above the week\'s expected time; legal_max: above weekly_max_seconds.')
+                            ->values(['expected', 'legal_max'])
+                            ->defaultValue('expected')
+                        ->end()
+                        ->integerNode('weekly_max_seconds')->info('40 h, art. 34.1 ET.')->defaultValue(144_000)->min(1)->max(604_800)->end()
+                        ->integerNode('annual_cap_seconds')->info('80 h, art. 35.2 ET (0 = no cap flags).')->defaultValue(288_000)->min(0)->end()
+                        ->booleanNode('ratify_on_approval')->info('Write one overtime_ratified ledger line when a timesheet is approved.')->defaultTrue()->end()
+                    ->end()
+                ->end()
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.13: `timesheets` (contract §13): weekly / monthly timesheets with submit, approval, hard lock and audit
+     * trail. Off by default; incoherent combinations are refused at compile time.
+     */
+    private function timesheetsNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('timesheets'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Timesheets, period lock and the timesheet client API (default off).')
+                    ->defaultFalse()
+                ->end()
+                ->enumNode('scope_mode')
+                    ->info('provider: tenant scopes from scope_provider; single: one scope "" for everybody.')
+                    ->values(['provider', 'single'])
+                    ->defaultValue('provider')
+                ->end()
+                ->scalarNode('scope_provider')
+                    ->info('Service id implementing TimesheetScopeProviderInterface (required with scope_mode: provider).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('approver_provider')
+                    ->info('Service id implementing TimesheetApproverProviderInterface (required when enabled).')
+                    ->defaultNull()
+                ->end()
+                ->enumNode('period')
+                    ->info('week (ISO, Monday to Sunday) or month.')
+                    ->values(['week', 'month'])
+                    ->defaultValue('week')
+                ->end()
+                ->scalarNode('default_timezone')
+                    ->info('Zone a period is cut in when neither the scope nor the working hours give one.')
+                    ->defaultValue('UTC')
+                    ->validate()
+                        ->ifTrue(static fn (mixed $v): bool => !is_string($v) || !in_array($v, DateTimeZone::listIdentifiers(), true))
+                        ->thenInvalid('timesheets.default_timezone must be an IANA time zone, got %s.')
+                    ->end()
+                ->end()
+                ->booleanNode('submit_requires_period_end')
+                    ->info('Refuse a submit before the period has ended (default false: a Friday afternoon submit is allowed).')
+                    ->defaultFalse()
+                ->end()
+                ->integerNode('auto_lock_after_days')
+                    ->info('Lock every period N days after its end (nowo:time-track:timesheets:auto-lock); null = off.')
+                    ->defaultNull()
+                    ->min(1)
+                    ->max(366)
+                ->end()
+                ->booleanNode('allow_self_approval')
+                    ->info('Fixed false in 1.13: nobody approves their own timesheet, admin roles included.')
+                    ->defaultFalse()
+                    ->validate()
+                        ->ifTrue(static fn (mixed $v): bool => $v !== false)
+                        ->thenInvalid('timesheets.allow_self_approval cannot be enabled in 1.13 (no self-approval, contract Q-O2).')
+                    ->end()
+                ->end()
+                ->booleanNode('admin_roles_view')
+                    ->info('Whether security.admin_roles see timesheets of their scopes without being approvers (default false).')
+                    ->defaultFalse()
+                ->end()
+                ->arrayNode('reopen_roles')
+                    ->info('Roles that may reopen a locked period besides its approvers (default none).')
+                    ->scalarPrototype()->end()
+                    ->defaultValue([])
+                ->end()
+                ->booleanNode('approver_sees_notes')
+                    ->info('Whether approvers see entry notes and descriptions (default false: minimisation).')
+                    ->defaultFalse()
+                ->end()
+                ->booleanNode('audit_blocked_edits')
+                    ->info('Write an edit_blocked audit row per refused write (at most one per timesheet per minute).')
+                    ->defaultFalse()
+                ->end()
+                ->integerNode('retention_years')
+                    ->info('Years timesheets, their audit rows and the ledger are kept after the end of the period month (4-10).')
+                    ->defaultValue(4)
+                    ->min(4)
+                    ->max(10)
+                ->end()
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && $v['scope_mode'] === 'provider' && !is_string($v['scope_provider']))
+                ->thenInvalid('timesheets.scope_provider is required when timesheets are enabled with scope_mode: provider.')
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['approver_provider']))
+                ->thenInvalid('timesheets.approver_provider is required when timesheets are enabled (nobody could approve).')
+            ->end();
+
+        return $node;
     }
 
     /**

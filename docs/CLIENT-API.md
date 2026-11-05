@@ -8,6 +8,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in 1.13 (working time, timesheets, task effort)](#changes-in-113-working-time-timesheets-task-effort)
 - [Notes](#notes)
 - [Changes in 1.11 (imported entries)](#changes-in-111-imported-entries)
 - [Changes in v0.3.1 (1.10.1)](#changes-in-v031-1101)
@@ -35,6 +36,59 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in 1.13 (working time, timesheets, task effort)
+
+Additive; with the features off every existing route answers as in 1.12 apart from the new keys.
+
+- **Scopes** `workday:read`, `workday:write`, `balance:read`, `timesheet:read`, `timesheet:write`. They are never part of
+  the default grant: a token without stored scopes (issued before 1.9), a login whose authenticator names none and a
+  device request without `scopes` keep `timer:read`, `timer:write`, `tasks:read`, `entries:read`. Ask for the new ones
+  explicitly (device flow `scopes`, or `ClientAuthResult::success($user, $credentialId, $scopes)`); without them the
+  routes answer `403 insufficient_scope`.
+- **`GET me`**: `features.workday` (real: a workday provider and a register for the user), `features.timesheets`,
+  `features.balance`, `features.calendar_suggestions` / `features.manual_entries` (false until 1.14),
+  `features.task_effort` (true); `timesheet`: `{scopeKey, periodKey, status, lockedThrough}` of the current scope and
+  period, or null. `monitoring` stays reserved (false).
+- **Entries / export**: each entry gains `scopeKey` (null = unassigned) and `locked` (its period is locked or submitted:
+  no bundle path may change it — skip it for *Resume*); the CSV gains the columns `scope_key` and `locked` (`yes` / `no`).
+- **Timer routes** (`timer/start`, `timer/switch`, `timer/discard-idle`): `409 {error: "period_locked", lockedThrough}`
+  and `409 {error: "period_submitted"}` (only with timesheets on). `timer/stop` is never refused.
+- **Task effort** on every task of `GET tasks` and on the timer of `GET timer`, `timer/start`, `timer/switch`:
+  `estimateSeconds` (TaskBoard estimate × 60, from the task provider's `TaskReference::$estimateSeconds`),
+  `loggedSeconds` (the user's **own** closed time on the task; the total of **every** user only for users the host lets
+  manage the task — `nowo_time_track.task_effort.access_check`, denied by default; the provider may give its own
+  `TaskReference::$loggedSeconds`), `loggedSecondsScope` (`"own"`: `loggedSeconds` is the user's own time; `"all"`:
+  every user's time — label it accordingly; null when `loggedSeconds` is null) and `remainingSeconds`
+  (`max(0, estimate − logged)`); each null when unknown.
+
+### Workday (R-GDPR §8)
+
+| Method and path | Scope | Answers |
+| --- | --- | --- |
+| `GET /api/time-track/workday` | `workday:read` | 200 `{status: idle\|working\|on_break\|closed, date, timezone, segments[{type, start, end, source}], workedSeconds, breakSeconds, flags[], reminder, allowedActions[]}`; 404 when the register is off for the user |
+| `POST /api/time-track/workday/{clock-in\|break-start\|break-end\|clock-out}` | `workday:write` | body `{occurredAt?}` (ISO 8601 with offset; not in the future, ≤ 72 h old), header `Idempotency-Key` (required, 1–64 visible characters). 200 state; 400 `invalid_request` (no key); 403 `forbidden`; 404 off; 409 `{error: "invalid_transition", state}`; 422 `invalid_occurred_at`, `idempotency_mismatch` (same key, other body) |
+
+The same key and body from the same user get the same answer (200 or 409) for 24 h without reaching the register again.
+
+### Balance
+
+`GET /api/time-track/balance?from=Y-m-d&to=Y-m-d&scope=` (`balance:read`; default range: the current period; ≤ 92 days)
+→ 200 `{scope: {key, label}, from, to, timezone, source: register|task_time, legalRecord, policy: {id, version},
+days[{date, kind, label, expectedSeconds, workedSeconds, diffSeconds, overtimeSeconds, flags[]}], weeks[], totals,
+balanceSeconds, ledger[], overtime: {year, ratifiedSeconds, compensatedSeconds, countedSeconds, capSeconds, flags[]}}`.
+400 bad range; 404 when working time is off, the scope is not the user's or the host has no calendar for them. Show
+*"Task time, not a working-time record"* whenever `legalRecord` is false.
+
+### Timesheets
+
+| Method and path | Scope | Answers |
+| --- | --- | --- |
+| `GET /api/time-track/timesheets?period=current\|previous\|2026-W45&scope=` | `timesheet:read` | 200 `{id, scope, period: {key, kind, start, end, timezone}, status, locked, lockedThrough, lockReason, decisionComment, totals, entries[], unassigned[], events[{action, fromStatus, toStatus, actorRole, client, occurredAt, comment}], allowedActions[]}`; 404 |
+| `POST /api/time-track/timesheets/{periodKey}/submit` | `timesheet:write` | body `{scope?}`; 200 timesheet; 409 `timer_running`, `not_started`, `not_ended`, `invalid_transition`, `conflict`; 404 |
+| `POST /api/time-track/timesheets/{periodKey}/withdraw` | `timesheet:write` | 200; 409 `invalid_transition`; 404 |
+
+Approve, reject, reopen and the ledger are web only. Other users' timesheets are never reachable through the client API.
 
 ## Notes
 
@@ -121,9 +175,11 @@ calls `ClientTokenRevoker::revokeByCredential()`.
 
 ## Scopes
 
-`timer:read`, `timer:write`, `tasks:read`, `entries:read`. A login grants what the authenticator returns
-(`ClientAuthResult::success($user, $credentialId, $scopes)`, default all four); a device grants what it asked for and
-the user approved. Tokens issued before 1.9 carry all four. `entries:write` is not part of 1.9.
+`timer:read`, `timer:write`, `tasks:read`, `entries:read`, and since 1.13 `workday:read`, `workday:write`,
+`balance:read`, `timesheet:read`, `timesheet:write`. A login grants what the authenticator returns
+(`ClientAuthResult::success($user, $credentialId, $scopes)`, default the first four); a device grants what it asked for
+and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 scopes always need an explicit grant.
+`entries:write` is not part of 1.13.
 
 ## Errors
 
@@ -140,6 +196,7 @@ the user approved. Tokens issued before 1.9 carry all four. `entries:write` is n
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |
 | 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
 | 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
+| 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 

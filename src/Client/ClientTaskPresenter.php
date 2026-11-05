@@ -6,7 +6,10 @@ namespace Nowo\TimeTrackBundle\Client;
 
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Repository\TaskEffortRepositoryInterface;
+use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
@@ -15,6 +18,7 @@ use Throwable;
 
 use function is_int;
 use function is_string;
+use function max;
 use function mb_strlen;
 use function mb_substr;
 use function parse_url;
@@ -49,11 +53,15 @@ final readonly class ClientTaskPresenter
      * @param TimerService $timerService Resolves the timer's task for the token user (through the task provider)
      * @param string|null $taskUrlOrigin `client_api.task_url.origin`: exact `https://host[:port]` (null = the request origin)
      * @param LoggerInterface|null $logger Logs dropped URLs and provider failures without data (defaults to no logging)
+     * @param TaskEffortRepositoryInterface|null $effort Logged time per task (since 1.13; null = unknown unless the provider gives it)
+     * @param TeamAccessGuard|null $effortAccess Who may see the all-users total ({@see TeamAccessGuard::canSeeTaskEffortTotal()}; null = nobody)
      */
     public function __construct(
         private TimerService $timerService,
         private ?string $taskUrlOrigin = null,
         ?LoggerInterface $logger = null,
+        private ?TaskEffortRepositoryInterface $effort = null,
+        private ?TeamAccessGuard $effortAccess = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -61,16 +69,32 @@ final readonly class ClientTaskPresenter
     /**
      * Wire shape of a task in `GET tasks`.
      *
-     * @return array{id: string, title: string, boardId: string|null, boardTitle: string|null, projectId: string|null, projectTitle: string|null, url: string|null}
+     * @param UserInterface|null $user The token user (null: the logged figures are unknown unless the provider gives them)
+     *
+     * @return array{id: string, title: string, boardId: string|null, boardTitle: string|null, projectId: string|null, projectTitle: string|null, url: string|null, estimateSeconds: int|null, loggedSeconds: int|null, loggedSecondsScope: string|null, remainingSeconds: int|null}
      */
-    public function task(TaskReference $task, Request $request): array
+    public function task(TaskReference $task, Request $request, ?UserInterface $user = null): array
     {
-        return [
-            'id'         => $task->id,
-            'title'      => $task->title,
-            'boardId'    => $task->boardId,
-            'boardTitle' => $task->boardTitle,
-        ] + $this->details($task, $request);
+        return $this->taskWith($task, $request, $user instanceof UserInterface ? $this->loggedOf([$task], $user)[$task->id] : null);
+    }
+
+    /**
+     * Since 1.13: the wire shape of a list of tasks for the user, with one logged-time query for the whole list (two
+     * when the user manages some of the tasks).
+     *
+     * @param list<TaskReference> $tasks
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function tasks(array $tasks, Request $request, UserInterface $user): array
+    {
+        $logged = $this->loggedOf($tasks, $user);
+        $out    = [];
+        foreach ($tasks as $task) {
+            $out[] = $this->taskWith($task, $request, $logged[$task->id] ?? null);
+        }
+
+        return $out;
     }
 
     /**
@@ -87,10 +111,10 @@ final readonly class ClientTaskPresenter
         $body = $timer->toArray();
 
         if (!$task instanceof TaskReference) {
-            return $body + ['boardTitle' => null, 'projectId' => null, 'projectTitle' => null, 'url' => null];
+            return $body + ['boardTitle' => null, 'projectId' => null, 'projectTitle' => null, 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'loggedSecondsScope' => null, 'remainingSeconds' => null];
         }
 
-        return $body + ['boardTitle' => $task->boardTitle] + $this->details($task, $request);
+        return $body + ['boardTitle' => $task->boardTitle] + $this->details($task, $request) + $this->effort($task, $this->loggedOf([$task], $user)[$task->id]);
     }
 
     /**
@@ -140,6 +164,92 @@ final readonly class ClientTaskPresenter
             'projectTitle' => $title !== '' ? mb_substr($title, 0, self::PROJECT_TITLE_MAX_LENGTH) : null,
             'url'          => $this->safeUrl($task->url, $request),
         ];
+    }
+
+    /**
+     * @param array{seconds: int|null, scope: string}|null $logged
+     *
+     * @return array{id: string, title: string, boardId: string|null, boardTitle: string|null, projectId: string|null, projectTitle: string|null, url: string|null, estimateSeconds: int|null, loggedSeconds: int|null, loggedSecondsScope: string|null, remainingSeconds: int|null}
+     */
+    private function taskWith(TaskReference $task, Request $request, ?array $logged): array
+    {
+        return [
+            'id'         => $task->id,
+            'title'      => $task->title,
+            'boardId'    => $task->boardId,
+            'boardTitle' => $task->boardTitle,
+        ] + $this->details($task, $request) + $this->effort($task, $logged);
+    }
+
+    /**
+     * Since 1.13: `estimateSeconds`, `loggedSeconds` (the user's own closed time on the task; every user's total only
+     * for users who can manage the task — owner decision 2026-11-05, audit GB-M3; a provider value is the host's own
+     * figure for that user), `loggedSecondsScope` (`own` or `all`: whose time `loggedSeconds` counts; null when
+     * `loggedSeconds` is null or the audience is unknown) and `remainingSeconds = max(0, estimate − logged)`; each null
+     * when unknown.
+     *
+     * @param array{seconds: int|null, scope: string}|null $logged
+     *
+     * @return array{estimateSeconds: int|null, loggedSeconds: int|null, loggedSecondsScope: string|null, remainingSeconds: int|null}
+     */
+    private function effort(TaskReference $task, ?array $logged): array
+    {
+        $estimate = is_int($task->estimateSeconds) && $task->estimateSeconds >= 0 ? $task->estimateSeconds : null;
+        $given    = is_int($task->loggedSeconds) && $task->loggedSeconds >= 0 ? $task->loggedSeconds : null;
+        $seconds  = $given ?? $logged['seconds'] ?? null;
+
+        return [
+            'estimateSeconds'    => $estimate,
+            'loggedSeconds'      => $seconds,
+            'loggedSecondsScope' => $seconds !== null ? $logged['scope'] ?? null : null,
+            'remainingSeconds'   => $estimate !== null && $seconds !== null ? max(0, $estimate - $seconds) : null,
+        ];
+    }
+
+    /**
+     * Logged seconds and their audience per task: the user's own total (`own`), or every user's total (`all`) for the
+     * tasks the user may manage ({@see TeamAccessGuard::canSeeTaskEffortTotal()}, deny by default). A task whose
+     * provider gives its own `loggedSeconds` is not queried; its audience follows the same rule (the provider must
+     * apply it). Seconds are null when unknown.
+     *
+     * @param list<TaskReference> $tasks
+     *
+     * @return array<string, array{seconds: int|null, scope: string}>
+     */
+    private function loggedOf(array $tasks, UserInterface $user): array
+    {
+        $out     = [];
+        $own     = [];
+        $managed = [];
+        foreach ($tasks as $task) {
+            $all            = $this->effortAccess instanceof TeamAccessGuard && $this->effortAccess->canSeeTaskEffortTotal($user, $task->id);
+            $out[$task->id] = ['seconds' => null, 'scope' => $all ? 'all' : 'own'];
+            if ($task->loggedSeconds === null) {
+                if ($all) {
+                    $managed[] = $task->id;
+                } else {
+                    $own[] = $task->id;
+                }
+            }
+        }
+        if (($own === [] && $managed === []) || !$this->effort instanceof TaskEffortRepositoryInterface) {
+            return $out;
+        }
+        try {
+            $totals = ($own === [] ? [] : $this->effort->loggedSecondsByTask($own, UserIdResolver::getId($user)))
+                + ($managed === [] ? [] : $this->effort->loggedSecondsByTask($managed));
+        } catch (Throwable) {
+            $this->logger->warning('TimeTrack task effort could not be read.', ['bundle' => 'time_track', 'action' => 'task_effort_failed']);
+
+            return $out;
+        }
+        foreach ($totals as $taskId => $seconds) {
+            if (isset($out[(string) $taskId])) {
+                $out[(string) $taskId]['seconds'] = $seconds;
+            }
+        }
+
+        return $out;
     }
 
     private function resolve(string $taskId, UserInterface $user): ?TaskReference

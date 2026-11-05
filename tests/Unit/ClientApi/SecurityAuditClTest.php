@@ -50,7 +50,7 @@ final class SecurityAuditClTest extends TestCase
     {
         $user = new TestUser('u1', 'a@example.com');
 
-        self::assertSame(ClientScope::all(), ClientAuthResult::success($user)->getScopes());
+        self::assertSame(ClientScope::defaults(), ClientAuthResult::success($user)->getScopes());
         self::assertSame([ClientScope::TimerRead], ClientAuthResult::success($user, 'c', ['timer:read', ClientScope::TimerRead])->getScopes());
         self::assertSame([], ClientAuthResult::failure()->getScopes());
     }
@@ -60,7 +60,7 @@ final class SecurityAuditClTest extends TestCase
     {
         self::assertSame([], ClientScope::normalize(['entries:write']));
         self::assertSame([], ClientScope::normalize([]));
-        self::assertSame(ClientScope::all(), ClientScope::normalize(null));
+        self::assertSame(ClientScope::defaults(), ClientScope::normalize(null));
         self::assertSame([ClientScope::TimerWrite], ClientScope::normalize(['timer:write', 'entries:write', 42]));
     }
 
@@ -78,7 +78,7 @@ final class SecurityAuditClTest extends TestCase
         $user    = new TestUser('u1', 'a@example.com');
         $expires = new DateTimeImmutable('+1 hour');
 
-        self::assertSame(ClientScope::all(), (new ClientToken('h1', $expires, $user, ClientType::Desktop))->getScopes());
+        self::assertSame(ClientScope::defaults(), (new ClientToken('h1', $expires, $user, ClientType::Desktop))->getScopes());
 
         $unknown = new ClientToken('h2', $expires, $user, ClientType::Desktop, null, 'cred', ['entries:write']);
         self::assertSame([], $unknown->getScopes());
@@ -91,7 +91,8 @@ final class SecurityAuditClTest extends TestCase
         $stack = new ClientApiStack($this->createStub(ClientAuthenticatorInterface::class), $this->createStub(TaskProviderInterface::class));
         $user  = new TestUser('u1', 'a@example.com');
 
-        self::assertSame(ClientScope::values(ClientScope::all()), $stack->authService->issueToken($user, ClientType::Desktop)['scopes']);
+        self::assertSame(ClientScope::values(ClientScope::defaults()), $stack->authService->issueToken($user, ClientType::Desktop)['scopes']);
+        self::assertCount(9, ClientScope::all(), 'the 1.13 scopes exist but need an explicit grant');
         self::assertSame([], $stack->authService->issueToken($user, ClientType::Desktop, 'c', [])['scopes']);
     }
 

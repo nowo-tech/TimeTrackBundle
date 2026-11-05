@@ -17,6 +17,15 @@ The Flex recipe copies `config/packages/nowo_time_track.yaml` and `config/routes
 
 Create tables via Doctrine migrations. See demo migration `demo/symfony8/migrations/Version20250706120000.php` for reference SQL, and `Version20261105000000.php` for the 1.11 imported-entry columns and the `time_track_entries_ended_idx` `(ended_at, id)` index.
 
+### Schema 1.13
+
+1.13 adds `time_track_entries.scope_key` and the always-mapped tables `time_track_timesheets`,
+`time_track_timesheet_events` and `time_track_balance_ledger`: run `doctrine:migrations:diff`, or use the reference SQL
+for [MySQL / MariaDB](sql/1.13.0/mysql-up.sql), [PostgreSQL](sql/1.13.0/postgresql-up.sql) and
+[SQLite](sql/1.13.0/sqlite-up.sql) (rollbacks next to them; details and optional append-only triggers in
+[UPGRADING](UPGRADING.md#to-1130)). Then, with timesheets or working time on, run
+`nowo:time-track:entries:backfill-scope` and schedule `nowo:time-track:timesheets:purge` (and `…:auto-lock` when used).
+
 ## Security
 
 ```yaml

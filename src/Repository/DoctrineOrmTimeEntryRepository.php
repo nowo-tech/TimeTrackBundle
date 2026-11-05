@@ -25,7 +25,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -292,6 +292,14 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
      */
     public function removeImported(ImportedTimeEntryScope $scope, int $batchSize = 500): ImportedTimeEntryRemoval
     {
+        return $this->removeImportedWhere($scope, static fn (): bool => false, $batchSize);
+    }
+
+    /**
+     * Since 1.13: {@see self::removeImported()} keeping the rows `$keep` protects (the period lock).
+     */
+    public function removeImportedWhere(ImportedTimeEntryScope $scope, callable $keep, int $batchSize = 500): ImportedTimeEntryRemoval
+    {
         $batchSize = max(1, $batchSize);
         $removal   = new ImportedTimeEntryRemoval();
         if ($scope->kind === ImportedTimeEntryScope::TASKS && $scope->values === []) {
@@ -299,7 +307,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
         }
         if ($scope->kind === ImportedTimeEntryScope::TASKS && count($scope->values) > self::TASK_IDS_PER_QUERY) {
             foreach (array_chunk($scope->values, self::TASK_IDS_PER_QUERY) as $taskIds) {
-                $removal = $removal->merge($this->removeImported(ImportedTimeEntryScope::tasks($scope->externalSource, $taskIds), $batchSize));
+                $removal = $removal->merge($this->removeImportedWhere(ImportedTimeEntryScope::tasks($scope->externalSource, $taskIds), $keep, $batchSize));
             }
 
             return $removal;
@@ -307,7 +315,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
         $lastId = '';
         do {
             $query = $this->entityManager->createQueryBuilder()
-                ->select('e.id AS id', 'e.taskId AS taskId', 'e.durationSeconds AS seconds', 'IDENTITY(e.user) AS userId')
+                ->select('e.id AS id', 'e.taskId AS taskId', 'e.durationSeconds AS seconds', 'IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey', 'e.startedAt AS startedAt')
                 ->from(TimeEntry::class, 'e')
                 ->where('e.source = :import')
                 ->andWhere('e.externalSource = :source')
@@ -324,15 +332,23 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
                 ImportedTimeEntryScope::BOARD => $query->andWhere('e.boardIdSnapshot = :value')->setParameter('value', $scope->values[0]),
                 default                       => null,
             };
-            /** @var list<array{id: string, taskId: string, seconds: int|string, userId: int|string}> $rows */
-            $rows = $query->getQuery()->getArrayResult();
-            if ($rows === []) {
+            /** @var list<array{id: string, taskId: string, seconds: int|string, userId: int|string, scopeKey: string|null, startedAt: DateTimeImmutable}> $batch */
+            $batch = $query->getQuery()->getArrayResult();
+            if ($batch === []) {
                 break;
             }
+            $rows    = [];
             $seconds = [];
-            foreach ($rows as $row) {
+            foreach ($batch as $row) {
+                $lastId = $row['id'];
+                if ($keep(['id' => $row['id'], 'userId' => (string) $row['userId'], 'scopeKey' => $row['scopeKey'], 'startedAt' => $row['startedAt']])) {
+                    continue;
+                }
                 $seconds[$row['taskId']] = ($seconds[$row['taskId']] ?? 0) + (int) $row['seconds'];
-                $lastId                  = $row['id'];
+                $rows[]                  = $row;
+            }
+            if ($rows === []) {
+                continue;
             }
             $this->entityManager->createQueryBuilder()
                 ->delete(TimeEntry::class, 'e')
@@ -342,9 +358,112 @@ final readonly class DoctrineOrmTimeEntryRepository implements ImportedTimeEntry
                 ->execute();
             $this->detachRemoved(array_column($rows, 'id'));
             $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(static fn (array $row): string => (string) $row['userId'], $rows)));
-        } while (count($rows) === $batchSize);
+        } while (count($batch) === $batchSize);
 
         return $removal;
+    }
+
+    /**
+     * Since 1.13: total closed seconds per task (of one user, or every user), the ids bound
+     * {@see self::TASK_IDS_PER_QUERY} at a time.
+     */
+    public function loggedSecondsByTask(array $taskIds, ?string $userId = null): array
+    {
+        $totals = [];
+        foreach (array_chunk($taskIds, self::TASK_IDS_PER_QUERY) as $chunk) {
+            $query = $this->entityManager->createQueryBuilder()
+                ->select('e.taskId AS taskId', 'SUM(e.durationSeconds) AS seconds')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.taskId IN (:ids)')
+                ->setParameter('ids', $chunk)
+                ->groupBy('e.taskId');
+            if ($userId !== null) {
+                // @igor-ignore - query builder created for this call, not a shared service.
+                $query->andWhere('IDENTITY(e.user) = :user')->setParameter('user', $userId);
+            }
+            /** @var list<array{taskId: string, seconds: int|string}> $rows */
+            $rows = $query->getQuery()->getArrayResult();
+            foreach ($rows as $row) {
+                $totals[$row['taskId']] = (int) $row['seconds'];
+            }
+        }
+
+        return $totals;
+    }
+
+    /**
+     * Since 1.13: distinct (owner, scope) pairs with scoped entries started in the window.
+     */
+    public function ownersWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        /** @var list<array{userId: int|string, scopeKey: string}> $rows */
+        $rows = $this->entityManager->createQueryBuilder()
+            ->select('IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey')
+            ->distinct()
+            ->from(TimeEntry::class, 'e')
+            ->where('e.scopeKey IS NOT NULL')
+            ->andWhere('e.startedAt >= :from')
+            ->andWhere('e.startedAt <= :to')
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->getQuery()
+            ->getArrayResult();
+        $userClass = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
+        $owners    = [];
+        foreach ($rows as $row) {
+            $user = $this->entityManager->find($userClass, $row['userId']);
+            if ($user instanceof UserInterface) {
+                $owners[] = ['user' => $user, 'scopeKey' => $row['scopeKey']];
+            }
+        }
+
+        return $owners;
+    }
+
+    /**
+     * Since 1.13: entries without a scope after an id (back-fill keyset).
+     */
+    public function findScopelessAfter(string $afterId, int $limit): array
+    {
+        /** @var list<TimeEntry> $result */
+        $result = $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TimeEntry::class, 'e')
+            ->where('e.scopeKey IS NULL')
+            ->andWhere('e.id > :after')
+            ->setParameter('after', $afterId)
+            ->orderBy('e.id', SortDirection::Ascending)
+            ->setMaxResults(max(1, $limit))
+            ->getQuery()
+            ->getResult();
+
+        return $result;
+    }
+
+    /**
+     * Since 1.13: sets the scope of still scopeless entries, one DQL update per scope, then detaches them.
+     */
+    public function assignScopeKeys(array $scopeKeys): int
+    {
+        $byScope = [];
+        foreach ($scopeKeys as $entryId => $scopeKey) {
+            $byScope[$scopeKey][] = (string) $entryId;
+        }
+        $changed = 0;
+        foreach ($byScope as $scopeKey => $ids) {
+            $changed += (int) $this->entityManager->createQueryBuilder()
+                ->update(TimeEntry::class, 'e')
+                ->set('e.scopeKey', ':scope')
+                ->where('e.id IN (:ids)')
+                ->andWhere('e.scopeKey IS NULL')
+                ->setParameter('scope', (string) $scopeKey)
+                ->setParameter('ids', $ids)
+                ->getQuery()
+                ->execute();
+            $this->detachRemoved($ids);
+        }
+
+        return $changed;
     }
 
     /**

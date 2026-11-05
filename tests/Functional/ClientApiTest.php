@@ -97,8 +97,9 @@ final class ClientApiTest extends FunctionalTestCase
             'workingHours' => null,
             'locale'       => null,
             'daysOff'      => null,
-            'features'     => ['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'monitoring' => false],
+            'features'     => ['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'monitoring' => false],
             'limits'       => ['backdate' => ['max_seconds' => 86400, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 10, 'answer_timeout_minutes' => 5, 'user_can_disable' => false]],
+            'timesheet'    => null,
         ], $me);
 
         $tasks = $this->api('GET', '/api/time-track/tasks?search=unit&limit=5', null, $token);

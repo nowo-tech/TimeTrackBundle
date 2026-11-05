@@ -95,7 +95,7 @@ final readonly class DeviceAuthorizationService
      * the table by rotating addresses. With the global cap on, expired rows are purged before counting.
      *
      * @param string $clientName Name the client sent (control characters removed, trimmed, capped at 100 characters)
-     * @param list<ClientScope>|null $scopes Requested scopes (null = every scope; parse device input with {@see ClientScope::fromRequested()})
+     * @param list<ClientScope>|null $scopes Requested scopes (null = the default scopes; parse device input with {@see ClientScope::fromRequested()})
      * @param string|null $clientIp Device IP (its /24 or /64 is counted and shown on the approval page)
      *
      * @throws DeviceFlowCapacityExceededException When a cap is reached

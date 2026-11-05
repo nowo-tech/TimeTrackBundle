@@ -28,7 +28,7 @@ final class ClientApiV110Test extends FunctionalTestCase
     {
         $me = $this->api('GET', '/api/time-track/me', null, $this->login());
 
-        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'monitoring' => false], $me['features'] ?? null);
+        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'monitoring' => false], $me['features'] ?? null);
         self::assertSame(['backdate' => ['max_seconds' => 7200, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 20, 'answer_timeout_minutes' => 2, 'user_can_disable' => true]], $me['limits'] ?? null);
     }
 
@@ -37,7 +37,7 @@ final class ClientApiV110Test extends FunctionalTestCase
         $token = $this->login();
 
         $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);
-        self::assertSame(['id' => 'task-1', 'title' => 'Implement login API', 'boardId' => 'board-1', 'boardTitle' => 'Sprint 1', 'projectId' => 'project-1', 'projectTitle' => 'Demo project', 'url' => null], $tasks['tasks'][0] ?? null);
+        self::assertSame(['id' => 'task-1', 'title' => 'Implement login API', 'boardId' => 'board-1', 'boardTitle' => 'Sprint 1', 'projectId' => 'project-1', 'projectTitle' => 'Demo project', 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'loggedSecondsScope' => null, 'remainingSeconds' => null], $tasks['tasks'][0] ?? null);
 
         $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1'], $token);
         $timer = $this->api('GET', '/api/time-track/timer', null, $token);

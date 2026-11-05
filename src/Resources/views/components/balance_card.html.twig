@@ -1,0 +1,28 @@
+{#
+  TimeTrack:BalanceCard (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::balanceCard()): from, to,
+  range, totals, balance, source, legalRecord, legalBadge (label key, null for a register), overtime (annual counter or
+  null), policy, labels, density.
+#}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
+{% set _l = view.labels %}
+{% set _b = 'time_track' %}
+<section class="{{ nowo_ui_class('card', _b) }} nowo-time-track-balance nowo-time-track--{{ view.density }}" data-testid="time-track-balance" data-source="{{ view.source }}">
+    <header class="{{ nowo_ui_class('card_header', _b) }}">
+        <h2 class="{{ nowo_ui_class('card_title', _b) }}">{{ (_l.title ?? 'balance.title')|trans }}</h2>
+        <span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ ('balance.range.' ~ view.range)|trans({'%from%': view.from, '%to%': view.to}) }}</span>
+    </header>
+    <div class="{{ nowo_ui_class('card_body', _b) }}">
+        {% if view.legalBadge %}<p class="{{ nowo_ui_class('badge_warning', _b) }}" data-testid="time-track-balance-legal">{{ view.legalBadge|trans }}</p>{% endif %}
+        <dl class="{{ nowo_ui_class('stat_row', _b) }}">
+            <div class="{{ nowo_ui_class('stat', _b) }}" data-testid="time-track-balance-value"><dt class="{{ nowo_ui_class('stat_label', _b) }}">{{ (_l.balance ?? 'balance.balance')|trans }}</dt><dd class="{{ nowo_ui_class('stat_value', _b) }}">{{ view.balance|nowo_time_track_duration(true) }}</dd></div>
+            <div class="{{ nowo_ui_class('stat', _b) }}"><dt class="{{ nowo_ui_class('stat_label', _b) }}">{{ (_l.expected ?? 'balance.expected')|trans }}</dt><dd class="{{ nowo_ui_class('stat_value', _b) }}">{{ view.totals.expectedSeconds|nowo_time_track_duration }}</dd></div>
+            <div class="{{ nowo_ui_class('stat', _b) }}"><dt class="{{ nowo_ui_class('stat_label', _b) }}">{{ (_l.worked ?? 'balance.worked')|trans }}</dt><dd class="{{ nowo_ui_class('stat_value', _b) }}">{{ view.totals.workedSeconds|nowo_time_track_duration }}</dd></div>
+            <div class="{{ nowo_ui_class('stat', _b) }}"><dt class="{{ nowo_ui_class('stat_label', _b) }}">{{ (_l.diff ?? 'balance.diff')|trans }}</dt><dd class="{{ nowo_ui_class('stat_value', _b) }}">{{ view.totals.diffSeconds|nowo_time_track_duration(true) }}</dd></div>
+            {% if view.overtime is not null %}
+                <div class="{{ nowo_ui_class('stat', _b) }}" data-testid="time-track-balance-overtime"><dt class="{{ nowo_ui_class('stat_label', _b) }}">{{ (_l.overtime ?? 'balance.overtime')|trans }}</dt><dd class="{{ nowo_ui_class('stat_value', _b) }}">{{ view.totals.overtimeSeconds|nowo_time_track_duration }}</dd></div>
+                <div class="{{ nowo_ui_class('stat', _b) }}"><dt class="{{ nowo_ui_class('stat_label', _b) }}">{{ (_l.overtime_year ?? 'balance.overtime_year')|trans({'%year%': view.overtime.year}) }}</dt><dd class="{{ nowo_ui_class('stat_value', _b) }}">{{ view.overtime.countedSeconds|nowo_time_track_duration }} / {{ view.overtime.capSeconds|nowo_time_track_duration }}</dd>
+                    {% for flag in view.overtime.flags %}<span class="{{ nowo_ui_class(flag == 'overtime_cap_exceeded' ? 'badge_danger' : 'badge_warning', _b) }}">{{ ('balance.flag.' ~ flag)|trans }}</span>{% endfor %}</div>
+            {% endif %}
+        </dl>
+    </div>
+</section>
