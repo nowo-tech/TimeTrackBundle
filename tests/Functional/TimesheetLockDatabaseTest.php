@@ -218,6 +218,22 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         self::assertSame([], $ledger->findByOwner($owner, 'org-a'));
     }
 
+    public function testThePurgeNeverCutsAChainInTheMiddle(): void
+    {
+        $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $owner  = (string) $this->user->getId();
+        // A backdated line written after a recent one: effective before the cut-off, but not part of a chain prefix.
+        $recent    = new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable('2026-10-01 08:00:00'), null, 'Opening');
+        $backdated = new BalanceLedgerLine($this->user, $owner, 'org-a', '2020-01-01', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-10-02 08:00:00'), $recent->getHash(), 'Backdated');
+        $ledger->append($recent);
+        $ledger->append($backdated);
+        $ledger->flush();
+
+        self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 0], (new DoctrineOrmTimesheetRepository($this->entityManager()))->purgeBefore('2021-01-01'));
+        self::assertCount(2, $ledger->findByOwner($owner, 'org-a'));
+        self::assertNull($ledger->findByOwner($owner, 'org-a')[0]->getPurgedBefore());
+    }
+
     public function testTheLedgerChainRefusesAFork(): void
     {
         $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
