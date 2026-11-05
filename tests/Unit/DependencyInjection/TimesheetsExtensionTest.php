@@ -18,7 +18,17 @@ use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
+use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
+use Nowo\TimeTrackBundle\WorkingTime\ConfigOvertimePolicy;
+use Nowo\TimeTrackBundle\WorkingTime\DerivedWorkingCalendar;
+use Nowo\TimeTrackBundle\WorkingTime\OvertimePolicyInterface;
+use Nowo\TimeTrackBundle\WorkingTime\TaskTimeWorkedTimeSource;
+use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
+use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
+use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
@@ -79,6 +89,42 @@ final class TimesheetsExtensionTest extends TestCase
         $container = $this->load(['timesheets' => ['enabled' => true, 'scope_provider' => 'app.scopes', 'approver_provider' => 'app.approvers']]);
 
         self::assertSame('app.scopes', (string) $container->getAlias(TimesheetScopeProviderInterface::class));
+    }
+
+    public function testWorkingTimeDefaultsAndHostServices(): void
+    {
+        $container = $this->load([]);
+        $config    = $container->getParameter('nowo_time_track.working_time');
+        self::assertIsArray($config);
+        self::assertFalse($config['enabled']);
+        self::assertSame(['daily_mode' => 'expected', 'ordinary_max_seconds' => 32_400, 'weekly_mode' => 'expected', 'weekly_max_seconds' => 144_000, 'annual_cap_seconds' => 288_000, 'ratify_on_approval' => true], $config['overtime']);
+        self::assertSame(DerivedWorkingCalendar::class, (string) $container->getAlias(WorkingCalendarProviderInterface::class));
+        self::assertSame(TaskTimeWorkedTimeSource::class, (string) $container->getAlias(WorkedTimeSourceInterface::class));
+        self::assertSame(ConfigOvertimePolicy::class, (string) $container->getAlias(OvertimePolicyInterface::class));
+        self::assertFalse($container->getDefinition(WorkingTimeBalanceService::class)->getArgument('$enabled'));
+        self::assertNull($container->getDefinition(TimesheetAccessGuard::class)->getArgument('$approverProvider'));
+        self::assertTrue($container->getDefinition(BalanceLedger::class)->isPublic());
+        self::assertSame('UTC', $container->getDefinition(TimesheetTimezoneResolver::class)->getArgument('$defaultTimezone'));
+
+        $host = $this->load(['working_time' => ['enabled' => true, 'calendar_provider' => 'app.calendar', 'worked_time_source' => 'app.register', 'overtime_policy' => 'app.convenio', 'balance' => ['start_date' => '2026-01-01'], 'overtime' => ['daily_mode' => 'none', 'weekly_mode' => 'legal_max']]]);
+        self::assertSame('app.calendar', (string) $host->getAlias(WorkingCalendarProviderInterface::class));
+        self::assertSame('app.register', (string) $host->getAlias(WorkedTimeSourceInterface::class));
+        self::assertSame('app.convenio', (string) $host->getAlias(OvertimePolicyInterface::class));
+        self::assertSame('2026-01-01', $host->getDefinition(WorkingTimeBalanceService::class)->getArgument('$balanceStartDate'));
+        self::assertSame('none', $host->getDefinition(ConfigOvertimePolicy::class)->getArgument('$dailyMode'));
+        self::assertSame(SingleScopeProvider::class, (string) $host->getAlias(TimesheetScopeProviderInterface::class), 'working time alone: one scope');
+
+        $scoped = $this->load(['working_time' => ['enabled' => true], 'timesheets' => ['scope_provider' => 'app.scopes', 'approver_provider' => 'app.approvers']]);
+        self::assertSame('app.scopes', (string) $scoped->getAlias(TimesheetScopeProviderInterface::class));
+        self::assertInstanceOf(Reference::class, $scoped->getDefinition(TimesheetAccessGuard::class)->getArgument('$approverProvider'));
+    }
+
+    public function testABadStartDateIsRefused(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('start_date');
+
+        $this->load(['working_time' => ['balance' => ['start_date' => '2026-13-01']]]);
     }
 
     /**

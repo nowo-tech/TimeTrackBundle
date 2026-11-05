@@ -55,6 +55,10 @@ services:
             - '../../Timesheet/PeriodLockGuard.php'
             - '../../Support/CanonicalJson.php'
             - '../../Support/StorageTime.php'
+            - '../../Timesheet/TimesheetAccessGuard.php'
+            - '../../Timesheet/TimesheetTimezoneResolver.php'
+            # Since 1.13: working time — value objects; the services are defined by the extension.
+            - '../../WorkingTime/'
 
     Nowo\TimeTrackBundle\Controller\:
         resource: '../../Controller/'

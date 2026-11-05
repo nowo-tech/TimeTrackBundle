@@ -174,6 +174,7 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                     ->end()
                 ->end()
+                ->append($this->workingTimeNode())
                 ->append($this->timesheetsNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
@@ -607,6 +608,69 @@ final class Configuration implements ConfigurationInterface
             ->end();
 
         return $treeBuilder;
+    }
+
+    /**
+     * Since 1.13: `working_time` (contract §4, §13): working calendar, worked-time source, overtime policy and the
+     * hours balance. Off by default.
+     */
+    private function workingTimeNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('working_time'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Hours balance, overtime and the balance client API (default off).')
+                    ->defaultFalse()
+                ->end()
+                ->scalarNode('calendar_provider')
+                    ->info('Service id implementing WorkingCalendarProviderInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('worked_time_source')
+                    ->info('Service id implementing WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('overtime_policy')
+                    ->info('Service id implementing OvertimePolicyInterface (null = ConfigOvertimePolicy with the values below).')
+                    ->defaultNull()
+                ->end()
+                ->arrayNode('balance')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('start_date')
+                            ->info('First day of the running balance (Y-m-d); null = the 366 days before the end of the asked range, or after the last locked period.')
+                            ->defaultNull()
+                            ->validate()
+                                ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || preg_match('/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/D', $v) !== 1))
+                                ->thenInvalid('working_time.balance.start_date must be a Y-m-d date or null, got %s.')
+                            ->end()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('overtime')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->enumNode('daily_mode')
+                            ->info('expected: above the day\'s expected time; ordinary_max: above the agreement cap or ordinary_max_seconds; none: weekly rule only (flexible hours).')
+                            ->values(['expected', 'ordinary_max', 'none'])
+                            ->defaultValue('expected')
+                        ->end()
+                        ->integerNode('ordinary_max_seconds')->info('9 h, art. 34.3 ET.')->defaultValue(32_400)->min(0)->max(86_400)->end()
+                        ->enumNode('weekly_mode')
+                            ->info('expected: above the week\'s expected time; legal_max: above weekly_max_seconds.')
+                            ->values(['expected', 'legal_max'])
+                            ->defaultValue('expected')
+                        ->end()
+                        ->integerNode('weekly_max_seconds')->info('40 h, art. 34.1 ET.')->defaultValue(144_000)->min(1)->max(604_800)->end()
+                        ->integerNode('annual_cap_seconds')->info('80 h, art. 35.2 ET (0 = no cap flags).')->defaultValue(288_000)->min(0)->end()
+                        ->booleanNode('ratify_on_approval')->info('Write one overtime_ratified ledger line when a timesheet is approved.')->defaultTrue()->end()
+                    ->end()
+                ->end()
+            ->end();
+
+        return $node;
     }
 
     /**

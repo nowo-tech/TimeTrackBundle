@@ -17,7 +17,7 @@ use function in_array;
 final class StubTimesheetApproverProvider implements TimesheetApproverProviderInterface
 {
     /**
-     * @param array<string, array<string, list<string>>> $approvers
+     * @param array<string, array<int|string, list<string>>> $approvers
      */
     public function __construct(public array $approvers = [])
     {

@@ -78,6 +78,23 @@ PRs). Every feature is off until configured; the schema change is required for e
   `PERIOD_LOCK_REFUSED`, `BALANCE_LEDGER_LINE_ADDED`.
 - **`nowo:time-track:entries:backfill-scope [--batch=500] [--dry-run]`**: gives pre-1.13 entries their scope (keyset,
   idempotent, resumable).
+- **Working time and hours balance** (`working_time`, off by default; contract §4): `WorkingTime\WorkingCalendarProviderInterface`
+  (`CalendarDay`, `CalendarDayKind`; default `DerivedWorkingCalendar` from the 1.12 working hours and days off; every
+  day validated by `CalendarDayNormalizer`, failing closed to `none`), `WorkedTimeSourceInterface` (`WorkedDay`; default
+  `TaskTimeWorkedTimeSource`: live task time of the scope, overlaps merged, `legalRecord: false`),
+  `OvertimePolicyInterface` (`OvertimeInput`, `OvertimeResult`; default `ConfigOvertimePolicy`: daily `expected` /
+  `ordinary_max` / `none`, weekly `expected` / `legal_max`, annual counter of ratified minus compensated-within-4-months
+  overtime with `overtime_cap_near` / `overtime_cap_exceeded` flags, informational `rest_short`, `break_missing`,
+  `long_day` flags), the pure `WorkingTimeBalanceCalculator` and `WorkingTimeBalanceService::report()` →
+  `BalanceReport` (days, ISO weeks, totals, running balance, ledger, `source: register|task_time`, `legalRecord`,
+  policy id + version). The running balance continues from the last locked timesheet's approved snapshot.
+- **Balance ledger** `WorkingTime\BalanceLedger::add()`: `opening` (once), `adjustment`, `overtime_paid` (negative),
+  `overtime_compensated` (positive), `reversal` (never edited, chained per owner and scope); approvers only, never the
+  owner; reasons required and sanitised; refused in a locked period; `overtime_ratified` only from the approval.
+  `BalanceLedgerLineAddedEvent`, `LedgerRefusedException` (stable codes).
+- **`Timesheet\TimesheetAccessGuard`**: tenant-aware view / submit / approve / reject / reopen / adjust decisions (no
+  self-approval, admin roles only with `timesheets.admin_roles_view` or `reopen_roles`), deny-only
+  `TimesheetAccessCheckEvent`; `TimesheetTimezoneResolver` (scope zone → working-hours zone → default).
 - `TimeEntrySource::Manual` and `TimeEntrySource::Calendar` (live, editable; write paths in 1.14).
 - `Repository\FilteredImportedTimeEntryRepositoryInterface` (bulk removal that keeps locked entries) and
   `Repository\ScopeBackfillRepositoryInterface`, both implemented by `DoctrineOrmTimeEntryRepository`.

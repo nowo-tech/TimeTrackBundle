@@ -134,6 +134,24 @@ final readonly class PeriodLockGuard
     }
 
     /**
+     * The hard-locked timesheet of the owner and scope whose period contains the local date (`Y-m-d`), or null: what
+     * a balance ledger line with that effective date is checked against (contract §3.4).
+     */
+    public function lockingTimesheetForDate(string $ownerId, string $scopeKey, string $localDate): ?Timesheet
+    {
+        if (!$this->enabled) {
+            return null;
+        }
+        foreach ($this->timesheets->findGuarding($ownerId, $scopeKey, $localDate, $localDate) as $timesheet) {
+            if ($timesheet->isLocked()) {
+                return $timesheet;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Whether an entry may be changed or deleted by any bundle path: false when its period (local start date, its
      * scope or, without one, any scope of its owner) is locked or submitted, and when its owner is unknown.
      */

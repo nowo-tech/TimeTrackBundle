@@ -65,9 +65,19 @@ use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
+use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
+use Nowo\TimeTrackBundle\WorkingTime\ConfigOvertimePolicy;
+use Nowo\TimeTrackBundle\WorkingTime\DerivedWorkingCalendar;
+use Nowo\TimeTrackBundle\WorkingTime\OvertimePolicyInterface;
+use Nowo\TimeTrackBundle\WorkingTime\TaskTimeWorkedTimeSource;
+use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
+use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
+use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -309,12 +319,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => $registryRef]));
         $container->setAlias(BalanceLedgerRepositoryInterface::class, DoctrineOrmBalanceLedgerRepository::class);
 
-        if ($enabled) {
-            if ($timesheets['scope_mode'] === 'single') {
+        /** @var array{enabled: bool} $workingTime */
+        $workingTime = $config['working_time'];
+        if ($enabled || $workingTime['enabled']) {
+            // Working time without timesheets and without a scope provider: one scope '' (like scope_mode single).
+            $providerId = $timesheets['scope_provider'];
+            if ($timesheets['scope_mode'] === 'single' || !is_string($providerId) || $providerId === '') {
                 $container->setDefinition(SingleScopeProvider::class, new Definition(SingleScopeProvider::class));
                 $container->setAlias(TimesheetScopeProviderInterface::class, SingleScopeProvider::class);
             } else {
-                $container->setAlias(TimesheetScopeProviderInterface::class, (string) $timesheets['scope_provider']);
+                $container->setAlias(TimesheetScopeProviderInterface::class, $providerId);
             }
         }
         $scopeRef = new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
@@ -338,6 +352,96 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$periodLockGuard', $guardRef);
         $container->getDefinition(BackfillEntryScopeCommand::class)
             ->setArgument('$scopeProvider', $scopeRef);
+
+        $this->registerWorkingTime($container, $config, $scopeRef, $guardRef);
+    }
+
+    /**
+     * Since 1.13: working calendar, worked-time source, overtime policy (host services or the defaults), the zone
+     * resolver, the balance service, the timesheet access guard and the balance ledger.
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerWorkingTime(ContainerBuilder $container, array $config, Reference $scopeRef, Reference $guardRef): void
+    {
+        /** @var array{enabled: bool, calendar_provider: string|null, worked_time_source: string|null, overtime_policy: string|null, balance: array{start_date: string|null}, overtime: array{daily_mode: string, ordinary_max_seconds: int, weekly_mode: string, weekly_max_seconds: int, annual_cap_seconds: int, ratify_on_approval: bool}} $workingTime */
+        $workingTime = $config['working_time'];
+        /** @var array{approver_provider: string|null, default_timezone: string, admin_roles_view: bool, reopen_roles: list<string>} $timesheets */
+        $timesheets = $config['timesheets'];
+        /** @var array{admin_roles: list<string>} $security */
+        $security  = $config['security'];
+        $loggerRef = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $container->setParameter('nowo_time_track.working_time', $workingTime);
+        $container->setParameter('nowo_time_track.working_time.enabled', $workingTime['enabled']);
+
+        $container->setDefinition(TimesheetTimezoneResolver::class, (new Definition(TimesheetTimezoneResolver::class))
+            ->setArguments([
+                '$scopeProvider'   => $scopeRef,
+                '$profileProvider' => new Reference(ClientUserProfileProviderInterface::class),
+                '$defaultTimezone' => $timesheets['default_timezone'],
+            ]));
+        $container->setDefinition(DerivedWorkingCalendar::class, (new Definition(DerivedWorkingCalendar::class))
+            ->setArguments(['$profileProvider' => new Reference(ClientUserProfileProviderInterface::class), '$logger' => $loggerRef])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(TaskTimeWorkedTimeSource::class, (new Definition(TaskTimeWorkedTimeSource::class))
+            ->setArguments(['$entries' => new Reference(TimeEntryRepositoryInterface::class), '$timezoneResolver' => new Reference(TimesheetTimezoneResolver::class)]));
+        $overtime = $workingTime['overtime'];
+        $container->setDefinition(ConfigOvertimePolicy::class, (new Definition(ConfigOvertimePolicy::class))
+            ->setArguments([
+                '$dailyMode'          => $overtime['daily_mode'],
+                '$ordinaryMaxSeconds' => $overtime['ordinary_max_seconds'],
+                '$weeklyMode'         => $overtime['weekly_mode'],
+                '$weeklyMaxSeconds'   => $overtime['weekly_max_seconds'],
+                '$annualCapSeconds'   => $overtime['annual_cap_seconds'],
+            ]));
+        foreach ([
+            WorkingCalendarProviderInterface::class => [$workingTime['calendar_provider'], DerivedWorkingCalendar::class],
+            WorkedTimeSourceInterface::class        => [$workingTime['worked_time_source'], TaskTimeWorkedTimeSource::class],
+            OvertimePolicyInterface::class          => [$workingTime['overtime_policy'], ConfigOvertimePolicy::class],
+        ] as $interface => [$serviceId, $default]) {
+            $container->setAlias($interface, is_string($serviceId) && $serviceId !== '' ? $serviceId : $default);
+        }
+
+        $clockRef = new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $container->setDefinition(WorkingTimeBalanceService::class, (new Definition(WorkingTimeBalanceService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$calendar'         => new Reference(WorkingCalendarProviderInterface::class),
+                '$workedSource'     => new Reference(WorkedTimeSourceInterface::class),
+                '$policy'           => new Reference(OvertimePolicyInterface::class),
+                '$ledger'           => new Reference(BalanceLedgerRepositoryInterface::class),
+                '$timesheets'       => new Reference(TimesheetRepositoryInterface::class),
+                '$timezoneResolver' => new Reference(TimesheetTimezoneResolver::class),
+                '$clock'            => $clockRef,
+                '$balanceStartDate' => $workingTime['balance']['start_date'],
+                '$enabled'          => $workingTime['enabled'],
+                '$logger'           => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+
+        $approverId = $timesheets['approver_provider'];
+        $container->setDefinition(TimesheetAccessGuard::class, (new Definition(TimesheetAccessGuard::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$scopeProvider'    => new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$approverProvider' => is_string($approverId) && $approverId !== '' ? new Reference($approverId) : null,
+                '$eventDispatcher'  => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$adminRoles'       => $security['admin_roles'],
+                '$adminRolesView'   => $timesheets['admin_roles_view'],
+                '$reopenRoles'      => $timesheets['reopen_roles'],
+                '$managerRegistry'  => new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ]));
+        $container->setDefinition(BalanceLedger::class, (new Definition(BalanceLedger::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$lines'           => new Reference(BalanceLedgerRepositoryInterface::class),
+                '$accessGuard'     => new Reference(TimesheetAccessGuard::class),
+                '$lockGuard'       => $guardRef,
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'           => $clockRef,
+                '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
     }
 
     /**
