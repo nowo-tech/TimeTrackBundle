@@ -182,6 +182,23 @@ PRs). Every feature is off until configured; the schema change is required for e
 - `Timesheet\TimesheetPersonalDataExporter::export($ownerRef)` (public service): the person's timesheets with their
   audit trail and their ledger lines, by `owner_ref`, without other people's ids, for the host's art. 15 / 20 export
   (contract §12.4, GB-L6).
+- REQ-SEC-004 audit GB (block 4): `GET timesheets` and the week-grid component mask imported entries whose task the
+  owner can no longer see (title and description), as `GET entries` / `GET export` do since 1.11 (GB-M2).
+- **Task effort** (owner decision 2026-11-05, GB-M3): `loggedSeconds` is the caller's own total; the total of every user
+  only for users the host lets manage the task — new deny-by-default event `nowo_time_track.task_effort.access_check`
+  (`Event\TaskEffortAccessCheckEvent`, `TeamAccessGuard::canSeeTaskEffortTotal()`);
+  `TaskEffortRepositoryInterface::loggedSecondsByTask($taskIds, ?$userId)`.
+- `GET me` never creates a timesheet row (`TimesheetService::peek()`); `GET timesheets` answers `id: null` for an
+  unstored draft period, 404 for keys after the next period or outside 2000–2099; `GET balance` answers 400 for ranges
+  outside the window or ending more than 366 days after today (GB-L1, GB-M1).
+- `TimesheetFormHandler` checks the CSRF token itself (fails closed without a token manager) (GB-L2); owner actions
+  use the posted `scope` + `period` (new hidden fields of `TimesheetDecisionType`; drafts can be submitted) and a
+  foreign timesheet id is `not_found` (GB-I3); ledger minutes beyond ±527 040 are `invalid_seconds` instead of an
+  integer overflow (GB-I9).
+- The week grid and the ledger table check `canView()` for the viewer; the ledger table drops lines of another owner or
+  scope (GB-I2).
+- Docs: no web ledger rate limit in 1.13 (hosts must rate-limit), workday providers deduplicate on the idempotency key,
+  unscoped timers and submit, `TimesheetPersonalDataExporter`, ledger tail not anchored (GB-L6, GB-I4, GB-I6, GB-L4).
 
 ## [1.12.0] - 2026-11-05
 

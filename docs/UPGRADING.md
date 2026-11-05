@@ -220,8 +220,22 @@ payloads must accept the new keys. Beacon: wire the new routes (`config/routes.y
 there) and implement `Workday\WorkdayProviderInterface` for spec 198 (`client_api.workday_provider`).
 
 **Task effort.** Let your task provider fill `TaskReference::$estimateSeconds` (TaskBoard `estimatedMinutes × 60`); the
-bundle sums `loggedSeconds` from its entries unless the provider gives `TaskReference::$loggedSeconds`. The total is the
-effort of every user on the task (see SECURITY).
+bundle sums `loggedSeconds` from its entries unless the provider gives `TaskReference::$loggedSeconds`. It is the caller's
+own time; the total of every user is shown only to users your listener on `nowo_time_track.task_effort.access_check`
+grants (those who can manage the task; denied by default, see SECURITY).
+
+**Timesheet web actions (CSRF).** `TimesheetFormHandler` verifies the CSRF token itself and refuses every post when no
+CSRF token manager exists: keep `framework.csrf_protection` enabled (`symfony/security-csrf`). The decision forms now
+carry hidden `scope` and `period` fields; owner submit / withdraw act on the actor's own period.
+
+**Rate limits and personal data.** Put a per-actor `RateLimiter` on your ledger (and decision) routes: the bundle does not
+limit web ledger writes in 1.13. Add `Timesheet\TimesheetPersonalDataExporter::export($ownerRef)` to your personal-data
+export (timesheets, their audit rows and the ledger).
+
+**Balance bounds.** `working_time.balance.start_date` is honoured for at most 3660 days before the end of a range; beyond
+that no balance is computed (warning `balance_span_exceeded`) until a locked timesheet or a later start date shortens the
+span. `GET timesheets?period=` answers 404 for keys after the next period or outside 2000–2099, and only the current and
+previous periods get a stored row when viewed.
 
 **UiKit 2.29.** `nowo-tech/ui-kit-bundle` is now `^2.29` (dialog anatomy of the components). Run
 `composer update nowo-tech/ui-kit-bundle` if your lock is older.

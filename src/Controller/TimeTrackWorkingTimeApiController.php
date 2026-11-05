@@ -150,8 +150,8 @@ final readonly class TimeTrackWorkingTimeApiController
     }
 
     /**
-     * GET balance `?from&to&scope`: the hours balance (≤ 92 days; default: the current period), with `source` and
-     * `legalRecord`.
+     * GET balance `?from&to&scope`: the hours balance (≤ 92 days, inside 2000–2099, ending at most 366 days after today;
+     * default: the current period), with `source` and `legalRecord`.
      */
     public function balance(Request $request): Response
     {
@@ -173,7 +173,7 @@ final readonly class TimeTrackWorkingTimeApiController
             }
             $report = $this->context->balance()->report($principal->user, $scope->key, $from, $to);
         } catch (InvalidArgumentException) {
-            return $this->responseFactory->error('invalid_request', 'from and to must be Y-m-d dates, from ≤ to, at most 92 days.', Response::HTTP_BAD_REQUEST, $request);
+            return $this->responseFactory->error('invalid_request', 'from and to must be Y-m-d dates, from ≤ to, at most 92 days, ending at most 366 days after today.', Response::HTTP_BAD_REQUEST, $request);
         }
 
         return $report instanceof BalanceReport ? $this->responseFactory->json(['scope' => $this->scopeArray($scope)] + $report->toArray(), Response::HTTP_OK, $request) : $this->notFound($request);
@@ -249,19 +249,24 @@ final readonly class TimeTrackWorkingTimeApiController
             return $this->responseFactory->error($e->errorCode(), 'The timesheet action was refused.', $e->httpStatus(), $request);
         }
 
-        return $this->responseFactory->json($this->timesheetArray($timesheet, $scope), Response::HTTP_OK, $request);
+        return $this->responseFactory->json($this->timesheetArray($timesheet, $scope, $principal), Response::HTTP_OK, $request);
     }
 
     /**
-     * The owner's view of a timesheet.
+     * The owner's view of a timesheet: imported entries whose task the owner may not see are masked as in
+     * `GET entries` (audit GB-M2); a period without a stored row has `id: null` and no events (audit GB-L1).
      *
      * @return array<string, mixed>
      */
-    private function timesheetArray(Timesheet $timesheet, TimesheetScope $scope): array
+    private function timesheetArray(Timesheet $timesheet, TimesheetScope $scope, ClientApiPrincipal $principal): array
     {
         $service  = $this->context->timesheets();
         $snapshot = $service->snapshot($timesheet);
-        $blocked  = $this->context->blockedEntryIds([...$snapshot->entries, ...$snapshot->unassigned]);
+        $all      = [...$snapshot->entries, ...$snapshot->unassigned];
+        $blocked  = $this->context->blockedEntryIds($all);
+        $hidden   = $this->context->hiddenEntryIds($all);
+        $title    = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->context->hiddenTaskTitle($principal->user);
+        $entry    = static fn (TimeEntry $e): array => $e->toArray(!isset($hidden[$e->getId()]), $title) + ['locked' => isset($blocked[$e->getId()])];
         $status   = $timesheet->getStatus();
         $actions  = [];
         if ($status->isEditable()) {
@@ -273,7 +278,7 @@ final readonly class TimeTrackWorkingTimeApiController
         $period = $timesheet->getPeriod();
 
         return [
-            'id'              => $timesheet->getId(),
+            'id'              => $timesheet->isDraft() ? null : $timesheet->getId(),
             'scope'           => $this->scopeArray($scope),
             'period'          => ['key' => $period->key, 'kind' => $period->kind->value, 'start' => $period->start, 'end' => $period->end, 'timezone' => $timesheet->getTimezone()],
             'status'          => $status->value,
@@ -282,8 +287,8 @@ final readonly class TimeTrackWorkingTimeApiController
             'lockReason'      => $timesheet->getLockReason()?->value,
             'decisionComment' => $timesheet->getDecisionComment(),
             'totals'          => $status->isEditable() ? $snapshot->totals : ($timesheet->getTotals() ?? $snapshot->totals),
-            'entries'         => array_map(static fn (TimeEntry $e): array => $e->toArray() + ['locked' => isset($blocked[$e->getId()])], $snapshot->entries),
-            'unassigned'      => array_map(static fn (TimeEntry $e): array => $e->toArray() + ['locked' => isset($blocked[$e->getId()])], $snapshot->unassigned),
+            'entries'         => array_map($entry, $snapshot->entries),
+            'unassigned'      => array_map($entry, $snapshot->unassigned),
             'events'          => array_map(static fn (TimesheetEvent $e): array => [
                 'action'     => $e->getAction()->value,
                 'fromStatus' => $e->getFromStatus()->value,

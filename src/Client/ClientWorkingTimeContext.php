@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Client;
 
+use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
-use Nowo\TimeTrackBundle\Exception\TimesheetException;
+use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
@@ -15,7 +16,15 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Workday\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdayState;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
+use ReflectionMethod;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+use function in_array;
+use function is_string;
+use function method_exists;
+use function preg_replace;
+use function strtolower;
 
 /**
  * Since 1.13: what the client API knows about a user's working time: the `GET me` feature flags (`workday`,
@@ -33,6 +42,9 @@ final readonly class ClientWorkingTimeContext
         private TimesheetAccessGuard $accessGuard,
         private PeriodLockGuard $lockGuard,
         private ?WorkdayProviderInterface $workdayProvider = null,
+        private ?TimerService $timerService = null,
+        private ?TranslatorInterface $translator = null,
+        private ?ClientUserProfileProviderInterface $profileProvider = null,
     ) {
     }
 
@@ -96,7 +108,34 @@ final readonly class ClientWorkingTimeContext
     }
 
     /**
-     * `GET me.timesheet`: the current period of the current scope, or null.
+     * Since the GB fixes: ids of the imported entries whose task their owner may not see (title and description
+     * masked, as `GET entries` / `GET export` since 1.11).
+     *
+     * @param list<TimeEntry> $entries
+     *
+     * @return array<string, true>
+     */
+    public function hiddenEntryIds(array $entries): array
+    {
+        return $this->timerService?->hiddenTaskEntryIds($entries) ?? [];
+    }
+
+    /**
+     * The title of a masked entry (`reports.task_not_visible` in the user's language when the translator knows it).
+     */
+    public function hiddenTaskTitle(UserInterface $user): string
+    {
+        if (!$this->translator instanceof TranslatorInterface) {
+            return TimeEntry::HIDDEN_TASK_TITLE;
+        }
+        $title = $this->translator->trans('reports.task_not_visible', [], 'NowoTimeTrackBundle', $this->language($user));
+
+        return $title === '' || $title === 'reports.task_not_visible' ? TimeEntry::HIDDEN_TASK_TITLE : $title;
+    }
+
+    /**
+     * `GET me.timesheet`: the current period of the current scope, or null. Read only: a missing row is reported as
+     * `open` and never created (audit GB-L1).
      *
      * @return array{scopeKey: string, periodKey: string, status: string, lockedThrough: string|null}|null
      */
@@ -106,12 +145,9 @@ final readonly class ClientWorkingTimeContext
         if (!$this->timesheets->isEnabled() || !$scope instanceof TimesheetScope) {
             return null;
         }
-        try {
-            $period    = $this->timesheets->period($user, $scope->key, 'current');
-            $timesheet = $this->timesheets->view($user, UserIdResolver::getId($user), $scope->key, $period);
-        } catch (TimesheetException) {
-            return null;
-        }
+        // The user's own current period in one of their scopes: peek() cannot refuse it, and it never writes.
+        $period    = $this->timesheets->period($user, $scope->key, 'current');
+        $timesheet = $this->timesheets->peek($user, UserIdResolver::getId($user), $scope->key, $period);
 
         return ['scopeKey' => $scope->key, 'periodKey' => $period->key, 'status' => $timesheet->getStatus()->value, 'lockedThrough' => self::lockedThrough($timesheet)];
     }
@@ -126,6 +162,24 @@ final readonly class ClientWorkingTimeContext
     public function blockedEntryIds(array $entries): array
     {
         return $this->lockGuard->blockedEntryIds($entries);
+    }
+
+    /**
+     * Shipped language of the user's locale (profile provider, else an argumentless `getLocale()`), or null.
+     */
+    private function language(UserInterface $user): ?string
+    {
+        if ($this->profileProvider instanceof ClientUserLocaleProviderInterface) {
+            $locale = $this->profileProvider->getLocale($user);
+        } else {
+            $locale = method_exists($user, 'getLocale') && (new ReflectionMethod($user, 'getLocale'))->getNumberOfRequiredParameters() === 0 ? $user->getLocale() : null;
+        }
+        if (!is_string($locale)) {
+            return null;
+        }
+        $language = strtolower((string) preg_replace('/[_-].*$/s', '', $locale));
+
+        return in_array($language, TimeTrackClientApiController::TRANSLATION_LOCALES, true) ? $language : null;
     }
 
     /**

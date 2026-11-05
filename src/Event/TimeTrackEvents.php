@@ -58,4 +58,7 @@ final class TimeTrackEvents
 
     /** {@see BalanceLedgerLineAddedEvent}: a balance ledger line was appended (1.13). */
     public const BALANCE_LEDGER_LINE_ADDED = 'nowo_time_track.balance_ledger.line_added';
+
+    /** Since 1.13: {@see TaskEffortAccessCheckEvent} — may the user see the all-users `loggedSeconds` of a task? (deny by default). */
+    public const TASK_EFFORT_ACCESS_CHECK = 'nowo_time_track.task_effort.access_check';
 }

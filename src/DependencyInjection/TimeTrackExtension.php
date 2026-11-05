@@ -453,13 +453,17 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$accessGuard'     => new Reference(TimesheetAccessGuard::class),
                 '$lockGuard'       => new Reference(PeriodLockGuard::class),
                 '$workdayProvider' => is_string($workday) && $workday !== '' ? new Reference($workday) : null,
+                '$timerService'    => new Reference(TimerService::class),
+                '$translator'      => new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$profileProvider' => new Reference(ClientUserProfileProviderInterface::class),
             ]));
         $container->getDefinition(TimeTrackWorkingTimeApiController::class)
             ->setArgument('$clock', $clockRef);
         $container->getDefinition(TimeTrackClientApiController::class)
             ->setArgument('$workingTime', new Reference(ClientWorkingTimeContext::class));
         $container->getDefinition(ClientTaskPresenter::class)
-            ->setArgument('$effort', new Reference(TimeEntryRepositoryInterface::class));
+            ->setArgument('$effort', new Reference(TimeEntryRepositoryInterface::class))
+            ->setArgument('$effortAccess', new Reference(TeamAccessGuard::class));
 
         // Since 1.13: the web side of the components (contract §16a).
         $container->setDefinition(TimesheetFormHandler::class, (new Definition(TimesheetFormHandler::class))
@@ -468,6 +472,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$forms'      => new Reference('form.factory'),
                 '$timesheets' => new Reference(TimesheetService::class),
                 '$ledger'     => $workingTime['enabled'] ? new Reference(BalanceLedger::class) : null,
+                // GB-L2: the handler checks the CSRF token itself (fails closed without a token manager).
+                '$csrfTokens' => new Reference('security.csrf.token_manager', ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ]));
         $container->setDefinition(TimesheetViewBuilder::class, (new Definition(TimesheetViewBuilder::class))
             ->setPublic(true)
@@ -476,6 +482,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$forms'             => new Reference(TimesheetFormHandler::class),
                 '$taskAccess'        => new Reference(TaskAccessCheckerInterface::class),
                 '$approverSeesNotes' => $timesheets['approver_sees_notes'],
+                '$timerService'      => new Reference(TimerService::class),
             ]));
 
         $container->getDefinition(TimesheetsPurgeCommand::class)

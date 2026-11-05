@@ -57,7 +57,7 @@ Threat model of the client API (1.9 contract v0.2, 1.10 contract v0.3):
 | Address rotation (IPv6) | Every per-IP limit (API, device, login) keys an IPv6 client by its /64 (`IpPrefix::rateLimitKey()`), IPv4 per address; keep a reverse-proxy limit in front for hard guarantees |
 | Device request flood | `device/code` capped per IPv4 /24 or IPv6 /64 within the code lifetime (`client_api.device_flow.max_pending_per_prefix`, 20) and in total (`max_pending`, 10 000; expired rows purged first) → `429 rate_limited` + `Retry-After` |
 | Clickjacking of the approval page | Every answer of the default verification page sends `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `Cache-Control: no-store`; a host page built on `DeviceAuthorizationService` must send the same ([USAGE](USAGE.md#host-integration-client-api-19)) |
-| Flooding / DoS | Per-token and per-IP fixed-window limits on a shared pool (`client_api.rate_limit.cache_pool`, Redis recommended); bounded lists (`tasks` ≤ 50, `entries` ≤ 100, export ≤ 10 000 rows, periods ≤ 366 days) |
+| Flooding / DoS | Per-token and per-IP fixed-window limits on a shared pool (`client_api.rate_limit.cache_pool`, Redis recommended); bounded lists (`tasks` ≤ 50, `entries` ≤ 100, export ≤ 10 000 rows, `entries` / `export` / reports periods ≤ 366 days); since 1.13 the working-time routes are bounded too (see [Timesheets, balance and lock](#timesheets-balance-and-lock-113)) |
 | Custom entry stores (EF-I6) | Without `LatestTimeEntryRepositoryInterface` the overlap check reads the backdate window plus one day; an older entry that ends inside the window is missed (documented in UPGRADING) |
 | Monitoring creep | No server-side activity signal: `heartbeat` ignores `isIdle`; free `metadata` rejected unless `client_api.allow_metadata`; idle handling is the user's decision (`timer/discard-idle`); the 1.10 idle-check settings (`GET me`) only configure the client prompt, and the server still receives only the decision, never an activity counter |
 | Time inflation by backdating (1.10) | Instants normalised to the server zone first (EF-M1); `startedAt` clamped to `client_api.backdate.max_seconds` (≤ 24 h), never before the user's latest entry, never after now; `endedAt` only shortens time; every clamp is reported to the client, logged without data (`timer_start_clamped`, `timer_stop_clamped`) and exposed to the host on `TimerStartEvent::getStartTime()` / `TimerStopEvent::getEndTime()` |
@@ -121,13 +121,29 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 | Task time presented as the legal register | `legalRecord: false` / `source: task_time` on every balance payload and component unless the host source is its register |
 | Workday replay / forged times | `Idempotency-Key` required (24 h replay, `idempotency_mismatch` for another body), `occurredAt` not in the future and at most 72 h old; the register logic stays in the host |
 | Old tokens gaining new powers | `workday:*`, `balance:read`, `timesheet:*` are never granted by default (a token without stored scopes keeps the pre-1.13 set) |
+| Unbounded balance computation (DoS, audit GB-M1) | The request range is not the only bound: the running balance is computed from `working_time.balance.start_date` (or the last locked timesheet) to the end of the range. `WorkingTimeBalanceService::report()` refuses dates outside 2000-01-01 – 2099-12-31 and ranges ending more than 366 days after today, and never computes a span longer than 3660 days (ten provider calls; null + a `balance_span_exceeded` warning instead). `GET balance` additionally caps the range at 92 days; `GET timesheets?period=` accepts keys in the window up to the next period only (404 otherwise). Hosts with an old `start_date` lock timesheets (their snapshots restart the running balance) or move `start_date` forward |
+| Rows created by reads (audit GB-L1) | `GET me` never writes; `GET timesheets` / `TimesheetService::view()` create the owner's row lazily only for the current and the previous period, any other period is an unstored draft (`id: null`). Rows are otherwise created by submit and auto-lock |
+| Imported-entry masking bypassed (audit GB-M2) | `GET timesheets` and the week-grid component mask imported entries whose task the owner can no longer see (title and description, `taskVisible: false`), as `GET entries` / `GET export` do since 1.11 — for the owner too |
+| Cross-site posts of approver actions (audit GB-L2) | `TimesheetFormHandler` checks the posted `_token` itself with the CSRF token manager (`nowo_time_track_timesheet` / `nowo_time_track_ledger`), whatever the host's `framework.form.csrf_protection` says; without a token manager (`symfony/security-csrf` + `framework.csrf_protection`) every post is refused. Owner actions act only on the actor's own period |
+| Components rendering data the host should not show (audit GB-I2) | The week grid and the ledger table check `canView()` for the viewer (`not_found` otherwise) and the ledger table drops lines of another owner or scope. Still, obtain timesheets through `TimesheetService::find()` / `view()` and lines through `BalanceLedger::linesOf()` |
+| Ledger write flooding (contract §11.4, audit GB-L6) | **No web rate limit in 1.13**: ledger writes come from authenticated approvers through host routes and are audited and chained. Hosts **must** put a per-actor `RateLimiter` on their ledger (and decision) routes |
+| Ledger chain forks and retention (audit GB-L3, GB-L4) | Unique `(owner_ref, scope_key, prev_hash)`: a concurrent append is refused (`conflict`) instead of forking the chain. The purge deletes only a chain-order prefix and marks the first line kept (`purged_before`), so `verify` keeps working after a purge. Not covered in 1.13: the chain has no stored head, so deleting the **newest** lines by hand is not detected — use DB triggers (UPGRADING) or keep the `BalanceLedgerLineAddedEvent` ids in an external log |
+| Scope back-fill changing approved periods (audit GB-L5) | `entries:backfill-scope` leaves entries of locked or submitted periods without a scope and reports them |
+| Personal-data access (art. 15 / 20, contract §12.4, audit GB-L6) | `TimesheetPersonalDataExporter::export($ownerRef)` returns the person's timesheets with their audit trail and their ledger lines (no other person's id); hosts add it to their personal-data export next to the entries |
+| Workday idempotency under concurrency (audit GB-I4) | The key check is check-then-act: two simultaneous posts with one key can both reach the provider, which receives the key and must deduplicate on it |
 
 ## Task effort on the client API (1.13)
 
-`GET tasks` and the timer payloads carry `estimateSeconds`, `loggedSeconds` and `remainingSeconds`. `loggedSeconds` is
-the **total** closed time of every user on the task (live and imported entries): it reveals the aggregate effort on a
-task to anyone who can track that task, never who tracked it or how much each person did. Hosts that consider the
-aggregate sensitive can return their own value (or 0) through `TaskReference::$loggedSeconds`.
+`GET tasks` and the timer payloads carry `estimateSeconds`, `loggedSeconds` and `remainingSeconds` (owner decision
+2026-11-05, audit GB-M3):
+
+- `loggedSeconds` is the caller's **own** closed time on the task (live and imported entries).
+- Only users who can **manage** the task see the total of **every** user. The bundle cannot know who manages a task, so
+  this is denied by default (admin roles included): the host grants it per user and task by listening to
+  `nowo_time_track.task_effort.access_check` (`TaskEffortAccessCheckEvent::grant()`; `TeamAccessGuard::canSeeTaskEffortTotal()`).
+- A total over several people can still reveal one person's effort when only one other person tracked the task, which
+  is why it is limited to managers. A provider that fills `TaskReference::$loggedSeconds` itself must apply the same rule
+  (the value is shown as given).
 
 ## Secrets & cryptography
 

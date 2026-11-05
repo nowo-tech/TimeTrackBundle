@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Service;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Event\TaskEffortAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
@@ -107,6 +108,19 @@ final readonly class TeamAccessGuard
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
         return $event->isGranted() && $this->isWritable($entry);
+    }
+
+    /**
+     * Since 1.13 (owner decision 2026-11-05, audit GB-M3): whether the user may see the all-users total of logged time
+     * on the task, i.e. can **manage** it. Denied by default (admin roles included); the host grants it through
+     * {@see TaskEffortAccessCheckEvent}. Everyone else sees only their own total.
+     */
+    public function canSeeTaskEffortTotal(UserInterface $user, string $taskId): bool
+    {
+        $event = new TaskEffortAccessCheckEvent($user, $taskId);
+        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TASK_EFFORT_ACCESS_CHECK);
+
+        return $event->isGranted();
     }
 
     /**

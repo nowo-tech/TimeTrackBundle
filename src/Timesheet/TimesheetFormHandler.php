@@ -17,16 +17,25 @@ use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
+use function abs;
 use function in_array;
+use function is_array;
 use function is_numeric;
 use function is_string;
 
 /**
  * Since 1.13: the web side of the timesheet components (contract §16a). Hosts build the forms the components render
  * and, in their own controllers (their routes, layout and permission catalogue), hand the posted request to this
- * handler: it validates the form (CSRF included) and runs the action through {@see TimesheetService} or
- * {@see BalanceLedger}, which apply the guard. Approve / reject / reopen and the ledger are web only (contract Q-O2).
+ * handler: it validates the form and runs the action through {@see TimesheetService} or {@see BalanceLedger}, which
+ * apply the guard. Approve / reject / reopen and the ledger are web only (contract Q-O2).
+ *
+ * CSRF (audit GB-L2): the handler checks the posted `_token` itself with the CSRF token manager, whatever the host's
+ * `framework.form.csrf_protection` says, and refuses every post (`invalid_request`) when no token manager exists.
+ * Owner actions (submit / withdraw) act on the actor's own period named by the posted `scope` + `period` (a period
+ * without a stored row included); a posted timesheet id of someone else is `not_found` (GB-I3).
  */
 final readonly class TimesheetFormHandler
 {
@@ -42,6 +51,7 @@ final readonly class TimesheetFormHandler
         private FormFactoryInterface $forms,
         private TimesheetService $timesheets,
         private ?BalanceLedger $ledger = null,
+        private ?CsrfTokenManagerInterface $csrfTokens = null,
     ) {
     }
 
@@ -57,7 +67,9 @@ final readonly class TimesheetFormHandler
             $options['action'] = $actionUrl;
         }
 
-        return $this->forms->createNamed('time_track_' . $action, TimesheetDecisionType::class, ['timesheet' => $timesheet?->getId()], $options);
+        $data = ['timesheet' => $timesheet instanceof Timesheet && !$timesheet->isDraft() ? $timesheet->getId() : null, 'scope' => $timesheet?->getScopeKey(), 'period' => $timesheet?->getPeriod()->key];
+
+        return $this->forms->createNamed('time_track_' . $action, TimesheetDecisionType::class, $data, $options);
     }
 
     /**
@@ -72,10 +84,10 @@ final readonly class TimesheetFormHandler
         }
         $form = $this->decisionForm($action);
         $form->handleRequest($request);
-        if (!$form->isSubmitted() || !$form->isValid()) {
+        if (!$form->isSubmitted() || !$form->isValid() || !$this->validCsrf($request, $form, TimesheetDecisionType::CSRF_TOKEN_ID)) {
             throw new TimesheetException('invalid_request');
         }
-        /** @var array{timesheet?: mixed, comment?: mixed} $data */
+        /** @var array{timesheet?: mixed, comment?: mixed, scope?: mixed, period?: mixed} $data */
         $data    = $form->getData();
         $id      = is_string($data['timesheet'] ?? null) ? $data['timesheet'] : '';
         $comment = is_string($data['comment'] ?? null) ? $data['comment'] : '';
@@ -84,7 +96,7 @@ final readonly class TimesheetFormHandler
             'approve' => $this->timesheets->approve($actor, $id),
             'reject'  => $this->timesheets->reject($actor, $id, $comment),
             'reopen'  => $this->timesheets->reopen($actor, $id, $comment),
-            default   => $this->ownerAction($actor, $id, $action === 'submit'),
+            default   => $this->ownerAction($actor, $id, is_string($data['scope'] ?? null) ? $data['scope'] : '', is_string($data['period'] ?? null) ? $data['period'] : '', $action === 'submit'),
         };
     }
 
@@ -115,7 +127,7 @@ final readonly class TimesheetFormHandler
         }
         $form = $this->ledgerForm(null, $reversal ? '' : null);
         $form->handleRequest($request);
-        if (!$form->isSubmitted() || !$form->isValid()) {
+        if (!$form->isSubmitted() || !$form->isValid() || !$this->validCsrf($request, $form, LedgerLineType::CSRF_TOKEN_ID)) {
             throw new LedgerRefusedException('invalid_request');
         }
         /** @var array<string, mixed> $data */
@@ -127,19 +139,48 @@ final readonly class TimesheetFormHandler
             return $this->ledger->add($actor, $owner, $scopeKey, LedgerKind::Reversal, 0, $date, $reason, is_string($data['reverses'] ?? null) ? $data['reverses'] : '');
         }
         // The choice field only accepts LedgerLineType::MANUAL_KINDS.
-        $kind = LedgerKind::from(is_string($data['kind'] ?? null) ? $data['kind'] : '');
+        $kind    = LedgerKind::from(is_string($data['kind'] ?? null) ? $data['kind'] : '');
+        $minutes = is_numeric($data['minutes'] ?? null) ? (int) $data['minutes'] : 0;
+        // GB-I9: bounded before the multiplication (no integer overflow into a float).
+        if (abs($minutes) > LedgerLineType::MAX_MINUTES) {
+            throw new LedgerRefusedException('invalid_seconds');
+        }
 
         // @igor-ignore - I/O delegate (ledger append); no worker state.
-        return $this->ledger->add($actor, $owner, $scopeKey, $kind, is_numeric($data['minutes'] ?? null) ? (int) $data['minutes'] * 60 : 0, $date, $reason);
+        return $this->ledger->add($actor, $owner, $scopeKey, $kind, $minutes * 60, $date, $reason);
     }
 
-    private function ownerAction(UserInterface $owner, string $timesheetId, bool $submit): Timesheet
+    /**
+     * Submit / withdraw of the actor's own period: by the posted scope and period key, else by the posted id of one of
+     * the actor's own timesheets.
+     */
+    private function ownerAction(UserInterface $owner, string $timesheetId, string $scopeKey, string $periodKey, bool $submit): Timesheet
     {
-        $timesheet = $this->timesheets->find($owner, $timesheetId);
-        $period    = $timesheet->getPeriod();
+        if ($scopeKey === '' || $periodKey === '') {
+            $timesheet = $this->timesheets->find($owner, $timesheetId);
+            if (!$this->timesheets->accessGuard()->isOwner($owner, $timesheet->getOwnerRef())) {
+                throw new TimesheetException('not_found');
+            }
+            $scopeKey  = $timesheet->getScopeKey();
+            $periodKey = $timesheet->getPeriod()->key;
+        }
+        $period = $this->timesheets->period($owner, $scopeKey, $periodKey);
 
         return $submit
-            ? $this->timesheets->submit($owner, $timesheet->getScopeKey(), $period, AuditClient::Web)
-            : $this->timesheets->withdraw($owner, $timesheet->getScopeKey(), $period, AuditClient::Web);
+            ? $this->timesheets->submit($owner, $scopeKey, $period, AuditClient::Web)
+            : $this->timesheets->withdraw($owner, $scopeKey, $period, AuditClient::Web);
+    }
+
+    /**
+     * Whether the posted `_token` of the form is valid for the token id (false without a token manager).
+     *
+     * @param FormInterface<mixed> $form
+     */
+    private function validCsrf(Request $request, FormInterface $form, string $tokenId): bool
+    {
+        $posted = $request->request->all()[$form->getName()] ?? null;
+        $token  = is_array($posted) ? ($posted['_token'] ?? null) : null;
+
+        return $this->csrfTokens instanceof CsrfTokenManagerInterface && is_string($token) && $token !== '' && $this->csrfTokens->isTokenValid(new CsrfToken($tokenId, $token));
     }
 }

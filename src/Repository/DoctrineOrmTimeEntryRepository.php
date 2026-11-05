@@ -364,21 +364,25 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.13: total closed seconds per task (every user), the ids bound {@see self::TASK_IDS_PER_QUERY} at a time.
+     * Since 1.13: total closed seconds per task (of one user, or every user), the ids bound
+     * {@see self::TASK_IDS_PER_QUERY} at a time.
      */
-    public function loggedSecondsByTask(array $taskIds): array
+    public function loggedSecondsByTask(array $taskIds, ?string $userId = null): array
     {
         $totals = [];
         foreach (array_chunk($taskIds, self::TASK_IDS_PER_QUERY) as $chunk) {
-            /** @var list<array{taskId: string, seconds: int|string}> $rows */
-            $rows = $this->entityManager->createQueryBuilder()
+            $query = $this->entityManager->createQueryBuilder()
                 ->select('e.taskId AS taskId', 'SUM(e.durationSeconds) AS seconds')
                 ->from(TimeEntry::class, 'e')
                 ->where('e.taskId IN (:ids)')
                 ->setParameter('ids', $chunk)
-                ->groupBy('e.taskId')
-                ->getQuery()
-                ->getArrayResult();
+                ->groupBy('e.taskId');
+            if ($userId !== null) {
+                // @igor-ignore - query builder created for this call, not a shared service.
+                $query->andWhere('IDENTITY(e.user) = :user')->setParameter('user', $userId);
+            }
+            /** @var list<array{taskId: string, seconds: int|string}> $rows */
+            $rows = $query->getQuery()->getArrayResult();
             foreach ($rows as $row) {
                 $totals[$row['taskId']] = (int) $row['seconds'];
             }

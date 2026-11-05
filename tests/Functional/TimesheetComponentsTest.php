@@ -8,6 +8,8 @@ use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Exception\TimesheetException;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -72,6 +74,8 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         $repo->save((new TimeEntry($this->user, 'task-1', 'Implement login API', 'board-1', $monday->modify('+8 hours'), $monday->modify('+10 hours'), 7200, TimeEntrySource::Web, ['note' => 'Private note']))->assignScopeKey('org-a'));
         $repo->save((new TimeEntry($this->user, 'task-secret', 'Secret project', 'board-1', $monday->modify('+11 hours'), $monday->modify('+12 hours'), 3600, TimeEntrySource::Web))->assignScopeKey('org-a'));
         $repo->save(new TimeEntry($this->user, 'task-1', 'Implement login API', 'board-1', $monday->modify('+13 hours'), $monday->modify('+14 hours'), 3600, TimeEntrySource::Web));
+        // GB-M2: an imported entry of a task the owner can no longer see (title and note masked for the owner too).
+        $repo->save(TimeEntry::imported($this->user, new ImportedTimeEntryData('clickup:d', 'gone-1', 'task-gone', 'Gone project', null, $monday->modify('+15 hours'), $monday->modify('+16 hours'), 3600))->assignScopeKey('org-a'));
         $timesheet = $sheets->view($this->user, (string) $this->user->getId(), 'org-a', $week);
         $urls      = ['submit' => '/host/submit', 'withdraw' => '/host/withdraw', 'approve' => '/host/approve', 'reject' => '/host/reject', 'reopen' => '/host/reopen'];
 
@@ -87,11 +91,23 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         self::assertStringContainsString('time-track-week-unassigned', $owner);
         self::assertStringContainsString('time-track-week-expected', $owner);
         self::assertStringContainsString('Task time, not a working-time record', $owner);
+        self::assertStringNotContainsString('Gone project', $owner, 'GB-M2: masked for the owner as in GET entries');
+        self::assertStringContainsString('Task not visible', $owner);
+
+        // GB-I2: the component checks the viewer, whatever the host passes in.
+        $stranger = $this->createUser('stranger@example.com');
+        try {
+            $this->render('TimesheetWeekGrid', ['timesheet' => $timesheet, 'viewer' => $stranger]);
+            self::fail('stranger');
+        } catch (RuntimeError $e) {
+            self::assertInstanceOf(TimesheetException::class, $e->getPrevious());
+        }
 
         $submitted = $sheets->submit($this->user, 'org-a', $week);
         $approver  = $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'show_expected' => false]]);
         self::assertStringContainsString('Task not visible', $approver, 'AC-08: a task the approver cannot see is masked');
         self::assertStringNotContainsString('Secret project', $approver);
+        self::assertStringNotContainsString('Gone project', $approver);
         self::assertStringNotContainsString('Private note', $approver, 'AC-08: no notes by default');
         self::assertStringContainsString('/host/approve', $approver);
         self::assertStringContainsString('nowo-ui-confirm-dialog--anatomy', $approver, 'reject is a UiKit 2.29 dialog');
@@ -139,7 +155,15 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         $ownerView = $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->user, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a', 'options' => ['action_urls' => $urls, 'columns' => ['kind', 'seconds']]]);
         self::assertStringNotContainsString('/host/ledger', $ownerView, 'owners never adjust their own balance');
         self::assertStringNotContainsString('Doctor visit', $ownerView, 'the reason column is hidden');
-        self::assertStringContainsString('No movements.', $this->render('LedgerTable', ['lines' => [], 'viewer' => $this->user, 'owner_id' => 'x', 'scope_key' => 'org-a']));
+        self::assertStringContainsString('No movements.', $this->render('LedgerTable', ['lines' => [], 'viewer' => $this->user, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a']));
+        // GB-I2: lines of another owner or scope are dropped, and a viewer without access gets not_found.
+        self::assertStringContainsString('No movements.', $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->approver, 'owner_id' => (string) $this->approver->getId(), 'scope_key' => 'org-a']));
+        try {
+            $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->user, 'owner_id' => (string) $this->approver->getId(), 'scope_key' => 'org-a']);
+            self::fail('other owner');
+        } catch (RuntimeError $e) {
+            self::assertInstanceOf(TimesheetException::class, $e->getPrevious());
+        }
     }
 
     public function testBadComponentCalls(): void

@@ -321,7 +321,7 @@ final readonly class TimeTrackClientApiController
         );
 
         return $this->responseFactory->json([
-            'tasks' => $this->taskPresenter->tasks($this->timerService->listTasks($principal->user, $query), $request),
+            'tasks' => $this->taskPresenter->tasks($this->timerService->listTasks($principal->user, $query), $request, $principal->user),
         ], Response::HTTP_OK, $request);
     }
 

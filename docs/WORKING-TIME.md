@@ -69,6 +69,9 @@ balance(t)   = Σ diff(d) + Σ ledger seconds (opening, adjustment, overtime_pai
 - The running balance continues from the **last locked timesheet** (its approved snapshot's `balanceSeconds`), else
   from `working_time.balance.start_date`, else from 366 days before the end of the range. Set a start date for a running
   balance across years when periods are not approved.
+- Bounds: dates between 2000-01-01 and 2099-12-31, the end at most 366 days after today (`InvalidArgumentException`,
+  400 on the API), and at most 3660 days computed from the running-balance start to the end of the range: beyond that the
+  report is null and `balance_span_exceeded` is logged. Approving (locking) periods keeps the span short.
 
 ## Overtime
 
@@ -93,7 +96,9 @@ append-only lines chained per owner and scope. `opening` (once unless reversed),
 for opening, adjustment, overtime paid and reversal (≤ 500 characters). `overtime_ratified` is written only by the
 approval (`working_time.overtime.ratify_on_approval`) and reversed by a reopen. Lines whose effective date is in a locked
 period are refused. Errors: `LedgerRefusedException::errorCode()` (`forbidden`, `reason_required`, `invalid_seconds`,
-`invalid_date`, `opening_exists`, `not_found`, `already_reversed`, `not_reversible`, `ratify_only`, `invalid_request`).
+`invalid_date`, `opening_exists`, `not_found`, `already_reversed`, `not_reversible`, `ratify_only`, `invalid_request`,
+`conflict` — another line was appended to the same chain at the same time; retry). The bundle does not rate-limit
+ledger writes in 1.13: put a per-actor `RateLimiter` on your ledger route.
 
 ## Timesheets
 
@@ -115,6 +120,11 @@ open ─auto-lock (system)─▶ open [locked: auto]
 - Reopen: approver or `timesheets.reopen_roles` holder, reason required; keeps every audit row and reverses the ratified
   overtime.
 - Other users' timesheets answer `not_found`, exactly like a non-existent one (no existence oracle).
+- Rows: the owner's row is created on the first view of the current or previous period, on submit and on auto-lock;
+  viewing any other period answers an unstored open draft (`Timesheet::isDraft()`, `id: null` on the API) and
+  `TimesheetService::peek()` (used by `GET me`) never writes. `period()` accepts keys up to the next period.
+- A timer whose task has no scope (the scope provider returns null) does not block the submit of a period; its stop
+  later becomes a late entry (`TIMESHEET_LATE_ENTRY`). Scope providers should place every trackable task.
 - Events (ids only, after commit): `TIMESHEET_SUBMITTED`, `…_WITHDRAWN`, `…_APPROVED`, `…_REJECTED`, `…_REOPENED`,
   `…_AUTO_LOCKED` (`TimesheetTransitionEvent`), deny-only `TIMESHEET_ACCESS_CHECK` (fired on every non-owner view, for
   the "who viewed whose timesheet" audit), `TIMESHEET_LATE_ENTRY`, `PERIOD_LOCK_REFUSED`, `BALANCE_LEDGER_LINE_ADDED`.
@@ -135,7 +145,10 @@ written into a period locked while its timer ran fires `TIMESHEET_LATE_ENTRY`. R
 Each timesheet transition appends one row to `time_track_timesheet_events` (`seq` 1, 2, …; `hash = sha256(prev_hash ‖
 canonical_json(row))`; the timesheet keeps the head hash). Ledger lines are chained per owner and scope. The repositories
 have no update or delete method (only the retention purge deletes). `nowo:time-track:timesheets:verify` recomputes every
-chain and names the first broken link. Hosts MAY add database triggers that refuse `UPDATE` / `DELETE` on both tables for
+chain and names the first broken link. A unique `(owner_ref, scope_key, prev_hash)` index stops concurrent appends from
+forking a ledger chain. After a retention purge a ledger chain restarts at the first line kept (marked `purged_before`;
+not hashed), so `verify` keeps passing; a chain with its oldest lines deleted by hand, or with two starts, is reported.
+The ledger has no stored head: the newest lines deleted by hand are not detected. Hosts MAY add database triggers that refuse `UPDATE` / `DELETE` on both tables for
 every user but the purge user; the bundle does not create them.
 
 ## Components (no template overrides)
@@ -161,22 +174,26 @@ templates are never overridden:
 An action appears only when the guard allows it for the viewer **and** the host gave its URL. Reject, reopen,
 adjustment and reversal open a UiKit 2.29 dialog with the anatomy (header, scrolling body with the form, footer with
 Cancel and the primary submit). Approvers see task titles masked when they cannot see the task, and notes only with
-`timesheets.approver_sees_notes: true`. In the host controller behind each URL:
+`timesheets.approver_sees_notes: true`; imported entries of a task the owner can no longer see are masked for everybody,
+the owner included. The grid and the ledger table refuse (`TimesheetException('not_found')`) a viewer who may not see the
+owner's data in that scope, and the ledger table drops lines of another owner or scope — still, load the data through
+`TimesheetService::find()` / `view()` and `BalanceLedger::linesOf()`. In the host controller behind each URL:
 
 ```php
 $timesheet = $formHandler->handleDecision($request, $this->getUser(), $action); // Timesheet\TimesheetFormHandler
 $line      = $formHandler->handleLedger($request, $this->getUser(), $owner, $scopeKey);
 ```
 
-The handler checks the form (CSRF ids `nowo_time_track_timesheet` / `nowo_time_track_ledger`) and runs the action through
-the service, which applies the guard; catch `TimesheetException` / `LedgerRefusedException` and show the translated
+The handler checks the form and the CSRF token itself (ids `nowo_time_track_timesheet` / `nowo_time_track_ledger`;
+every post is refused without a CSRF token manager, whatever `framework.form.csrf_protection` says) and runs the action
+through the service, which applies the guard; owner actions use the posted `scope` + `period` of the actor's own period; catch `TimesheetException` / `LedgerRefusedException` and show the translated
 `timesheet.error.<code>`.
 
 ## Commands
 
 | Command | When |
 | --- | --- |
-| `nowo:time-track:entries:backfill-scope [--batch=500] [--dry-run]` | once after enabling timesheets or working time |
+| `nowo:time-track:entries:backfill-scope [--batch=500] [--dry-run]` | once after enabling timesheets or working time (entries of locked or submitted periods are left without a scope and counted) |
 | `nowo:time-track:timesheets:auto-lock [--lookback-days=62]` | daily, with `timesheets.auto_lock_after_days` |
 | `nowo:time-track:timesheets:purge [--batch=500]` | daily or monthly (retention) |
 | `nowo:time-track:timesheets:verify [--scope=] [--user=]` | on demand / monitoring |
@@ -184,9 +201,16 @@ the service, which applies the guard; catch `TimesheetException` / `LedgerRefuse
 ## Retention and erasure
 
 Timesheets, their audit rows and ledger lines are kept `timesheets.retention_years` (4–10, default 4) after the end of
-the period's month, then deleted by `timesheets:purge` — the only delete path. On account erasure the owner FK becomes
+the period's month, then deleted by `timesheets:purge` — the only delete path. The purge removes, per ledger chain, the
+chain-order prefix of lines effective before the cut-off (a line is never removed from the middle of a chain) and keeps
+a timesheet as long as a kept ledger line points to it. On account erasure the owner FK becomes
 `NULL` (`ON DELETE SET NULL`) and `owner_ref` / `actor_ref` keep the identity until the retention ends (art. 17.3.b
 GDPR). Entries follow the host's entry retention; the lock never blocks it.
+
+Personal-data export (art. 15 / 20): `Timesheet\TimesheetPersonalDataExporter::export($ownerRef)` returns
+`{timesheets: [{id, scopeKey, period, status, lockedAt, lockReason, submittedAt, decidedAt, decisionComment, totals,
+createdAt, events: [{action, fromStatus, toStatus, actorRole, client, occurredAt, comment}]}], ledger: [line…]}` — by
+`owner_ref`, across scopes, without other people's ids. Add it to your exporter next to the time entries.
 
 ## Host checklist
 
@@ -195,7 +219,9 @@ GDPR). Entries follow the host's entry retention; the lock never blocks it.
    `time_track.timesheet.approve`), and optionally the calendar, worked-time source (register), overtime policy and
    workday provider.
 3. Wire the components into your pages and the form handler into your controllers; permissions are yours (deny by
-   default, 404 for others' resources).
-4. Schedule `auto-lock` (if used), `purge`; audit from the events; notify only inside the recipient's working hours.
-5. Update the worker notice, RAT and DPIA (timesheets: purpose, who approves, what approvers see, retention; balance:
+   default, 404 for others' resources). Keep CSRF on (the handler checks the token itself) and rate-limit the ledger and
+   decision routes per actor. Grant `nowo_time_track.task_effort.access_check` to users who manage a task.
+4. Add `TimesheetPersonalDataExporter` to your personal-data export.
+5. Schedule `auto-lock` (if used), `purge`; audit from the events; notify only inside the recipient's working hours.
+6. Update the worker notice, RAT and DPIA (timesheets: purpose, who approves, what approvers see, retention; balance:
    source and whether it is the legal register).

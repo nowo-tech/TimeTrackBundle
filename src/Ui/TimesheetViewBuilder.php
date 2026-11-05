@@ -9,7 +9,9 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
+use Nowo\TimeTrackBundle\Exception\TimesheetException;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetFormHandler;
@@ -20,6 +22,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_column;
 use function array_combine;
+use function array_filter;
 use function array_intersect;
 use function array_values;
 use function count;
@@ -32,7 +35,9 @@ use function is_string;
  * labels (translation keys or text per slot), visible actions with the host URLs they post to, density
  * (`comfortable` / `compact`), rows and columns. Actions are offered only when the guard allows them for the viewer; the
  * server checks again on post. Approvers see task titles masked when they cannot see the task, and notes only with
- * `timesheets.approver_sees_notes`.
+ * `timesheets.approver_sees_notes`. Imported entries whose task the owner can no longer see are masked for every viewer,
+ * the owner included (the 1.11 rule of the client API; audit GB-M2). The grid and the ledger table check that the
+ * viewer may see the owner's data in that scope (`not_found` otherwise; audit GB-I2), whatever the host passes in.
  */
 final readonly class TimesheetViewBuilder
 {
@@ -46,6 +51,7 @@ final readonly class TimesheetViewBuilder
         private TimesheetFormHandler $forms,
         private ?TaskAccessCheckerInterface $taskAccess = null,
         private bool $approverSeesNotes = false,
+        private ?TimerService $timerService = null,
     ) {
     }
 
@@ -54,10 +60,15 @@ final readonly class TimesheetViewBuilder
      *
      * @param array<string, mixed> $options labels, actions, action_urls, density, show_expected, show_diff, read_only
      *
+     * @throws TimesheetException `not_found` when the viewer may not see the timesheet
+     *
      * @return array<string, mixed>
      */
     public function weekGrid(Timesheet $timesheet, UserInterface $viewer, array $options = []): array
     {
+        if (!$this->timesheets->accessGuard()->canView($viewer, $timesheet->getOwnerRef(), $timesheet->getScopeKey())) {
+            throw new TimesheetException('not_found');
+        }
         $resolver = new OptionsResolver();
         $resolver->setDefaults(['labels' => [], 'actions' => TimesheetFormHandler::ACTIONS, 'action_urls' => [], 'density' => 'comfortable', 'show_expected' => true, 'show_diff' => true, 'read_only' => null]);
         $resolver->setAllowedValues('density', self::DENSITIES);
@@ -73,18 +84,19 @@ final readonly class TimesheetViewBuilder
         $period   = $timesheet->getPeriod();
         $dates    = $period->dates();
         $notes    = $owner || $this->approverSeesNotes;
+        $hidden   = $this->timerService?->hiddenTaskEntryIds($snapshot->entries) ?? [];
         $rows     = [];
         $daily    = array_combine($dates, array_fill(0, count($dates), 0));
         foreach ($snapshot->entries as $entry) {
             $taskId = $entry->getTaskId();
             $date   = StorageTime::localDate($entry->getStartedAt(), $timesheet->getTimezone());
-            $rows[$taskId] ??= ['taskId' => $taskId, 'title' => $this->title($entry, $viewer, $owner), 'masked' => false, 'imported' => !$entry->getSource()->isLive(), 'days' => array_combine($dates, array_fill(0, count($dates), 0)), 'total' => 0, 'notes' => []];
+            $rows[$taskId] ??= ['taskId' => $taskId, 'title' => isset($hidden[$entry->getId()]) ? null : $this->title($entry, $viewer, $owner), 'masked' => false, 'imported' => !$entry->getSource()->isLive(), 'days' => array_combine($dates, array_fill(0, count($dates), 0)), 'total' => 0, 'notes' => []];
             $rows[$taskId]['masked'] = $rows[$taskId]['title'] === null;
             $rows[$taskId]['days'][$date] += $entry->getDurationSeconds();
             $rows[$taskId]['total'] += $entry->getDurationSeconds();
             $daily[$date] += $entry->getDurationSeconds();
             $note = ($entry->getMetadata() ?? [])['note'] ?? null;
-            if ($notes && is_string($note) && $note !== '') {
+            if ($notes && !isset($hidden[$entry->getId()]) && is_string($note) && $note !== '') {
                 $rows[$taskId]['notes'][] = $note;
             }
         }
@@ -164,10 +176,15 @@ final readonly class TimesheetViewBuilder
      * @param list<BalanceLedgerLine> $lines
      * @param array<string, mixed> $options labels, columns, actions (`add_adjustment`, `reversal`), action_urls, density
      *
+     * @throws TimesheetException `not_found` when the viewer may not see the owner's balance in the scope
+     *
      * @return array<string, mixed>
      */
     public function ledgerTable(array $lines, UserInterface $viewer, string $ownerId, string $scopeKey, array $options = []): array
     {
+        if (!$this->timesheets->accessGuard()->canView($viewer, $ownerId, $scopeKey)) {
+            throw new TimesheetException('not_found');
+        }
         $resolver = new OptionsResolver();
         $resolver->setDefaults(['labels' => [], 'columns' => ['effectiveDate', 'kind', 'seconds', 'reason', 'createdAt'], 'actions' => ['add_adjustment', 'reversal'], 'action_urls' => [], 'density' => 'comfortable']);
         $resolver->setAllowedValues('density', self::DENSITIES);
@@ -180,6 +197,7 @@ final readonly class TimesheetViewBuilder
 
         $canAdjust = $this->timesheets->accessGuard()->canAdjustBalance($viewer, $ownerId, $scopeKey);
         $reversed  = [];
+        $lines     = array_values(array_filter($lines, static fn (BalanceLedgerLine $line): bool => $line->getOwnerRef() === $ownerId && $line->getScopeKey() === $scopeKey));
         foreach ($lines as $line) {
             if ($line->getReversesId() !== null) {
                 $reversed[$line->getReversesId()] = true;

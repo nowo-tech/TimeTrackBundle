@@ -6,10 +6,14 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
+use Nowo\TimeTrackBundle\Event\TaskEffortAccessCheckEvent;
+use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
@@ -18,9 +22,12 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_column;
+use function array_filter;
 use function array_slice;
+use function array_values;
 use function str_contains;
 use function str_getcsv;
 
@@ -214,6 +221,67 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertSame('open', $me['timesheet']['status'] ?? null);
         $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);
         self::assertSame(['estimateSeconds' => null, 'loggedSeconds' => 32_400, 'remainingSeconds' => null], array_slice($tasks['tasks'][0] ?? [], -3));
+    }
+
+    public function testAuditGbMaskingDraftsBoundsAndTaskEffort(): void
+    {
+        $token  = $this->token(ClientScope::BalanceRead, ClientScope::TimesheetRead, ClientScope::TasksRead);
+        $sheets = self::getContainer()->get(TimesheetService::class);
+        self::assertInstanceOf(TimesheetService::class, $sheets);
+        $week   = $sheets->period($this->user, 'org-a', 'previous');
+        $monday = $week->startsAt('UTC');
+        $repo   = new DoctrineOrmTimeEntryRepository($this->entityManager());
+        $repo->save(TimeEntry::imported($this->user, new ImportedTimeEntryData('clickup:d', 'gone-1', 'task-gone', 'Gone project', null, $monday->modify('+8 hours'), $monday->modify('+9 hours'), 3600, description: 'Secret description'))->assignScopeKey('org-a'));
+        $repo->save((new TimeEntry($this->user, 'task-1', 'Implement login API', 'board-1', $monday->modify('+10 hours'), $monday->modify('+12 hours'), 7200, TimeEntrySource::Web))->assignScopeKey('org-a'));
+        $repo->save((new TimeEntry($this->approver, 'task-1', 'Implement login API', 'board-1', $monday->modify('+10 hours'), $monday->modify('+11 hours'), 3600, TimeEntrySource::Web))->assignScopeKey('org-a'));
+        $rows = fn (): int => $this->entityManager()->getRepository(Timesheet::class)->count([]);
+
+        // GB-M2: GET timesheets masks the imported entry whose task the owner cannot see, as GET entries does.
+        $previous = $this->api('GET', '/api/time-track/timesheets?period=previous', null, $token);
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('Gone project', (string) $this->client->getResponse()->getContent());
+        self::assertStringNotContainsString('Secret description', (string) $this->client->getResponse()->getContent());
+        $masked = array_values(array_filter($previous['entries'] ?? [], static fn (array $e): bool => ($e['taskId'] ?? null) === 'task-gone'));
+        self::assertSame('Task not visible', $masked[0]['taskTitle'] ?? null);
+        self::assertFalse($masked[0]['taskVisible'] ?? true);
+
+        // GB-L1: GET me never creates a row; an older period is an unstored draft (id null); later than next is 404.
+        $before = $rows();
+        $this->api('GET', '/api/time-track/me', null, $token);
+        self::assertSame($before, $rows());
+        $old = $this->api('GET', '/api/time-track/timesheets?period=' . $week->previous()->previous()->key, null, $token);
+        self::assertResponseIsSuccessful();
+        self::assertIsArray($old);
+        self::assertArrayHasKey('id', $old);
+        self::assertNull($old['id']);
+        self::assertSame('open', $old['status'] ?? null);
+        self::assertSame([], $old['events'] ?? null);
+        self::assertSame($before, $rows());
+        foreach (['9998-W52', '1999-W52', $week->next()->next()->next()->key] as $key) {
+            $this->api('GET', '/api/time-track/timesheets?period=' . $key, null, $token);
+            self::assertResponseStatusCodeSame(404, $key);
+        }
+        self::assertSame($before, $rows());
+
+        // GB-M1: far balance ranges are refused before anything is computed.
+        foreach (['from=9998-12-01&to=9998-12-31', 'from=1999-12-01&to=1999-12-31'] as $range) {
+            $this->api('GET', '/api/time-track/balance?' . $range, null, $token);
+            self::assertResponseStatusCodeSame(400, $range);
+        }
+
+        // GB-M3: loggedSeconds is the user's own total; the all-users total only for users who can manage the task.
+        $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);
+        self::assertSame(7200, $tasks['tasks'][0]['loggedSeconds'] ?? null);
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->addListener(TimeTrackEvents::TASK_EFFORT_ACCESS_CHECK, static function (TaskEffortAccessCheckEvent $event): void {
+            if ($event->getTaskId() === 'task-1') {
+                $event->grant();
+            }
+        });
+        $managed = $this->api('GET', '/api/time-track/tasks', null, $token);
+        self::assertSame(10_800, $managed['tasks'][0]['loggedSeconds'] ?? null);
+        self::assertNull($managed['tasks'][1]['loggedSeconds'] ?? null, 'no time on task-2');
     }
 
     public function testRunningTimersAndLockedSwitches(): void

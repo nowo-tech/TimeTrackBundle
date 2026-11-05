@@ -20,7 +20,7 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
  * id, and a comment for reject and reopen (`with_comment`). CSRF id `nowo_time_track_timesheet`; the guard decides on
  * the server ({@see TimesheetFormHandler}).
  *
- * @extends AbstractType<array{timesheet?: string|null, comment?: string|null}>
+ * @extends AbstractType<array{timesheet?: string|null, scope?: string|null, period?: string|null, comment?: string|null}>
  */
 #[FormKitConfig(TimerActionType::FORM_KIT_PROFILE)]
 final class TimesheetDecisionType extends AbstractType
@@ -37,6 +37,9 @@ final class TimesheetDecisionType extends AbstractType
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $this->field($builder, 'timesheet', HiddenType::class, ['label' => null]);
+        // Since the GB fixes: the owner's period (submit / withdraw of a period without a stored row too).
+        $this->field($builder, 'scope', HiddenType::class, ['label' => null]);
+        $this->field($builder, 'period', HiddenType::class, ['label' => null]);
         if ($options['with_comment'] === true) {
             $this->field($builder, 'comment', TextareaType::class, ['label' => 'timesheet.comment', 'required' => true, 'attr' => ['maxlength' => 1000, 'minlength' => 10, 'rows' => 4]]);
         }

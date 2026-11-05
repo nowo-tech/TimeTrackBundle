@@ -33,6 +33,9 @@ final class LedgerLineType extends AbstractType
 
     public const CSRF_TOKEN_ID = 'nowo_time_track_ledger';
 
+    /** Largest absolute number of minutes of one line (one year, as {@see BalanceLedger::MAX_SECONDS}; checked by the handler). */
+    public const MAX_MINUTES = 527_040;
+
     /** Kinds a person may add by hand (`overtime_ratified` is written by approvals only). */
     public const MANUAL_KINDS = [LedgerKind::Opening, LedgerKind::Adjustment, LedgerKind::OvertimePaid, LedgerKind::OvertimeCompensated];
 
@@ -51,7 +54,7 @@ final class LedgerLineType extends AbstractType
                 $choices['ledger.kind.' . $kind->value] = $kind->value;
             }
             $this->field($builder, 'kind', ChoiceType::class, ['label' => 'ledger.kind_label', 'choices' => $choices]);
-            $this->field($builder, 'minutes', IntegerType::class, ['label' => 'ledger.minutes', 'help' => 'ledger.minutes_help']);
+            $this->field($builder, 'minutes', IntegerType::class, ['label' => 'ledger.minutes', 'help' => 'ledger.minutes_help', 'attr' => ['min' => -self::MAX_MINUTES, 'max' => self::MAX_MINUTES]]);
         }
         $this->field($builder, 'effective_date', DateType::class, ['label' => 'ledger.effective_date', 'widget' => 'single_text', 'input' => 'string']);
         $this->field($builder, 'reason', TextareaType::class, ['label' => 'ledger.reason', 'required' => true, 'attr' => ['maxlength' => 500, 'rows' => 3]]);
