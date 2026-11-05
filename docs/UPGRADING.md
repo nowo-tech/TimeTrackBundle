@@ -56,7 +56,7 @@
 
 ## To 1.13.0
 
-From **1.12.0** (unreleased; built as stacked PRs, contract `timetrack-next` v1.0):
+From **1.12.0** (contract `timetrack-next` v1.0):
 
 ```bash
 composer update nowo-tech/time-track-bundle
