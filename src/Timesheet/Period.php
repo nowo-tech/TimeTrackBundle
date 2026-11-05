@@ -28,6 +28,12 @@ final readonly class Period
     /** `2026-11-05`. */
     public const DATE_PATTERN = '/^(\d{4})-(\d{2})-(\d{2})$/D';
 
+    /** First local date a period key or a balance range may name (sane window; GB-M1). */
+    public const MIN_DATE = '2000-01-01';
+
+    /** Last local date a period key or a balance range may name (sane window; GB-M1). */
+    public const MAX_DATE = '2099-12-31';
+
     /**
      * @param string $start First local date (Y-m-d)
      * @param string $end Last local date (Y-m-d, inclusive)
@@ -49,18 +55,40 @@ final readonly class Period
     {
         $date = self::date($localDate);
         if ($kind === TimesheetPeriodKind::Month) {
-            return self::fromKey($kind, $date->format('Y-m'));
+            return self::parse($kind, $date->format('Y-m'));
         }
 
-        return self::fromKey($kind, sprintf('%s-W%s', $date->format('o'), $date->format('W')));
+        return self::parse($kind, sprintf('%s-W%s', $date->format('o'), $date->format('W')));
     }
 
     /**
-     * The period of a key (`2026-W45` or `2026-11`).
+     * The period of a key (`2026-W45` or `2026-11`) inside the sane window ({@see self::MIN_DATE} – {@see self::MAX_DATE}).
      *
-     * @throws InvalidArgumentException When the key does not match the kind or does not exist (week 53 of a 52-week year)
+     * @throws InvalidArgumentException When the key does not match the kind, does not exist (week 53 of a 52-week year)
+     *                                  or lies outside the window
      */
     public static function fromKey(TimesheetPeriodKind $kind, string $key): self
+    {
+        $period = self::parse($kind, $key);
+        if (!self::inWindow($period->start) || !self::inWindow($period->end)) {
+            throw new InvalidArgumentException('Period outside the supported window.');
+        }
+
+        return $period;
+    }
+
+    /**
+     * Whether a local date (`Y-m-d`) lies in the sane window ({@see self::MIN_DATE} – {@see self::MAX_DATE}).
+     */
+    public static function inWindow(string $localDate): bool
+    {
+        return $localDate >= self::MIN_DATE && $localDate <= self::MAX_DATE;
+    }
+
+    /**
+     * The period of a key, without the window check (periods of stored dates).
+     */
+    private static function parse(TimesheetPeriodKind $kind, string $key): self
     {
         if ($kind === TimesheetPeriodKind::Week) {
             if (preg_match(self::WEEK_KEY_PATTERN, $key, $m) !== 1) {

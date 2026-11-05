@@ -32,11 +32,22 @@ use function substr;
  * requests. The running balance starts after the last **locked** timesheet ending before the range (its approved
  * snapshot's `balanceSeconds` is reused: locked periods do not change), else at `working_time.balance.start_date`, else
  * 366 days before the end of the range. Weekly overtime is evaluated on whole ISO weeks.
+ *
+ * Hard bounds (audit GB-M1): both dates inside {@see Period::MIN_DATE} – {@see Period::MAX_DATE}, the end at most
+ * {@see self::MAX_FUTURE_DAYS} days after today, and the computed span (from the running-balance start to the end of the
+ * range) at most {@see self::MAX_SPAN_DAYS} days: a longer span (an old `balance.start_date` and no locked timesheet
+ * since) answers no report (null) and logs a warning, it is never computed.
  */
 final readonly class WorkingTimeBalanceService
 {
     /** Longest range of one report, in days. */
     public const MAX_RANGE_DAYS = 366;
+
+    /** Furthest end of a report after today, in days. */
+    public const MAX_FUTURE_DAYS = 366;
+
+    /** Longest computed span (running-balance start to the end of the range), in days: ten calls of 366 days. */
+    public const MAX_SPAN_DAYS = 3660;
 
     private ClockInterface $clock;
 
@@ -98,10 +109,11 @@ final readonly class WorkingTimeBalanceService
     }
 
     /**
-     * The report of [$fromDate, $toDate] (≤ 366 days), or null when the feature is off or the host has no calendar
-     * for the user and scope.
+     * The report of [$fromDate, $toDate] (≤ 366 days), or null when the feature is off, the host has no calendar
+     * for the user and scope, or the span to compute is longer than {@see self::MAX_SPAN_DAYS} days.
      *
-     * @throws InvalidArgumentException When a date is invalid, the range is reversed or longer than 366 days
+     * @throws InvalidArgumentException When a date is invalid or outside the supported window, the range is reversed or
+     *                                  longer than 366 days, or it ends more than {@see self::MAX_FUTURE_DAYS} days after today
      */
     public function report(UserInterface $user, string $scopeKey, string $fromDate, string $toDate): ?BalanceReport
     {
@@ -109,6 +121,9 @@ final readonly class WorkingTimeBalanceService
         $to   = Period::date($toDate);
         if ($to < $from || $from->diff($to)->days >= self::MAX_RANGE_DAYS) {
             throw new InvalidArgumentException(sprintf('The balance range must be 1 to %d days.', self::MAX_RANGE_DAYS));
+        }
+        if (!Period::inWindow($fromDate) || !Period::inWindow($toDate)) {
+            throw new InvalidArgumentException('The balance range is outside the supported window.');
         }
         if (!$this->enabled) {
             return null;
@@ -118,10 +133,18 @@ final readonly class WorkingTimeBalanceService
         $timezone = $this->timezoneResolver->resolve($user, $scopeKey);
         // @igor-ignore - reads the clock (a new immutable value); no worker state.
         $today = $this->clock->now()->setTimezone(new DateTimeZone($timezone))->format('Y-m-d');
+        if ($toDate > Period::date($today)->modify('+' . self::MAX_FUTURE_DAYS . ' days')->format('Y-m-d')) {
+            throw new InvalidArgumentException(sprintf('The balance range may end at most %d days after today.', self::MAX_FUTURE_DAYS));
+        }
 
         [$balanceFrom, $opening] = $this->balanceStart($ownerId, $scopeKey, $fromDate, $toDate);
         $queryFrom               = min($balanceFrom, Period::containing(TimesheetPeriodKind::Week, $fromDate)->start);
         $queryTo                 = Period::containing(TimesheetPeriodKind::Week, $toDate)->end;
+        if (Period::date($queryFrom)->diff(Period::date($queryTo))->days > self::MAX_SPAN_DAYS) {
+            $this->logger?->warning('TimeTrack balance span too long: lock timesheets or move working_time.balance.start_date forward.', ['bundle' => 'time_track', 'action' => 'balance_span_exceeded', 'max_days' => self::MAX_SPAN_DAYS]);
+
+            return null;
+        }
 
         $calendar = [];
         $worked   = [];

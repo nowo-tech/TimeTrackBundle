@@ -123,6 +123,28 @@ PRs). Every feature is off until configured; the schema change is required for e
   a scope provider) as their last constructor arguments; without them (or with timesheets off) they behave as in 1.12.
 - `TimeTrackMetadataListener` maps the three new tables (prefix and user class) through three optional arguments.
 
+### Security
+
+- REQ-SEC-004 audit GB (block 1): period keys are limited to a sane window (`Period::MIN_DATE` 2000-01-01 –
+  `Period::MAX_DATE` 2099-12-31; `Period::fromKey()` refuses keys outside it, `Period::inWindow()`; periods of stored
+  dates are unaffected) (GB-M1).
+- The ledger gets the unique index `uniq_time_track_balance_ledger_chain (owner_ref, scope_key, prev_hash)`: two
+  concurrent writers can no longer fork a chain (the second append fails) (GB-L4), the index
+  `idx_time_track_balance_ledger_reverses (reverses_id)` (GB-I8) and the column `purged_before` (DATE NULL, not hashed).
+- The retention purge deletes, per ledger chain, only the chain-order **prefix** of lines effective before the cut-off
+  and marks the first line kept (`purged_before`), so `timesheets:verify` keeps verifying the rest of the chain instead
+  of reporting it as broken; a timesheet still referenced by a kept ledger line is kept with it (GB-L3).
+- `nowo:time-track:entries:backfill-scope` leaves entries of a locked or submitted period without a scope and reports
+  them (`… left in a locked or submitted period`): an approved timesheet no longer gains entries after approval (GB-L5).
+- CI: the whole functional suite also runs on MySQL 8.0 and PostgreSQL 16 (`functional-databases` job).
+- REQ-SEC-004 audit GB (block 2): `WorkingTimeBalanceService::report()` has hard bounds — dates inside the period
+  window, the range ending at most `MAX_FUTURE_DAYS` (366) days after today (`InvalidArgumentException` otherwise), and a
+  computed span (running-balance start to the end of the range) of at most `MAX_SPAN_DAYS` (3660 days, ten calls):
+  beyond it no report is computed (null) and a `balance_span_exceeded` warning is logged; lock timesheets (their
+  snapshots restart the running balance) or move `working_time.balance.start_date` forward (GB-M1).
+- `BalanceLedger::add()` answers `LedgerRefusedException('conflict')` when a concurrent line was appended to the same
+  chain (unique chain index) instead of forking it (GB-L4).
+
 ## [1.12.0] - 2026-11-05
 
 Minor release (additive): days off on `GET me` and one shape for `workingHours`.

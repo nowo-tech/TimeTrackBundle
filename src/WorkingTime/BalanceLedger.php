@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\WorkingTime;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
@@ -70,7 +71,7 @@ final readonly class BalanceLedger
      * @param string $effectiveDate Local date the movement applies to (Y-m-d)
      * @param string|null $reversesId The line a reversal cancels (its seconds are the opposite of that line's)
      *
-     * @throws LedgerRefusedException When a rule refuses the line (nothing written)
+     * @throws LedgerRefusedException When a rule refuses the line, or `conflict` when a concurrent line won (nothing written)
      * @throws PeriodLockedException When the effective date is in a locked period
      */
     public function add(UserInterface $actor, UserInterface $owner, string $scopeKey, LedgerKind $kind, int $seconds, string $effectiveDate, ?string $reason, ?string $reversesId = null): BalanceLedgerLine
@@ -121,7 +122,13 @@ final readonly class BalanceLedger
         }
 
         $line = $this->append($owner, $ownerId, $scopeKey, $kind, $seconds, $effectiveDate, $reason, null, $reversed?->getId(), UserIdResolver::getId($actor));
-        $this->lines->flush();
+        try {
+            $this->lines->flush();
+        } catch (UniqueConstraintViolationException) {
+            // Another line was appended to the chain at the same time (unique owner, scope and previous hash): the
+            // chain does not fork, this line is not written.
+            throw new LedgerRefusedException('conflict');
+        }
         $this->dispatch($line);
 
         return $line;
