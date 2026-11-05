@@ -1329,6 +1329,37 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         audit_blocked_edits?: bool|Param, // Write an edit_blocked audit row per refused write (at most one per timesheet per minute). // Default: false
  *         retention_years?: int|Param, // Years timesheets, their audit rows and the ledger are kept after the end of the period month (4-10). // Default: 4
  *     },
+ *     calendar?: array{
+ *         enabled?: bool|Param, // Calendar suggestions, their client API and the sync command (default off). // Default: false
+ *         credential_provider?: scalar|Param|null, // Service id implementing CalendarCredentialProviderInterface (host OAuth tokens; required for server mode). // Default: null
+ *         task_key_resolver?: scalar|Param|null, // Service id implementing TaskKeyResolverInterface (host task keys; required when enabled). // Default: null
+ *         providers?: list<"google"|"microsoft"|Param>,
+ *         modes?: list<"server"|"local"|Param>,
+ *         lookback_days?: int|Param, // Past days read per sync (events end before now; future events are never suggested). // Default: 14
+ *         suggestion_ttl_days?: int|Param, // Days a suggestion is kept after its event ends. // Default: 14
+ *         sync_interval_minutes?: int|Param, // Minutes between two scheduled syncs of one connection. // Default: 60
+ *         max_event_seconds?: int|Param, // Longer events are ignored (default 8 h). // Default: 28800
+ *         max_rules_per_user?: int|Param, // User rules per scope. // Default: 20
+ *         max_pages?: int|Param, // Provider pages read per sync. // Default: 10
+ *     },
+ *     manual_entries?: array{
+ *         enabled?: bool|Param, // POST entries on the client API (default off). Accepting calendar suggestions does not depend on it. // Default: false
+ *         max_age_days?: int|Param, // Oldest accepted start, in days before now. // Default: 31
+ *     },
+ *     meetings?: array{
+ *         enabled?: bool|Param, // GET me/meetings and the GET me meeting keys (default off). // Default: false
+ *         provider?: scalar|Param|null, // Service id implementing MeetingProviderInterface (required when enabled). // Default: null
+ *         max_range_days?: int|Param, // Longest from-to range. // Default: 14
+ *         max_past_days?: int|Param, // How far back from may go (host retention: 7 days). // Default: 1
+ *         default_limit?: int|Param, // Default: 100
+ *         refresh_after_seconds?: int|Param, // Default poll-gap hint to the clients. // Default: 300
+ *         rate_limit?: array{
+ *             per_hour?: int|Param, // Default: 60
+ *             per_minute?: int|Param, // Default: 6
+ *         },
+ *         jitsi_hosts?: list<scalar|Param|null>,
+ *         links_calendars_route?: scalar|Param|null, // Host route name of Account → Integrations → Calendars (GET me links.calendars; https only). // Default: null
+ *     },
  *     retention?: array{ // Since 1.11: retention policy (Retention\TimeEntryRetentionPolicy) that any purge must apply.
  *         include_imported?: bool|Param, // false (default) = imported entries are history and stay out of retention purges. // Default: false
  *     },
@@ -1441,6 +1472,38 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             timesheet_withdraw?: array{
  *                 path?: scalar|Param|null, // Default: "/api/time-track/timesheets/{periodKey}/withdraw"
  *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timesheet_withdraw"
+ *             },
+ *             calendar_connections?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/calendar/connections"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_calendar_connections"
+ *             },
+ *             calendar_connection_revoke?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/calendar/connections/{id}"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_calendar_connection_revoke"
+ *             },
+ *             suggestions?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/suggestions"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_suggestions"
+ *             },
+ *             suggestions_accept?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/suggestions/accept"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_suggestions_accept"
+ *             },
+ *             suggestions_dismiss?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/suggestions/dismiss"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_suggestions_dismiss"
+ *             },
+ *             suggestions_resolve_keys?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/suggestions/resolve-keys"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_suggestions_resolve_keys"
+ *             },
+ *             entries_create?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/entries"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_entries_create"
+ *             },
+ *             me_meetings?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/me/meetings"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_client_me_meetings"
  *             },
  *         },
  *     },

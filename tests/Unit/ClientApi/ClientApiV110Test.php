@@ -422,7 +422,7 @@ final class ClientApiV110Test extends TestCase
         $stack = $this->stack(settings: new ConfigClientApiSettingsProvider([], clockSkewSeconds: 30, idleCheckEnabled: false, idleCheckThresholdMinutes: 99, idleCheckAnswerTimeoutMinutes: 0));
         $me    = $this->body($stack->apiController()->me($this->request('GET', $this->token($stack))));
 
-        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => false, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'monitoring' => false], $me['features']);
+        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => false, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'meetings' => false, 'monitoring' => false], $me['features']);
         self::assertSame(['backdate' => ['max_seconds' => 86400, 'clock_skew_seconds' => 30], 'idle_check' => ['threshold_minutes' => 60, 'answer_timeout_minutes' => 1, 'user_can_disable' => false]], $me['limits']);
     }
 

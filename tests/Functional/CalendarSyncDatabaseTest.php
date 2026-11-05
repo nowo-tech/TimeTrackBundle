@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventView;
 use Nowo\TimeTrackBundle\Calendar\CalendarException;
+use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
 use Nowo\TimeTrackBundle\Calendar\CalendarRuleService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncException;
@@ -48,6 +49,7 @@ use function array_keys;
 use function array_map;
 use function array_unique;
 use function array_values;
+use function count;
 use function dirname;
 use function explode;
 use function file_get_contents;
@@ -390,6 +392,15 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertSame(array_map(static fn (CalendarSuggestion $s): string => $s->getId(), $all), array_map(static fn (CalendarSuggestion $s): string => $s->getId(), $group));
         self::assertSame([], $repo->findSuggestionsByGroup($userId, 'series:none:2026-W45'));
         self::assertSame($connection->getId(), $repo->findConnectionFor($userId, 'org-a', CalendarProvider::Google)?->getId());
+
+        // Personal-data export (contract §12.4): connections without the credential reference, rules, suggestions.
+        $this->rules()->create($this->user, 'org-b', 'retro', 'task-2');
+        $exporter = self::getContainer()->get(CalendarPersonalDataExporter::class);
+        self::assertInstanceOf(CalendarPersonalDataExporter::class, $exporter);
+        $export = $exporter->export($userId);
+        self::assertSame([[$connection->getId()], ['retro'], 5], [array_column($export['calendarConnections'], 'id'), array_column($export['calendarRules'], 'pattern'), count($export['calendarSuggestions'])]);
+        self::assertStringNotContainsString('host-cred-1', (string) json_encode($export));
+        self::assertSame(['taskId', 'status', 'matchKind', 'groupKey', 'entryId', 'id', 'startsAt', 'endsAt', 'seconds'], array_keys($export['calendarSuggestions'][0]));
         self::assertNull($repo->findConnectionFor($userId, 'org-a', CalendarProvider::Microsoft));
     }
 
@@ -555,8 +566,12 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
     private function runSql(string $file): void
     {
         $conn = $this->entityManager()->getConnection();
+        // Like a host: the MySQL tables take the collation of the existing time_track_entries table (entry_id FK).
+        $collation = $conn->getDatabasePlatform() instanceof AbstractMySQLPlatform
+            ? (string) $conn->fetchOne("SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'time_track_entries'")
+            : 'utf8mb4_unicode_ci';
         foreach ($this->statements($file) as $statement) {
-            $conn->executeStatement(str_replace('REFERENCES users (id)', 'REFERENCES app_user (id)', $statement));
+            $conn->executeStatement(str_replace(['REFERENCES users (id)', '`utf8mb4_unicode_ci`'], ['REFERENCES app_user (id)', '`' . $collation . '`'], $statement));
         }
     }
 

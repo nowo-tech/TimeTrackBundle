@@ -161,6 +161,11 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 | Regex denial of service in user rules | Rules are literal substrings (`mb_stripos`), at most 120 characters and `max_rules_per_user` per scope; control and format characters refused |
 | Leaving data behind | Revoke calls the host `revoke()` (token and grant) first, then deletes the connection, its suggestions and the user's rules in that scope; account deletion cascades; suggestions expire `suggestion_ttl_days` after the event |
 | Titles in logs, events or exceptions | Logs and events carry ids, codes and counts only (marker-string tests over rows, logs and events) |
+| Meetings API: reading someone else's calendar | No user parameter exists; unknown query parameters are refused (400 `unknown_parameter`); the provider receives the authenticated user only; `meetings:read` needs an explicit grant |
+| Meetings API: personal data leaving through the client API | Field whitelist (JSON schema with `additionalProperties: false`); private events cleared even when the host leaks them; internal attendees `{id, name}` only, ≤ 50, never the caller; external attendees as a count; task links only for trackable tasks; titles cleaned and cut |
+| Meetings API: hostile join links | `MeetingLinkDetector`: https, no user information, port 443 only, no whitespace / control / quote / angle-bracket / backslash characters, ASCII host on the allow-list (Teams, Meet, Zoom, Jitsi, Webex), ≤ 2048 characters; ChatKit 1.19 vectors plus look-alikes in tests |
+| Meetings API: caches and logs | `Cache-Control: no-store`, `Pragma: no-cache`, `Vary: Authorization`, `nosniff`, no validators on every answer; nothing stored or cached by the bundle; the access log has status, count, dropped and duration only (join links often carry passcodes); provider exceptions answer 503 without their message and are logged by class |
+| Meetings API: polling abuse | 6 / min and 60 / h per token on top of the global limits; 429 with an integer `Retry-After`; clients respect `refreshAfterSeconds` |
 
 ## Secrets & cryptography
 

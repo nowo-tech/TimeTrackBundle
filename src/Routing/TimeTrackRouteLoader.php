@@ -9,6 +9,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackManageController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
@@ -112,6 +113,8 @@ final class TimeTrackRouteLoader extends Loader
                 'suggestions_resolve_keys'   => ['resolveKeys', ['POST', 'OPTIONS'], $calendar],
                 // Same path as GET entries: POST only (the GET route answers the preflight).
                 'entries_create' => ['createEntry', ['POST'], $calendar],
+                // Contract §22: the caller's own meetings (404 while off).
+                'me_meetings' => ['meetings', ['GET', 'OPTIONS'], TimeTrackMeetingsApiController::class],
             ];
             if ($this->deviceFlowEnabled) {
                 $apiMap['device_code']  = ['code', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];

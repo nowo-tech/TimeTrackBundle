@@ -323,4 +323,23 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
 
         return $result;
     }
+
+    /**
+     * Rules of a user in every scope, oldest first.
+     */
+    public function findRulesByOwner(string $userId): array
+    {
+        /** @var list<CalendarRule> $result */
+        $result = $this->entityManager->createQueryBuilder()
+            ->select('r')
+            ->from(CalendarRule::class, 'r')
+            ->where('IDENTITY(r.user) = :user')
+            ->setParameter('user', $userId)
+            ->orderBy('r.createdAt', SortDirection::Ascending->value)
+            ->addOrderBy('r.id', SortDirection::Ascending->value)
+            ->getQuery()
+            ->getResult();
+
+        return $result;
+    }
 }

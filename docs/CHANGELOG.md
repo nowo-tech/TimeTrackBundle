@@ -73,6 +73,8 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
   `Calendar\CalendarConnectionService` (connect / reconnect / pause / revoke with the host revoke first, owner only) and
   `Calendar\CalendarRuleService`; command `nowo:time-track:calendar:sync` (inside working hours only, AC-19).
 - **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only).
+- `Calendar\CalendarPersonalDataExporter` (contract §12.4): connections, rules and suggestions of a person for the
+  host's GDPR export.
 - **Configuration** `calendar.*` (`enabled`, `credential_provider`, `task_key_resolver`, `providers`, `modes`,
   `lookback_days`, `suggestion_ttl_days`, `sync_interval_minutes`, `max_event_seconds`, `max_rules_per_user`,
   `max_pages`); incoherent combinations are refused at compile time.
@@ -91,6 +93,20 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
 - **Events** `TIME_ENTRY_CREATED` (`TimeEntryCreatedEvent`, for TaskBoard's time totals) and
   `CALENDAR_SUGGESTION_DECIDED` (ids only).
 - `Support\Rfc3339`: the strict date-time profile of the 1.14 routes.
+- **Meetings API** (contract §22, Beacon spec 210, Q-B13..Q-B24, Q-O16..Q-O22): `GET /api/time-track/me/meetings`
+  (`Controller\TimeTrackMeetingsApiController`, route `nowo_time_track_client_me_meetings`) — the caller's own meetings
+  from the host `Meeting\MeetingProviderInterface` (DTOs `MeetingQuery`, `MeetingView`, `MeetingAttendeeView`,
+  `MeetingTaskLink`, `MeetingPage`, `MeetingSyncState`, `MeetingSyncStatus`); strict query validation (400 with
+  `{field}`, never the value; no user parameter), `MeetingResponder` privacy filters (whitelist, private events
+  cleared, ≤ 50 internal attendees, trackable task links, cleaned titles), `MeetingLinkDetector` (https allow-list:
+  Teams, Meet, Zoom, Jitsi + `meetings.jitsi_hosts`, Webex), `no-store` headers on every answer, 6 / min and 60 / h per
+  token (429 + integer `Retry-After`), 503 `meetings_unavailable`; JSON schema `docs/schemas/meetings.v1.json`; host
+  guide `docs/MEETINGS.md`. Nothing about meetings is stored, cached or logged by the bundle.
+- **Scope** `meetings:read` (explicit grant only). **`GET me`**: `features.meetings`, `meetings: {status,
+  refreshAfterSeconds}`, `links.calendars`.
+- **Configuration** `meetings.*` (off by default; `enabled` requires `provider`).
+- *Track the meeting* (Q-B22): `timer/switch` and `timer/start` accept `metadata: {origin: "meeting"}` without
+  `client_api.allow_metadata`; `TimerService::switchTo()` takes the new timer's metadata (optional argument).
 
 ### Changed
 

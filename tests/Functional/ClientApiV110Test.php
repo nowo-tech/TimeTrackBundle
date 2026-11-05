@@ -28,7 +28,7 @@ final class ClientApiV110Test extends FunctionalTestCase
     {
         $me = $this->api('GET', '/api/time-track/me', null, $this->login());
 
-        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'monitoring' => false], $me['features'] ?? null);
+        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'meetings' => false, 'monitoring' => false], $me['features'] ?? null);
         self::assertSame(['backdate' => ['max_seconds' => 7200, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 20, 'answer_timeout_minutes' => 2, 'user_can_disable' => true]], $me['limits'] ?? null);
     }
 

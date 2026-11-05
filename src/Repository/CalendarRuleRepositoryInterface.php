@@ -32,4 +32,11 @@ interface CalendarRuleRepositoryInterface
      * @return list<CalendarRule>
      */
     public function findRulesByUser(string $userId, string $scopeKey): array;
+
+    /**
+     * Rules of a user in every scope, oldest first (personal-data export).
+     *
+     * @return list<CalendarRule>
+     */
+    public function findRulesByOwner(string $userId): array;
 }

@@ -1,0 +1,190 @@
+{
+  "_comment": "Hand-written link vectors of the meetings API (contract §22.10); ChatKit 1.19 vectors copied, not a dependency. No real meeting link.",
+  "jitsiHosts": [
+    "jitsi.example.org"
+  ],
+  "accepted": [
+    [
+      "teams meeting (ChatKit 1.19 vector)",
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%3a%22x%22%7d",
+      "teams"
+    ],
+    [
+      "teams live",
+      "https://teams.live.com/meet/9876543210",
+      "teams"
+    ],
+    [
+      "meet, uppercase scheme and host (ChatKit 1.19 vector)",
+      "HTTPS://Meet.Google.COM/abc-defg-hij",
+      "meet"
+    ],
+    [
+      "meet with port 443",
+      "https://meet.google.com:443/abc-defg-hij",
+      "meet"
+    ],
+    [
+      "zoom",
+      "https://zoom.us/j/1234567890?pwd=FAKEPASSCODE",
+      "zoom"
+    ],
+    [
+      "zoom subdomain (ChatKit 1.19 vector)",
+      "https://us02web.zoom.us/j/1234567890",
+      "zoom"
+    ],
+    [
+      "zoomgov",
+      "https://zoomgov.com/j/1600000000",
+      "zoom"
+    ],
+    [
+      "zoomgov subdomain",
+      "https://agency.zoomgov.com/j/1600000000",
+      "zoom"
+    ],
+    [
+      "jitsi",
+      "https://meet.jit.si/FakeRoomName",
+      "jitsi"
+    ],
+    [
+      "self-hosted jitsi from configuration",
+      "https://jitsi.example.org/FakeRoom",
+      "jitsi"
+    ],
+    [
+      "webex subdomain",
+      "https://company.webex.com/meet/fake.person",
+      "webex"
+    ],
+    [
+      "fragment",
+      "https://meet.google.com/abc-defg-hij#top",
+      "meet"
+    ]
+  ],
+  "refused": [
+    [
+      "javascript (ChatKit 1.19 vector)",
+      "javascript:alert(1)"
+    ],
+    [
+      "data (ChatKit 1.19 vector)",
+      "data:text/html;base64,PHNjcmlwdD4="
+    ],
+    [
+      "http (ChatKit 1.19 vector)",
+      "http://meet.google.com/abc-defg-hij"
+    ],
+    [
+      "protocol-relative (ChatKit 1.19 vector)",
+      "//meet.google.com/abc-defg-hij"
+    ],
+    [
+      "relative (ChatKit 1.19 vector)",
+      "/path"
+    ],
+    [
+      "ftp (ChatKit 1.19 vector)",
+      "ftp://meet.google.com/"
+    ],
+    [
+      "userinfo (ChatKit 1.19 vector)",
+      "https://user:pass@meet.google.com/abc"
+    ],
+    [
+      "user only (ChatKit 1.19 vector)",
+      "https://user@meet.google.com/abc"
+    ],
+    [
+      "whitespace inside (ChatKit 1.19 vector)",
+      "https://meet.goo gle.com/abc"
+    ],
+    [
+      "backslash (ChatKit 1.19 vector)",
+      "https://meet.google.com\\@evil.test/"
+    ],
+    [
+      "control character (ChatKit 1.19 vector)",
+      "https://meet.google.com/\u0001"
+    ],
+    [
+      "no host (ChatKit 1.19 vector)",
+      "https:///path"
+    ],
+    [
+      "ipv6 (ChatKit 1.19 vector)",
+      "https://[::1]/"
+    ],
+    [
+      "scheme not at the start (ChatKit 1.19 vector)",
+      "xhttps://meet.google.com/"
+    ],
+    [
+      "IDN look-alike",
+      "https://meet.goog1e.com/abc-defg-hij"
+    ],
+    [
+      "unicode look-alike",
+      "https://meet.gооgle.com/abc"
+    ],
+    [
+      "provider host as a prefix",
+      "https://zoom.us.evil.tld/j/1"
+    ],
+    [
+      "provider host inside another host",
+      "https://example.com.teams.microsoft.com.evil.test/"
+    ],
+    [
+      "suffix that is not a subdomain (ChatKit 1.19 vector)",
+      "https://notzoom.us/j/1"
+    ],
+    [
+      "bare webex.com",
+      "https://webex.com/meet/x"
+    ],
+    [
+      "trailing whitespace",
+      "https://meet.google.com/abc-defg-hij "
+    ],
+    [
+      "leading whitespace",
+      "  https://meet.google.com/abc-defg-hij"
+    ],
+    [
+      "double quote",
+      "https://meet.google.com/abc\"onmouseover=\"x"
+    ],
+    [
+      "single quote",
+      "https://meet.google.com/abc'x"
+    ],
+    [
+      "angle bracket",
+      "https://meet.google.com/<script>"
+    ],
+    [
+      "other port",
+      "https://meet.google.com:8443/abc"
+    ],
+    [
+      "trailing dot host",
+      "https://meet.google.com./abc"
+    ],
+    [
+      "unknown provider",
+      "https://example.com/meeting"
+    ],
+    [
+      "empty",
+      ""
+    ],
+    [
+      "4 kB URL",
+      "https://meet.google.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+  ]
+}

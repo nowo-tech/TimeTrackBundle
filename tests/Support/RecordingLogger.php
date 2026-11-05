@@ -7,6 +7,8 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 use Psr\Log\AbstractLogger;
 use Stringable;
 
+use function is_scalar;
+
 /**
  * PSR-3 logger that keeps the records in memory (REQ-OBS-001 assertions).
  */
@@ -41,7 +43,8 @@ final class RecordingLogger extends AbstractLogger
         $values = [];
         foreach ($this->records as $record) {
             array_walk_recursive($record['context'], static function (mixed $value) use (&$values): void {
-                $values[] = (string) $value;
+                // Since 1.14: Doctrine query logs carry enum parameter types (not stringable).
+                $values[] = is_scalar($value) || $value === null || $value instanceof Stringable ? (string) $value : get_debug_type($value);
             });
         }
 

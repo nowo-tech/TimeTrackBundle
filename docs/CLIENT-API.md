@@ -1,4 +1,4 @@
-# Client API reference (1.10.1, contract v0.3.1)
+# Client API reference (1.14, contract v0.3.1 + timetrack-next v1.1)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -9,6 +9,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 ## Table of contents
 
 - [Changes in 1.14 (calendar suggestions, manual entries)](#changes-in-114-calendar-suggestions-manual-entries)
+  - [GET me/meetings (1.14)](#get-memeetings-114)
 - [Changes in 1.13 (working time, timesheets, task effort)](#changes-in-113-working-time-timesheets-task-effort)
 - [Notes](#notes)
 - [Changes in 1.11 (imported entries)](#changes-in-111-imported-entries)
@@ -61,6 +62,37 @@ Additive; with `calendar` and `manual_entries` off (the default) every new route
 | `POST /api/time-track/entries` | `entries:write` | header `Idempotency-Key` (1–64 visible characters, required); `{taskId, startedAt, endedAt, source: manual\|calendar, note?}` (RFC 3339 with offset) | 201 `{entry}` (`metadata.origin` = source); 400 `invalid_request`; 403 `task_forbidden`; 409 `period_locked` (+ `lockedThrough`), `period_submitted`, `overlap` (a live entry or the running timer); 422 `invalid_range` (end ≤ start), `entry_too_long` (> 24 h), `entry_in_future`, `entry_too_old` (> `manual_entries.max_age_days`), `idempotency_mismatch`; 120 / h per token; 404 when `manual_entries.enabled` is false |
 
 The same `Idempotency-Key` and body get the same answer for 24 h (201, 409 and 422 are replayed).
+
+### GET me/meetings (1.14)
+
+`GET /api/time-track/me/meetings?from=&to=&tz=&limit=` (scope **`meetings:read`**, explicit grant only): the caller's
+own meetings overlapping `[from, to)`, minimal fields (contract §22, host guide [MEETINGS.md](MEETINGS.md), JSON schema
+[`schemas/meetings.v1.json`](schemas/meetings.v1.json)). There is no user parameter.
+
+| Parameter | Format | Default | Rules |
+| --- | --- | --- | --- |
+| `from` | RFC 3339 with `Z` or an offset (seconds optional, ≤ 6 fraction digits; encode `+` as `%2B`) | now (to the minute) | ≥ now − `meetings.max_past_days` (1) |
+| `to` | same | `from` + 24 h | after `from`; ≤ `meetings.max_range_days` (14) after it; ≤ now + 14 days |
+| `tz` | IANA zone | the working-hours zone, else UTC | shapes all-day `date` and bounds only |
+| `limit` | 1–200 | 100 | more meetings → `truncated: true` |
+
+200 `{from, to, tz, generatedAt, sync: {status: connected|not_connected|needs_reconnect|syncing, lastSyncAt,
+refreshAfterSeconds}, truncated, meetings: [{id, start, end, timeZone, allDay, date, busy, private, title, joinUrl,
+joinProvider: teams|meet|zoom|jitsi|webex|null, organizerIsMe, attendees: [{id, name}], externalCount, taskLinks:
+[{taskId, key}], updatedAt}]}`. Times are UTC `Z`. Private meetings come with `title: null`, no attendees, no task links
+and `externalCount: null`, but keep `joinUrl`. Errors: 400 `invalid_datetime` / `invalid_timezone` / `invalid_range` /
+`invalid_limit` / `unknown_parameter` with `{field}` (the value is never echoed); 401; 403 `insufficient_scope`; 404
+`not_found` (feature off, no provider, organization disabled calendars); 429 `rate_limited` (6 / min, 60 / h per token;
+integer `Retry-After` header and `retryAfter` in the body); 503 `meetings_unavailable` (`Retry-After: 60`). Every answer:
+`Cache-Control: no-store, private`, `Pragma: no-cache`, `Vary: Authorization`, `X-Content-Type-Options: nosniff`, no
+validators. Clients MUST wait `sync.refreshAfterSeconds` between polls.
+
+`GET me` gains `features.meetings`, `meetings: {status, refreshAfterSeconds}` (null when off) and `links: {calendars}` (the
+host's https *Calendars* page for the *Connect* button, or null).
+
+*Track the meeting* (Q-B22): `POST timer/switch` (and `timer/start`) accept `metadata: {"origin": "meeting"}` even when
+free metadata is off; it is kept on the timer and its entry. Any other metadata on `timer/switch` is `400
+metadata_not_allowed`.
 
 ## Changes in 1.13 (working time, timesheets, task effort)
 
@@ -204,7 +236,7 @@ calls `ClientTokenRevoker::revokeByCredential()`.
 `balance:read`, `timesheet:read`, `timesheet:write`. A login grants what the authenticator returns
 (`ClientAuthResult::success($user, $credentialId, $scopes)`, default the first four); a device grants what it asked for
 and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 scopes and, since 1.14, `entries:write`,
-`suggestions:read` and `suggestions:write` always need an explicit grant.
+`suggestions:read`, `suggestions:write` and `meetings:read` always need an explicit grant.
 
 ## Errors
 
@@ -226,6 +258,7 @@ and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 s
 | 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
+| 503 | `meetings_unavailable` | Since 1.14: the host meeting provider failed (`Retry-After: 60`) |
 
 ## Endpoints
 

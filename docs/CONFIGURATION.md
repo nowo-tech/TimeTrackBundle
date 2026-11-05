@@ -18,6 +18,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Imported entries and retention (1.11)](#imported-entries-and-retention-111)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
+- [Meetings API (1.14)](#meetings-api-114)
 - [Security](#security)
 
 ## Required
@@ -363,6 +364,27 @@ nowo_time_track:
   (`/api/time-track/calendar/connections/{id}`, DELETE), `suggestions`, `suggestions_accept`, `suggestions_dismiss`,
   `suggestions_resolve_keys`, `entries_create` (`POST /api/time-track/entries`); they answer 404 while their feature is
   off.
+
+## Meetings API (1.14)
+
+Off by default; host guide in [MEETINGS.md](MEETINGS.md).
+
+```yaml
+nowo_time_track:
+  meetings:
+    enabled: false
+    provider: ~                      # MeetingProviderInterface service id (required when enabled)
+    max_range_days: 14               # 1..14
+    max_past_days: 1                 # 0..7
+    default_limit: 100               # 1..200
+    refresh_after_seconds: 300       # 60..3600, poll-gap hint to the clients
+    rate_limit: { per_hour: 60, per_minute: 6 }
+    jitsi_hosts: []                  # extra self-hosted Jitsi hosts (lowercase host names)
+    links_calendars_route: ~         # host route of the Calendars page (GET me links.calendars, https only)
+```
+
+- Client route `clients.routes.me_meetings` (`/api/time-track/me/meetings`, name `nowo_time_track_client_me_meetings`).
+- Refused at compile time: `enabled` without `provider`, values outside the ranges, a Jitsi host that is not a host name.
 
 ## Security
 

@@ -59,6 +59,8 @@ services:
             - '../../WorkingTime/'
             # Since 1.14: calendar suggestions are defined by the extension (value objects excluded too).
             - '../../Calendar/'
+            # Since 1.14: the meetings API services are defined by the extension (value objects excluded too).
+            - '../../Meeting/'
 
     Nowo\TimeTrackBundle\Controller\:
         resource: '../../Controller/'

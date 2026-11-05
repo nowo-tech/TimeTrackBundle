@@ -10,12 +10,12 @@ use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
-use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
@@ -115,7 +115,8 @@ final class FunctionalKernel extends Kernel
             'http_client' => ['mock_response_factory' => NoNetworkHttpResponses::class],
         ]);
         $container->services()->set(NoNetworkHttpResponses::class)->public();
-        $container->services()->set('logger', NullLogger::class);
+        // Since 1.14: a recording logger (public) so tests can scan log records for personal data.
+        $container->services()->set('logger', RecordingLogger::class)->public();
         // Since 1.13: approver provider of the timesheet variants (public: tests configure it per case).
         $container->services()->set(StubTimesheetApproverProvider::class)->public();
         $container->services()->set(FixedScopeProvider::class)->public();
@@ -125,6 +126,7 @@ final class FunctionalKernel extends Kernel
         $container->services()->set(StubTaskKeyResolver::class)->public();
         $container->services()->set(StubCalendarCredentialProvider::class)->public();
         $container->services()->set(MutableProfileProvider::class)->public();
+        $container->services()->set(StubMeetingProvider::class)->public();
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);

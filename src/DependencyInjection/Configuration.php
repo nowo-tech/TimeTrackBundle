@@ -178,6 +178,7 @@ final class Configuration implements ConfigurationInterface
                 ->append($this->timesheetsNode())
                 ->append($this->calendarNode())
                 ->append($this->manualEntriesNode())
+                ->append($this->meetingsNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
                     ->addDefaultsIfNotSet()
@@ -494,6 +495,14 @@ final class Configuration implements ConfigurationInterface
                                     ->children()
                                         ->scalarNode('path')->defaultValue('/api/time-track/entries')->end()
                                         ->scalarNode('name')->defaultValue('nowo_time_track_api_entries_create')->end()
+                                    ->end()
+                                ->end()
+                                // Since 1.14 (contract §22.2).
+                                ->arrayNode('me_meetings')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/me/meetings')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_client_me_meetings')->end()
                                     ->end()
                                 ->end()
                             ->end()
@@ -937,6 +946,49 @@ final class Configuration implements ConfigurationInterface
                     ->min(1)
                     ->max(366)
                 ->end()
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.14: `meetings` (contract §22.9, spec 210): the caller's own meetings on the client API from a host
+     * provider. Off by default; enabled needs a provider.
+     */
+    private function meetingsNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('meetings'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')->info('GET me/meetings and the GET me meeting keys (default off).')->defaultFalse()->end()
+                ->scalarNode('provider')->info('Service id implementing MeetingProviderInterface (required when enabled).')->defaultNull()->end()
+                ->integerNode('max_range_days')->info('Longest from-to range.')->defaultValue(14)->min(1)->max(14)->end()
+                ->integerNode('max_past_days')->info('How far back from may go (host retention: 7 days).')->defaultValue(1)->min(0)->max(7)->end()
+                ->integerNode('default_limit')->defaultValue(100)->min(1)->max(200)->end()
+                ->integerNode('refresh_after_seconds')->info('Default poll-gap hint to the clients.')->defaultValue(300)->min(60)->max(3600)->end()
+                ->arrayNode('rate_limit')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->integerNode('per_hour')->defaultValue(60)->min(1)->end()
+                        ->integerNode('per_minute')->defaultValue(6)->min(1)->end()
+                    ->end()
+                ->end()
+                ->arrayNode('jitsi_hosts')
+                    ->info('Extra self-hosted Jitsi hosts accepted as join links (host names only).')
+                    ->scalarPrototype()
+                        ->validate()
+                            ->ifTrue(static fn (mixed $v): bool => !is_string($v) || preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/D', $v) !== 1)
+                            ->thenInvalid('meetings.jitsi_hosts takes lowercase host names only, got %s.')
+                        ->end()
+                    ->end()
+                    ->defaultValue([])
+                ->end()
+                ->scalarNode('links_calendars_route')->info('Host route name of Account → Integrations → Calendars (GET me links.calendars; https only).')->defaultNull()->end()
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['provider']))
+                ->thenInvalid('meetings.provider is required when the meetings API is enabled.')
             ->end();
 
         return $node;

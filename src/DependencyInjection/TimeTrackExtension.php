@@ -10,6 +10,7 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
+use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
 use Nowo\TimeTrackBundle\Calendar\CalendarRefHasher;
 use Nowo\TimeTrackBundle\Calendar\CalendarRuleService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
@@ -21,6 +22,7 @@ use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarEventSource;
 use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Client\AlwaysActiveClientCredentialState;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
+use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
@@ -49,6 +51,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
@@ -56,6 +59,11 @@ use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Meeting\MeetingContext;
+use Nowo\TimeTrackBundle\Meeting\MeetingLinkDetector;
+use Nowo\TimeTrackBundle\Meeting\MeetingQueryParser;
+use Nowo\TimeTrackBundle\Meeting\MeetingResponder;
+use Nowo\TimeTrackBundle\Meeting\MeetingSettings;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
@@ -502,6 +510,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$logger'          => $loggerRef,
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
+        // Since 1.14 (contract §12.4): personal-data export of the calendar tables.
+        $container->setDefinition(CalendarPersonalDataExporter::class, (new Definition(CalendarPersonalDataExporter::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$connections' => new Reference(CalendarConnectionRepositoryInterface::class),
+                '$rules'       => new Reference(CalendarRuleRepositoryInterface::class),
+                '$suggestions' => new Reference(CalendarSuggestionRepositoryInterface::class),
+            ]));
         $container->setDefinition(CalendarSyncCommand::class, (new Definition(CalendarSyncCommand::class))
             ->setArguments(['$sync' => new Reference(CalendarSyncService::class)])
             ->addTag('console.command'));
@@ -541,6 +557,63 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->getDefinition(TimeTrackClientApiController::class)
             ->setArgument('$calendar', new Reference(CalendarConnectionService::class))
             ->setArgument('$manualEntries', new Reference(ManualEntryService::class));
+
+        $this->registerMeetings($container, $config, $clockRef, $loggerRef);
+    }
+
+    /**
+     * Since 1.14 (contract §22): the meetings API — settings, link detector, query parser, responder, the `GET me`
+     * context and the controller. The host provider is required when enabled (checked by the configuration).
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerMeetings(ContainerBuilder $container, array $config, Reference $clockRef, Reference $loggerRef): void
+    {
+        /** @var array{enabled: bool, provider: string|null, max_range_days: int, max_past_days: int, default_limit: int, refresh_after_seconds: int, rate_limit: array{per_hour: int, per_minute: int}, jitsi_hosts: list<string>, links_calendars_route: string|null} $meetings */
+        $meetings = $config['meetings'];
+        $provider = $meetings['provider'];
+        $container->setParameter('nowo_time_track.meetings', $meetings);
+        $container->setDefinition(MeetingSettings::class, (new Definition(MeetingSettings::class))
+            ->setArguments([
+                '$enabled'             => $meetings['enabled'],
+                '$maxRangeDays'        => $meetings['max_range_days'],
+                '$maxPastDays'         => $meetings['max_past_days'],
+                '$defaultLimit'        => $meetings['default_limit'],
+                '$refreshAfterSeconds' => $meetings['refresh_after_seconds'],
+                '$perHour'             => $meetings['rate_limit']['per_hour'],
+                '$perMinute'           => $meetings['rate_limit']['per_minute'],
+                '$calendarsRoute'      => $meetings['links_calendars_route'],
+            ]));
+        $container->setDefinition(MeetingLinkDetector::class, (new Definition(MeetingLinkDetector::class))
+            ->setArguments(['$jitsiHosts' => $meetings['jitsi_hosts']]));
+        $container->setDefinition(MeetingQueryParser::class, (new Definition(MeetingQueryParser::class))
+            ->setArguments(['$settings' => new Reference(MeetingSettings::class)]));
+        $container->setDefinition(MeetingResponder::class, (new Definition(MeetingResponder::class))
+            ->setArguments(['$links' => new Reference(MeetingLinkDetector::class), '$taskAccess' => new Reference(TaskAccessCheckerInterface::class)]));
+        $container->setDefinition(MeetingContext::class, (new Definition(MeetingContext::class))
+            ->setArguments([
+                '$settings'     => new Reference(MeetingSettings::class),
+                '$provider'     => $meetings['enabled'] && is_string($provider) && $provider !== '' ? new Reference($provider) : null,
+                '$urlGenerator' => new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'       => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->getDefinition(TimeTrackMeetingsApiController::class)
+            ->setArguments([
+                '$guard'           => new Reference(ClientApiGuard::class),
+                '$responseFactory' => new Reference(ClientResponseFactory::class),
+                '$rateLimiter'     => new Reference(ClientApiRateLimiter::class),
+                '$profileProvider' => new Reference(ClientUserProfileProviderInterface::class),
+                '$context'         => new Reference(MeetingContext::class),
+                '$parser'          => new Reference(MeetingQueryParser::class),
+                '$responder'       => new Reference(MeetingResponder::class),
+                '$settings'        => new Reference(MeetingSettings::class),
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$meetings', new Reference(MeetingContext::class));
     }
 
     /**

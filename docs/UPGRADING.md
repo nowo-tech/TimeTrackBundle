@@ -68,16 +68,19 @@ composer update nowo-tech/time-track-bundle
 (empty until calendar suggestions are enabled): `time_track_calendar_connections`, `time_track_calendar_suggestions` and
 `time_track_calendar_rules`. Run `doctrine:migrations:diff` (the diff is exactly the statements below for the default
 prefix) or apply the reference SQL of your platform. Replace `users` and `INT` with your user table and its primary-key
-type (Beacon: `INT`). No data is rewritten; the files are also in `docs/sql/1.14.0/`, and the demo ships the MySQL one as
+type (Beacon: `INT`). On MySQL / MariaDB the new tables must use the collation of your `time_track_entries` table (the
+`entry_id` foreign key needs the same one; the reference SQL uses `utf8mb4_unicode_ci`, like Beacon and the demo; a
+`doctrine:migrations:diff` uses your `doctrine.dbal.default_table_options`). No data is rewritten; the files are also in
+`docs/sql/1.14.0/`, and the demo ships the MySQL one as
 `demo/symfony8/migrations/Version20261107000000.php`. The meetings API adds no table.
 
 <details><summary>MySQL 8 / MariaDB (docs/sql/1.14.0/mysql-up.sql)</summary>
 
 ```sql
--- TimeTrackBundle 1.14.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type). Calendar suggestions (always mapped); the meetings API adds no table.
-CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, UNIQUE INDEX uniq_time_track_calendar_connections (user_id, scope_key, provider), INDEX IDX_12CE44F6A76ED395 (user_id), PRIMARY KEY (id));
-CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_suggestions_user (user_id, status, starts_at), UNIQUE INDEX uniq_time_track_calendar_suggestions_ref (connection_id, event_ref), INDEX IDX_3C8E3EF7BA364942 (entry_id), INDEX IDX_3C8E3EF7DD03F01 (connection_id), INDEX IDX_3C8E3EF7A76ED395 (user_id), PRIMARY KEY (id));
-CREATE TABLE time_track_calendar_rules (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, pattern VARCHAR(120) NOT NULL, task_id VARCHAR(36) NOT NULL, group_matches TINYINT DEFAULT 1 NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_rules_user (user_id, scope_key), INDEX IDX_84F867CAA76ED395 (user_id), PRIMARY KEY (id));
+-- TimeTrackBundle 1.14.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type, and utf8mb4_unicode_ci with the collation of your time_track_entries table: the entry_id foreign key needs the same one). Calendar suggestions (always mapped); the meetings API adds no table.
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, UNIQUE INDEX uniq_time_track_calendar_connections (user_id, scope_key, provider), INDEX IDX_12CE44F6A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
+CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_suggestions_user (user_id, status, starts_at), UNIQUE INDEX uniq_time_track_calendar_suggestions_ref (connection_id, event_ref), INDEX IDX_3C8E3EF7BA364942 (entry_id), INDEX IDX_3C8E3EF7DD03F01 (connection_id), INDEX IDX_3C8E3EF7A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
+CREATE TABLE time_track_calendar_rules (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, pattern VARCHAR(120) NOT NULL, task_id VARCHAR(36) NOT NULL, group_matches TINYINT DEFAULT 1 NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_rules_user (user_id, scope_key), INDEX IDX_84F867CAA76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
 ALTER TABLE time_track_calendar_connections ADD CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
 ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7BA364942 FOREIGN KEY (entry_id) REFERENCES time_track_entries (id) ON DELETE SET NULL;
 ALTER TABLE time_track_calendar_suggestions ADD CONSTRAINT FK_3C8E3EF7DD03F01 FOREIGN KEY (connection_id) REFERENCES time_track_calendar_connections (id) ON DELETE CASCADE;
@@ -190,6 +193,9 @@ only events whose title carries a resolvable key or matches a user rule become s
 stored (no title, description, attendees, location, link or provider id — only keyed HMAC references). Delete the user's
 connections with their account (FK `ON DELETE CASCADE`) and call your own token revoke on account erasure.
 
+**Personal data.** Add `Calendar\CalendarPersonalDataExporter::export($userId)` (connections without the credential
+reference, rules, suggestions) to your personal-data export next to the timesheet exporter.
+
 **New events**: `nowo_time_track.calendar.connection_changed` (`CalendarConnectionChangedEvent`),
 `nowo_time_track.calendar.sync_finished` (`CalendarSyncFinishedEvent`) and
 `nowo_time_track.calendar.suggestion_decided` (`CalendarSuggestionDecidedEvent`): ids, codes, counts and the consent
@@ -203,11 +209,19 @@ period lock). A host replacement of `TimeEntryRepositoryInterface` may implement
 `OverlappingTimeEntryRepositoryInterface` for an exact overlap query; without it the overlap check reads the two days
 before the new entry.
 
+**Meetings API (spec 210) is off by default** (`meetings.enabled: false`) and adds no table. Implement
+`Meeting\MeetingProviderInterface` over your meeting read model and set `meetings.provider` ([MEETINGS.md](MEETINGS.md));
+optionally `meetings.links_calendars_route` for `GET me.links.calendars`. Clients need the new **`meetings:read`** scope
+(explicit grant: existing desktops re-consent once in the device flow). `GET me` gains `features.meetings`, `meetings`
+and `links`.
+
 **Client API (additive).** New scopes `entries:write`, `suggestions:read`, `suggestions:write` are never granted by
 default (as for the 1.13 scopes): request them in the device flow. New routes (404 while their feature is off):
 `calendar/connections` (GET, and DELETE `/{id}`), `suggestions`, `suggestions/accept`, `suggestions/dismiss`,
-`suggestions/resolve-keys`, `POST entries`. CORS preflights now allow `DELETE`. `GET me.features.calendar_suggestions`
-and `features.manual_entries` become real.
+`suggestions/resolve-keys`, `POST entries`, `me/meetings`. CORS preflights now allow `DELETE`.
+`GET me.features.calendar_suggestions` and `features.manual_entries` become real. `timer/switch` and `timer/start` accept
+`metadata: {origin: "meeting"}` (*Track the meeting*); `TimerService::switchTo()` has a new optional `$metadata`
+argument (subclasses / decorators that override it must add it).
 
 ## To 1.13.0
 

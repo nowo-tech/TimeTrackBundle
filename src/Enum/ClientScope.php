@@ -40,6 +40,8 @@ enum ClientScope: string
     case SuggestionsRead = 'suggestions:read';
     /** Since 1.14: accept / dismiss suggestions, revoke a calendar connection. Explicit grant only. */
     case SuggestionsWrite = 'suggestions:write';
+    /** Since 1.14: `GET me/meetings` (spec 210). Explicit grant only (one re-consent of existing desktops, Q-O17). */
+    case MeetingsRead = 'meetings:read';
 
     /**
      * Every scope.
