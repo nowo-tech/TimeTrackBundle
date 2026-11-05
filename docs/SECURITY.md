@@ -7,6 +7,7 @@
 - [Threat model](#threat-model)
 - [Client API](#client-api)
 - [Reports](#reports)
+- [Imported entries (1.11)](#imported-entries-111)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -89,6 +90,17 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 - Bounded list (REQ-PERF-001): the reports page shows `reports.page_size` entries per page (default 50, max 500),
   paged in the database by `DoctrineOrmTimeEntryRepository`; out-of-range `page` values are clamped to the existing
   pages; the period is capped at 366 days
+
+## Imported entries (1.11)
+
+| Threat | Control |
+| --- | --- |
+| Imported time edited into worked (payroll) time | Read-only by source; `canEditEntry()` is false before any listener runs; no timer events; excluded from the backdate overlap clamp; `isLive()` / `findLiveByUserAndPeriod()` for host registers |
+| One tenant's import overwrites another's entry, or time moves silently between users | The writer refuses an owner change (`ImportedEntryOwnerMismatchException`); the external source carries the host scope; removals match the source exactly, never by prefix |
+| Duplicates on re-sync | Unique `(external_source, external_id)`; unchanged rows are not written |
+| Task title leaked to an owner without access | Imported entries of a task the owner cannot track show *Task not visible* in the API, export and reports |
+| Deleting imported time without authority | Single deletion needs a `delete_imported` grant (default deny); bulk removals are host calls after its own check; never a side effect of deleting tasks or boards |
+| Personal data in logs | The writer logs counts and the scope kind only, never descriptions, titles or ids of people |
 
 ## Secrets & cryptography
 

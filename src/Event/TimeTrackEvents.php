@@ -22,4 +22,10 @@ final class TimeTrackEvents
 
     /** {@see ClientApiEvent}: client API audit trail (1.9). */
     public const CLIENT_API = 'nowo_time_track.client_api';
+
+    /** {@see TimeEntryImportedEvent}: an imported entry was created or changed by the writer (1.11). */
+    public const TIME_ENTRY_IMPORTED = 'nowo_time_track.time_entry.imported';
+
+    /** {@see TimeEntriesRemovedEvent}: imported entries were deleted (one, or in bulk) (1.11). */
+    public const TIME_ENTRIES_REMOVED = 'nowo_time_track.time_entries.removed';
 }

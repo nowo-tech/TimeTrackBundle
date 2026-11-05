@@ -9,6 +9,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 ## Table of contents
 
 - [Notes](#notes)
+- [Changes in 1.11 (imported entries)](#changes-in-111-imported-entries)
 - [Changes in v0.3.1 (1.10.1)](#changes-in-v031-1101)
 - [Changes since v0.2 (1.10)](#changes-since-v02-110)
 - [Conventions](#conventions)
@@ -52,6 +53,15 @@ Since 1.10.2 every client note (`timer/start`, `timer/stop`, `timer/switch`, `ti
 - **Follow-ups:** idle `split` and reassign `then: continue` start the follow-up timer **without** the note (it stays
   on the entry up to the idle start). A reassign note goes on the reassigned entry only.
 - Notes are plain user text: clients render them as text; hosts escape them.
+
+## Changes in 1.11 (imported entries)
+
+- `GET entries` and `GET export`: an entry may have `source: "import"` (time imported from another tool). New keys on
+  every entry: `billable` (bool or null), `description` (string or null, full text), `readOnly` (true for imported
+  entries) and `taskVisible` (false when the owner cannot see the task; `taskTitle` is then `"Task not visible"`).
+  The CSV export appends `billable`, `description`, `imported`.
+- Clients render `import` as *Imported*, never offer to edit it, and **skip `readOnly` entries for *Resume* and the
+  recent / quick tasks**.
 
 ## Changes in v0.3.1 (1.10.1)
 

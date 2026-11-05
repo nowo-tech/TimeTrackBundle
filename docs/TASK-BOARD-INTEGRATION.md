@@ -7,6 +7,7 @@
 - [Interfaces (implemented by TaskBoard)](#interfaces-implemented-by-taskboard)
 - [Wiring](#wiring)
 - [Recommended TaskBoard features](#recommended-taskboard-features)
+- [Imported time (1.11)](#imported-time-111)
 
 ## Interfaces (implemented by TaskBoard)
 
@@ -31,3 +32,10 @@ nowo_time_track:
 - UI widget on task cards showing accumulated time
 
 Both bundles should declare reciprocal `suggest` entries in `composer.json`.
+
+## Imported time (1.11)
+
+TaskBoardBundle (1.25+) keeps `total_time_seconds` for imported entries through `TIME_ENTRY_IMPORTED` (adds the
+change in duration) and `TIME_ENTRIES_REMOVED` (subtracts `secondsByTask`). Its listener registers only when these
+event classes exist. Deleting tasks or boards never deletes TimeTrack entries (live or imported); imported time is
+deleted only by an explicit manager action.

@@ -7,6 +7,7 @@
 - [Translations (REQ-I18N-001)](#translations-req-i18n-001)
 - [API (clients)](#api-clients)
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
+- [Imported entries (1.11)](#imported-entries-111)
 - [Events](#events)
 
 ## Web UI
@@ -196,7 +197,42 @@ so two concurrent `timer/stop` / `timer/switch` calls record one entry. A store 
 
 **Cron** — `nowo:time-track:client-tokens:purge` also deletes expired device requests.
 
+## Imported entries (1.11)
+
+Time recorded in another tool (e.g. ClickUp, through TaskBoardBundle's sync) is written by the host:
+
+```php
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+
+$result = $writer->upsert($user, new ImportedTimeEntryData(
+    externalSource: 'clickup:' . $directoryId,   // [a-z0-9_]{1,24}:[A-Za-z0-9._-]{1,39}
+    externalId: $clickUpEntryId,
+    taskId: $task->getId(), taskTitle: $task->getTitle(), boardId: $board->getId(),
+    startedAt: $start, endedAt: $end, durationSeconds: $seconds,
+    billable: $billable, description: $description,  // kept in full
+));
+// $result->outcome: created | updated | unchanged (unchanged = nothing written, no event)
+```
+
+- Idempotent by `(externalSource, externalId)`; `upsertMany()` takes up to 500 rows with one flush.
+- **The owner never changes**: re-associating someone's time is `removeForUser()` / `remove()` then `upsert()` for
+  the new user (the host audits it).
+- Imported entries are **read-only** (`TimeEntry::isReadOnly()`, `canEditEntry()` always false) and are not live
+  (`TimeEntrySource::isLive()`): keep them out of overlap checks, registers and clock-in rules
+  (`findLiveByUserAndPeriod()`, `TimeEntryListQueryEvent::setIncludeImported(false)`).
+- **Deleting** imported time is an explicit manager action: one entry through `ImportedTimeEntryDeleter` (needs a
+  `delete_imported` grant on `TimeEntryAccessCheckEvent`), or in bulk through `remove*()` after the host's own check.
+  **Never** call `removeForTasks()` / `removeForBoard()` from a task or board deletion: deleting tasks keeps tracked
+  time (owner rule).
+- Lists, reports and exports include imported entries. The title of an imported entry whose task its owner cannot
+  track is shown as *Task not visible*.
+
 ## Events
+
+Since 1.11: `TimeTrackEvents::TIME_ENTRY_IMPORTED` (`TimeEntryImportedEvent`) after an imported entry is created or
+changed, and `TimeTrackEvents::TIME_ENTRIES_REMOVED` (`TimeEntriesRemovedEvent`: scope, count, seconds per task, owner
+ids) after imported entries are deleted. Neither is a timer event.
 
 - `nowo_time_track.timer.start` — `TimerStartEvent`
 - `nowo_time_track.timer.stop` — `TimerStopEvent` (TaskBoard can aggregate `time_spent`)

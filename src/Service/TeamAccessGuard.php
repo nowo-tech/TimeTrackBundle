@@ -55,11 +55,19 @@ final readonly class TeamAccessGuard
         return in_array($targetUserId, $this->teamContext->getManagedUserIds($viewer), true);
     }
 
+    /** Since 1.11: the access-check action of {@see self::canDeleteImportedEntry()}. */
+    public const ACTION_DELETE_IMPORTED = 'delete_imported';
+
     /**
-     * Whether the viewer may edit the entry (host code only; the bundle ships no edit route).
+     * Whether the viewer may edit the entry (host code only; the bundle ships no edit route). Since 1.11 an imported
+     * (read-only) entry is never editable: the access-check event is not even dispatched, so no listener can grant it.
      */
     public function canEditEntry(UserInterface $editor, TimeEntry $entry): bool
     {
+        if ($entry->isReadOnly()) {
+            return false;
+        }
+
         $entryUser = $entry->getUser();
         if (!$entryUser instanceof UserInterface) {
             return false;
@@ -74,6 +82,23 @@ final readonly class TeamAccessGuard
         }
 
         $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted);
+        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
+
+        return $event->isGranted();
+    }
+
+    /**
+     * Since 1.11: whether the actor may delete an imported entry. Denied by default (also for its owner); the host
+     * grants it through {@see TimeEntryAccessCheckEvent} with action `delete_imported` (e.g. project managers).
+     * Always false for live entries.
+     */
+    public function canDeleteImportedEntry(UserInterface $actor, TimeEntry $entry): bool
+    {
+        if (!$entry->isReadOnly()) {
+            return false;
+        }
+
+        $event = new TimeEntryAccessCheckEvent($actor, $entry, self::ACTION_DELETE_IMPORTED, false);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
         return $event->isGranted();

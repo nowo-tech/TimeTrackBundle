@@ -29,6 +29,7 @@ use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -452,9 +453,12 @@ final readonly class TimerService
     public function listEntries(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId = null): array
     {
         $entries = [];
-        foreach ($this->resolveEntryUserIds($viewer, $from, $to, $targetUserId) as $userId) {
+        $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId);
+        foreach ($query['userIds'] as $userId) {
             foreach ($this->timeEntryRepository->findByUserAndPeriod($userId, $from, $to) as $entry) {
-                $entries[] = $entry;
+                if ($query['includeImported'] || $entry->getSource()->isLive()) {
+                    $entries[] = $entry;
+                }
             }
         }
 
@@ -480,17 +484,22 @@ final readonly class TimerService
     {
         $perPage = max(1, $perPage);
 
-        if ($this->timeEntryRepository instanceof PaginatedTimeEntryRepositoryInterface) {
-            $userIds = $this->resolveEntryUserIds($viewer, $from, $to, $targetUserId);
-            $total   = $this->timeEntryRepository->countByUsersAndPeriod($userIds, $from, $to);
-            $page    = $this->clampPage($page, $total, $perPage);
+        $repository = $this->timeEntryRepository;
+        if ($repository instanceof PaginatedTimeEntryRepositoryInterface) {
+            $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId);
+            $userIds = $query['userIds'];
+            if ($query['includeImported']) {
+                $total = $repository->countByUsersAndPeriod($userIds, $from, $to);
+                $page  = $this->clampPage($page, $total, $perPage);
 
-            return new TimeEntryPage(
-                $total === 0 ? [] : $this->timeEntryRepository->findPageByUsersAndPeriod($userIds, $from, $to, ($page - 1) * $perPage, $perPage),
-                $page,
-                $perPage,
-                $total,
-            );
+                return new TimeEntryPage($total === 0 ? [] : $repository->findPageByUsersAndPeriod($userIds, $from, $to, ($page - 1) * $perPage, $perPage), $page, $perPage, $total);
+            }
+            if ($repository instanceof ImportedTimeEntryRepositoryInterface) {
+                $total = $repository->countLiveByUsersAndPeriod($userIds, $from, $to);
+                $page  = $this->clampPage($page, $total, $perPage);
+
+                return new TimeEntryPage($total === 0 ? [] : $repository->findLivePageByUsersAndPeriod($userIds, $from, $to, ($page - 1) * $perPage, $perPage), $page, $perPage, $total);
+            }
         }
 
         $entries = $this->listEntries($viewer, $from, $to, $targetUserId);
@@ -506,16 +515,50 @@ final readonly class TimerService
     }
 
     /**
-     * @return list<string>
+     * Since 1.11: ids of the imported entries whose task the entry owner cannot see (by the task provider): their
+     * title must be masked wherever the entries are shown. One provider call per distinct (owner, task).
+     *
+     * @param list<TimeEntry> $entries
+     *
+     * @return array<string, true> entry id => true
      */
-    private function resolveEntryUserIds(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId): array
+    public function hiddenTaskEntryIds(array $entries): array
+    {
+        $hidden  = [];
+        $answers = [];
+        foreach ($entries as $entry) {
+            if ($entry->getSource()->isLive()) {
+                continue;
+            }
+            $owner = $entry->getUser();
+            if (!$owner instanceof UserInterface) {
+                $hidden[$entry->getId()] = true;
+                continue;
+            }
+            $key = UserIdResolver::getId($owner) . "\0" . $entry->getTaskId();
+            $answers[$key] ??= $this->taskProvider->canUserTrack($owner, $entry->getTaskId());
+            if (!$answers[$key]) {
+                $hidden[$entry->getId()] = true;
+            }
+        }
+
+        return $hidden;
+    }
+
+    /**
+     * @return array{userIds: list<string>, includeImported: bool}
+     */
+    private function resolveEntryQuery(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId): array
     {
         $event = new TimeEntryListQueryEvent($viewer, $from, $to);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_LIST_QUERY);
 
         $userIds = $event->getUserIds();
 
-        return $userIds === [] ? [$targetUserId ?? UserIdResolver::getId($viewer)] : $userIds;
+        return [
+            'userIds'         => $userIds === [] ? [$targetUserId ?? UserIdResolver::getId($viewer)] : $userIds,
+            'includeImported' => $event->includesImported(),
+        ];
     }
 
     /**
@@ -779,6 +822,10 @@ final readonly class TimerService
 
         $latest = null;
         foreach ($this->timeEntryRepository->findByUserAndPeriod($userId, $since->modify('-1 day'), $this->clock->now()) as $entry) {
+            // Since 1.11: imported entries are history and never clamp a live start.
+            if (!$entry->getSource()->isLive()) {
+                continue;
+            }
             if (!$latest instanceof DateTimeImmutable || $entry->getEndedAt() > $latest) {
                 $latest = $entry->getEndedAt();
             }

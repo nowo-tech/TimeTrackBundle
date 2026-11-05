@@ -547,8 +547,10 @@ final readonly class TimeTrackClientApiController
             $list = $this->timerService->listOwnEntries($user, $period['from'], $period['to'], $limit, $offset);
         }
 
+        $hidden = $this->timerService->hiddenTaskEntryIds($list);
+
         return $this->responseFactory->json([
-            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(), $list),
+            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()])), $list),
             'limit'   => $limit,
             'offset'  => $offset,
         ], Response::HTTP_OK, $request);
@@ -572,15 +574,16 @@ final readonly class TimeTrackClientApiController
         $period  = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'), $this->clock->now());
         $entries = $this->timerService->listOwnEntries($principal->user, $period['from'], $period['to'], self::EXPORT_MAX_ROWS);
         $name    = sprintf('time-entries-%s-%s.%s', $period['from']->format('Ymd'), $period['to']->format('Ymd'), $format);
+        $hidden  = $this->timerService->hiddenTaskEntryIds($entries);
 
         $response = $this->responseFactory->empty(Response::HTTP_OK, $request);
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->setContent($format === 'csv'
-            ? TimeEntryCsv::render($entries)
+            ? TimeEntryCsv::render($entries, $hidden)
             : json_encode([
                 'from'    => $period['from']->format(DATE_ATOM),
                 'to'      => $period['to']->format(DATE_ATOM),
-                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(), $entries),
+                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()])), $entries),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->headers->set('Content-Type', $format === 'csv' ? 'text/csv; charset=UTF-8' : 'application/json');

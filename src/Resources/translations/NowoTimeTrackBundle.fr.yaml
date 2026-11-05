@@ -32,6 +32,8 @@ reports:
   source_web: Web
   source_extension: Extension du navigateur
   source_desktop: Application de bureau
+  source_import: Importé
+  task_not_visible: Tâche non visible
 flash:
   timer_started: Minuteur démarré.
   timer_already_active: Vous avez déjà un minuteur actif.
