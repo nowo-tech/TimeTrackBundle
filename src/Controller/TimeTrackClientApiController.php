@@ -131,7 +131,7 @@ final readonly class TimeTrackClientApiController
      *
      * @param bool $allowMetadata `client_api.allow_metadata`: accept free `metadata` on timer start (default false)
      * @param ClockInterface|null $clock Reference time of the default periods (defaults to the system clock)
-     * @param LoggerInterface|null $logger Logs throttled logins without username or IP (defaults to no logging)
+     * @param LoggerInterface|null $logger Logs throttled logins without username or IP and (1.12) malformed working hours / days off without user data (defaults to no logging)
      * @param ClientMinSupportedVersionProviderInterface|null $minSupportedVersionProvider `me.minSupportedVersion` source (null = key never sent)
      * @param ClientTaskPresenter|null $taskPresenter Task details of tasks and timers (null = request origin, no logging)
      * @param ClientApiSettingsProviderInterface|null $settingsProvider Backdate and idle settings (null = the defaults)
@@ -243,7 +243,7 @@ final readonly class TimeTrackClientApiController
         }
 
         $user         = $principal->user;
-        $workingHours = ClientWorkingHoursNormalizer::normalize($this->profileProvider->getWorkingHours($user));
+        $workingHours = ClientWorkingHoursNormalizer::normalize($this->profileProvider->getWorkingHours($user), $this->logger);
         $body         = [
             'userId'       => UserIdResolver::getId($user),
             'identifier'   => $user->getUserIdentifier(),
@@ -648,7 +648,7 @@ final readonly class TimeTrackClientApiController
 
         [$from, $to] = ClientDaysOffNormalizer::range($this->clock->now(), $timezone ?? date_default_timezone_get());
 
-        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'));
+        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'), $this->logger);
     }
 
     /**

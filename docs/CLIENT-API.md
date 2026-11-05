@@ -196,7 +196,8 @@ when the user class has one. Values that are not a locale (`^[A-Za-z]{2,3}([_-][
 
 #### Working hours (normalised since 1.12)
 
-`workingHours` is `null` (unknown: the clients then remind at any time) or always this shape:
+`workingHours` is `null` only when the provider returns `null` (unknown: TimeTrack Desktop then notifies at any time),
+otherwise always this shape:
 
 ```json
 "workingHours": {"timezone": "Europe/Madrid",
@@ -217,10 +218,10 @@ Slots are sorted by day, then start.
 | an overnight range, e.g. Fri `22:00`–`06:00` | split at midnight: `{day: 5, from: "22:00", to: "23:59"}`, `{day: 6, from: "00:00", to: "06:00"}` (Sunday wraps to Monday; `to: "00:00"` = until midnight) |
 | overlapping or touching ranges of one day | merged into one slot |
 | `to: "24:00"` | `"23:59"` (clients only parse `00:00`–`23:59`) |
-| anything else: no `slots` / `days`, unknown time zone, day not an int 1-7 or unknown day key, time not `H:MM`/`HH:MM`, `from` = `to`, more than 100 ranges | `null` (fail closed) |
+| anything else: no `slots` / `days`, unknown or non-canonical time zone (`europe/madrid`), day not an int 1-7 (`"1"`) or unknown day key, time not `H:MM`/`HH:MM` (`" 9:00"`, `09:00:00`), `from` = `to` (`00:00`–`00:00` is not "all day"), more than 100 ranges | **fail closed**: `{timezone: <the given zone when valid, else null>, slots: []}` — never inside working hours, so the clients send no notifications limited to working hours — and a `warning` log (`reason`, no user data) |
 
 Before 1.12 the provider value was passed through unchanged, so a host returning the documented `days` shape sent a
-value the clients could not read.
+value TimeTrack Desktop 0.4 could not read (0.5.0 reads both shapes).
 
 #### Days off (since 1.12)
 
@@ -229,22 +230,36 @@ value the clients could not read.
             {"date": "2026-12-28", "kind": "vacation", "label": null}]
 ```
 
-Always present: a list, or `null` when unknown (no provider, the provider returns `null`, or its value is malformed).
-The clients send no working-hours reminders on these days (TimeTrack Desktop and the extension already read the key,
-defensively, and merge it with the user's local days off).
+Always present: a list, or `null` when unknown (no provider, the provider returns `null`, or its value is not a list).
+TimeTrack Desktop 0.5.0+ (unreleased; desktop PRs #14 / #15) reads it, merges it with the user's local days off and
+sends no schedule reminders on those days; the browser extension ignores it.
 
 - `date`: `YYYY-MM-DD` local date in the working-hours `timezone` (the server's PHP time zone when there is none).
 - `kind`: `holiday` or `vacation`.
-- `label`: plain text or `null`, at most 80 characters. It is JSON, not HTML: the server escapes nothing and the clients
-  render it as text.
+- `label`: plain text or `null`, at most 80 characters (grapheme clusters). It is JSON, not HTML: the server escapes
+  nothing and the clients render it as text.
 - Range: today → today + 60 days in that time zone; entries outside it are dropped, one entry per date (the first the
   provider lists), sorted by date.
 
 Source: the profile provider when it also implements `ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user,
 DateTimeImmutable $from, DateTimeImmutable $to): ?array` (`$from` = start of today, `$to` = end of today + 60, both in
-that time zone). Validation is strict: the value must be a list of at most 400 entries, each with a real `date`, a known
-`kind` and an optional string-or-null `label` (valid UTF-8, no control characters; trimmed, empty = `null`, cut to 80
-characters). One malformed entry makes the whole `daysOff` `null`.
+that time zone). Validation, entry by entry:
+
+- The value must be a list (else `null`); only its first 400 entries are read.
+- An entry without a real `YYYY-MM-DD` `date` or with a `kind` other than `holiday` / `vacation` (any case: `Holiday`
+  is accepted) is **dropped alone**; the other entries are still sent.
+- `label`: control characters (line breaks, tabs, DEL, C1) become one space; bidi controls, zero-width characters,
+  BOM and soft hyphens are removed (ZWJ is kept for emoji); Unicode blanks (NBSP included) are trimmed; empty = `null`;
+  cut to 80 grapheme clusters. A label that is not a string or not valid UTF-8 becomes `null` (the day off is kept).
+- Dropped entries and cleaned labels are logged once per request as a `warning` (counts and reasons, no dates, labels
+  or user data).
+
+The provider runs on every `GET me` (each client polls it): if it reads a calendar service, cache the result (for
+example per user and day).
+
+**Privacy.** Labels reach the user's devices and are stored there (the desktop keeps them for its reminders). Send
+public holiday names only (`"Inmaculada Concepción"`), `null` for vacations, and never a leave reason (illness, family
+or any personal detail) in a label.
 
 ### GET tasks
 

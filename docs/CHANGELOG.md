@@ -49,22 +49,25 @@ Planned **1.12.0** (minor, additive): days off on `GET me` and one shape for `wo
 
 - **`GET me.daysOff`**: the user's holidays and vacations from today to today + 60 days, a list of
   `{date: "YYYY-MM-DD", kind: "holiday"|"vacation", label: ?string}` (dates in the working-hours time zone), or `null`
-  when unknown. Always present. TimeTrack Desktop and the browser extension already read it.
+  when unknown. Always present. TimeTrack Desktop 0.5.0+ (unreleased; desktop PRs #14 / #15) reads it; the browser
+  extension ignores it. Labels reach the user's devices: public holiday names only, `null` for vacations.
 - **`ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user, DateTimeImmutable $from, DateTimeImmutable $to): ?array`**:
   optional extra of the `client_api.profile_provider` service (like `ClientUserLocaleProviderInterface`).
   `NullClientUserProfileProvider` implements it and returns `null`.
-- **`ClientDaysOffNormalizer`**: strict validation of the provider value (real dates, known kinds, labels plain text
-  ≤ 80 characters without control characters, ≤ 400 entries; out-of-range entries dropped, one per date, sorted). A
-  malformed value is sent as `null`.
+- **`ClientDaysOffNormalizer`**: validates the provider value entry by entry. An entry with a bad date or an unknown
+  kind (`kind` is matched case-insensitively) is dropped alone and logged as a warning; labels are cleaned (control
+  characters → space, bidi / zero-width removed, Unicode trim) and cut to 80 grapheme clusters; only the first 400
+  entries are read; out-of-range entries dropped, one per date, sorted. A value that is not a list is sent as `null`.
 - **`ClientWorkingHoursNormalizer`**: normalises `workingHours` for `GET me`.
 
 ### Changed
 
 - **`GET me.workingHours` is always `{timezone, slots: [{day: 1-7, from: "HH:MM", to: "HH:MM"}]}` or `null`.** The
   provider may return the `slots` shape or the documented 1.9 `days` shape (`{timezone, days: {mon: [["09:00","17:00"]]}}`),
-  which the clients never understood; both are normalised to `slots`. Overnight ranges are split at midnight, overlapping
+  which TimeTrack Desktop 0.4 could not read; both are normalised to `slots`. Overnight ranges are split at midnight, overlapping
   or touching ranges of a day are merged, `24:00` becomes `23:59`. Malformed values (unknown time zone, bad day or time,
-  empty range, more than 100 ranges, no `slots` / `days`) are sent as `null` instead of being passed through.
+  empty range, more than 100 ranges, no `slots` / `days`) fail closed as `{timezone, slots: []}` (never inside working
+  hours) with a warning log instead of being passed through; `null` stays "the provider returned null".
 
 ## [1.11.0] - 2026-11-05
 
