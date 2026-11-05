@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Client;
 
 use DateTimeZone;
+use Psr\Log\LoggerInterface;
 
 use function array_is_list;
 use function array_key_exists;
@@ -35,11 +36,12 @@ use function usort;
  *   `{next day, 00:00, 06:00}` (Sunday wraps to Monday).
  * - Overlapping or touching ranges of one day are merged; slots are sorted by day, then start.
  * - Fail closed: anything else (unknown key shape, bad day, bad time, empty range, unknown time zone, more than
- *   {@see self::MAX_SLOTS} ranges) makes the whole value null.
+ *   {@see self::MAX_SLOTS} ranges) is sent as `{timezone, slots: []}` — never inside working hours, so the clients
+ *   send no notifications that are limited to working hours — and logged as a warning. Only a null provider value (unknown) stays null.
  */
 final class ClientWorkingHoursNormalizer
 {
-    /** Most ranges accepted from the provider (more = malformed, null). */
+    /** Most ranges accepted from the provider (more = malformed); counted while reading, before anything is built. */
     public const MAX_SLOTS = 100;
 
     private const DAY_NAMES = [
@@ -50,26 +52,44 @@ final class ClientWorkingHoursNormalizer
     private const END_OF_DAY = 1440;
 
     /**
-     * Normalised working hours, or null when unknown or malformed.
+     * Normalised working hours: null only when the provider returned null (unknown); a malformed value fails closed
+     * as `{timezone: <the given zone when valid, else null>, slots: []}` (never inside working hours) and logs a
+     * warning with the reason (no user data).
      *
      * @param array<mixed>|null $hours Provider output (`slots` or `days` shape)
      *
      * @return array{timezone: string|null, slots: list<array{day: int, from: string, to: string}>}|null
      */
-    public static function normalize(?array $hours): ?array
+    public static function normalize(?array $hours, ?LoggerInterface $logger = null): ?array
     {
         if ($hours === null) {
             return null;
         }
 
-        $timezone = $hours['timezone'] ?? null;
-        if ($timezone !== null && (!is_string($timezone) || !in_array($timezone, DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true))) {
-            return null;
+        $timezone  = $hours['timezone'] ?? null;
+        $validZone = $timezone === null || (is_string($timezone) && in_array($timezone, DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true));
+        $result    = $validZone ? self::slots($hours) : 'unknown time zone';
+        if (is_string($result)) {
+            $logger?->warning('TimeTrack client working hours are malformed; sent as no working hours.', ['bundle' => 'time_track', 'action' => 'client_me', 'reason' => $result]);
+
+            return ['timezone' => $validZone && is_string($timezone) ? $timezone : null, 'slots' => []];
         }
 
-        $ranges = array_key_exists('slots', $hours) ? self::fromSlots($hours['slots']) : (array_key_exists('days', $hours) ? self::fromDays($hours['days']) : null);
-        if ($ranges === null || count($ranges) > self::MAX_SLOTS) {
-            return null;
+        return ['timezone' => $timezone, 'slots' => $result];
+    }
+
+    /**
+     * Normalised slots of either shape, or the reason they are malformed.
+     *
+     * @param array<mixed> $hours
+     *
+     * @return list<array{day: int, from: string, to: string}>|string
+     */
+    private static function slots(array $hours): array|string
+    {
+        $ranges = array_key_exists('slots', $hours) ? self::fromSlots($hours['slots']) : (array_key_exists('days', $hours) ? self::fromDays($hours['days']) : 'neither slots nor days');
+        if (is_string($ranges)) {
+            return $ranges;
         }
 
         /** @var list<array{int, int, int}> $minutes */
@@ -77,8 +97,16 @@ final class ClientWorkingHoursNormalizer
         foreach ($ranges as [$day, $from, $to]) {
             $start = self::minutes($from, false);
             $end   = self::minutes($to, true);
-            if ($day === null || $start === null || $end === null || $start === $end) {
-                return null;
+            if ($day === null) {
+                return 'invalid day';
+            }
+
+            if ($start === null || $end === null) {
+                return 'invalid time';
+            }
+
+            if ($start === $end) {
+                return 'empty range';
             }
 
             if ($start < $end) {
@@ -92,24 +120,28 @@ final class ClientWorkingHoursNormalizer
             }
         }
 
-        return ['timezone' => $timezone, 'slots' => self::merge($minutes)];
+        return self::merge($minutes);
     }
 
     /**
-     * Ranges of the `slots` shape (`day` must be an int 1-7), or null when malformed.
+     * Ranges of the `slots` shape (`day` must be an int 1-7), or the reason they are malformed.
      *
-     * @return list<array{int|null, mixed, mixed}>|null
+     * @return list<array{int|null, mixed, mixed}>|string
      */
-    private static function fromSlots(mixed $slots): ?array
+    private static function fromSlots(mixed $slots): array|string
     {
         if (!is_array($slots) || !array_is_list($slots)) {
-            return null;
+            return 'slots is not a list';
+        }
+
+        if (count($slots) > self::MAX_SLOTS) {
+            return 'too many ranges';
         }
 
         $ranges = [];
         foreach ($slots as $slot) {
             if (!is_array($slot)) {
-                return null;
+                return 'slot is not an object';
             }
 
             $day      = $slot['day'] ?? null;
@@ -120,30 +152,34 @@ final class ClientWorkingHoursNormalizer
     }
 
     /**
-     * Ranges of the 1.9 `days` shape, or null when malformed (unknown day key included).
+     * Ranges of the 1.9 `days` shape, or the reason they are malformed (unknown day key included).
      *
-     * @return list<array{int, mixed, mixed}>|null
+     * @return list<array{int, mixed, mixed}>|string
      */
-    private static function fromDays(mixed $days): ?array
+    private static function fromDays(mixed $days): array|string
     {
         if (!is_array($days)) {
-            return null;
+            return 'days is not an object';
         }
 
         $ranges = [];
         foreach ($days as $name => $list) {
-            if (!is_array($list) || !array_is_list($list)) {
-                return null;
-            }
-
             $day = is_string($name) ? (self::DAY_NAMES[strtolower($name)] ?? null) : null;
             if ($day === null) {
-                return null;
+                return 'invalid day';
+            }
+
+            if (!is_array($list) || !array_is_list($list)) {
+                return 'day ranges are not a list';
+            }
+
+            if (count($ranges) + count($list) > self::MAX_SLOTS) {
+                return 'too many ranges';
             }
 
             foreach ($list as $range) {
                 if (!is_array($range)) {
-                    return null;
+                    return 'range is not a list';
                 }
 
                 $ranges[] = array_is_list($range) && count($range) === 2

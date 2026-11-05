@@ -13,7 +13,11 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * the user's holidays and vacations as `daysOff` (the clients send no working-hours reminders on them). Without it, or
  * when it returns null, `daysOff` is null (unknown). The default {@see NullClientUserProfileProvider} returns null.
  *
- * The output is validated by {@see ClientDaysOffNormalizer}: a malformed list makes `daysOff` null (fail closed).
+ * The output is validated by {@see ClientDaysOffNormalizer}: a malformed entry is dropped alone (warning log), a value
+ * that is not a list makes `daysOff` null. It runs on every `GET me`: cache it when it reads a calendar service.
+ *
+ * Privacy: labels reach the user's devices and are stored there. Send public holiday names only, null for vacations,
+ * never a leave reason.
  */
 interface ClientUserDaysOffProviderInterface
 {
@@ -23,7 +27,7 @@ interface ClientUserDaysOffProviderInterface
      *
      * Each entry: `['date' => 'YYYY-MM-DD', 'kind' => 'holiday'|'vacation', 'label' => ?string]` — `date` is a local
      * date in that time zone, `label` is optional plain text (at most {@see ClientDaysOffNormalizer::LABEL_MAX_LENGTH}
-     * characters are sent). Dates outside the range are dropped; null = unknown.
+     * grapheme clusters are sent). Dates outside the range are dropped; null = unknown.
      *
      * @return list<array{date: string, kind: string, label?: string|null}>|null
      */

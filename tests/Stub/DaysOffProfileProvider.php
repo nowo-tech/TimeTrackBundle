@@ -20,7 +20,7 @@ final class DaysOffProfileProvider implements ClientUserProfileProviderInterface
 
     /**
      * @param array<mixed>|null $hours
-     * @param list<array{date: string, kind: string, label?: string|null}>|null $daysOff
+     * @param array<mixed>|null $daysOff Raw provider value (may be malformed on purpose)
      */
     public function __construct(private readonly ?array $hours, private readonly ?array $daysOff)
     {
@@ -42,6 +42,9 @@ final class DaysOffProfileProvider implements ClientUserProfileProviderInterface
         $this->to   = $to;
 
         /* @var list<array{date: string, kind: string, label?: string|null}>|null */
-        return $this->daysOff;
+        /** @var list<array{date: string, kind: string, label?: string|null}>|null $daysOff */
+        $daysOff = $this->daysOff;
+
+        return $daysOff;
     }
 }

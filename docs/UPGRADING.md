@@ -57,8 +57,11 @@ Planned **1.12.0**. No schema change, no configuration change.
 **`GET me.workingHours` is normalised.** If your `ClientUserProfileProviderInterface::getWorkingHours()` returns the
 documented 1.9 `days` shape, the clients now receive it as `slots` (before, they could not read it and treated it as
 "outside working hours"). The `slots` shape is also accepted and is the recommended one. Check that your value is valid:
-an unknown time zone, a bad day or time, `from` = `to`, more than 100 ranges or a missing `slots` / `days` key now makes
-`workingHours` `null` (no restriction in the clients) instead of being passed through. Overnight ranges are split at
+an unknown or non-canonical time zone (`europe/madrid`), a string day (`"1"`), a bad time (`" 9:00"`, `09:00:00`),
+`from` = `to` (`00:00`–`00:00` does not mean "all day"), more than 100 ranges or a missing `slots` / `days` key is now
+sent as `{timezone, slots: []}` (fail closed: never inside working hours, so the clients send no notifications limited
+to working hours) and logged as a `warning` with the reason, instead of being passed through. `null` is sent only when
+your provider returns `null` (unknown). Overnight ranges are split at
 midnight and overlapping ones merged ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)).
 
 **`GET me.daysOff` (new, optional).** Always present, `null` by default. To publish holidays and vacations, let your
@@ -75,8 +78,13 @@ public function getDaysOff(UserInterface $user, DateTimeImmutable $from, DateTim
 }
 ```
 
-Dates are local `YYYY-MM-DD` in that time zone; `kind` is `holiday` or `vacation`; `label` is optional plain text (cut
-to 80 characters; do not HTML-escape it). One malformed entry makes `daysOff` `null`. A class implementing
+Dates are local `YYYY-MM-DD` in that time zone; `kind` is `holiday` or `vacation` (any case); `label` is optional plain
+text (cleaned of control / bidi / zero-width characters, cut to 80 grapheme clusters; do not HTML-escape it). A
+malformed entry is dropped alone and logged as a `warning`; a value that is not a list is sent as `null`. The method runs
+on every `GET me`: cache it if it reads a calendar service.
+
+**Privacy.** Labels reach the user's devices and are stored there. Send public holiday names only, `null` for
+vacations, and never a leave reason. TimeTrack Desktop 0.5.0+ (unreleased) reads `daysOff`; the extension ignores it. A class implementing
 `ClientUserProfileProviderInterface` keeps working unchanged.
 
 **Imported entries (audit follow-ups).**

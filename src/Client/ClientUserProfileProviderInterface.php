@@ -26,7 +26,8 @@ interface ClientUserProfileProviderInterface
      * - `{timezone: "Europe/Madrid", days: {mon: [["09:00", "17:00"]], ...}}` (the 1.9 shape, still accepted).
      *
      * Since 1.12 `GET me` normalises the value into the `slots` shape ({@see ClientWorkingHoursNormalizer}: overnight
-     * ranges split at midnight, overlaps merged); a malformed value is sent as null.
+     * ranges split at midnight, overlaps merged); a malformed value fails closed as `{timezone, slots: []}` (never inside
+     * working hours) with a warning log. Return null only when the hours are unknown.
      *
      * @return array<string, mixed>|null
      */

@@ -71,7 +71,7 @@ final class ClientApiV112Test extends TestCase
         self::assertSame('2027-01-02T23:59:59+14:00', $profiles->to?->format(DATE_ATOM));
     }
 
-    public function testDaysOffUseThePhpTimeZoneWithoutWorkingHoursAndFailClosed(): void
+    public function testDaysOffUseThePhpTimeZoneWithoutWorkingHoursAndDropBadEntries(): void
     {
         $today = (new DateTimeImmutable('2026-11-02 10:00:00'))->setTime(0, 0);
 
@@ -81,7 +81,8 @@ final class ClientApiV112Test extends TestCase
         self::assertSame($today->modify('+60 days')->setTime(23, 59, 59)->format(DATE_ATOM), $profiles->to?->format(DATE_ATOM));
         self::assertSame(date_default_timezone_get(), $profiles->from->getTimezone()->getName());
 
-        self::assertNull($this->me($this->provider(null, [['date' => '2026-11-02', 'kind' => 'sick']]))['daysOff']);
+        self::assertSame([['date' => $today->format('Y-m-d'), 'kind' => 'holiday', 'label' => null]], $this->me($this->provider(null, [['date' => '2026-11-02', 'kind' => 'sick'], ['date' => $today->format('Y-m-d'), 'kind' => 'Holiday']]))['daysOff']);
+        self::assertNull($this->me($this->provider(null, ['not' => 'a list']))['daysOff']);
         self::assertNull($this->me($this->provider(null, null))['daysOff']);
     }
 
@@ -91,12 +92,12 @@ final class ClientApiV112Test extends TestCase
 
         self::assertSame($expected, $this->me($this->provider(['timezone' => 'Europe/Madrid', 'days' => ['mon' => [['09:00', '17:00']]]], null))['workingHours']);
         self::assertSame($expected, $this->me($this->provider(['timezone' => 'Europe/Madrid', 'slots' => [['day' => 1, 'from' => '09:00', 'to' => '17:00']]], null))['workingHours']);
-        self::assertNull($this->me($this->provider(['timezone' => 'Europe/Madrid', 'days' => ['mon' => [['17:00', '17:00']]]], null))['workingHours']);
+        self::assertSame(['timezone' => 'Europe/Madrid', 'slots' => []], $this->me($this->provider(['timezone' => 'Europe/Madrid', 'days' => ['mon' => [['17:00', '17:00']]]], null))['workingHours']);
     }
 
     /**
      * @param array<mixed>|null $hours
-     * @param list<array{date: string, kind: string, label?: string|null}>|null $daysOff
+     * @param array<mixed>|null $daysOff Raw provider value (may be malformed on purpose)
      */
     private function provider(?array $hours, ?array $daysOff): DaysOffProfileProvider
     {
