@@ -10,7 +10,7 @@ namespace Nowo\TimeTrackBundle\Calendar;
 final readonly class CalendarSyncResult
 {
     /**
-     * @param array{fetched: int, matched: int, ignored: int, new: int, updated: int, expired: int} $counts
+     * @param array{fetched: int, matched: int, ignored: int, new: int, updated: int, expired: int, stale: int} $counts
      * @param string|null $errorCode Null on success
      */
     public function __construct(

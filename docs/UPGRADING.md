@@ -78,7 +78,7 @@ type (Beacon: `INT`). On MySQL / MariaDB the new tables must use the collation o
 
 ```sql
 -- TimeTrackBundle 1.14.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type, and utf8mb4_unicode_ci with the collation of your time_track_entries table: the entry_id foreign key needs the same one). Calendar suggestions (always mapped); the meetings API adds no table.
-CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, UNIQUE INDEX uniq_time_track_calendar_connections (user_id, scope_key, provider), INDEX IDX_12CE44F6A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, last_attempt_at DATETIME DEFAULT NULL, next_attempt_at DATETIME DEFAULT NULL, failure_count INT DEFAULT 0 NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_connections_due (mode, status, next_attempt_at), UNIQUE INDEX uniq_time_track_calendar_connections (user_id, scope_key, provider), INDEX IDX_12CE44F6A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
 CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_suggestions_user (user_id, status, starts_at), UNIQUE INDEX uniq_time_track_calendar_suggestions_ref (connection_id, event_ref), INDEX IDX_3C8E3EF7BA364942 (entry_id), INDEX IDX_3C8E3EF7DD03F01 (connection_id), INDEX IDX_3C8E3EF7A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
 CREATE TABLE time_track_calendar_rules (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, pattern VARCHAR(120) NOT NULL, task_id VARCHAR(36) NOT NULL, group_matches TINYINT DEFAULT 1 NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_calendar_rules_user (user_id, scope_key), INDEX IDX_84F867CAA76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
 ALTER TABLE time_track_calendar_connections ADD CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
@@ -108,7 +108,8 @@ DROP TABLE time_track_calendar_connections;
 
 ```sql
 -- TimeTrackBundle 1.14.0, PostgreSQL 13+ (default table prefix; replace `users` and INT with your user table and PK type). Calendar suggestions (always mapped); the meetings API adds no table.
-CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, last_sync_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, last_sync_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, last_attempt_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, next_attempt_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, failure_count INT DEFAULT 0 NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
+CREATE INDEX idx_time_track_calendar_connections_due ON time_track_calendar_connections (mode, status, next_attempt_at);
 CREATE UNIQUE INDEX uniq_time_track_calendar_connections ON time_track_calendar_connections (user_id, scope_key, provider);
 CREATE INDEX IDX_12CE44F6A76ED395 ON time_track_calendar_connections (user_id);
 CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, starts_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, ends_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, expires_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
@@ -147,7 +148,8 @@ DROP TABLE time_track_calendar_connections;
 
 ```sql
 -- TimeTrackBundle 1.14.0, SQLite 3.35+ (default table prefix; replace `users` with your user table). Foreign keys are declared inline. Calendar suggestions (always mapped); the meetings API adds no table.
-CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE TABLE time_track_calendar_connections (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, consented_at DATETIME NOT NULL, last_sync_at DATETIME DEFAULT NULL, last_error_code VARCHAR(32) DEFAULT NULL, last_attempt_at DATETIME DEFAULT NULL, next_attempt_at DATETIME DEFAULT NULL, failure_count INTEGER DEFAULT 0 NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, scope_key VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL, mode VARCHAR(8) NOT NULL, credential_ref VARCHAR(128) DEFAULT NULL, consent_version VARCHAR(16) NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_12CE44F6A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
+CREATE INDEX idx_time_track_calendar_connections_due ON time_track_calendar_connections (mode, status, next_attempt_at);
 CREATE UNIQUE INDEX uniq_time_track_calendar_connections ON time_track_calendar_connections (user_id, scope_key, provider);
 CREATE INDEX IDX_12CE44F6A76ED395 ON time_track_calendar_connections (user_id);
 CREATE TABLE time_track_calendar_suggestions (id VARCHAR(36) NOT NULL, status VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, event_ref CHAR(64) NOT NULL, series_ref CHAR(64) DEFAULT NULL, group_key VARCHAR(48) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, match_kind VARCHAR(8) NOT NULL, entry_id VARCHAR(36) DEFAULT NULL, connection_id VARCHAR(36) NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_3C8E3EF7BA364942 FOREIGN KEY (entry_id) REFERENCES time_track_entries (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_3C8E3EF7DD03F01 FOREIGN KEY (connection_id) REFERENCES time_track_calendar_connections (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE, CONSTRAINT FK_3C8E3EF7A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
@@ -187,6 +189,11 @@ DROP TABLE time_track_calendar_connections;
   working hours (`ClientUserProfileProviderInterface::getWorkingHours()`; unknown hours are never inside) and purges
   expired suggestions.
 
+Your `TaskKeyResolverInterface::extractKeys()` receives titles of at most 1024 characters from anyone who can invite the
+user: use linear-time matching (no backtracking regex). On account erasure call
+`CalendarConnectionService::revokeAllFor($user)` before deleting the user (the cascade does not call your `revoke()`).
+Rotating `kernel.secret` changes the event references: dismissed events are suggested once more.
+
 OAuth scopes (least privilege): Google `https://www.googleapis.com/auth/calendar.events.readonly`, Microsoft
 `Calendars.ReadBasic` + `offline_access`. Only the **primary** calendar is read, `calendar.lookback_days` (14) back, and
 only events whose title carries a resolvable key or matches a user rule become suggestions; nothing else of an event is
@@ -209,6 +216,11 @@ period lock). A host replacement of `TimeEntryRepositoryInterface` may implement
 `OverlappingTimeEntryRepositoryInterface` for an exact overlap query; without it the overlap check reads the two days
 before the new entry.
 
+**Concurrency.** Entries without a timer and accepted suggestions are written under a per-user row lock
+(`SELECT … FOR UPDATE` on your user row, inside a short transaction). A host replacement of `TimeEntryRepositoryInterface`
+should implement `UserSerialisedTimeEntryRepositoryInterface` too (without it the overlap check can race). Listeners of
+`nowo_time_track.time_entry.created` run after the commit; their exceptions are logged and do not undo the entry.
+
 **Meetings API (spec 210) is off by default** (`meetings.enabled: false`) and adds no table. Implement
 `Meeting\MeetingProviderInterface` over your meeting read model and set `meetings.provider` ([MEETINGS.md](MEETINGS.md));
 optionally `meetings.links_calendars_route` for `GET me.links.calendars`. Clients need the new **`meetings:read`** scope
@@ -218,10 +230,10 @@ and `links`.
 **Client API (additive).** New scopes `entries:write`, `suggestions:read`, `suggestions:write` are never granted by
 default (as for the 1.13 scopes): request them in the device flow. New routes (404 while their feature is off):
 `calendar/connections` (GET, and DELETE `/{id}`), `suggestions`, `suggestions/accept`, `suggestions/dismiss`,
-`suggestions/resolve-keys`, `POST entries`, `me/meetings`. CORS preflights now allow `DELETE`.
-`GET me.features.calendar_suggestions` and `features.manual_entries` become real. `timer/switch` and `timer/start` accept
-`metadata: {origin: "meeting"}` (*Track the meeting*); `TimerService::switchTo()` has a new optional `$metadata`
-argument (subclasses / decorators that override it must add it).
+`suggestions/resolve-keys` (keys of tasks the user cannot track are left out), `POST entries`, `me/meetings`. CORS
+preflights now allow `DELETE` and the `Idempotency-Key` header. `GET me.features.calendar_suggestions` and
+`features.manual_entries` become real. `timer/switch` and `timer/start` accept `metadata: {origin: "meeting"}` (*Track
+the meeting*); `TimerService::switchTo()` has a new optional `$metadata` argument.
 
 ## To 1.13.0
 

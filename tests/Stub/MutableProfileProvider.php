@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
+
+use function array_key_exists;
 
 /**
  * Profile provider whose working hours a test sets (default: every day, all day, UTC).
@@ -19,6 +22,9 @@ final class MutableProfileProvider implements ClientUserProfileProviderInterface
         ['day' => 7, 'from' => '00:00', 'to' => '24:00'],
     ]];
 
+    /** @var array<int|string, array<string, mixed>|null> per-user override (user id => hours) */
+    public array $hoursByUser = [];
+
     public function getDisplayName(UserInterface $user): ?string
     {
         return null;
@@ -26,6 +32,8 @@ final class MutableProfileProvider implements ClientUserProfileProviderInterface
 
     public function getWorkingHours(UserInterface $user): ?array
     {
-        return $this->hours;
+        $id = UserIdResolver::getId($user);
+
+        return array_key_exists($id, $this->hoursByUser) ? $this->hoursByUser[$id] : $this->hours;
     }
 }

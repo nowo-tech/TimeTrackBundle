@@ -190,6 +190,20 @@ final readonly class CalendarConnectionService
     }
 
     /**
+     * Since the GG fixes (GG-I8): revokes every connection of the user (account erasure in one call: the host revoke
+     * runs for each server-mode connection first). Returns how many were revoked.
+     */
+    public function revokeAllFor(UserInterface $user): int
+    {
+        $revoked = 0;
+        foreach ($this->connectionsOf($user) as $connection) {
+            $revoked += $this->revoke($user, $connection->getId()) ? 1 : 0;
+        }
+
+        return $revoked;
+    }
+
+    /**
      * The host *Connect* links per enabled provider for a scope (absolute https URLs only; null when the host has none).
      *
      * @return array<string, string|null>

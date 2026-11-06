@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Calendar;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Event\CalendarSuggestionDecidedEvent;
@@ -17,8 +18,11 @@ use Nowo\TimeTrackBundle\Repository\CalendarSuggestionRepositoryInterface;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Throwable;
 
 use function array_column;
 use function array_key_exists;
@@ -36,6 +40,8 @@ use function mb_strlen;
  */
 final readonly class CalendarSuggestionService
 {
+    private LoggerInterface $logger;
+
     /** Ids per accept / dismiss request. */
     public const MAX_IDS = 100;
 
@@ -52,7 +58,9 @@ final readonly class CalendarSuggestionService
         private CalendarSettings $settings,
         private ?TaskKeyResolverInterface $resolver = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
+        ?LoggerInterface $logger = null,
     ) {
+        $this->logger = $logger ?? new NullLogger();
     }
 
     /**
@@ -103,6 +111,8 @@ final readonly class CalendarSuggestionService
                 $outcomes[] = ['id' => $id, 'error' => 'not_found'];
                 continue;
             }
+            // GG-L1 / GG-L2: one transaction per occurrence under the user's lock — the suggestion is re-read (a concurrent
+            // accept or dismiss wins), the entry and the accepted status are committed together, or neither.
             try {
                 $entry = $this->entries->create(
                     $user,
@@ -113,18 +123,35 @@ final readonly class CalendarSuggestionService
                     $note,
                     ['origin' => 'calendar', 'provider' => $suggestion->getConnection()->getProvider()->value],
                     $this->settings->lookbackDays,
+                    // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+                    function () use ($suggestion): void {
+                        if (!$this->suggestions->isStillPending($suggestion)) {
+                            throw new CalendarException('not_found');
+                        }
+                    },
+                    // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+                    function (TimeEntry $entry) use ($suggestion): void {
+                        $suggestion->accept($entry);
+                        $this->suggestions->flushSuggestions();
+                    },
                 );
-            } catch (ManualEntryException|PeriodWriteRefusedException $exception) {
-                $outcomes[] = ['id' => $id, 'error' => $exception instanceof ManualEntryException ? $exception->errorCode : $exception->errorCode()];
+            } catch (ManualEntryException|CalendarException $exception) {
+                $outcomes[] = ['id' => $id, 'error' => $exception->errorCode];
+                continue;
+            } catch (PeriodWriteRefusedException $exception) {
+                $outcomes[] = ['id' => $id, 'error' => $exception->errorCode()];
+                continue;
+            } catch (Throwable $exception) {
+                $this->logger->warning('TimeTrack suggestion accept failed.', ['bundle' => 'time_track', 'action' => 'suggestion_accept', 'exception' => $exception::class]);
+                $outcomes[] = ['id' => $id, 'error' => 'internal_error'];
                 continue;
             }
-            $suggestion->accept($entry);
             $outcomes[] = ['id' => $id, 'entryId' => $entry->getId()];
             $accepted[] = $id;
             $entryIds[] = $entry->getId();
         }
         if ($accepted !== []) {
-            $this->suggestions->flushSuggestions();
+            // After every commit; a listener cannot undo the decisions.
             $this->eventDispatcher?->dispatch(new CalendarSuggestionDecidedEvent($userId, $accepted, 'accepted', $entryIds), TimeTrackEvents::CALENDAR_SUGGESTION_DECIDED);
         }
 
@@ -140,15 +167,24 @@ final readonly class CalendarSuggestionService
      */
     public function dismiss(UserInterface $user, ?array $ids, ?string $groupKey): array
     {
-        $dismissed = [];
-        foreach ($this->resolve($user, $ids, $groupKey) as $id => $suggestion) {
-            if ($suggestion instanceof CalendarSuggestion && $suggestion->getStatus() === CalendarSuggestionStatus::Pending) {
-                $suggestion->dismiss();
-                $dismissed[] = $id;
+        $requested = $this->resolve($user, $ids, $groupKey);
+        // Under the user's lock, re-read: a concurrent accept wins over a dismiss.
+        // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+        $dismissed = $this->entries->serialised($user, function () use ($requested): array {
+            $dismissed = [];
+            foreach ($requested as $id => $suggestion) {
+                if ($suggestion instanceof CalendarSuggestion && $this->suggestions->isStillPending($suggestion)) {
+                    $suggestion->dismiss();
+                    $dismissed[] = $id;
+                }
             }
-        }
+            if ($dismissed !== []) {
+                $this->suggestions->flushSuggestions();
+            }
+
+            return $dismissed;
+        });
         if ($dismissed !== []) {
-            $this->suggestions->flushSuggestions();
             $this->eventDispatcher?->dispatch(new CalendarSuggestionDecidedEvent(UserIdResolver::getId($user), $dismissed, 'dismissed'), TimeTrackEvents::CALENDAR_SUGGESTION_DECIDED);
         }
 
@@ -157,11 +193,11 @@ final readonly class CalendarSuggestionService
 
     /**
      * Local mode (contract §6.6): the tasks some keys mean in the user's scope, `{key: {taskId, title, boardId,
-     * trackable}}`; the title and board are given only for tasks the user can track. Unknown keys are left out.
+     * trackable: true}}`. Unknown keys and keys of tasks the user cannot track are left out alike (audit GG-L4).
      *
      * @param list<string> $keys At most 50, each at most 32 characters
      *
-     * @return array<string, array{taskId: string, title: string|null, boardId: string|null, trackable: bool}>
+     * @return array<string, array{taskId: string, title: string, boardId: string|null, trackable: true}>
      */
     public function resolveKeys(UserInterface $user, string $scopeKey, array $keys): array
     {
@@ -180,8 +216,10 @@ final readonly class CalendarSuggestionService
             if (!array_key_exists($key, $wanted) || !$task instanceof TaskReference) {
                 continue;
             }
-            $trackable     = $this->taskAccess->canTrack($user, $task->id);
-            $matches[$key] = ['taskId' => $task->id, 'title' => $trackable ? $task->title : null, 'boardId' => $trackable ? $task->boardId : null, 'trackable' => $trackable];
+            // GG-L4: a task the user cannot track is left out like an unknown key (no task id).
+            if ($this->taskAccess->canTrack($user, $task->id)) {
+                $matches[$key] = ['taskId' => $task->id, 'title' => $task->title, 'boardId' => $task->boardId, 'trackable' => true];
+            }
         }
 
         return $matches;

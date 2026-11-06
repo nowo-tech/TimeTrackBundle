@@ -72,7 +72,12 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
   `event_ref`, decisions kept, dailies grouped per series or rule and ISO week, expiry purge, `status = error` + code),
   `Calendar\CalendarConnectionService` (connect / reconnect / pause / revoke with the host revoke first, owner only) and
   `Calendar\CalendarRuleService`; command `nowo:time-track:calendar:sync` (inside working hours only, AC-19).
-- **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only).
+- **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only; counts include
+  `stale`).
+- Sync hardening (audit GG): pending suggestions of events that are gone are deleted after a complete read (GG-L3);
+  connections carry `last_attempt_at`, `next_attempt_at` and `failure_count` (backoff, least recently attempted first,
+  outside-hours rows do not use the run limit, every failure is a per-connection code, GG-L5); titles cut to 1024
+  characters before the host key extractor (GG-I4); `CalendarConnectionService::revokeAllFor()` (GG-I8).
 - `Calendar\CalendarPersonalDataExporter` (contract §12.4): connections, rules and suggestions of a person for the
   host's GDPR export.
 - **Configuration** `calendar.*` (`enabled`, `credential_provider`, `task_key_resolver`, `providers`, `modes`,
@@ -107,11 +112,16 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
 - **Configuration** `meetings.*` (off by default; `enabled` requires `provider`).
 - *Track the meeting* (Q-B22): `timer/switch` and `timer/start` accept `metadata: {origin: "meeting"}` without
   `client_api.allow_metadata`; `TimerService::switchTo()` takes the new timer's metadata (optional argument).
+- Write hardening (audit GG): `POST entries` and suggestion accept / dismiss run under a per-user row lock
+  (`UserSerialisedTimeEntryRepositoryInterface`), with the `Idempotency-Key` re-checked and stored under it (GG-L1);
+  one transaction per accepted occurrence, events after the commit, per-occurrence `internal_error` (GG-L2);
+  `resolve-keys` leaves out keys of untrackable tasks (GG-L4); `no-store` on the calendar routes (GG-I1); CORS allows
+  `Idempotency-Key` (GG-I6).
 
 ### Changed
 
 - `symfony/http-client` is a new `suggest` (calendar server mode) and a dev dependency.
-- CORS `Access-Control-Allow-Methods` lists `DELETE` too.
+- CORS `Access-Control-Allow-Methods` lists `DELETE` and `Access-Control-Allow-Headers` lists `Idempotency-Key` too.
 
 ## [1.13.0] - 2026-11-05
 

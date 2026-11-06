@@ -127,6 +127,7 @@ final class FunctionalKernel extends Kernel
         $container->services()->set(StubCalendarCredentialProvider::class)->public();
         $container->services()->set(MutableProfileProvider::class)->public();
         $container->services()->set(StubMeetingProvider::class)->public();
+        $container->services()->set(RacingCachePool::class)->public();
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);

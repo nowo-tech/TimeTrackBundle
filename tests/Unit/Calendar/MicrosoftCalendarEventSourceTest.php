@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Calendar;
 
 use DateTimeImmutable;
+use Generator;
 use Nowo\TimeTrackBundle\Calendar\CalendarCredential;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncException;
@@ -82,9 +83,12 @@ final class MicrosoftCalendarEventSourceTest extends TestCase
             return new MockResponse(json_encode(['value' => [], '@odata.nextLink' => MicrosoftCalendarEventSource::BASE_URI . '?$skip=1'], JSON_THROW_ON_ERROR));
         });
 
-        iterator_to_array((new MicrosoftCalendarEventSource(new CalendarHttpClient($http), 3))->fetch(new CalendarCredential('t'), new DateTimeImmutable('-1 day'), new DateTimeImmutable()));
+        $events = (new MicrosoftCalendarEventSource(new CalendarHttpClient($http), 3))->fetch(new CalendarCredential('t'), new DateTimeImmutable('-1 day'), new DateTimeImmutable());
+        self::assertInstanceOf(Generator::class, $events);
+        iterator_to_array($events);
 
         self::assertSame(3, $calls);
+        self::assertTrue($events->getReturn(), 'the window was not read in full');
     }
 
     public function testValueMustBeAList(): void

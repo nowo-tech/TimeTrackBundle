@@ -26,6 +26,7 @@ use const DATE_ATOM;
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_calendar_connections')]
 #[ORM\UniqueConstraint(name: 'uniq_time_track_calendar_connections', columns: ['user_id', 'scope_key', 'provider'])]
+#[ORM\Index(name: 'idx_time_track_calendar_connections_due', columns: ['mode', 'status', 'next_attempt_at'])]
 class CalendarConnection
 {
     /** Longest stored error code. */
@@ -46,6 +47,18 @@ class CalendarConnection
 
     #[ORM\Column(name: 'last_error_code', type: 'string', length: 32, nullable: true)]
     private ?string $lastErrorCode = null;
+
+    /** Since the GG fixes: last sync attempt, successful or not (orders the scheduled run). */
+    #[ORM\Column(name: 'last_attempt_at', type: 'datetime_immutable', nullable: true)]
+    private ?DateTimeImmutable $lastAttemptAt = null;
+
+    /** Since the GG fixes: earliest next scheduled sync (interval after a success, backoff after failures). */
+    #[ORM\Column(name: 'next_attempt_at', type: 'datetime_immutable', nullable: true)]
+    private ?DateTimeImmutable $nextAttemptAt = null;
+
+    /** Since the GG fixes: failed syncs in a row (backoff). */
+    #[ORM\Column(name: 'failure_count', type: 'integer', options: ['default' => 0])]
+    private int $failureCount = 0;
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private DateTimeImmutable $createdAt;
@@ -147,6 +160,24 @@ class CalendarConnection
         return $this->lastErrorCode;
     }
 
+    /** Last sync attempt. */
+    public function getLastAttemptAt(): ?DateTimeImmutable
+    {
+        return $this->lastAttemptAt;
+    }
+
+    /** Earliest next scheduled sync (null = due now). */
+    public function getNextAttemptAt(): ?DateTimeImmutable
+    {
+        return $this->nextAttemptAt;
+    }
+
+    /** Failed syncs in a row. */
+    public function getFailureCount(): int
+    {
+        return $this->failureCount;
+    }
+
     /** Creation time. */
     public function getCreatedAt(): DateTimeImmutable
     {
@@ -176,32 +207,49 @@ class CalendarConnection
         $this->consentedAt = StorageTime::normalize($now);
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastErrorCode = null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->failureCount = 0;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->nextAttemptAt = null;
         $this->changeStatus(CalendarConnectionStatus::Active, $now);
     }
 
     /**
-     * Records a successful sync (status `active`, error cleared).
+     * Records a successful sync (status `active`, error cleared) and the next scheduled one.
      *
      * @internal used by the calendar sync service
      */
-    public function markSynced(DateTimeImmutable $now): void
+    public function markSynced(DateTimeImmutable $now, ?DateTimeImmutable $nextAttempt = null): void
     {
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastSyncAt = StorageTime::normalize($now);
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->lastAttemptAt = $this->lastSyncAt;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->nextAttemptAt = $nextAttempt instanceof DateTimeImmutable ? StorageTime::normalize($nextAttempt) : null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->failureCount = 0;
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastErrorCode = null;
         $this->changeStatus(CalendarConnectionStatus::Active, $now);
     }
 
     /**
-     * Records a failed sync: status `error` and the code (cut to 32 characters), never a message.
+     * Records a failed sync: status `error`, the code (cut to 32 characters, never a message), one more failure in a row
+     * and the next attempt (the caller's backoff).
      *
      * @internal used by the calendar sync service
      */
-    public function markFailed(string $errorCode, DateTimeImmutable $now): void
+    public function markFailed(string $errorCode, DateTimeImmutable $now, ?DateTimeImmutable $nextAttempt = null): void
     {
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->lastErrorCode = substr($errorCode, 0, self::ERROR_CODE_MAX_LENGTH);
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->lastAttemptAt = StorageTime::normalize($now);
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->nextAttemptAt = $nextAttempt instanceof DateTimeImmutable ? StorageTime::normalize($nextAttempt) : null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        ++$this->failureCount;
         $this->changeStatus(CalendarConnectionStatus::Error, $now);
     }
 

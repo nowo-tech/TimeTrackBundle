@@ -85,6 +85,9 @@ final readonly class GoogleCalendarEventSource implements CalendarEventSourceInt
             }
             $pageToken = $next;
         }
+
+        // Stopped at `max_pages` with more pages left: the window was not read in full (no stale clean-up).
+        return true;
     }
 
     /**

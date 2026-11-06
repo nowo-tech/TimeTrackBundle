@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
 use Nowo\TimeTrackBundle\Calendar\CalendarRuleService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncException;
+use Nowo\TimeTrackBundle\Calendar\CalendarSyncResult;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
 use Nowo\TimeTrackBundle\Calendar\CalendarWorkingHours;
 use Nowo\TimeTrackBundle\Command\CalendarSyncCommand;
@@ -133,7 +134,7 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         $result = $this->sync($source)->sync($connection);
 
         self::assertTrue($result->isSuccess());
-        self::assertSame(['fetched' => 8, 'matched' => 7, 'ignored' => 1, 'new' => 7, 'updated' => 0, 'expired' => 0], $result->counts);
+        self::assertSame(['fetched' => 8, 'matched' => 7, 'ignored' => 1, 'new' => 7, 'updated' => 0, 'expired' => 0, 'stale' => 0], $result->counts);
         self::assertSame('fake-token-google', $source->calls[0][0]);
         self::assertSame('2026-10-23T12:00:00+00:00', $source->calls[0][1]->format(DATE_ATOM), 'lookback 14 days');
         $rows = $this->rows('time_track_calendar_suggestions');
@@ -218,6 +219,77 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         $this->assertNoEventData();
     }
 
+    public function testEventsThatAreGoneLoseTheirPendingSuggestion(): void
+    {
+        $connection = $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', '2026-11');
+        $source     = new FakeCalendarEventSource(CalendarProvider::Google, [
+            $this->event('evt-a', null, '2026-11-04T09:00:00Z', 1800, '#task-1'),
+            $this->event('evt-b', null, '2026-11-04T10:00:00Z', 1800, '#task-2'),
+            $this->event('evt-c', null, '2026-11-04T11:00:00Z', 1800, '#task-3'),
+            $this->event('evt-old', null, '2026-10-20T11:00:00Z', 1800, '#task-3'),
+        ]);
+        $sync = $this->sync($source);
+        self::assertSame(3, $sync->sync($connection)->counts['new'], 'evt-old is before the look-back');
+        $repo    = $this->repository();
+        [$a, $b] = $repo->findSuggestionsByUser((string) $this->user->getId(), 'org-a', new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-07'), [CalendarSuggestionStatus::Pending]);
+        $a->dismiss();
+        $repo->flushSuggestions();
+
+        // GG-L3: evt-b moved (new occurrence start = new reference), evt-c was cancelled, evt-a (dismissed) is gone too.
+        $source->events    = [$this->event('evt-b', null, '2026-11-05T10:00:00Z', 1800, '#task-2')];
+        $source->truncated = true;
+        $truncated         = $sync->sync($this->reload($connection->getId()));
+        self::assertSame([1, 0], [$truncated->counts['new'], $truncated->counts['stale']], 'an incomplete read removes nothing');
+        $source->truncated = false;
+        $result            = $sync->sync($this->reload($connection->getId()));
+        self::assertSame([0, 2], [$result->counts['new'], $result->counts['stale']]);
+        $this->entityManager()->clear();
+        $left = $repo->findSuggestionsByUser((string) $this->user->getId(), 'org-a', new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-07'), CalendarSuggestionStatus::cases());
+        self::assertSame([[CalendarSuggestionStatus::Dismissed, '2026-11-04 09:00'], [CalendarSuggestionStatus::Pending, '2026-11-05 10:00']], array_map(static fn (CalendarSuggestion $s): array => [$s->getStatus(), $s->getStartsAt()->format('Y-m-d H:i')], $left), 'decided rows are kept');
+    }
+
+    public function testFailuresBackOffAndNeverStopTheBatch(): void
+    {
+        $other  = $this->createUser('other@example.com');
+        $scopes = self::getContainer()->get(FixedScopeProvider::class);
+        self::assertInstanceOf(FixedScopeProvider::class, $scopes);
+        $scopes->memberships[(string) $other->getId()] = ['org-a'];
+        $failing                                       = $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', 'v1');
+        $healthy                                       = $this->connections()->connect($other, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-2', 'v1');
+        $credentials                                   = $this->credentials();
+        $credentials->failFor                          = [$failing->getId()];
+        $sync                                          = $this->sync(new FakeCalendarEventSource(CalendarProvider::Google, []));
+
+        // GG-L5: a host exception is a per-connection failure (internal_error), the batch goes on.
+        self::assertSame(['synced' => 1, 'failed' => 1, 'outside_hours' => 0, 'purged' => 0], $sync->syncDue());
+        self::assertSame(['internal_error', 1, '2026-11-06 14:00'], [$failing->getLastErrorCode(), $failing->getFailureCount(), $failing->getNextAttemptAt()?->format('Y-m-d H:i')], 'next attempt after 2 × 60 minutes');
+        self::assertSame('2026-11-06 12:00', $failing->getLastAttemptAt()?->format('Y-m-d H:i'));
+        self::assertSame('2026-11-06 13:00', $healthy->getNextAttemptAt()?->format('Y-m-d H:i'));
+        self::assertContains('TimeTrack calendar sync failed.', $this->logger->messages());
+        self::assertSame(['internal_error'], array_map(static fn (CalendarSyncResult $r): ?string => $r->errorCode, $sync->syncUser($this->user, 'org-a')), 'refresh=1 never throws');
+
+        $this->clock->modify('+61 minutes');
+        self::assertSame(['synced' => 1, 'failed' => 0, 'outside_hours' => 0, 'purged' => 0], $sync->syncDue(), 'the failing one waits for its backoff');
+        self::assertSame([2, '2026-11-06 16:00'], [$failing->getFailureCount(), $failing->getNextAttemptAt()?->format('Y-m-d H:i')], 'the refresh failed too: 60 × 2^2 minutes');
+
+        // Least recently attempted first: at 17:01 both are due; with a limit of one only the failing one (12:00) runs.
+        $this->clock->modify('+4 hours');
+        self::assertSame(['synced' => 0, 'failed' => 1, 'outside_hours' => 0, 'purged' => 0], $sync->syncDue(null, 1));
+        self::assertSame([3, '2026-11-07 01:01'], [$failing->getFailureCount(), $failing->getNextAttemptAt()?->format('Y-m-d H:i')]);
+        self::assertSame('2026-11-06 13:01', $healthy->getLastAttemptAt()?->format('Y-m-d H:i'));
+        self::assertSame(['synced' => 1, 'failed' => 0, 'outside_hours' => 0, 'purged' => 0], $sync->syncDue(null, 1));
+
+        // Rows outside working hours do not use the limit; a reconnect clears the backoff.
+        $credentials->failFor = [];
+        $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-3', 'v2');
+        self::assertSame([0, null], [$failing->getFailureCount(), $failing->getNextAttemptAt()]);
+        $profile = self::getContainer()->get(MutableProfileProvider::class);
+        self::assertInstanceOf(MutableProfileProvider::class, $profile);
+        $profile->hoursByUser[(string) $this->user->getId()] = null;
+        $this->clock->modify('+1 day');
+        self::assertSame(['synced' => 1, 'failed' => 0, 'outside_hours' => 1, 'purged' => 0], $sync->syncDue(null, 1));
+    }
+
     public function testTheScheduledRunRespectsWorkingHoursAndPurges(): void
     {
         $connection = $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', '2026-11');
@@ -290,8 +362,10 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertFalse($service->revoke($this->user, $first->getId()));
 
         $local = $service->connect($this->user, 'org-b', CalendarProvider::Microsoft, CalendarConnectionMode::Local, null, 'v1');
-        self::assertTrue($service->revoke($this->user, $local->getId()));
+        self::assertSame(1, $service->revokeAllFor($this->user), 'GG-I8: account erasure in one call');
+        self::assertSame(0, $service->revokeAllFor($this->user));
         self::assertCount(1, $this->credentials()->revoked, 'local mode has no host token');
+        self::assertFalse($service->revoke($this->user, $local->getId()));
         $changes = array_map(static fn (CalendarConnectionChangedEvent $e): string => ($e->from ?? 'new') . '>' . $e->to, array_values(array_filter($this->events, static fn (object $e): bool => $e instanceof CalendarConnectionChangedEvent)));
         self::assertSame(['new>active', 'active>active', 'active>paused', 'paused>active', 'active>revoked', 'new>active', 'active>revoked'], $changes);
     }

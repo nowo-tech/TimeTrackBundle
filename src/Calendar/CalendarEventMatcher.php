@@ -18,6 +18,7 @@ use function count;
 use function is_string;
 use function mb_stripos;
 use function mb_strlen;
+use function mb_substr;
 
 /**
  * Since 1.14 (contract §6.3): turns calendar events into task matches, in memory.
@@ -38,6 +39,9 @@ final readonly class CalendarEventMatcher
 
     /** Longest key. */
     public const MAX_KEY_LENGTH = 32;
+
+    /** Since the GG fixes: titles are cut to this many code points before the host extracts keys or rules match. */
+    public const MAX_TITLE_LENGTH = 1024;
 
     /**
      * Receives the host resolver, the track check, the reference hasher and the settings.
@@ -77,8 +81,10 @@ final readonly class CalendarEventMatcher
                 ++$ignored;
                 continue;
             }
-            $keys = $this->keys($event->title);
-            $rule = $this->rule($event->title, $rules);
+            // GG-I4: a provider title can be arbitrarily long (a crafted invite); the host extractor sees at most 1024.
+            $title = mb_substr($event->title, 0, self::MAX_TITLE_LENGTH);
+            $keys  = $this->keys($title);
+            $rule  = $this->rule($title, $rules);
             if ($keys === [] && !$rule instanceof CalendarRule) {
                 ++$ignored;
                 continue;
@@ -119,7 +125,7 @@ final readonly class CalendarEventMatcher
     public function keys(string $title): array
     {
         $keys = [];
-        foreach ($this->resolver->extractKeys($title) as $key) {
+        foreach ($this->resolver->extractKeys(mb_substr($title, 0, self::MAX_TITLE_LENGTH)) as $key) {
             if (is_string($key) && $key !== '' && mb_strlen($key) <= self::MAX_KEY_LENGTH) {
                 $keys[$key] = true;
             }
