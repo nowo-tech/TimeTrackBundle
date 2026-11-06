@@ -36,12 +36,12 @@ interface CalendarConnectionRepositoryInterface
     public function findConnectionsByUser(string $userId, ?string $scopeKey = null): array;
 
     /**
-     * Server-mode connections (active or in error) never synced or last synced before `$syncedBefore`, least recently
-     * synced first.
+     * Server-mode connections (active or in error) whose next attempt is due at `$now` (or never set), least recently
+     * attempted first (never attempted first of all).
      *
      * @return list<CalendarConnection>
      */
-    public function findConnectionsDue(DateTimeImmutable $syncedBefore, ?string $userId, int $limit): array;
+    public function findConnectionsDue(DateTimeImmutable $now, ?string $userId, int $limit, int $offset = 0): array;
 
     /**
      * Deletes the connection, its suggestions and the owner's rules in its scope, in one transaction.

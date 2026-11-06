@@ -8,6 +8,7 @@ use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Symfony\Component\Security\Core\User\UserInterface;
 
+use function mb_strlen;
 use function preg_match_all;
 
 /**
@@ -18,6 +19,9 @@ final class StubTaskKeyResolver implements TaskKeyResolverInterface
 {
     /** @var list<list<string>> */
     public array $resolved = [];
+
+    /** @var list<int> lengths of the titles it was given (never the titles) */
+    public array $titleLengths = [];
 
     /** @var list<mixed> extra raw values appended to every extraction (to test the bundle's filtering) */
     public array $extraKeys = [];
@@ -41,6 +45,7 @@ final class StubTaskKeyResolver implements TaskKeyResolverInterface
 
     public function extractKeys(string $title): array
     {
+        $this->titleLengths[] = mb_strlen($title);
         preg_match_all('/#(?:task-\d+|[0-9a-f]{8})\b/', $title, $matches);
 
         /** @var list<string> $keys */

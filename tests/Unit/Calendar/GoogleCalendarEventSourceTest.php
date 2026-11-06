@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Calendar;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Generator;
 use Nowo\TimeTrackBundle\Calendar\CalendarCredential;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventView;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
@@ -93,9 +94,12 @@ final class GoogleCalendarEventSourceTest extends TestCase
             return new MockResponse('{"items":[],"nextPageToken":"again"}');
         });
 
-        iterator_to_array((new GoogleCalendarEventSource(new CalendarHttpClient($http), 2))->fetch(new CalendarCredential('t'), new DateTimeImmutable('-1 day'), new DateTimeImmutable()));
+        $events = (new GoogleCalendarEventSource(new CalendarHttpClient($http), 2))->fetch(new CalendarCredential('t'), new DateTimeImmutable('-1 day'), new DateTimeImmutable());
+        self::assertInstanceOf(Generator::class, $events);
+        iterator_to_array($events);
 
         self::assertSame(2, $calls);
+        self::assertTrue($events->getReturn(), 'the window was not read in full');
     }
 
     public function testItemsMustBeAList(): void

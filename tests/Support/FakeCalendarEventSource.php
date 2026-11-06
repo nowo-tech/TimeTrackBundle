@@ -27,6 +27,7 @@ final class FakeCalendarEventSource implements CalendarEventSourceInterface
         private readonly CalendarProvider $provider = CalendarProvider::Google,
         public array $events = [],
         public ?string $errorCode = null,
+        public bool $truncated = false,
     ) {
     }
 
@@ -43,5 +44,7 @@ final class FakeCalendarEventSource implements CalendarEventSourceInterface
         }
 
         yield from $this->events;
+
+        return $this->truncated;
     }
 }

@@ -98,6 +98,18 @@ final class CalendarEventMatcherTest extends TestCase
         self::assertSame(['task-9', 'task-3', 'task-2', 'task-1'], $this->checker->checked, 'each task is checked once');
     }
 
+    public function testLongTitlesAreCutBeforeTheHostSeesThem(): void
+    {
+        $events = [new CalendarEventView('long', null, str_repeat('x', 5000) . ' #task-1', new DateTimeImmutable('2026-11-04T09:00Z'), new DateTimeImmutable('2026-11-04T10:00Z'))];
+        $user   = $this->user();
+        $rules  = [new CalendarRule($user, 'org-a', '#task-1', 'task-2', false, new DateTimeImmutable())];
+
+        $result = $this->matcher()->match($user, $this->connection(), $events, $rules, new DateTimeImmutable(self::NOW));
+
+        self::assertSame(1, $result['ignored'], 'a key or pattern after 1024 characters is not seen');
+        self::assertSame([1024], $this->resolver->titleLengths);
+    }
+
     public function testKeyListsAreBounded(): void
     {
         $this->resolver->extraKeys = ['', str_repeat('k', 33), 42, '#k1', '#k1', '#k2', '#k3', '#k4', '#k5', '#k6'];

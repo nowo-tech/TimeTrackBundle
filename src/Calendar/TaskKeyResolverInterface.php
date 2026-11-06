@@ -17,7 +17,9 @@ interface TaskKeyResolverInterface
 {
     /**
      * The task keys in an event title, in title order: at most 5, each at most 32 characters (the bundle drops the rest).
-     * Called with the title in memory only; implementations MUST NOT store or log it.
+     * Called with the title in memory only (at most 1024 characters, cut by the bundle); implementations MUST NOT store
+     * or log it and MUST use linear-time matching (no backtracking regex): titles come from anyone who can send the
+     * user an invitation.
      *
      * @return list<string>
      */
