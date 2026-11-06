@@ -197,7 +197,7 @@ final readonly class ImportedTimeEntryWriter
             $scopeKey = $user instanceof UserInterface ? ($this->scopeProvider?->scopeKeyForTask($user, $data->taskId, $data->boardId) ?? ($owner instanceof ImportedTimeEntryClaim ? $owner->scopeKey : null)) : null;
             $existing = $this->repository->findByExternal($data->externalSource, $data->externalId)
                 ?? $this->repository->findByExternal($data->externalSource, TimeEntry::anonymisedExternalId($data->externalSource, $data->externalId));
-            $plan[] = [$owner, $user, $scopeKey, $data, $existing, $existing instanceof TimeEntry ? $this->transition($existing, $owner, $user, $scopeKey) : null];
+            $plan[] = [$owner, $user, $scopeKey, $data, $existing, $existing instanceof TimeEntry ? $this->transition($existing, $owner, $user, $scopeKey, $data->externalId) : null];
         }
 
         $results = [];
@@ -447,13 +447,13 @@ final readonly class ImportedTimeEntryWriter
 
     /**
      * What an upsert may do to a stored entry, compared case-sensitively in PHP (a MySQL collation may not be). An entry
-     * with a user only takes that user. An ownerless entry takes its own person, or a claim naming its reference in its
-     * scope. An entry of a deleted user, or with no identity, or anonymised, is frozen for a sync: `Unchanged`, so one row
+     * with a user only takes that user. An ownerless entry takes its own person, or a claim naming its reference in exactly its
+     * scope (no scope on the row means no scope on the claim, so a claim cannot cross tenants). An entry of a deleted user, or with no identity, or anonymised, is frozen for a sync: `Unchanged`, so one row
      * does not stop a batch and nobody can rewrite those hours.
      *
      * @throws ImportedEntryOwnerMismatchException
      */
-    private function transition(TimeEntry $entry, ImportedTimeEntryClaim|ImportedTimeEntryPerson|UserInterface $owner, ?UserInterface $user, ?string $scopeKey): string
+    private function transition(TimeEntry $entry, ImportedTimeEntryClaim|ImportedTimeEntryPerson|UserInterface $owner, ?UserInterface $user, ?string $scopeKey, string $externalId): string
     {
         if ($entry->isAnonymised()) {
             return self::TRANSITION_FROZEN;
@@ -464,7 +464,7 @@ final readonly class ImportedTimeEntryWriter
                 return self::TRANSITION_KEEP;
             }
 
-            throw new ImportedEntryOwnerMismatchException();
+            throw new ImportedEntryOwnerMismatchException($externalId);
         }
         $personRef = $entry->getPersonRef();
         if ($personRef === null) {
@@ -477,15 +477,15 @@ final readonly class ImportedTimeEntryWriter
                 return self::TRANSITION_FROZEN;
             }
             if ($personRef !== $owner->ref || ($storedScope !== null && $storedScope !== $owner->scopeKey)) {
-                throw new ImportedEntryOwnerMismatchException();
+                throw new ImportedEntryOwnerMismatchException($externalId);
             }
 
             return self::TRANSITION_KEEP;
         }
         if (!$owner instanceof ImportedTimeEntryClaim || $owner->personRef !== $personRef
             || ($formerUser !== null && $formerUser !== UserIdResolver::getId($owner->user))
-            || ($storedScope !== null && $storedScope !== $scopeKey)) {
-            throw new ImportedEntryOwnerMismatchException();
+            || $storedScope !== $scopeKey) {
+            throw new ImportedEntryOwnerMismatchException($externalId);
         }
 
         return self::TRANSITION_CLAIM;

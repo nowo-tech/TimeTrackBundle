@@ -95,29 +95,49 @@ final readonly class FormerPersonTimeEntries
      */
     public function release(UserInterface $user, ?string $name = null): int
     {
+        $store = $this->store();
         $this->timers?->stopForUserDeletion($user);
 
-        return $this->logged('release', $this->store()->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
+        return $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
     }
 
     /**
-     * Part of a delete the bundle sees (the entity manager's flush): the snapshot on the user's entries, with the user still
-     * set. The foreign key clears the user. A provider that fails costs the name, not the delete. Returns the name.
+     * Part of a delete the bundle sees, before the flush's commit: the name the entries will keep. A provider that fails costs
+     * the name, not the delete.
      */
-    public function snapshotBeforeDelete(UserInterface $user): ?string
+    public function nameBeforeDelete(UserInterface $user): ?string
     {
-        $name = $this->nameOf($user, null);
-        $this->store()->snapshotOwner(UserIdResolver::getId($user), self::personRefOf($user), $name);
-
-        return $name;
+        return $this->nameOf($user, null);
     }
 
     /**
-     * Part of a delete the bundle sees, with `retention.anonymise_on_user_delete`: the timer is already stopped.
+     * Part of a delete the bundle sees, before the flush's commit: the entries to settle after it. Reads only.
+     *
+     * @return list<string>
      */
-    public function anonymiseBeforeDelete(UserInterface $user): int
+    public function entryIdsOf(UserInterface $user): array
     {
-        return $this->logged('anonymise_on_delete', $this->store()->anonymiseOwner(UserIdResolver::getId($user), $this->now()));
+        return $this->store()->entryIdsOfOwner(UserIdResolver::getId($user));
+    }
+
+    /**
+     * Part of a delete the bundle sees, after the commit: the name and reference on the entries of the deleted user.
+     *
+     * @param list<string> $entryIds
+     */
+    public function settleDeleted(array $entryIds, string $personRef, ?string $name): int
+    {
+        return $this->store()->settleDeletedOwner($entryIds, $personRef, $name);
+    }
+
+    /**
+     * Part of a delete the bundle sees, after the commit, with `retention.anonymise_on_user_delete`.
+     *
+     * @param list<string> $entryIds
+     */
+    public function anonymiseDeleted(array $entryIds): int
+    {
+        return $this->logged('anonymise_on_delete', $this->store()->anonymiseEntries($entryIds, $this->now()));
     }
 
     /**
@@ -126,8 +146,8 @@ final readonly class FormerPersonTimeEntries
      */
     public function anonymiseUser(UserInterface $user): int
     {
-        $this->timers?->stopForUserDeletion($user);
         $store = $this->store();
+        $this->timers?->stopForUserDeletion($user);
 
         return $this->logged('anonymise_user', $store->anonymiseOwner(UserIdResolver::getId($user), $this->now()) + $store->anonymisePerson(self::personRefOf($user), $this->now()));
     }

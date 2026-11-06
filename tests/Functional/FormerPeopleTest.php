@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
+use Doctrine\ORM\Event\OnFlushEventArgs;
+use Doctrine\ORM\Event\PostFlushEventArgs;
 use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
@@ -340,14 +343,45 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame($this->user->getId(), $this->userIdOf($this->reload('e-1')));
     }
 
-    public function testAClaimStatesTheScopeOfAnEntryThatHadNone(): void
+    public function testAClaimWithAScopeIsRefusedOnARowWithNone(): void
     {
         $writer = $this->writer();
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
         $this->entityManager()->clear();
+        $user = $this->managedUser();
 
-        $writer->upsert(new ImportedTimeEntryClaim($this->managedUser(), 'p-1', 'org-a'), $this->data('e-1'));
-        self::assertSame('org-a', $this->reload('e-1')->getScopeKey());
+        $this->assertMismatch(fn (): mixed => $writer->upsert(new ImportedTimeEntryClaim($user, 'p-1', 'org-b'), $this->data('e-1')), 'a claim cannot cross tenants through a row with no scope');
+        self::assertTrue($this->reload('e-1')->isOwnerless());
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsert(new ImportedTimeEntryClaim($user, 'p-1'), $this->data('e-1'))->outcome, 'no scope on either side');
+    }
+
+    public function testAMismatchNamesTheRowThatStoppedTheBatch(): void
+    {
+        $writer = $this->writer();
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-a'), $this->data('e-1'));
+        $writer->upsert($this->user, $this->data('e-2'));
+        $other = $this->createUser('other@example.com');
+        $this->entityManager()->clear();
+        $rows = [
+            [$this->managedUser(), $this->data('e-new')],
+            [$this->managedUser(), $this->data('e-1')],
+        ];
+
+        foreach ([
+            ['e-1', static fn (): mixed => $writer->upsertMany($rows)],
+            ['e-1', fn (): mixed => $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis', 'org-a'), $this->data('e-1'))],
+            ['e-2', fn (): mixed => $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis'), $this->data('e-2'))],
+        ] as [$externalId, $call]) {
+            try {
+                $call();
+                self::fail('expected a mismatch');
+            } catch (ImportedEntryOwnerMismatchException $exception) {
+                self::assertSame($externalId, $exception->externalId);
+                self::assertStringNotContainsString($externalId, $exception->getMessage(), 'the message names no entry');
+            }
+        }
+        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-new'), 'nothing of the batch was written');
+        self::assertNotNull($other->getId());
     }
 
     public function testAnEntryNeverMovesBetweenOwners(): void
@@ -433,7 +467,9 @@ final class FormerPeopleTest extends FunctionalTestCase
 
     public function testAnEmailOrInvisibleCharactersNeverBecomeAName(): void
     {
-        self::assertNull(ImportedTimeEntryPerson::cleanName('ana@example.com'));
+        foreach (['ana@example.com', 'Ana <ana@example.com>', 'mailto:ana@example.com', 'ana@localhost', 'añá@example.com', 'a@example.com, b@example.com', 'ana＠example.com'] as $address) {
+            self::assertNull(ImportedTimeEntryPerson::cleanName($address), $address);
+        }
         self::assertSame('Ana', ImportedTimeEntryPerson::cleanName("A\u{2060}n\u{00AD}a\u{200D}"));
         self::assertNull(ImportedTimeEntryPerson::cleanName(null));
     }
@@ -539,6 +575,53 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame('user:' . $userId, $reloaded->getPersonRef());
     }
 
+    public function testAFailedDeleteLeavesNoSnapshotOnALivingUsersRows(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1', description: 'Kept'));
+        $this->entityManager()->clear();
+        $conn = $this->entityManager()->getConnection();
+        $this->enforceForeignKeys();
+        $conn->executeStatement('CREATE TABLE block_user_delete (user_id INT NOT NULL, CONSTRAINT fk_block_user_delete FOREIGN KEY (user_id) REFERENCES app_user (id))');
+        $conn->executeStatement('INSERT INTO block_user_delete (user_id) VALUES (?)', [$this->user->getId()]);
+        $people = $this->people();
+        self::assertTrue($people->isAvailable());
+
+        try {
+            $this->entityManager()->remove($this->managedUser());
+            $this->entityManager()->flush();
+            self::fail('the delete should fail');
+        } catch (DbalException) {
+            $row = $conn->fetchAssociative('SELECT user_id, person_ref, person_name_snapshot, anonymised_at, description FROM time_track_entries');
+            self::assertIsArray($row);
+            self::assertSame((string) $this->user->getId(), (string) $row['user_id']);
+            self::assertNull($row['person_ref'], 'no stale reference');
+            self::assertNull($row['person_name_snapshot'], 'no stale name');
+            self::assertNull($row['anonymised_at']);
+            self::assertSame('Kept', $row['description']);
+        } finally {
+            $conn->executeStatement('DROP TABLE block_user_delete');
+        }
+    }
+
+    public function testReleasingAUserWithNoEntriesChangesNothing(): void
+    {
+        self::assertSame(0, $this->people()->release($this->user, 'Ana'));
+    }
+
+    public function testResetForgetsAFailedFlush(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $listener = self::getContainer()->get(FormerPersonSnapshotListener::class);
+        self::assertInstanceOf(FormerPersonSnapshotListener::class, $listener);
+        $this->entityManager()->getUnitOfWork()->scheduleForDelete($this->user);
+        $listener->onFlush(new OnFlushEventArgs($this->entityManager()));
+        $listener->reset();
+        $listener->postFlush(new PostFlushEventArgs($this->entityManager()));
+        $this->entityManager()->clear();
+
+        self::assertNull($this->reload('e-1')->getPersonRef(), 'what a failed flush prepared is never written');
+    }
+
     public function testRemoveWithNoFlushWritesNoSnapshot(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
@@ -555,12 +638,12 @@ final class FormerPeopleTest extends FunctionalTestCase
         $profiles = $this->createStub(ClientUserProfileProviderInterface::class);
         $profiles->method('getDisplayName')->willReturn('Ana Ruiz');
         $people = new FormerPersonTimeEntries($this->repository(), $profiles);
-        self::assertSame('Ana Ruiz', $people->snapshotBeforeDelete($this->user));
+        self::assertSame('Ana Ruiz', $people->nameBeforeDelete($this->user));
 
         $failing = $this->createStub(ClientUserProfileProviderInterface::class);
         $failing->method('getDisplayName')->willThrowException(new RuntimeException('down'));
         $logger = new RecordingLogger();
-        self::assertNull((new FormerPersonTimeEntries($this->repository(), $failing, logger: $logger))->snapshotBeforeDelete($this->user));
+        self::assertNull((new FormerPersonTimeEntries($this->repository(), $failing, logger: $logger))->nameBeforeDelete($this->user));
         self::assertCount(1, $logger->records);
     }
 

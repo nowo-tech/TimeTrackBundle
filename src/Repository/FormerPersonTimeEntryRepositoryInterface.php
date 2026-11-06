@@ -14,10 +14,25 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 interface FormerPersonTimeEntryRepositoryInterface
 {
     /**
-     * Writes the person reference and name on the user's entries and keeps the user (the delete runs later, and the
-     * foreign key clears the user). Returns the entries changed.
+     * Ids of the user's entries. Reads only: what a flush that deletes the user settles after its commit.
+     *
+     * @return list<string>
      */
-    public function snapshotOwner(string $userId, string $personRef, ?string $name): int;
+    public function entryIdsOfOwner(string $userId): array;
+
+    /**
+     * After the user's delete: no user, and this reference and name, on these entries. Returns the entries changed.
+     *
+     * @param list<string> $entryIds
+     */
+    public function settleDeletedOwner(array $entryIds, string $personRef, ?string $name): int;
+
+    /**
+     * Anonymises these entries, as {@see self::anonymiseOwner()} does. Returns the entries changed.
+     *
+     * @param list<string> $entryIds
+     */
+    public function anonymiseEntries(array $entryIds, DateTimeImmutable $at): int;
 
     /**
      * Clears the user of the user's entries, with the person reference and name. Returns the entries changed.

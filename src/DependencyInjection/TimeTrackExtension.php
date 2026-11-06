@@ -359,7 +359,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$userClass', $config['user_class'])
             ->setArgument('$timers', new Reference(TimerService::class))
             ->addTag('doctrine.event_listener', ['event' => 'preRemove'])
-            ->addTag('doctrine.event_listener', ['event' => 'onFlush']));
+            ->addTag('doctrine.event_listener', ['event' => 'onFlush'])
+            ->addTag('doctrine.event_listener', ['event' => 'postFlush'])
+            ->addTag('kernel.reset', ['method' => 'reset']));
     }
 
     /**

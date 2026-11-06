@@ -306,9 +306,9 @@ $rows = $people->export($personId);
 | a user or a claim | the same user | update |
 | a user or a claim | another user | `ImportedEntryOwnerMismatchException` |
 | a plain user | a former person or a deleted user | mismatch: taking one must be explicit |
-| a claim, with the entry's reference and scope | a former person | claim: the user owns it, the snapshot goes |
-| a claim, with the entry's reference and scope | a deleted user | the same id: back to them; another: mismatch |
-| a claim with another reference or scope | an ownerless entry | mismatch |
+| a claim, with the entry's reference and exactly its scope | a former person | claim: the user owns it, the snapshot goes |
+| a claim, with the entry's reference and exactly its scope | a deleted user | the same id: back to them; another: mismatch |
+| a claim with another reference or scope, or with a scope on an entry that has none | an ownerless entry | mismatch |
 | a person | a user | mismatch: remove, then upsert |
 | a person, same reference and scope | that person | update, name included |
 | a person, another reference or scope | a former person | mismatch |
@@ -316,10 +316,12 @@ $rows = $people->export($personId);
 | a user, a claim or a person | an entry with no identity (a raw delete) | `Unchanged`, nothing written |
 | anyone | an anonymised entry | `Unchanged`, nothing written |
 
-A mismatch refuses the whole batch, as it always has. References compare case-sensitively.
+A mismatch refuses the whole batch, as it always has; `ImportedEntryOwnerMismatchException::$externalId` says which row stopped it. References
+compare case-sensitively. `Unchanged` on a deleted user's entry means the local hours stay as they were, even if the remote changed: totals can
+drift from the remote. To take a remote change, a manager removes the entry and the next sync imports it for the person.
 
 - `ImportedTimeEntryPerson::$ref` is opaque and stable (`[A-Za-z0-9._:#-]{1,64}`, `user:` is reserved in any case): never an e-mail.
-  The name is cleaned to one line with every invisible character stripped, cut to 255; blank or an e-mail means none.
+  The name is cleaned to one line with every invisible character stripped, cut to 255; blank, or anything holding an `@`, means none.
 - **Who sees them:** nobody by default. A `TIME_ENTRY_LIST_QUERY` listener decides, with the viewer's tenant scopes:
   `$event->includeOwnerless(['org-a'])`, or `null` for every scope (the only way to list an entry with no scope, so a host
   listing by scope does not see those hours). They never reach the client API or the owner's export. On a MySQL
@@ -340,10 +342,15 @@ A mismatch refuses the whole batch, as it always has. References compare case-se
   (ownerless entries are not in any overlap check). It flushes at `remove()`, before the delete, your pending work included. Wrap
   the delete in a transaction to make it one unit; otherwise, if the delete fails, the user keeps a stopped, marked entry. Do not
   `remove()` a user from inside a flush.
-- **A raw `DELETE` gets none of this.** `time_track_active_timers` is `ON DELETE CASCADE`, so the running timer goes with the user, and
-  the entries stay with no name and no reference, where no erasure or export can find one person's. **`$people->release($user, $name)` is
-  required before it.** Keeping the timer through the foreign key is not an option: a foreign key runs no code, so nothing could close the
-  timer at the deletion time or name it.
+- **A delete that runs no bundle code gets none of this:** a bulk DQL `DELETE` of users, raw SQL, a database cascade from a parent table. Code that
+  deletes `ActiveTimer` rows loses the timer in the same way. `time_track_active_timers` is `ON DELETE CASCADE`, so the running timer goes with the
+  user, however long it ran, with no row, event or log left, and the entries stay with no name and no reference, where no erasure or export can find
+  one person's. **`$people->release($user, $name)` is required before such a delete.** A `SET NULL` on the timers table could keep the row, but a
+  foreign key runs no code, so nothing could close the timer at the deletion: only a later sweep ending it at the last heartbeat, with no name or
+  exact end.
+- **A timer started between `remove()` and the flush is deleted with the user.** Keep the two close together.
+- **A delete that fails changes nothing on the user's rows.** The name snapshot and `anonymise_on_user_delete` are written after the commit. If the
+  process dies between the commit and that write, the rows stay with no name or reference: `anonymiseUnidentified()` reaches them.
 - **Period lock:** a deleted user's entry stays locked by their timesheets (found by `owner_ref`); a former person has none; an entry with no
   identity has an unknown owner and is not writable while timesheets are on. Anonymising outranks the lock, and it changes no time. An
   approved timesheet keeps its stored totals, while a rebuild from the live entries differs.
@@ -351,8 +358,10 @@ A mismatch refuses the whole batch, as it always has. References compare case-se
   entries and never see them. **Anonymising a living account takes its hours out of those views.** A deleted user's timesheet has
   stored totals, but a rebuild reads zero, so an approver gets `stale`.
 - Anonymising clears the name, the reference, `description`, `task_title_snapshot` and `metadata` (except the `closed_by` mark), and hashes
-  `external_id`, so a re-sync still finds the row and writes nothing. `task_id`, `board_id_snapshot`, `scope_key` and the times stay: totals and tenant
-  isolation need them. An explicit manager removal of an anonymised row forgets it, and a later re-sync creates it again with the name.
+  `external_id`, so a re-sync still finds the row and writes nothing. `task_id`, `board_id_snapshot`, `scope_key` and the times stay, because totals and
+  tenant isolation need them, and so do `billable`, `source`, `external_source` (which can hold a directory id) and `created_at`. Task totals stay. Timesheets
+  keep `owner_ref` and `totals.byTask`, which can re-link task time to an id. The hash is unsalted: whoever holds the remote id can recompute it, and a small
+  id space can be enumerated (a 6-digit id took 0.36 s in the audit). An explicit manager removal of an anonymised row forgets it, and a later re-sync creates it again with the name.
 
 ### What the host must do
 
@@ -363,8 +372,24 @@ A mismatch refuses the whole batch, as it always has. References compare case-se
 - **Do not anonymise entries you use as a legal working-time register** within the legal term. The bundle marks its totals `legalRecord: false`.
 - **Show names only to those who need them.** If you keep data only for possible liabilities, block it (LOPDGDD art. 32) and do not list it.
 - **Store `TimeEntriesRemovedEvent`.**
-- **Call `release()` before a raw `DELETE`**, and `stopForUserDeletion()` before code that deletes `ActiveTimer` rows.
-- **Keep `external_id` opaque:** it is hashed on anonymise, but only then.
+- **Call `release()` before a bulk DQL or raw SQL delete**, and `stopForUserDeletion()` before code that deletes `ActiveTimer` rows.
+- **Keep `external_id` opaque:** it is hashed on anonymise, but only then, and long random ids resist enumeration where short or sequential ones do not.
+
+### An erasure chain that must not flush
+
+`stopForUserDeletion()`, `release()` and `anonymiseUser()` flush when a timer is running, open a nested transaction and fire `TIMER_STOP`, whose listeners may
+write. An erasure chain whose erasers must not flush or open transactions (UserKit's `PersonalDataEraser`) should stop the timer **before** the chain:
+
+```php
+if ($eraser->check($user, $actor) === []) { // no vetoes: a vetoed erasure stops nobody's timer
+    $timers->stop($user);                    // public since 1.12; saves the entry under the user, with its note
+}
+$eraser->erase($user, $actor);               // throws on a veto; your eraser blanks that note like any other
+```
+
+Limits: it is not atomic, so if the erase fails the timer stays stopped (the time is safe). A timer started between the stop and the eraser is still deleted by an
+eraser that deletes `ActiveTimer` rows. `stop()` adds no `closed_by` mark, which suits a user who is not being deleted. A `TIMER_STOP` listener that throws stops
+the erasure before it starts.
 
 ## Working time and timesheets (1.13)
 

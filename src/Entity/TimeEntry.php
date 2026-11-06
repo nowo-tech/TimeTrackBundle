@@ -241,7 +241,7 @@ class TimeEntry
 
     /**
      * Since 1.15: the external id an anonymised entry keeps: a hash, so a re-sync still finds it and writes nothing, and the
-     * remote entry is not named. A pseudonym: whoever holds the remote id can recompute it.
+     * remote entry is not named. A pseudonym: whoever holds the remote id can recompute it, and a small id space can be enumerated.
      */
     public static function anonymisedExternalId(string $externalSource, string $externalId): string
     {

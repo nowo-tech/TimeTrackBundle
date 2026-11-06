@@ -18,7 +18,7 @@ final readonly class ImportedTimeEntryClaim
     /**
      * @param UserInterface $user the new owner
      * @param string $personRef the reference the entry must hold ({@see ImportedTimeEntryPerson::$ref}, or {@see FormerPersonTimeEntries::personRefOf()})
-     * @param string|null $scopeKey the claimer's tenant scope, used when `timesheets.scope_provider` gives none
+     * @param string|null $scopeKey the claimer's tenant scope, used when `timesheets.scope_provider` gives none. It must equal the entry's: a claim with a scope is refused on an entry with none
      */
     public function __construct(
         public UserInterface $user,

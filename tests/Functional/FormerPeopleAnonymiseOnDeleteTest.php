@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
@@ -18,6 +19,37 @@ final class FormerPeopleAnonymiseOnDeleteTest extends FunctionalTestCase
     protected static function timeTrackConfig(): array
     {
         return ['retention' => ['anonymise_on_user_delete' => true]];
+    }
+
+    public function testAFailedDeleteLeavesTheLivingUsersEntriesIntact(): void
+    {
+        $em   = $this->entityManager();
+        $conn = $em->getConnection();
+        if ($conn->getDatabasePlatform() instanceof SQLitePlatform) {
+            $conn->executeStatement('PRAGMA foreign_keys = ON');
+        }
+        $em->persist(new TimeEntry($this->user, 'task-1', 'Onboarding of Ana', 'board-1', new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Web, ['note' => 'Note']));
+        $em->flush();
+        $em->clear();
+        $conn->executeStatement('CREATE TABLE block_user_delete (user_id INT NOT NULL, CONSTRAINT fk_block_user_delete FOREIGN KEY (user_id) REFERENCES app_user (id))');
+        $conn->executeStatement('INSERT INTO block_user_delete (user_id) VALUES (?)', [$this->user->getId()]);
+        $user = $em->find($this->user::class, $this->user->getId());
+        self::assertNotNull($user);
+
+        try {
+            $em->remove($user);
+            $em->flush();
+            self::fail('the delete should fail');
+        } catch (DbalException) {
+            $row = $conn->fetchAssociative('SELECT user_id, anonymised_at, task_title_snapshot, metadata FROM time_track_entries');
+            self::assertIsArray($row);
+            self::assertSame((string) $this->user->getId(), (string) $row['user_id'], 'still theirs');
+            self::assertNull($row['anonymised_at']);
+            self::assertSame('Onboarding of Ana', $row['task_title_snapshot']);
+            self::assertStringContainsString('Note', (string) $row['metadata']);
+        } finally {
+            $conn->executeStatement('DROP TABLE block_user_delete');
+        }
     }
 
     public function testDeletingAUserKeepsTheHoursAndNotThePerson(): void

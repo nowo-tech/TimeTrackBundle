@@ -554,15 +554,70 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.15: writes the snapshot on the user's entries; the user stays until the host's delete runs.
+     * Since 1.15: ids of the user's entries, by keyset. Reads only.
      */
-    public function snapshotOwner(string $userId, string $personRef, ?string $name): int
+    public function entryIdsOfOwner(string $userId): array
     {
-        return $this->updateInBatches(
-            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId),
-            static fn (QueryBuilder $update): QueryBuilder => $update->set('e.personRef', ':ref')->set('e.personNameSnapshot', ':name')->setParameter('ref', $personRef)->setParameter('name', $name),
-            false,
-        );
+        $ids    = [];
+        $lastId = '';
+        do {
+            /** @var list<array{id: string}> $rows */
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('e.id AS id')
+                ->from(TimeEntry::class, 'e')
+                ->where('IDENTITY(e.user) = :owner')
+                ->andWhere('e.id > :lastId')
+                ->setParameter('owner', $userId)
+                ->setParameter('lastId', $lastId)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(self::FORMER_PERSON_BATCH)
+                ->getQuery()
+                ->getArrayResult();
+            foreach ($rows as $row) {
+                $ids[]  = $row['id'];
+                $lastId = $row['id'];
+            }
+        } while (count($rows) === self::FORMER_PERSON_BATCH);
+
+        return $ids;
+    }
+
+    /**
+     * Since 1.15: the name and reference on these entries of a deleted user. Clears the user too, for a database that does not
+     * enforce the foreign key. Already anonymised rows are left alone.
+     */
+    public function settleDeletedOwner(array $entryIds, string $personRef, ?string $name): int
+    {
+        $changed = 0;
+        foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
+            $changed += (int) $this->entityManager->createQueryBuilder()
+                ->update(TimeEntry::class, 'e')
+                ->set('e.user', 'NULL')
+                ->set('e.personRef', ':ref')
+                ->set('e.personNameSnapshot', ':name')
+                ->where('e.id IN (:ids)')
+                ->andWhere('e.anonymisedAt IS NULL')
+                ->setParameter('ref', $personRef)
+                ->setParameter('name', $name)
+                ->setParameter('ids', $ids)
+                ->getQuery()
+                ->execute();
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Since 1.15: anonymises these entries. Already anonymised rows are left alone.
+     */
+    public function anonymiseEntries(array $entryIds, DateTimeImmutable $at): int
+    {
+        $changed = 0;
+        foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
+            $changed += $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.id IN (:ids)')->setParameter('ids', $ids), $at);
+        }
+
+        return $changed;
     }
 
     /**
@@ -758,9 +813,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      *
      * @param callable(QueryBuilder): QueryBuilder $filter
      * @param callable(QueryBuilder): QueryBuilder $apply
-     * @param bool $detach false keeps loaded entries managed, with any pending change of the host
      */
-    private function updateInBatches(callable $filter, callable $apply, bool $detach = true): int
+    private function updateInBatches(callable $filter, callable $apply): int
     {
         $changed = 0;
         $lastId  = '';
@@ -781,9 +835,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->setParameter('ids', $ids)
                 ->getQuery()
                 ->execute();
-            if ($detach) {
-                $this->detachRemoved($ids);
-            }
+            $this->detachRemoved($ids);
         } while (count($rows) === self::FORMER_PERSON_BATCH);
 
         return $changed;

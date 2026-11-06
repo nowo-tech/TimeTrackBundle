@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).
-Audit status: Appendix HA (2026-11-06): Fail / High at `ebe1629`; fixes pending independent re-verification. Not for release until then.
+Audit status: Appendix HA (2026-11-06): Pass (conditional) / Medium at `1f8a0af`; residuals in `docs/SECURITY.md`.
 
 ### Added
 
@@ -82,12 +82,13 @@ Audit status: Appendix HA (2026-11-06): Fail / High at `ebe1629`; fixes pending 
 
 - **`time_track_entries.user_id` is nullable and `ON DELETE SET NULL`** (was `NOT NULL`, `ON DELETE CASCADE`): deleting a user keeps their
   entries. `TimeEntry::getUser()` returns `?object`. A flush that deletes a user writes the name snapshot on their entries
-  (`FormerPersonSnapshotListener`: the profile provider's display name, never an e-mail, and `user:<id>`).
+  (`FormerPersonSnapshotListener`: after the commit, the profile provider's display name, never with an `@`, and `user:<id>`).
 - `PeriodLockGuard`: an ownerless entry is judged by the deleted user's timesheets, found by `owner_ref` (a store without the capability
   fails closed); a former person's is writable; one with no identity has an unknown owner. A sync leaves an entry of a deleted user
   or with no identity alone (`Unchanged`).
 - `FilteredImportedTimeEntryRepositoryInterface::removeImportedWhere()`: the row has `personRef`, and `userId` may be null.
 - `ownersWithEntries()` and `findScopelessAfter()` skip ownerless entries.
+- `ImportedEntryOwnerMismatchException::$externalId`: the row that stopped a batch, kept out of the message.
 - `ImportedTimeEntryWriter::removeForUser()` is for re-association only, and now respects the period lock.
 - `TimerService::start()` drops a reserved `closed_by` metadata key.
 - Demo: the 1.11 migration's rollback no longer deletes imported time.
