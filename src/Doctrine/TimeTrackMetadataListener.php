@@ -9,6 +9,9 @@ use Doctrine\ORM\Mapping\ClassMetadata;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
+use Nowo\TimeTrackBundle\Entity\CalendarConnection;
+use Nowo\TimeTrackBundle\Entity\CalendarRule;
+use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -37,6 +40,9 @@ final readonly class TimeTrackMetadataListener
         private string $timesheetsTableName = 'time_track_timesheets',
         private string $timesheetEventsTableName = 'time_track_timesheet_events',
         private string $balanceLedgerTableName = 'time_track_balance_ledger',
+        private string $calendarConnectionsTableName = 'time_track_calendar_connections',
+        private string $calendarSuggestionsTableName = 'time_track_calendar_suggestions',
+        private string $calendarRulesTableName = 'time_track_calendar_rules',
     ) {
     }
 
@@ -56,10 +62,13 @@ final readonly class TimeTrackMetadataListener
             Timesheet::class           => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->timesheetsTableName])),
             TimesheetEvent::class      => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->timesheetEventsTableName])),
             BalanceLedgerLine::class   => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->balanceLedgerTableName])),
+            CalendarConnection::class  => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->calendarConnectionsTableName])),
+            CalendarSuggestion::class  => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->calendarSuggestionsTableName])),
+            CalendarRule::class        => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->calendarRulesTableName])),
             default                    => null,
         };
 
-        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class, Timesheet::class, BalanceLedgerLine::class], true)) {
+        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class, Timesheet::class, BalanceLedgerLine::class, CalendarConnection::class, CalendarSuggestion::class, CalendarRule::class], true)) {
             return;
         }
 

@@ -63,6 +63,7 @@
         "rector/rector": "^2.0",
         "symfony/browser-kit": "^7.4 || ^8.0",
         "symfony/css-selector": "^7.4 || ^8.0",
+        "symfony/http-client": "^7.4 || ^8.0",
         "vincentlanglet/twig-cs-fixer": "^4.0"
     },
     "autoload": {
@@ -96,7 +97,8 @@
         }
     },
     "suggest": {
-        "nowo-tech/task-board-bundle": "Integrated task list, ACL, and team/manager context for time tracking."
+        "nowo-tech/task-board-bundle": "Integrated task list, ACL, and team/manager context for time tracking.",
+        "symfony/http-client": "Calendar suggestions in server mode (Google / Microsoft 365 adapters, since 1.14)."
     },
     "minimum-stability": "stable",
     "prefer-stable": true,

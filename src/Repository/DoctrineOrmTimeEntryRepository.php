@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -13,8 +14,11 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Psr\Log\LoggerInterface;
 use SortDirection;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Throwable;
 
 use function array_chunk;
 use function array_column;
@@ -25,7 +29,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -37,6 +41,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -245,6 +250,72 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->setParameter('import', TimeEntrySource::Import->value)
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    /**
+     * Since the GG fixes: one transaction holding the user's row lock (`SELECT … FOR UPDATE`) around the operation.
+     */
+    public function inUserTransaction(object $user, callable $operation): mixed
+    {
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
+        try {
+            $this->lockUser($user);
+            $result = $operation();
+            $connection->commit();
+
+            return $result;
+        } catch (Throwable $exception) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            RecoveringFlusher::resetIfClosed($this->entityManager, $this->managerRegistry);
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * The user's row lock: on the managed entity, else (a user from another manager or provider, delta GG-D-2) by id
+     * through the mapped user class; a warning when no row could be locked.
+     */
+    private function lockUser(object $user): void
+    {
+        if ($this->entityManager->contains($user)) {
+            $this->entityManager->lock($user, LockMode::PESSIMISTIC_WRITE);
+
+            return;
+        }
+        $class  = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
+        $locked = $user instanceof UserInterface ? $this->entityManager->find($class, UserIdResolver::getId($user), LockMode::PESSIMISTIC_WRITE) : null;
+        if ($locked === null) {
+            $this->logger?->warning('TimeTrack could not lock the user row; this write is not serialised.', ['bundle' => 'time_track', 'action' => 'entry_lock']);
+        }
+    }
+
+    /**
+     * Since 1.14: live entries of the user overlapping `[from, to)` (manual entries and accepted suggestions refuse
+     * overlaps).
+     */
+    public function findLiveOverlapping(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        /** @var list<TimeEntry> $result */
+        $result = $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TimeEntry::class, 'e')
+            ->where('IDENTITY(e.user) = :userId')
+            ->andWhere('e.startedAt < :to')
+            ->andWhere('e.endedAt > :from')
+            ->andWhere('e.source <> :import')
+            ->setParameter('userId', $userId)
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->setParameter('import', TimeEntrySource::Import->value)
+            ->orderBy('e.startedAt', SortDirection::Ascending)
+            ->getQuery()
+            ->getResult();
+
+        return $result;
     }
 
     /**

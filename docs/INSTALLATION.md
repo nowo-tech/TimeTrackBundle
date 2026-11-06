@@ -9,6 +9,8 @@ The Flex recipe copies `config/packages/nowo_time_track.yaml` and `config/routes
 ## Table of contents
 
 - [Database](#database)
+  - [Schema 1.13](#schema-113)
+  - [Schema 1.14](#schema-114)
 - [Security](#security)
 - [TaskBoardBundle](#taskboardbundle)
 - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
@@ -25,6 +27,14 @@ for [MySQL / MariaDB](sql/1.13.0/mysql-up.sql), [PostgreSQL](sql/1.13.0/postgres
 [SQLite](sql/1.13.0/sqlite-up.sql) (rollbacks next to them; details and optional append-only triggers in
 [UPGRADING](UPGRADING.md#to-1130)). Then, with timesheets or working time on, run
 `nowo:time-track:entries:backfill-scope` and schedule `nowo:time-track:timesheets:purge` (and `…:auto-lock` when used).
+
+### Schema 1.14
+
+1.14 adds the always-mapped tables `time_track_calendar_connections`, `time_track_calendar_suggestions` and
+`time_track_calendar_rules`: run `doctrine:migrations:diff`, or use the reference SQL for
+[MySQL / MariaDB](sql/1.14.0/mysql-up.sql), [PostgreSQL](sql/1.14.0/postgresql-up.sql) and
+[SQLite](sql/1.14.0/sqlite-up.sql) (rollbacks next to them, [UPGRADING](UPGRADING.md#to-1140)). With calendar
+suggestions on, install `symfony/http-client` (server mode) and schedule `nowo:time-track:calendar:sync`.
 
 ## Security
 

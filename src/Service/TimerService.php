@@ -262,6 +262,7 @@ final readonly class TimerService
      * @param string $taskId Task to track next
      * @param ClientType $clientType Client that switches
      * @param string|null $note Note stored in the entry of the stopped timer
+     * @param array<string, mixed> $metadata Metadata of the new timer (since 1.14: `{origin: "meeting"}` from the client API)
      *
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
      * @throws ActiveTimerConflictException When a concurrent start won the race
@@ -270,7 +271,7 @@ final readonly class TimerService
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer} The entry of the stopped timer and the new timer
      */
-    public function switchTo(UserInterface $user, string $taskId, ClientType $clientType, ?string $note = null): array
+    public function switchTo(UserInterface $user, string $taskId, ClientType $clientType, ?string $note = null, array $metadata = []): array
     {
         $task = $this->resolveTrackable($user, $taskId);
         // Since 1.13: refused before the running timer stops, so a locked period leaves it untouched.
@@ -278,7 +279,7 @@ final readonly class TimerService
 
         $entry = $this->stop($user, null, $note);
 
-        return ['entry' => $entry, 'timer' => $this->start($user, $taskId, $clientType)];
+        return ['entry' => $entry, 'timer' => $this->start($user, $taskId, $clientType, $metadata)];
     }
 
     /**

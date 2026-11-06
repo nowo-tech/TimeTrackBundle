@@ -25,3 +25,10 @@ nowo_time_track:
         approver_provider: App\Timesheet\DemoApproverProvider
     working_time:
         enabled: true
+    # TimeTrack 1.14 showcase: GET /api/time-track/me/meetings from a fake provider (no real calendar; the token needs the
+    # meetings:read scope), and POST /api/time-track/entries (manual entries, entries:write scope).
+    meetings:
+        enabled: true
+        provider: App\Meeting\DemoMeetingProvider
+    manual_entries:
+        enabled: true

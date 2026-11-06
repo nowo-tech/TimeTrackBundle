@@ -23,6 +23,11 @@ This bundle is **FrankenPHP worker mode friendly**.
   time (register or task time, labelled), an append-only balance ledger, weekly timesheets with submit / approve /
   reject and an audited reopen, a hard period lock on every write path, SHA-256 chained audit trails, tenant scopes,
   the workday / balance / timesheet client API and configurable Twig components ([WORKING-TIME.md](docs/WORKING-TIME.md)).
+- **Calendar suggestions, manual entries and meetings (1.14, opt-in)**: read-only Google / Microsoft 365 adapters of the
+  primary calendar (host-held tokens, minimal fields), task-key matching and literal user rules, dailies grouped per
+  week, suggestions accepted into `calendar` entries (lock and overlap aware), `POST entries`, `resolve-keys` for the
+  desktop's local mode, and `GET me/meetings` over a host meeting read model with strict privacy filters
+  ([CLIENT-API](docs/CLIENT-API.md#changes-in-114-calendar-suggestions-manual-entries), [MEETINGS.md](docs/MEETINGS.md)).
 
 ## Installation
 
@@ -103,6 +108,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [PSR evaluation (REQ-CS-007)](docs/PSR.md)
 - [Client API reference](docs/CLIENT-API.md)
 - [Working time, balance and timesheets](docs/WORKING-TIME.md)
+- [Meetings API (host guide)](docs/MEETINGS.md)
 - [Browser extension](docs/BROWSER-EXTENSION.md)
 - [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)

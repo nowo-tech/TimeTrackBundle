@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Controller;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
@@ -39,14 +40,17 @@ use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
+use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Support\TimeEntryCsv;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -106,6 +110,9 @@ final readonly class TimeTrackClientApiController
     /** Max length of a timer note, in code points ({@see NoteSanitizer::MAX_LENGTH}). */
     public const NOTE_MAX_LENGTH = NoteSanitizer::MAX_LENGTH;
 
+    /** Since 1.14 (contract Q-B22): the only metadata accepted without `client_api.allow_metadata` — "track the meeting". */
+    public const MEETING_ORIGIN = ['origin' => 'meeting'];
+
     /** Features of `GET me` reserved for later releases; always false (1.13: `workday` became real). */
     public const RESERVED_FEATURES = ['monitoring'];
 
@@ -146,6 +153,9 @@ final readonly class TimeTrackClientApiController
      * @param IdleCheckSettingsResolver|null $idleCheckResolver Per-user idle-check settings of `me` (null = instance settings)
      * @param TranslatorInterface|null $translator Translates the masked title of imported entries (1.11; null = English)
      * @param ClientWorkingTimeContext|null $workingTime Working-time flags, `me.timesheet` and entry locks (1.13; null = all off)
+     * @param CalendarConnectionService|null $calendar Calendar suggestions (`me.features.calendar_suggestions`, 1.14; null = off)
+     * @param ManualEntryService|null $manualEntries `POST entries` (`me.features.manual_entries`, 1.14; null = off)
+     * @param MeetingContext|null $meetings Meetings API (`me.features.meetings`, `me.meetings`, `me.links.calendars`, 1.14; null = off)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -167,6 +177,9 @@ final readonly class TimeTrackClientApiController
         ?IdleCheckSettingsResolver $idleCheckResolver = null,
         private ?TranslatorInterface $translator = null,
         private ?ClientWorkingTimeContext $workingTime = null,
+        private ?CalendarConnectionService $calendar = null,
+        private ?ManualEntryService $manualEntries = null,
+        private ?MeetingContext $meetings = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -289,6 +302,12 @@ final readonly class TimeTrackClientApiController
         if ($this->workingTime instanceof ClientWorkingTimeContext) {
             $features = array_replace($features, $this->workingTime->features($user));
         }
+        // Since 1.14 (contract §10.1).
+        $features['calendar_suggestions'] = $this->calendar?->scopeOf($user, null) instanceof TimesheetScope;
+        $features['manual_entries']       = $this->manualEntries?->isEnabled() ?? false;
+        // Since 1.14 (contract §22.8, spec 210).
+        $meetings             = $this->meetings?->summary($user);
+        $features['meetings'] = $meetings !== null;
         foreach (self::RESERVED_FEATURES as $reserved) {
             $features[$reserved] = false;
         }
@@ -300,6 +319,9 @@ final readonly class TimeTrackClientApiController
         ];
         // Since 1.13: the current period of the current scope (null without timesheets).
         $body['timesheet'] = $this->workingTime?->timesheetSummary($user);
+        // Since 1.14: meeting sync state (null when off) and the host's Calendars page for the Connect button.
+        $body['meetings'] = $meetings;
+        $body['links']    = ['calendars' => $this->meetings?->calendarsLink()];
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }
@@ -428,8 +450,9 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * POST timer/switch `{taskId, note?, source?}`: stops the running timer (if any, with the note) and starts one on
-     * the task. The task is checked first: a refused task leaves the running timer untouched.
+     * POST timer/switch `{taskId, note?, source?, metadata?}`: stops the running timer (if any, with the note) and starts
+     * one on the task. The task is checked first: a refused task leaves the running timer untouched. Since 1.14 the only
+     * accepted `metadata` is `{origin: "meeting"}` (*Track the meeting*, Q-B22), kept on the new timer and its entry.
      */
     public function timerSwitch(Request $request): Response
     {
@@ -449,12 +472,18 @@ final readonly class TimeTrackClientApiController
             return $this->invalidSource($request);
         }
 
+        // Since 1.14 (Q-B22): "track the meeting" marks the new timer with `metadata: {origin: "meeting"}`; nothing else.
+        $origin = $payload['metadata'] ?? null;
+        if (!in_array($origin, [null, [], self::MEETING_ORIGIN], true)) {
+            return $this->responseFactory->error('metadata_not_allowed', 'timer/switch accepts only metadata {"origin": "meeting"}.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
         if (!$this->taskAccessChecker->canTrack($principal->user, $taskId)) {
             return $this->taskForbidden($principal, $request);
         }
 
         try {
-            $result = $this->timerService->switchTo($principal->user, $taskId, $clientType, $this->note($payload));
+            $result = $this->timerService->switchTo($principal->user, $taskId, $clientType, $this->note($payload), $origin === self::MEETING_ORIGIN ? self::MEETING_ORIGIN : []);
         } catch (ActiveTimerConflictException) {
             return $this->timerRunning($request);
         } catch (InvalidArgumentException) {
@@ -789,7 +818,7 @@ final readonly class TimeTrackClientApiController
     private function metadata(array $payload, Request $request): array|Response
     {
         $metadata = $payload['metadata'] ?? null;
-        if ($metadata !== null && $metadata !== [] && !$this->allowMetadata) {
+        if ($metadata !== null && $metadata !== [] && !$this->allowMetadata && $metadata !== self::MEETING_ORIGIN) {
             return $this->responseFactory->error('metadata_not_allowed', 'Free metadata is not accepted; send source (extension, desktop, web) and note instead.', Response::HTTP_BAD_REQUEST, $request);
         }
 

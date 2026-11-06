@@ -24,7 +24,7 @@ final class SecurityAuditClTest extends FunctionalTestCase
     /** CL-01: a device asking only for an unknown scope gets 400 invalid_scope, not an every-scope token. */
     public function testDeviceUnknownScopeIsRejected(): void
     {
-        foreach ([['entries:write'], [], 'timer:read', ['timer:read', 'timer.write']] as $scopes) {
+        foreach ([['entries:delete'], [], 'timer:read', ['timer:read', 'timer.write']] as $scopes) {
             $body = $this->api('POST', '/api/time-track/device/code', ['clientType' => 'desktop', 'clientName' => 'x', 'scopes' => $scopes]);
             self::assertResponseStatusCodeSame(400);
             self::assertSame('invalid_scope', $body['error'] ?? null);

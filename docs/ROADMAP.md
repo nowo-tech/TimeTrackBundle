@@ -25,9 +25,12 @@ Current release **v1.7.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-- **1.13 (unreleased)**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with
-  approval and a hard period lock, audit chains, workday client API (R-GDPR §8). Next: **1.14** calendar suggestions
-  (Google / Microsoft 365, read-only, opt-in) and `POST entries`; **1.15** budget versus actual with TaskBoard.
+- **1.13**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with approval and a
+  hard period lock, audit chains, workday client API (R-GDPR §8).
+- **1.14 (unreleased)**: calendar suggestions (Google / Microsoft 365, read-only, primary calendar, opt-in, server mode;
+  the desktop local mode is a later client release using `resolve-keys` and `POST entries`), `POST entries`, and the
+  meetings API for TimeTrack Desktop reminders (spec 210; the host stores the meetings). Next: **1.15** budget versus
+  actual with TaskBoard.
 
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 

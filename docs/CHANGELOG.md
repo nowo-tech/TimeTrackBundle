@@ -45,6 +45,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, contract `timetrack-next` v1.1 §6, §10.3,
+§22, built as stacked PRs). Every feature is off until configured; the schema change is required for every host
+(always-mapped tables).
+
+### Added
+
+- **Calendar model** (always mapped, contract §3.5–§3.7): `Entity\CalendarConnection`
+  (`time_track_calendar_connections`: opt-in per user, scope and provider, `mode` server / local, opaque host
+  `credential_ref`, `consent_version` / `consented_at`, error **codes** only), `Entity\CalendarSuggestion`
+  (`time_track_calendar_suggestions`: keyed HMAC `event_ref` / `series_ref`, `group_key`, task, `match_kind`, time range,
+  status, entry link, expiry — no title, attendee, location, link or provider id), `Entity\CalendarRule`
+  (`time_track_calendar_rules`: literal case-insensitive patterns for keyless events, `group_matches`). Reference SQL in
+  `docs/sql/1.14.0/` and the demo migration `Version20261107000000`.
+- **Provider adapters** (read-only, primary calendar, contract §6.2): `Calendar\GoogleCalendarEventSource` (`fields`
+  mask `items(id,summary,start,end,status,recurringEventId,transparency,eventType,attendees(self,responseStatus)),nextPageToken`)
+  and `Calendar\MicrosoftCalendarEventSource` (`$select=subject,start,end,isAllDay,isCancelled,showAs,type,seriesMasterId,responseStatus`,
+  UTC), behind `Calendar\CalendarEventSourceInterface`; one HTTP path `Calendar\CalendarHttpClient` (GET only, constant
+  base URIs, no redirects, 10 s timeout, 2 MB per page, bounded inline wait on 429, then `rate_limited`; error codes only).
+- **Host interfaces**: `Calendar\TaskKeyResolverInterface` (task keys, Q-O8) and
+  `Calendar\CalendarCredentialProviderInterface` (tokens, revoke, connect URL; Q-B9). `Calendar\CalendarCredential`
+  and `Calendar\CalendarEventView` are redacted in debug output and refuse serialization.
+- **Matching and sync** (contract §6.3–§6.7): `Calendar\CalendarEventMatcher` (drops cancelled / all-day / free /
+  declined / non-default / too long / outside the look-back or not yet ended events; keys first, then user rules; one
+  resolver call per sync; the user must be able to track the task), `Calendar\CalendarSyncService` (upsert by
+  `event_ref`, decisions kept, dailies grouped per series or rule and ISO week, expiry purge, `status = error` + code),
+  `Calendar\CalendarConnectionService` (connect / reconnect / pause / revoke with the host revoke first, owner only) and
+  `Calendar\CalendarRuleService`; command `nowo:time-track:calendar:sync` (inside working hours only, AC-19).
+- **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only; counts include
+  `stale`).
+- Sync hardening (audit GG): pending suggestions of events that are gone are deleted after a complete read (GG-L3);
+  connections carry `last_attempt_at`, `next_attempt_at` and `failure_count` (backoff, least recently attempted first,
+  outside-hours rows do not use the run limit, every failure is a per-connection code, GG-L5); titles cut to 1024
+  characters before the host key extractor (GG-I4); `CalendarConnectionService::revokeAllFor()` (GG-I8).
+- `Calendar\CalendarPersonalDataExporter` (contract §12.4): connections, rules and suggestions of a person for the
+  host's GDPR export.
+- **Configuration** `calendar.*` (`enabled`, `credential_provider`, `task_key_resolver`, `providers`, `modes`,
+  `lookback_days`, `suggestion_ttl_days`, `sync_interval_minutes`, `max_event_seconds`, `max_rules_per_user`,
+  `max_pages`); incoherent combinations are refused at compile time.
+
+- **Entries without a timer** (contract §10.3, Q-O7): `Service\ManualEntryService` and `POST /api/time-track/entries`
+  (`manual_entries.enabled`, off by default; sources `manual` / `calendar`; `Idempotency-Key`; ≤ 24 h, not in the
+  future, ≤ `manual_entries.max_age_days` old, no overlap with a live entry or the running timer, period lock 409;
+  120 / h per token). Optional store capability `OverlappingTimeEntryRepositoryInterface` (the Doctrine store has it).
+- **Suggestions client API** (contract §6.4–§6.6, §10.3): `GET calendar/connections`, `DELETE
+  calendar/connections/{id}`, `GET suggestions` (groups and singles, `refresh=1` once per 5 minutes),
+  `POST suggestions/accept` (one `calendar` entry per occurrence, per-occurrence outcomes), `POST suggestions/dismiss`,
+  `POST suggestions/resolve-keys` (local mode; 60 / min) — `Controller\TimeTrackCalendarApiController`,
+  `Calendar\CalendarSuggestionService`.
+- **Scopes** `entries:write`, `suggestions:read`, `suggestions:write` (explicit grant only); `GET me`
+  `features.calendar_suggestions` and `features.manual_entries` are real.
+- **Events** `TIME_ENTRY_CREATED` (`TimeEntryCreatedEvent`, for TaskBoard's time totals) and
+  `CALENDAR_SUGGESTION_DECIDED` (ids only).
+- `Support\Rfc3339`: the strict date-time profile of the 1.14 routes.
+- **Meetings API** (contract §22, Beacon spec 210, Q-B13..Q-B24, Q-O16..Q-O22): `GET /api/time-track/me/meetings`
+  (`Controller\TimeTrackMeetingsApiController`, route `nowo_time_track_client_me_meetings`) — the caller's own meetings
+  from the host `Meeting\MeetingProviderInterface` (DTOs `MeetingQuery`, `MeetingView`, `MeetingAttendeeView`,
+  `MeetingTaskLink`, `MeetingPage`, `MeetingSyncState`, `MeetingSyncStatus`); strict query validation (400 with
+  `{field}`, never the value; no user parameter), `MeetingResponder` privacy filters (whitelist, private events
+  cleared, ≤ 50 internal attendees, trackable task links, cleaned titles), `MeetingLinkDetector` (https allow-list:
+  Teams, Meet, Zoom, Jitsi + `meetings.jitsi_hosts`, Webex), `no-store` headers on every answer, 6 / min and 60 / h per
+  token (429 + integer `Retry-After`), 503 `meetings_unavailable`; JSON schema `docs/schemas/meetings.v1.json`; host
+  guide `docs/MEETINGS.md`. Nothing about meetings is stored, cached or logged by the bundle.
+- **Scope** `meetings:read` (explicit grant only). **`GET me`**: `features.meetings`, `meetings: {status,
+  refreshAfterSeconds}`, `links.calendars`.
+- **Configuration** `meetings.*` (off by default; `enabled` requires `provider`).
+- *Track the meeting* (Q-B22): `timer/switch` and `timer/start` accept `metadata: {origin: "meeting"}` without
+  `client_api.allow_metadata`; `TimerService::switchTo()` takes the new timer's metadata (optional argument).
+- Write hardening (audit GG): `POST entries` and suggestion accept / dismiss run under a per-user row lock
+  (`UserSerialisedTimeEntryRepositoryInterface`), with the `Idempotency-Key` re-checked and stored under it (GG-L1);
+  one transaction per accepted occurrence, events after the commit, per-occurrence `internal_error` (GG-L2);
+  `resolve-keys` leaves out keys of untrackable tasks (GG-L4); `no-store` on the calendar routes (GG-I1); CORS allows
+  `Idempotency-Key` (GG-I6).
+
+### Changed
+
+- `symfony/http-client` is a new `suggest` (calendar server mode) and a dev dependency.
+- CORS `Access-Control-Allow-Methods` lists `DELETE` and `Access-Control-Allow-Headers` lists `Idempotency-Key` too.
+
 ## [1.13.0] - 2026-11-05
 
 Working time, hours balance and timesheets (TimeTrack 1.13.0, contract `timetrack-next` v1.0 §3–§5, built as stacked

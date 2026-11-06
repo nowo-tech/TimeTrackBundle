@@ -58,10 +58,10 @@ final class SecurityAuditClTest extends TestCase
     /** CL-01: a stored list that holds no known scope grants none (a 2.x-only scope on a 1.9 server). */
     public function testNormalizeNeverWidensToEveryScope(): void
     {
-        self::assertSame([], ClientScope::normalize(['entries:write']));
+        self::assertSame([], ClientScope::normalize(['entries:delete']));
         self::assertSame([], ClientScope::normalize([]));
         self::assertSame(ClientScope::defaults(), ClientScope::normalize(null));
-        self::assertSame([ClientScope::TimerWrite], ClientScope::normalize(['timer:write', 'entries:write', 42]));
+        self::assertSame([ClientScope::TimerWrite], ClientScope::normalize(['timer:write', 'entries:delete', 42]));
     }
 
     /** CL-01: fromRequested() rejects non-string values too. */
@@ -80,7 +80,7 @@ final class SecurityAuditClTest extends TestCase
 
         self::assertSame(ClientScope::defaults(), (new ClientToken('h1', $expires, $user, ClientType::Desktop))->getScopes());
 
-        $unknown = new ClientToken('h2', $expires, $user, ClientType::Desktop, null, 'cred', ['entries:write']);
+        $unknown = new ClientToken('h2', $expires, $user, ClientType::Desktop, null, 'cred', ['entries:delete']);
         self::assertSame([], $unknown->getScopes());
         self::assertFalse($unknown->hasScope(ClientScope::TimerRead));
     }
@@ -92,7 +92,7 @@ final class SecurityAuditClTest extends TestCase
         $user  = new TestUser('u1', 'a@example.com');
 
         self::assertSame(ClientScope::values(ClientScope::defaults()), $stack->authService->issueToken($user, ClientType::Desktop)['scopes']);
-        self::assertCount(9, ClientScope::all(), 'the 1.13 scopes exist but need an explicit grant');
+        self::assertCount(13, ClientScope::all(), 'the 1.13 and 1.14 scopes exist but need an explicit grant');
         self::assertSame([], $stack->authService->issueToken($user, ClientType::Desktop, 'c', [])['scopes']);
     }
 

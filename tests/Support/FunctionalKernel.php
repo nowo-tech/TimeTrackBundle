@@ -8,11 +8,14 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as Doctrine
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
-use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
@@ -108,13 +111,23 @@ final class FunctionalKernel extends Kernel
             'default_locale'       => 'en',
             // Login throttle counters: a filesystem pool (an array pool is reset between requests), cleared per test.
             'cache' => ['pools' => ['cache.time_track_test' => ['adapter' => 'cache.adapter.filesystem', 'public' => true]]],
+            // Since 1.14: the calendar adapters never reach the network in tests.
+            'http_client' => ['mock_response_factory' => NoNetworkHttpResponses::class],
         ]);
-        $container->services()->set('logger', NullLogger::class);
+        $container->services()->set(NoNetworkHttpResponses::class)->public();
+        // Since 1.14: a recording logger (public) so tests can scan log records for personal data.
+        $container->services()->set('logger', RecordingLogger::class)->public();
         // Since 1.13: approver provider of the timesheet variants (public: tests configure it per case).
         $container->services()->set(StubTimesheetApproverProvider::class)->public();
         $container->services()->set(FixedScopeProvider::class)->public();
         $container->services()->set(FixedWorkingCalendar::class)->args(['UTC'])->public();
         $container->services()->set(StubWorkdayProvider::class)->public();
+        // Since 1.14: calendar fakes (no real calendar, token or event ever).
+        $container->services()->set(StubTaskKeyResolver::class)->public();
+        $container->services()->set(StubCalendarCredentialProvider::class)->public();
+        $container->services()->set(MutableProfileProvider::class)->public();
+        $container->services()->set(StubMeetingProvider::class)->public();
+        $container->services()->set(RacingCachePool::class)->public();
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);

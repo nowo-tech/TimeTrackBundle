@@ -17,6 +17,8 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Client distribution](#client-distribution)
 - [Imported entries and retention (1.11)](#imported-entries-and-retention-111)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
+- [Calendar suggestions (1.14)](#calendar-suggestions-114)
+- [Meetings API (1.14)](#meetings-api-114)
 - [Security](#security)
 
 ## Required
@@ -323,6 +325,66 @@ nowo_time_track:
   they answer 404 while their feature is off.
 - Public services for hosts: `PeriodLockGuard`, `TimesheetService`, `TimesheetFormHandler`, `TimesheetAccessGuard`,
   `WorkingTimeBalanceService`, `BalanceLedger`, `Ui\TimesheetViewBuilder`.
+
+## Calendar suggestions (1.14)
+
+Off by default; see [USAGE.md](USAGE.md#calendar-suggestions-114) for the flow and [SECURITY.md](SECURITY.md#calendar-suggestions-and-meetings-114) for what is read and stored.
+
+```yaml
+nowo_time_track:
+  calendar:
+    enabled: false
+    credential_provider: ~          # CalendarCredentialProviderInterface (host tokens; required for server mode)
+    task_key_resolver: ~            # TaskKeyResolverInterface (host task keys; required when enabled)
+    providers: [google, microsoft]
+    modes: [server]                 # server | local
+    lookback_days: 14               # 1-14; events must have ended
+    suggestion_ttl_days: 14         # kept after the event ends (1-31)
+    sync_interval_minutes: 60       # 5-1440, between two scheduled syncs of one connection
+    max_event_seconds: 28800        # longer events are ignored
+    max_rules_per_user: 20          # per scope (0-100)
+    max_pages: 10                   # provider pages per sync (1-50)
+```
+
+- Refused at compile time: `enabled` without `task_key_resolver`, `server` in `modes` without `credential_provider`,
+  unknown providers or modes, values outside the ranges above.
+- Without `timesheets.scope_provider` everybody is in one scope `''` (like `scope_mode: single`).
+- Server mode needs `symfony/http-client` (the framework `http_client`); without it a sync fails with `no_http_client`.
+- Public services for hosts: `Calendar\CalendarConnectionService`, `Calendar\CalendarRuleService`,
+  `Calendar\CalendarSyncService`, `Calendar\CalendarSuggestionService`, `Service\ManualEntryService`.
+
+```yaml
+nowo_time_track:
+  manual_entries:                   # POST entries (sources manual / calendar), Q-O7
+    enabled: false
+    max_age_days: 31                # oldest start accepted (1-366); accepted suggestions use calendar.lookback_days
+```
+
+- Client routes (`clients.routes.*`): `calendar_connections`, `calendar_connection_revoke`
+  (`/api/time-track/calendar/connections/{id}`, DELETE), `suggestions`, `suggestions_accept`, `suggestions_dismiss`,
+  `suggestions_resolve_keys`, `entries_create` (`POST /api/time-track/entries`); they answer 404 while their feature is
+  off.
+
+## Meetings API (1.14)
+
+Off by default; host guide in [MEETINGS.md](MEETINGS.md).
+
+```yaml
+nowo_time_track:
+  meetings:
+    enabled: false
+    provider: ~                      # MeetingProviderInterface service id (required when enabled)
+    max_range_days: 14               # 1..14
+    max_past_days: 1                 # 0..7
+    default_limit: 100               # 1..200
+    refresh_after_seconds: 300       # 60..3600, poll-gap hint to the clients
+    rate_limit: { per_hour: 60, per_minute: 6 }
+    jitsi_hosts: []                  # extra self-hosted Jitsi hosts (lowercase host names)
+    links_calendars_route: ~         # host route of the Calendars page (GET me links.calendars, https only)
+```
+
+- Client route `clients.routes.me_meetings` (`/api/time-track/me/meetings`, name `nowo_time_track_client_me_meetings`).
+- Refused at compile time: `enabled` without `provider`, values outside the ranges, a Jitsi host that is not a host name.
 
 ## Security
 

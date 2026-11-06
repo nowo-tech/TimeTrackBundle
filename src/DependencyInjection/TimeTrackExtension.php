@@ -7,8 +7,22 @@ namespace Nowo\TimeTrackBundle\DependencyInjection;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
+use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
+use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
+use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
+use Nowo\TimeTrackBundle\Calendar\CalendarRefHasher;
+use Nowo\TimeTrackBundle\Calendar\CalendarRuleService;
+use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
+use Nowo\TimeTrackBundle\Calendar\CalendarSuggestionService;
+use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
+use Nowo\TimeTrackBundle\Calendar\CalendarWorkingHours;
+use Nowo\TimeTrackBundle\Calendar\GoogleCalendarEventSource;
+use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarEventSource;
+use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Client\AlwaysActiveClientCredentialState;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
+use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
@@ -30,11 +44,14 @@ use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
+use Nowo\TimeTrackBundle\Command\CalendarSyncCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsPurgeCommand;
+use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
@@ -42,13 +59,22 @@ use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Meeting\MeetingContext;
+use Nowo\TimeTrackBundle\Meeting\MeetingLinkDetector;
+use Nowo\TimeTrackBundle\Meeting\MeetingQueryParser;
+use Nowo\TimeTrackBundle\Meeting\MeetingResponder;
+use Nowo\TimeTrackBundle\Meeting\MeetingSettings;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\CalendarRuleRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\CalendarSuggestionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmBalanceLedgerRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmCalendarRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
@@ -67,6 +93,7 @@ use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
+use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
@@ -93,6 +120,7 @@ use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
@@ -197,6 +225,11 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
                 ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+            if ($repoClass === DoctrineOrmTimeEntryRepository::class) {
+                // Since the delta GG-D-2 fix: warns when a user row cannot be locked.
+                $repoDefinition->setArgument('$logger', new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+                $repoDefinition->addTag('monolog.logger', ['channel' => 'time_track']);
+            }
             if (in_array($repoClass, [DoctrineOrmClientTokenRepository::class, DoctrineOrmDeviceAuthorizationRepository::class], true)) {
                 $repoDefinition->setArgument('$clock', new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE));
             }
@@ -215,6 +248,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$timesheetsTableName', $timesheetsTable)
             ->setArgument('$timesheetEventsTableName', $prefix . '_timesheet_events')
             ->setArgument('$balanceLedgerTableName', $prefix . '_balance_ledger')
+            ->setArgument('$calendarConnectionsTableName', $prefix . '_calendar_connections')
+            ->setArgument('$calendarSuggestionsTableName', $prefix . '_calendar_suggestions')
+            ->setArgument('$calendarRulesTableName', $prefix . '_calendar_rules')
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
         $loginRateLimit = $clients['login_rate_limit'];
@@ -334,7 +370,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         /** @var array{enabled: bool} $workingTime */
         $workingTime = $config['working_time'];
-        if ($enabled || $workingTime['enabled']) {
+        /** @var array{enabled: bool} $calendar */
+        $calendar = $config['calendar'];
+        // Since 1.14: calendar connections live in a tenant scope too ('' without a scope provider).
+        if ($enabled || $workingTime['enabled'] || $calendar['enabled']) {
             // Working time without timesheets and without a scope provider: one scope '' (like scope_mode single).
             $providerId = $timesheets['scope_provider'];
             if ($timesheets['scope_mode'] === 'single' || !is_string($providerId) || $providerId === '') {
@@ -369,6 +408,219 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $this->registerWorkingTime($container, $config, $scopeRef, $guardRef);
         $this->registerTimesheetWorkflow($container, $config, $scopeRef);
+        $this->registerCalendar($container, $config, $emRef, $scopeRef);
+    }
+
+    /**
+     * Since 1.14: calendar suggestions (contract §6) — the store (always mapped), the settings, the host resolver and
+     * credential provider, the Google / Microsoft adapters (only with an HTTP client), the matcher, the sync, connection
+     * and rule services and the sync command.
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerCalendar(ContainerBuilder $container, array $config, Reference $emRef, Reference $scopeRef): void
+    {
+        /** @var array{enabled: bool, credential_provider: string|null, task_key_resolver: string|null, providers: list<string>, modes: list<string>, lookback_days: int, suggestion_ttl_days: int, sync_interval_minutes: int, max_event_seconds: int, max_rules_per_user: int, max_pages: int} $calendar */
+        $calendar    = $config['calendar'];
+        $enabled     = $calendar['enabled'];
+        $clockRef    = new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $loggerRef   = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $dispatchRef = new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $container->setParameter('nowo_time_track.calendar', $calendar);
+        $container->setParameter('nowo_time_track.calendar.enabled', $enabled);
+
+        $container->setDefinition(DoctrineOrmCalendarRepository::class, (new Definition(DoctrineOrmCalendarRepository::class))
+            ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)]));
+        foreach ([CalendarConnectionRepositoryInterface::class, CalendarSuggestionRepositoryInterface::class, CalendarRuleRepositoryInterface::class] as $interface) {
+            $container->setAlias($interface, DoctrineOrmCalendarRepository::class);
+        }
+        $container->setDefinition(CalendarSettings::class, (new Definition(CalendarSettings::class))
+            ->setArguments([
+                '$enabled'             => $enabled,
+                '$providers'           => $calendar['providers'],
+                '$modes'               => $calendar['modes'],
+                '$lookbackDays'        => $calendar['lookback_days'],
+                '$suggestionTtlDays'   => $calendar['suggestion_ttl_days'],
+                '$syncIntervalMinutes' => $calendar['sync_interval_minutes'],
+                '$maxEventSeconds'     => $calendar['max_event_seconds'],
+                '$maxRulesPerUser'     => $calendar['max_rules_per_user'],
+            ]));
+        $resolverId   = $calendar['task_key_resolver'];
+        $credentialId = $calendar['credential_provider'];
+        $resolverRef  = $enabled && is_string($resolverId) && $resolverId !== '' ? new Reference($resolverId) : null;
+        $credentials  = $enabled && is_string($credentialId) && $credentialId !== '' ? new Reference($credentialId) : null;
+        if ($resolverRef instanceof Reference) {
+            $container->setAlias(TaskKeyResolverInterface::class, (string) $resolverRef);
+        }
+        $container->setDefinition(CalendarRefHasher::class, (new Definition(CalendarRefHasher::class))
+            ->setArguments(['$secret' => '%kernel.secret%']));
+        $container->setDefinition(CalendarWorkingHours::class, (new Definition(CalendarWorkingHours::class))
+            ->setArguments(['$profileProvider' => new Reference(ClientUserProfileProviderInterface::class), '$logger' => $loggerRef])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $matcher = null;
+        if ($resolverRef instanceof Reference) {
+            $container->setDefinition(CalendarEventMatcher::class, (new Definition(CalendarEventMatcher::class))
+                ->setArguments([
+                    '$resolver'   => $resolverRef,
+                    '$taskAccess' => new Reference(TaskAccessCheckerInterface::class),
+                    '$hasher'     => new Reference(CalendarRefHasher::class),
+                    '$settings'   => new Reference(CalendarSettings::class),
+                ]));
+            $matcher = new Reference(CalendarEventMatcher::class);
+        }
+        $sources = [];
+        // The adapters need symfony/http-client (a `suggest`): without the framework `http_client` a sync fails with
+        // the code `no_http_client`.
+        if ($enabled && $credentials instanceof Reference) {
+            $container->setDefinition(CalendarHttpClient::class, (new Definition(CalendarHttpClient::class))
+                ->setArguments(['$httpClient' => new Reference('http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE), '$clock' => $clockRef]));
+            foreach ([GoogleCalendarEventSource::class, MicrosoftCalendarEventSource::class] as $sourceClass) {
+                $container->setDefinition($sourceClass, (new Definition($sourceClass))
+                    ->setArguments(['$http' => new Reference(CalendarHttpClient::class), '$maxPages' => $calendar['max_pages']]));
+                $sources[] = new Reference($sourceClass);
+            }
+        }
+        $container->setDefinition(CalendarConnectionService::class, (new Definition(CalendarConnectionService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$connections'     => new Reference(CalendarConnectionRepositoryInterface::class),
+                '$settings'        => new Reference(CalendarSettings::class),
+                '$scopeProvider'   => $resolverRef instanceof Reference ? $scopeRef : null,
+                '$credentials'     => $credentials,
+                '$eventDispatcher' => $dispatchRef,
+                '$clock'           => $clockRef,
+            ]));
+        $container->setDefinition(CalendarRuleService::class, (new Definition(CalendarRuleService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$rules'       => new Reference(CalendarRuleRepositoryInterface::class),
+                '$connections' => new Reference(CalendarConnectionService::class),
+                '$taskAccess'  => new Reference(TaskAccessCheckerInterface::class),
+                '$settings'    => new Reference(CalendarSettings::class),
+                '$clock'       => $clockRef,
+            ]));
+        $container->setDefinition(CalendarSyncService::class, (new Definition(CalendarSyncService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$connections'     => new Reference(CalendarConnectionRepositoryInterface::class),
+                '$suggestions'     => new Reference(CalendarSuggestionRepositoryInterface::class),
+                '$rules'           => new Reference(CalendarRuleRepositoryInterface::class),
+                '$settings'        => new Reference(CalendarSettings::class),
+                '$workingHours'    => new Reference(CalendarWorkingHours::class),
+                '$matcher'         => $matcher,
+                '$sources'         => new IteratorArgument($sources),
+                '$credentials'     => $credentials,
+                '$eventDispatcher' => $dispatchRef,
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        // Since 1.14 (contract §12.4): personal-data export of the calendar tables.
+        $container->setDefinition(CalendarPersonalDataExporter::class, (new Definition(CalendarPersonalDataExporter::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$connections' => new Reference(CalendarConnectionRepositoryInterface::class),
+                '$rules'       => new Reference(CalendarRuleRepositoryInterface::class),
+                '$suggestions' => new Reference(CalendarSuggestionRepositoryInterface::class),
+            ]));
+        $container->setDefinition(CalendarSyncCommand::class, (new Definition(CalendarSyncCommand::class))
+            ->setArguments(['$sync' => new Reference(CalendarSyncService::class)])
+            ->addTag('console.command'));
+
+        // Since 1.14: entries without a timer (POST entries, accepted suggestions) and the calendar client API.
+        /** @var array{enabled: bool, max_age_days: int} $manual */
+        $manual = $config['manual_entries'];
+        $container->setParameter('nowo_time_track.manual_entries', $manual);
+        $container->setDefinition(ManualEntryService::class, (new Definition(ManualEntryService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$timerService'    => new Reference(TimerService::class),
+                '$entries'         => new Reference(TimeEntryRepositoryInterface::class),
+                '$timers'          => new Reference(ActiveTimerRepositoryInterface::class),
+                '$taskAccess'      => new Reference(TaskAccessCheckerInterface::class),
+                '$eventDispatcher' => $dispatchRef,
+                '$enabled'         => $manual['enabled'],
+                '$maxAgeDays'      => $manual['max_age_days'],
+                '$periodLockGuard' => new Reference(PeriodLockGuard::class),
+                '$scopeProvider'   => $scopeRef,
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(CalendarSuggestionService::class, (new Definition(CalendarSuggestionService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$suggestions'     => new Reference(CalendarSuggestionRepositoryInterface::class),
+                '$entries'         => new Reference(ManualEntryService::class),
+                '$taskAccess'      => new Reference(TaskAccessCheckerInterface::class),
+                '$settings'        => new Reference(CalendarSettings::class),
+                '$resolver'        => $resolverRef,
+                '$eventDispatcher' => $dispatchRef,
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->getDefinition(TimeTrackCalendarApiController::class)
+            ->setArgument('$clock', $clockRef);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$calendar', new Reference(CalendarConnectionService::class))
+            ->setArgument('$manualEntries', new Reference(ManualEntryService::class));
+
+        $this->registerMeetings($container, $config, $clockRef, $loggerRef);
+    }
+
+    /**
+     * Since 1.14 (contract §22): the meetings API — settings, link detector, query parser, responder, the `GET me`
+     * context and the controller. The host provider is required when enabled (checked by the configuration).
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerMeetings(ContainerBuilder $container, array $config, Reference $clockRef, Reference $loggerRef): void
+    {
+        /** @var array{enabled: bool, provider: string|null, max_range_days: int, max_past_days: int, default_limit: int, refresh_after_seconds: int, rate_limit: array{per_hour: int, per_minute: int}, jitsi_hosts: list<string>, links_calendars_route: string|null} $meetings */
+        $meetings = $config['meetings'];
+        $provider = $meetings['provider'];
+        $container->setParameter('nowo_time_track.meetings', $meetings);
+        $container->setDefinition(MeetingSettings::class, (new Definition(MeetingSettings::class))
+            ->setArguments([
+                '$enabled'             => $meetings['enabled'],
+                '$maxRangeDays'        => $meetings['max_range_days'],
+                '$maxPastDays'         => $meetings['max_past_days'],
+                '$defaultLimit'        => $meetings['default_limit'],
+                '$refreshAfterSeconds' => $meetings['refresh_after_seconds'],
+                '$perHour'             => $meetings['rate_limit']['per_hour'],
+                '$perMinute'           => $meetings['rate_limit']['per_minute'],
+                '$calendarsRoute'      => $meetings['links_calendars_route'],
+            ]));
+        $container->setDefinition(MeetingLinkDetector::class, (new Definition(MeetingLinkDetector::class))
+            ->setArguments(['$jitsiHosts' => $meetings['jitsi_hosts']]));
+        $container->setDefinition(MeetingQueryParser::class, (new Definition(MeetingQueryParser::class))
+            ->setArguments(['$settings' => new Reference(MeetingSettings::class)]));
+        $container->setDefinition(MeetingResponder::class, (new Definition(MeetingResponder::class))
+            ->setArguments(['$links' => new Reference(MeetingLinkDetector::class), '$taskAccess' => new Reference(TaskAccessCheckerInterface::class)]));
+        $container->setDefinition(MeetingContext::class, (new Definition(MeetingContext::class))
+            ->setArguments([
+                '$settings'     => new Reference(MeetingSettings::class),
+                '$provider'     => $meetings['enabled'] && is_string($provider) && $provider !== '' ? new Reference($provider) : null,
+                '$urlGenerator' => new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'       => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->getDefinition(TimeTrackMeetingsApiController::class)
+            ->setArguments([
+                '$guard'           => new Reference(ClientApiGuard::class),
+                '$responseFactory' => new Reference(ClientResponseFactory::class),
+                '$rateLimiter'     => new Reference(ClientApiRateLimiter::class),
+                '$profileProvider' => new Reference(ClientUserProfileProviderInterface::class),
+                '$context'         => new Reference(MeetingContext::class),
+                '$parser'          => new Reference(MeetingQueryParser::class),
+                '$responder'       => new Reference(MeetingResponder::class),
+                '$settings'        => new Reference(MeetingSettings::class),
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$meetings', new Reference(MeetingContext::class));
     }
 
     /**

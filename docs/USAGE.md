@@ -9,6 +9,7 @@
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
 - [Imported entries (1.11)](#imported-entries-111)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
+- [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Events](#events)
 
 ## Web UI
@@ -297,7 +298,42 @@ The posted forms go to your routes; hand the request to `Timesheet\TimesheetForm
 `handleLedger()`. The `nowo_time_track_duration` filter formats seconds as `H:MM` (`|nowo_time_track_duration(true)` adds
 the sign).
 
-## Events
+## Calendar suggestions (1.14)
+
+Opt-in per user and scope; nothing is read until the user connects a calendar in your app. The host owns OAuth and the
+tokens; the bundle owns the read-only adapters, the matching and the suggestions.
+
+```php
+// After your OAuth flow (server mode): record the consent with your token reference.
+$connection = $calendarConnections->connect($user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, $tokenRef, '2026-11');
+// The desktop reads the calendar itself (local mode): only the consent is recorded.
+$calendarConnections->connect($user, 'org-a', CalendarProvider::Microsoft, CalendarConnectionMode::Local, null, '2026-11');
+
+// A rule for keyless events (literal, case-insensitive; matches grouped per ISO week).
+$calendarRules->create($user, 'org-a', 'stand-up', $taskId);
+
+// Disconnect: your CalendarCredentialProviderInterface::revoke() runs first, then everything derived is deleted.
+$calendarConnections->revoke($user, $connection->getId());
+```
+
+`nowo:time-track:calendar:sync` (schedule it, e.g. every 15 minutes) reads each due server-mode connection inside its
+owner's working hours: events of the primary calendar of the last `calendar.lookback_days` that have ended, whose title
+carries a key your `TaskKeyResolverInterface` resolves (or that a user rule matches) and whose task the user can track.
+Recurring events of one series (or one grouping rule) in one ISO week share a `group_key`.
+
+The owner's side (also behind the client API, [CLIENT-API.md](CLIENT-API.md#changes-in-114-calendar-suggestions-manual-entries)):
+
+```php
+$list     = $calendarSuggestions->pending($user, 'org-a', $from, $to);          // {groups, singles}
+$outcomes = $calendarSuggestions->accept($user, $ids, null, null, 'note');      // one `calendar` entry per occurrence
+$calendarSuggestions->dismiss($user, null, $groupKey);
+
+// Entries without a timer (POST entries; refuses overlaps, locked periods, > 24 h, future, too old)
+$entry = $manualEntries->create($user, $taskId, $start, $end, TimeEntrySource::Manual, 'Fixed the build');
+```
+
+`TimeTrackEvents::TIME_ENTRY_CREATED` fires for each of these entries (TaskBoard aggregates it).
+
 
 Since 1.11: `TimeTrackEvents::TIME_ENTRY_IMPORTED` (`TimeEntryImportedEvent`) after an imported entry is created or
 changed, and `TimeTrackEvents::TIME_ENTRIES_REMOVED` (`TimeEntriesRemovedEvent`: scope, count, seconds per task, owner

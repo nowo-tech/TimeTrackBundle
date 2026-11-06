@@ -10,6 +10,7 @@
 - [Imported entries (1.11)](#imported-entries-111)
 - [Timesheets, balance and lock (1.13)](#timesheets-balance-and-lock-113)
 - [Task effort on the client API (1.13)](#task-effort-on-the-client-api-113)
+- [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -145,6 +146,38 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   is why it is limited to managers. A provider that fills `TaskReference::$loggedSeconds` itself must apply the same rule
   (the value is shown as given, labelled by that rule).
 - `loggedSecondsScope` (`own` / `all`) tells clients which of the two the figure is.
+
+## Calendar suggestions and meetings (1.14)
+
+| Threat | Control |
+| --- | --- |
+| Reading more of a calendar than needed | Primary calendar only, `[now − lookback_days, now]`; Google `fields` / Graph `$select` masks with no description, location, organiser, attendee identity or conference data; least-privilege scopes (`calendar.events.readonly`, `Calendars.ReadBasic`) |
+| Storing event data | Events live only in memory during a sync (`CalendarEventView`: redacted debug output, serialization throws). A suggestion keeps the task, the time range and keyed HMAC references (`event_ref`, `series_ref`; per-user key derived from the kernel secret) — never a title, attendee, location, link, calendar name or provider id. Unmatched events are only counted |
+| Tokens leaking | No token in the bundle: the host returns a `CalendarCredential` per sync (`#[SensitiveParameter]`, redacted, not serializable); `credential_ref` is an opaque host id and never leaves the API |
+| Hostile or compromised provider responses | GET only, constant base URIs (Graph next links only under the same base), no redirects, 10 s timeout, 2 MB per page, `max_pages`; errors stored as codes (`last_error_code`), never provider messages |
+| Rate limits / provider abuse | A 429 waits once for a short `Retry-After` (≤ 5 s), then the sync stops with `rate_limited` until the next interval |
+| Night-time processing (LOPDGDD art. 88) | The scheduled sync reads a calendar only inside its owner's working hours; unknown hours are never inside |
+| Other people seeing calendar data | Connections, rules and suggestions are owner-only services; no approver, manager or admin path exists |
+| Regex denial of service in user rules | Rules are literal substrings (`mb_stripos`), at most 120 characters and `max_rules_per_user` per scope; control and format characters refused |
+| Leaving data behind | Revoke calls the host `revoke()` (token and grant) first, then deletes the connection, its suggestions and the user's rules in that scope; account deletion cascades; suggestions expire `suggestion_ttl_days` after the event |
+| Titles in logs, events or exceptions | Logs and events carry ids, codes and counts only (marker-string tests over rows, logs and events) |
+| Suggestions for events that are gone (audit GG-L3) | After a complete read of the window, pending suggestions of that connection whose event was not seen again (moved, cancelled, declined, key removed) are deleted; accepted and dismissed rows stay (the DELETE carries `status = pending`, so a row a concurrent accept decided is kept, delta GG-D-5). A read cut at `max_pages` deletes nothing |
+| Sync starvation and batch aborts (audit GG-L5) | Due order is "never attempted, then least recently attempted"; a failure records `last_attempt_at` and backs off (2 × interval, doubling, at most a day; a reconnect clears it); outside-hours rows do not use the run limit; any exception of the host, the store or a listener is a per-connection `internal_error` (logged by class), so neither the batch nor `refresh=1` fails. Only connections of enabled providers are due; one whose provider was removed from `calendar.providers` is recorded as `not_syncable` with the same backoff, and a row met twice in one run is skipped (delta GG-D-1) |
+| Hostile titles against the host key extractor (audit GG-I4) | Titles are cut to 1024 characters before `TaskKeyResolverInterface::extractKeys()` and rule matching; hosts MUST use linear-time matching (no backtracking regex) |
+| Erasure and secret rotation (audit GG-I8) | `CalendarConnectionService::revokeAllFor($user)` revokes every connection (host token and grant first) in one call; call it before deleting an account (the database cascade alone does not reach the host). Rotating `kernel.secret` changes every `event_ref`: dismissed events are suggested once more |
+| Duplicate or overlapping entries from concurrent requests (audit GG-L1) | `POST entries` and every accepted occurrence run the period lock check, the overlap check and the insert in one transaction holding the user's row lock (`SELECT … FOR UPDATE`, `UserSerialisedTimeEntryRepositoryInterface`; SQLite serialises writers). The `Idempotency-Key` is re-read and its answer stored under that lock, so a concurrent request with the same key replays; accept and dismiss re-read the suggestion under the lock, so it is decided once. A host replacement of the entry store without that capability keeps the race. A user the manager does not manage is locked by id (warning when no row can be locked, delta GG-D-2); the 201 answer is stored after the commit (delta GG-D-3) |
+| Half-applied accepts (audit GG-L2) | One transaction per occurrence covers the entry and the accepted status; `TIME_ENTRY_CREATED` and `CALENDAR_SUGGESTION_DECIDED` are dispatched after the commit (a throwing listener of either is logged by class and does not undo anything or fail the request, delta GG-D-4); any exception of an occurrence is its own `internal_error` outcome and the others go on |
+| Task ids of tasks the user cannot track (audit GG-L4) | `resolve-keys` leaves such keys out exactly like unknown keys (no task id, no title) |
+| Client caches (audit GG-I1) | Calendar, suggestion and `POST entries` answers carry `Cache-Control: no-store, private` |
+| Rate limiter properties (audit GG-I2) | Fixed windows on the shared PSR-6 pool: up to twice the limit across a window edge, increments not atomic (a few hits may be lost under concurrency), counted per token (a user with several tokens gets each limit per token); accept, dismiss and revoke have only the global per-token limit. Put a reverse-proxy limit in front where hard guarantees matter |
+| `source: calendar` provenance (audit GG-I3) | `POST entries` accepts `source: calendar` from the desktop's local mode without a stored suggestion: it states the client's claim, not evidence of a real event. Only entries created by an accepted suggestion are backed by the bundle's own sync |
+| Long on-demand refreshes (audit GG-I7) | `refresh=1` (once per 5 minutes per token) syncs inline: at most `max_pages` pages × 20 s plus one ≤ 5 s wait per connection. Keep `max_pages` low (default 10) or let the scheduled command do the work |
+| Meetings API: reading someone else's calendar | No user parameter exists; unknown query parameters are refused (400 `unknown_parameter`); the provider receives the authenticated user only; `meetings:read` needs an explicit grant |
+| Meetings API: personal data leaving through the client API | Field whitelist (JSON schema with `additionalProperties: false`); private events cleared even when the host leaks them; internal attendees `{id, name}` only, ≤ 50, never the caller; external attendees as a count; task links only for trackable tasks; titles cleaned and cut |
+| Meetings API: hostile join links | `MeetingLinkDetector`: https, no user information, port 443 only, no whitespace / control / quote / angle-bracket / backslash characters, ASCII host on the allow-list (Teams, Meet, Zoom, Jitsi, Webex), ≤ 2048 characters; ChatKit 1.19 vectors plus look-alikes in tests |
+| Meetings API: caches and logs | `Cache-Control: no-store`, `Pragma: no-cache`, `Vary: Authorization`, `nosniff`, no validators on every answer; nothing stored or cached by the bundle; the access log has status, count, dropped and duration only (join links often carry passcodes); provider exceptions answer 503 without their message and are logged by class |
+| Meetings API: feature probing (audit GG-I5) | With the feature off (or no provider) the route answers 404 before authentication, so an anonymous caller can tell whether meetings are on for the instance; it learns nothing about any user. Kept on purpose (contract §22.2: off = 404) |
+| Meetings API: polling abuse | 6 / min and 60 / h per token on top of the global limits; 429 with an integer `Retry-After`; clients respect `refreshAfterSeconds` |
 
 ## Secrets & cryptography
 

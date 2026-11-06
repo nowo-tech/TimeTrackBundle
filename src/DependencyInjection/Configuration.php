@@ -176,6 +176,9 @@ final class Configuration implements ConfigurationInterface
                 ->end()
                 ->append($this->workingTimeNode())
                 ->append($this->timesheetsNode())
+                ->append($this->calendarNode())
+                ->append($this->manualEntriesNode())
+                ->append($this->meetingsNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
                     ->addDefaultsIfNotSet()
@@ -442,6 +445,64 @@ final class Configuration implements ConfigurationInterface
                                     ->children()
                                         ->scalarNode('path')->defaultValue('/api/time-track/timesheets/{periodKey}/withdraw')->end()
                                         ->scalarNode('name')->defaultValue('nowo_time_track_api_timesheet_withdraw')->end()
+                                    ->end()
+                                ->end()
+                                // Since 1.14 (contract §10.3).
+                                ->arrayNode('calendar_connections')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/calendar/connections')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_calendar_connections')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('calendar_connection_revoke')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/calendar/connections/{id}')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_calendar_connection_revoke')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions_accept')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions/accept')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions_accept')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions_dismiss')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions/dismiss')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions_dismiss')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('suggestions_resolve_keys')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/suggestions/resolve-keys')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_suggestions_resolve_keys')->end()
+                                    ->end()
+                                ->end()
+                                ->arrayNode('entries_create')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/entries')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_entries_create')->end()
+                                    ->end()
+                                ->end()
+                                // Since 1.14 (contract §22.2).
+                                ->arrayNode('me_meetings')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/me/meetings')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_client_me_meetings')->end()
                                     ->end()
                                 ->end()
                             ->end()
@@ -809,6 +870,125 @@ final class Configuration implements ConfigurationInterface
             ->validate()
                 ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['approver_provider']))
                 ->thenInvalid('timesheets.approver_provider is required when timesheets are enabled (nobody could approve).')
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.14: `calendar` (contract §6, §13): calendar suggestions from Google / Microsoft 365 events whose title
+     * carries a task key. Off by default; on needs a task-key resolver, and server mode a credential provider.
+     */
+    private function calendarNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('calendar'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('Calendar suggestions, their client API and the sync command (default off).')
+                    ->defaultFalse()
+                ->end()
+                ->scalarNode('credential_provider')
+                    ->info('Service id implementing CalendarCredentialProviderInterface (host OAuth tokens; required for server mode).')
+                    ->defaultNull()
+                ->end()
+                ->scalarNode('task_key_resolver')
+                    ->info('Service id implementing TaskKeyResolverInterface (host task keys; required when enabled).')
+                    ->defaultNull()
+                ->end()
+                ->arrayNode('providers')
+                    ->info('Enabled providers.')
+                    ->enumPrototype()->values(['google', 'microsoft'])->end()
+                    ->defaultValue(['google', 'microsoft'])
+                ->end()
+                ->arrayNode('modes')
+                    ->info('Enabled modes: server (bundle adapters, host tokens) and/or local (the desktop reads the calendar).')
+                    ->enumPrototype()->values(['server', 'local'])->end()
+                    ->defaultValue(['server'])
+                ->end()
+                ->integerNode('lookback_days')->info('Past days read per sync (events end before now; future events are never suggested).')->defaultValue(14)->min(1)->max(14)->end()
+                ->integerNode('suggestion_ttl_days')->info('Days a suggestion is kept after its event ends.')->defaultValue(14)->min(1)->max(31)->end()
+                ->integerNode('sync_interval_minutes')->info('Minutes between two scheduled syncs of one connection.')->defaultValue(60)->min(5)->max(1440)->end()
+                ->integerNode('max_event_seconds')->info('Longer events are ignored (default 8 h).')->defaultValue(28_800)->min(60)->max(86_400)->end()
+                ->integerNode('max_rules_per_user')->info('User rules per scope.')->defaultValue(20)->min(0)->max(100)->end()
+                ->integerNode('max_pages')->info('Provider pages read per sync.')->defaultValue(10)->min(1)->max(50)->end()
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['task_key_resolver']))
+                ->thenInvalid('calendar.task_key_resolver is required when calendar suggestions are enabled.')
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && in_array('server', $v['modes'], true) && !is_string($v['credential_provider']))
+                ->thenInvalid('calendar.credential_provider is required when the server mode is enabled.')
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.14: `manual_entries` (contract §10.3, Q-O7): `POST entries` for past entries without a timer (sources
+     * `manual` and `calendar`). Off by default.
+     */
+    private function manualEntriesNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('manual_entries'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')
+                    ->info('POST entries on the client API (default off). Accepting calendar suggestions does not depend on it.')
+                    ->defaultFalse()
+                ->end()
+                ->integerNode('max_age_days')
+                    ->info('Oldest accepted start, in days before now.')
+                    ->defaultValue(31)
+                    ->min(1)
+                    ->max(366)
+                ->end()
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.14: `meetings` (contract §22.9, spec 210): the caller's own meetings on the client API from a host
+     * provider. Off by default; enabled needs a provider.
+     */
+    private function meetingsNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('meetings'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('enabled')->info('GET me/meetings and the GET me meeting keys (default off).')->defaultFalse()->end()
+                ->scalarNode('provider')->info('Service id implementing MeetingProviderInterface (required when enabled).')->defaultNull()->end()
+                ->integerNode('max_range_days')->info('Longest from-to range.')->defaultValue(14)->min(1)->max(14)->end()
+                ->integerNode('max_past_days')->info('How far back from may go (host retention: 7 days).')->defaultValue(1)->min(0)->max(7)->end()
+                ->integerNode('default_limit')->defaultValue(100)->min(1)->max(200)->end()
+                ->integerNode('refresh_after_seconds')->info('Default poll-gap hint to the clients.')->defaultValue(300)->min(60)->max(3600)->end()
+                ->arrayNode('rate_limit')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->integerNode('per_hour')->defaultValue(60)->min(1)->end()
+                        ->integerNode('per_minute')->defaultValue(6)->min(1)->end()
+                    ->end()
+                ->end()
+                ->arrayNode('jitsi_hosts')
+                    ->info('Extra self-hosted Jitsi hosts accepted as join links (host names only).')
+                    ->scalarPrototype()
+                        ->validate()
+                            ->ifTrue(static fn (mixed $v): bool => !is_string($v) || preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/D', $v) !== 1)
+                            ->thenInvalid('meetings.jitsi_hosts takes lowercase host names only, got %s.')
+                        ->end()
+                    ->end()
+                    ->defaultValue([])
+                ->end()
+                ->scalarNode('links_calendars_route')->info('Host route name of Account → Integrations → Calendars (GET me links.calendars; https only).')->defaultNull()->end()
+            ->end()
+            ->validate()
+                ->ifTrue(static fn (array $v): bool => $v['enabled'] && !is_string($v['provider']))
+                ->thenInvalid('meetings.provider is required when the meetings API is enabled.')
             ->end();
 
         return $node;
