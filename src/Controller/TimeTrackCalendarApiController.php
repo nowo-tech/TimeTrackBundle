@@ -16,8 +16,10 @@ use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Exception\IdempotentReplayException;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
@@ -95,6 +97,14 @@ final readonly class TimeTrackCalendarApiController
      */
     public function connections(Request $request): Response
     {
+        return $this->noStore($this->doConnections($request));
+    }
+
+    /**
+     * Answer of {@see self::connections()}.
+     */
+    private function doConnections(Request $request): Response
+    {
         $principal = $this->authorize($request, ClientScope::SuggestionsRead);
         if ($principal instanceof Response) {
             return $principal;
@@ -117,6 +127,14 @@ final readonly class TimeTrackCalendarApiController
      */
     public function connectionRevoke(Request $request, string $id): Response
     {
+        return $this->noStore($this->doConnectionRevoke($request, $id));
+    }
+
+    /**
+     * Answer of {@see self::connectionRevoke()}.
+     */
+    private function doConnectionRevoke(Request $request, string $id): Response
+    {
         $principal = $this->authorize($request, ClientScope::SuggestionsWrite);
         if ($principal instanceof Response) {
             return $principal;
@@ -130,6 +148,14 @@ final readonly class TimeTrackCalendarApiController
      * `calendar.lookback_days`. `refresh=1` syncs the user's server-mode connections first (once per 5 minutes).
      */
     public function suggestions(Request $request): Response
+    {
+        return $this->noStore($this->doSuggestions($request));
+    }
+
+    /**
+     * Answer of {@see self::suggestions()}.
+     */
+    private function doSuggestions(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::SuggestionsRead);
         if ($principal instanceof Response) {
@@ -171,6 +197,14 @@ final readonly class TimeTrackCalendarApiController
      */
     public function accept(Request $request): Response
     {
+        return $this->noStore($this->doAccept($request));
+    }
+
+    /**
+     * Answer of {@see self::accept()}.
+     */
+    private function doAccept(Request $request): Response
+    {
         $principal = $this->authorize($request, ClientScope::SuggestionsWrite);
         if ($principal instanceof Response) {
             return $principal;
@@ -199,6 +233,14 @@ final readonly class TimeTrackCalendarApiController
      */
     public function dismiss(Request $request): Response
     {
+        return $this->noStore($this->doDismiss($request));
+    }
+
+    /**
+     * Answer of {@see self::dismiss()}.
+     */
+    private function doDismiss(Request $request): Response
+    {
         $principal = $this->authorize($request, ClientScope::SuggestionsWrite);
         if ($principal instanceof Response) {
             return $principal;
@@ -219,6 +261,14 @@ final readonly class TimeTrackCalendarApiController
      * trackable}}}`. Keys only reach the server (≤ 50, each ≤ 32 characters); 60 calls per minute per token.
      */
     public function resolveKeys(Request $request): Response
+    {
+        return $this->noStore($this->doResolveKeys($request));
+    }
+
+    /**
+     * Answer of {@see self::resolveKeys()}.
+     */
+    private function doResolveKeys(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::SuggestionsRead);
         if ($principal instanceof Response) {
@@ -248,6 +298,14 @@ final readonly class TimeTrackCalendarApiController
      * 409 `period_locked` / `period_submitted` / `overlap`; 422 for the times; 403 `task_forbidden`.
      */
     public function createEntry(Request $request): Response
+    {
+        return $this->noStore($this->doCreateEntry($request));
+    }
+
+    /**
+     * Answer of {@see self::createEntry()}.
+     */
+    private function doCreateEntry(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::EntriesWrite);
         if ($principal instanceof Response) {
@@ -284,10 +342,27 @@ final readonly class TimeTrackCalendarApiController
             return $this->tooManyRequests($request, $retry);
         }
 
+        $idempotencyKey = 'entries:' . $key;
         try {
-            $entry  = $this->entries->create($principal->user, $taskId, $start, $end, $source, $note, ['origin' => $source->value]);
-            $status = Response::HTTP_CREATED;
-            $body   = ['entry' => $entry->toArray() + ['locked' => false]];
+            // GG-L1: under the user's lock, a concurrent request with the same key is replayed, and the answer is stored
+            // before the lock is released.
+            // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+            $entry = $this->entries->create($principal->user, $taskId, $start, $end, $source, $note, ['origin' => $source->value], null, function () use ($userId, $idempotencyKey, $bodyHash): void {
+                $again = $this->idempotency->find($userId, $idempotencyKey, $bodyHash);
+                if ($again === false) {
+                    throw new IdempotentReplayException(Response::HTTP_UNPROCESSABLE_ENTITY, ['error' => 'idempotency_mismatch', 'message' => 'This Idempotency-Key was used with another request.']);
+                }
+                if ($again !== null) {
+                    throw new IdempotentReplayException($again['status'], $again['body']);
+                }
+                // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+            }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash): void {
+                $this->idempotency->save($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $entry->toArray() + ['locked' => false]]);
+            });
+
+            return $this->responseFactory->json(['entry' => $entry->toArray() + ['locked' => false]], Response::HTTP_CREATED, $request);
+        } catch (IdempotentReplayException $replay) {
+            return $this->responseFactory->json($replay->body, $replay->status, $request);
         } catch (ManualEntryException $e) {
             if ($e->errorCode === ManualEntryException::NOT_TRACKABLE) {
                 return $this->responseFactory->error('task_forbidden', 'You may not track time on this task.', Response::HTTP_FORBIDDEN, $request);
@@ -301,7 +376,7 @@ final readonly class TimeTrackCalendarApiController
                 $body['lockedThrough'] = $e->getLockedThrough();
             }
         }
-        $this->idempotency->save($userId, 'entries:' . $key, $bodyHash, $status, $body);
+        $this->idempotency->save($userId, $idempotencyKey, $bodyHash, $status, $body);
 
         return $this->responseFactory->json($body, $status, $request);
     }
@@ -388,6 +463,17 @@ final readonly class TimeTrackCalendarApiController
     private function tooManyRequests(Request $request, int $retryAfter): JsonResponse
     {
         return $this->responseFactory->error('rate_limited', 'Too many requests. Try again later.', Response::HTTP_TOO_MANY_REQUESTS, $request, ['Retry-After' => (string) $retryAfter]);
+    }
+
+    /**
+     * GG-I1: personal data on these routes; nothing keeps a copy.
+     */
+    private function noStore(Response $response): Response
+    {
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->set('Cache-Control', 'no-store, private');
+
+        return $response;
     }
 
     private function notFound(Request $request): JsonResponse

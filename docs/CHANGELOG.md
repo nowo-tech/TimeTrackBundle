@@ -96,11 +96,16 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
 - **Events** `TIME_ENTRY_CREATED` (`TimeEntryCreatedEvent`, for TaskBoard's time totals) and
   `CALENDAR_SUGGESTION_DECIDED` (ids only).
 - `Support\Rfc3339`: the strict date-time profile of the 1.14 routes.
+- Write hardening (audit GG): `POST entries` and suggestion accept / dismiss run under a per-user row lock
+  (`UserSerialisedTimeEntryRepositoryInterface`), with the `Idempotency-Key` re-checked and stored under it (GG-L1);
+  one transaction per accepted occurrence, events after the commit, per-occurrence `internal_error` (GG-L2);
+  `resolve-keys` leaves out keys of untrackable tasks (GG-L4); `no-store` on the calendar routes (GG-I1); CORS allows
+  `Idempotency-Key` (GG-I6).
 
 ### Changed
 
 - `symfony/http-client` is a new `suggest` (calendar server mode) and a dev dependency.
-- CORS `Access-Control-Allow-Methods` lists `DELETE` too.
+- CORS `Access-Control-Allow-Methods` lists `DELETE` and `Access-Control-Allow-Headers` lists `Idempotency-Key` too.
 
 ## [1.13.0] - 2026-11-05
 

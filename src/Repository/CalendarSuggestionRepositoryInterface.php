@@ -65,4 +65,9 @@ interface CalendarSuggestionRepositoryInterface
      * @param list<string> $seenRefs Event references matched by the sync
      */
     public function deleteUnseenPending(string $connectionId, DateTimeImmutable $from, DateTimeImmutable $to, array $seenRefs): int;
+
+    /**
+     * Since the GG fixes: whether the suggestion is still pending in the database (read fresh, under the caller's lock).
+     */
+    public function isStillPending(CalendarSuggestion $suggestion): bool;
 }

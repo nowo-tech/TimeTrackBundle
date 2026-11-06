@@ -21,6 +21,8 @@ use Throwable;
 
 use function array_fill_keys;
 use function array_map;
+use function is_array;
+use function is_string;
 use function max;
 
 /**
@@ -314,6 +316,24 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         }
 
         return $deleted;
+    }
+
+    /**
+     * Whether the suggestion row is still pending (a fresh read, not the identity map).
+     */
+    public function isStillPending(CalendarSuggestion $suggestion): bool
+    {
+        $status = $this->entityManager->createQueryBuilder()
+            ->select('s.status')
+            ->from(CalendarSuggestion::class, 's')
+            ->where('s.id = :id')
+            ->setParameter('id', $suggestion->getId())
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        $value = is_array($status) ? ($status['status'] ?? null) : null;
+
+        return ($value instanceof CalendarSuggestionStatus ? $value : CalendarSuggestionStatus::tryFrom(is_string($value) ? $value : '')) === CalendarSuggestionStatus::Pending;
     }
 
     /**

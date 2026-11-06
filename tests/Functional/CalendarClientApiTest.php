@@ -25,7 +25,9 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
+use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
+use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -96,6 +98,8 @@ final class CalendarClientApiTest extends FunctionalTestCase
         $this->api('OPTIONS', '/api/time-track/suggestions', null, null, ['HTTP_ORIGIN' => 'chrome-extension://functional']);
         self::assertResponseStatusCodeSame(204);
         self::assertSame('GET, POST, DELETE, OPTIONS', $this->client->getResponse()->headers->get('Access-Control-Allow-Methods'));
+        self::assertSame('Authorization, Content-Type, Idempotency-Key', $this->client->getResponse()->headers->get('Access-Control-Allow-Headers'), 'GG-I6');
+        self::assertSame('no-store, private', $this->client->getResponse()->headers->get('Cache-Control'), 'GG-I1');
     }
 
     public function testMeFlagsAndConnections(): void
@@ -141,6 +145,7 @@ final class CalendarClientApiTest extends FunctionalTestCase
 
         $list = $this->api('GET', '/api/time-track/suggestions', null, $token);
         self::assertResponseIsSuccessful();
+        self::assertSame('no-store, private', $this->client->getResponse()->headers->get('Cache-Control'), 'GG-I1');
         self::assertIsArray($list);
         self::assertArrayHasKey('ignored', $list);
         self::assertNull($list['ignored']);
@@ -185,6 +190,45 @@ final class CalendarClientApiTest extends FunctionalTestCase
         self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['groupKey' => 'series:aaaaaaaaaaaaaaaa:W'], $token)['dismissed'] ?? null, 'already accepted');
     }
 
+    public function testAcceptIsSerialisedAndAtomicPerOccurrence(): void
+    {
+        $connection = $this->connect();
+        $raced      = $this->suggestion($connection, 'task-1', $this->day(3, 8), 900, null);
+        $broken     = $this->suggestion($connection, 'task-3', $this->day(3, 10), 900, null);
+        $fine       = $this->suggestion($connection, 'task-2', $this->day(3, 12), 900, null);
+        $dismissed  = $this->suggestion($connection, 'task-2', $this->day(2, 12), 900, null);
+        $this->entityManager()->flush();
+        $token = $this->token(ClientScope::SuggestionsWrite, ClientScope::EntriesWrite);
+        // A concurrent request decided two of them after this one read them (the database changed, not this request's copy).
+        $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_calendar_suggestions SET status = 'accepted' WHERE id IN (?, ?)", [$raced->getId(), $dismissed->getId()]);
+        $scopes = self::getContainer()->get(FixedScopeProvider::class);
+        self::assertInstanceOf(FixedScopeProvider::class, $scopes);
+        $scopes->failForTasks = ['task-3'];
+        $dispatcher           = self::getContainer()->get(EventDispatcherInterface::class);
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_CREATED, static function (): never {
+            throw new RuntimeException('listener down');
+        });
+
+        $accepted = $this->api('POST', '/api/time-track/suggestions/accept', ['ids' => [$raced->getId(), $broken->getId(), $fine->getId()]], $token);
+
+        self::assertResponseIsSuccessful();
+        self::assertSame(['not_found', 'internal_error', null], array_map(static fn (array $o): ?string => $o['error'] ?? null, $accepted['outcomes'] ?? []), 'GG-L1: the raced one is not accepted twice; GG-L2: a failure is per occurrence');
+        $this->entityManager()->clear();
+        $rows = $this->entityManager()->getConnection()->fetchAllKeyValue('SELECT id, status FROM time_track_calendar_suggestions');
+        self::assertSame(['pending', 'accepted'], [$rows[$broken->getId()], $rows[$fine->getId()]], 'the failed occurrence left nothing behind');
+        self::assertSame(1, (int) $this->entityManager()->getConnection()->fetchOne("SELECT COUNT(*) FROM time_track_entries WHERE source = 'calendar'"));
+        $decided = array_values(array_filter($this->events, static fn (object $e): bool => $e instanceof CalendarSuggestionDecidedEvent));
+        self::assertSame([[$fine->getId()]], array_map(static fn (CalendarSuggestionDecidedEvent $e): array => $e->suggestionIds, $decided), 'dispatched after the commits, even with a failing entry listener');
+        $logger = self::getContainer()->get('logger');
+        self::assertInstanceOf(RecordingLogger::class, $logger);
+        self::assertContains('TimeTrack entry-created listener failed.', $logger->messages());
+        self::assertContains('TimeTrack suggestion accept failed.', $logger->messages());
+
+        $this->api('POST', '/api/time-track/suggestions/dismiss', ['ids' => [$dismissed->getId()]], $token);
+        self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['ids' => [$dismissed->getId()]], $token)['dismissed'] ?? null, 'a decided row is not dismissed');
+    }
+
     public function testAGroupCanBeDismissedAndRefreshIsRateLimited(): void
     {
         $connection = $this->connect();
@@ -211,7 +255,6 @@ final class CalendarClientApiTest extends FunctionalTestCase
         self::assertResponseIsSuccessful();
         self::assertSame([
             '#task-1' => ['taskId' => 'task-1', 'title' => 'Implement login API', 'boardId' => 'board-1', 'trackable' => true],
-            '#task-9' => ['taskId' => 'task-9', 'title' => null, 'boardId' => null, 'trackable' => false],
         ], $result['matches'] ?? null);
         self::assertSame('{"matches":{}}', $this->rawApi('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#none']], $token));
         $this->api('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-1'], 'scopeKey' => 'org-z'], $token);

@@ -57,7 +57,7 @@ final class ClientResponseFactoryTest extends TestCase
 
         self::assertSame('https://app.example.com', $response->headers->get('Access-Control-Allow-Origin'));
         self::assertFalse($response->headers->has('Access-Control-Allow-Credentials'));
-        self::assertSame('Authorization, Content-Type', $response->headers->get('Access-Control-Allow-Headers'));
+        self::assertSame('Authorization, Content-Type, Idempotency-Key', $response->headers->get('Access-Control-Allow-Headers'));
     }
 
     public function testJsonWithWildcardInDevOnly(): void

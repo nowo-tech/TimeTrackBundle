@@ -535,7 +535,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$settings'        => new Reference(CalendarSettings::class),
                 '$resolver'        => $resolverRef,
                 '$eventDispatcher' => $dispatchRef,
-            ]));
+                '$logger'          => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->getDefinition(TimeTrackCalendarApiController::class)
             ->setArgument('$clock', $clockRef);
         $container->getDefinition(TimeTrackClientApiController::class)

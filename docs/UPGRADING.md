@@ -210,10 +210,15 @@ period lock). A host replacement of `TimeEntryRepositoryInterface` may implement
 `OverlappingTimeEntryRepositoryInterface` for an exact overlap query; without it the overlap check reads the two days
 before the new entry.
 
+**Concurrency.** Entries without a timer and accepted suggestions are written under a per-user row lock
+(`SELECT … FOR UPDATE` on your user row, inside a short transaction). A host replacement of `TimeEntryRepositoryInterface`
+should implement `UserSerialisedTimeEntryRepositoryInterface` too (without it the overlap check can race). Listeners of
+`nowo_time_track.time_entry.created` run after the commit; their exceptions are logged and do not undo the entry.
+
 **Client API (additive).** New scopes `entries:write`, `suggestions:read`, `suggestions:write` are never granted by
 default (as for the 1.13 scopes): request them in the device flow. New routes (404 while their feature is off):
 `calendar/connections` (GET, and DELETE `/{id}`), `suggestions`, `suggestions/accept`, `suggestions/dismiss`,
-`suggestions/resolve-keys`, `POST entries`. CORS preflights now allow `DELETE`. `GET me.features.calendar_suggestions`
+`suggestions/resolve-keys` (keys of tasks the user cannot track are left out), `POST entries`. CORS preflights now allow `DELETE` and the `Idempotency-Key` header. `GET me.features.calendar_suggestions`
 and `features.manual_entries` become real.
 
 ## To 1.13.0

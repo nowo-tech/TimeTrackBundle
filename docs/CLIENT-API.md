@@ -57,10 +57,12 @@ Additive; with `calendar` and `manual_entries` off (the default) every new route
 | `GET /api/time-track/suggestions` | `suggestions:read` | `scope?`, `from?`, `to?` (RFC 3339; default and earliest: `calendar.lookback_days` back; latest: now), `refresh?` (`1`: sync now, at most once per 5 minutes per token, else 429) | 200 `{scopeKey, from, to, groups: [item], singles: [item], ignored}`; item `{groupKey, taskId, occurrences: [{id, startsAt, endsAt, seconds}], totalSeconds}`; `ignored` = events of the refresh that matched nothing (null without `refresh`); 400 bad dates |
 | `POST /api/time-track/suggestions/accept` | `suggestions:write` **and** `entries:write` | `{ids: [1-100 ids] \| groupKey, taskId?, note?}` | 200 `{outcomes: [{id, entryId}\|{id, error}]}` with `error` `period_locked`, `period_submitted`, `overlap`, `not_trackable`, `entry_too_old`, `not_found` (unknown, another user's or already decided); one `calendar` entry per occurrence, partial success allowed |
 | `POST /api/time-track/suggestions/dismiss` | `suggestions:write` | `{ids \| groupKey}` | 200 `{dismissed: [ids]}` (dismissed suggestions are not suggested again until they expire) |
-| `POST /api/time-track/suggestions/resolve-keys` | `suggestions:read` | `{scopeKey?, keys: [1-50 strings of 1-32 characters]}` | 200 `{matches: {key: {taskId, title, boardId, trackable}}}` (title and board only when trackable; unknown keys left out); 60 / min per token; 400; 404 |
+| `POST /api/time-track/suggestions/resolve-keys` | `suggestions:read` | `{scopeKey?, keys: [1-50 strings of 1-32 characters]}` | 200 `{matches: {key: {taskId, title, boardId, trackable: true}}}` (keys of unknown tasks and of tasks the user cannot track are left out alike); 60 / min per token; 400; 404 |
 | `POST /api/time-track/entries` | `entries:write` | header `Idempotency-Key` (1–64 visible characters, required); `{taskId, startedAt, endedAt, source: manual\|calendar, note?}` (RFC 3339 with offset) | 201 `{entry}` (`metadata.origin` = source); 400 `invalid_request`; 403 `task_forbidden`; 409 `period_locked` (+ `lockedThrough`), `period_submitted`, `overlap` (a live entry or the running timer); 422 `invalid_range` (end ≤ start), `entry_too_long` (> 24 h), `entry_in_future`, `entry_too_old` (> `manual_entries.max_age_days`), `idempotency_mismatch`; 120 / h per token; 404 when `manual_entries.enabled` is false |
 
-The same `Idempotency-Key` and body get the same answer for 24 h (201, 409 and 422 are replayed).
+The same `Idempotency-Key` and body get the same answer for 24 h (201, 409 and 422 are replayed), also for two requests
+sent at once. CORS preflights allow the `Idempotency-Key` header. Every answer of these routes carries `Cache-Control:
+no-store, private`. `source: calendar` on `POST entries` is the client's claim (local mode), not evidence of an event.
 
 ## Changes in 1.13 (working time, timesheets, task effort)
 
