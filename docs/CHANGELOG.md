@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).
-Audit status: Appendix HA (2026-11-06): Pass (conditional) / Medium at `1f8a0af`; residuals in `docs/SECURITY.md`.
+Audit status: Appendix HA (2026-11-06): Pass (conditional) / Medium at `38f5230`. The only open Medium was accepted by the owner on 2026-11-06; residuals in `docs/SECURITY.md`.
 
 ### Added
 
