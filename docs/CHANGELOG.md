@@ -72,7 +72,12 @@ Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, con
   `event_ref`, decisions kept, dailies grouped per series or rule and ISO week, expiry purge, `status = error` + code),
   `Calendar\CalendarConnectionService` (connect / reconnect / pause / revoke with the host revoke first, owner only) and
   `Calendar\CalendarRuleService`; command `nowo:time-track:calendar:sync` (inside working hours only, AC-19).
-- **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only).
+- **Events** `CALENDAR_CONNECTION_CHANGED` and `CALENDAR_SYNC_FINISHED` (ids, codes and counts only; counts include
+  `stale`).
+- Sync hardening (audit GG): pending suggestions of events that are gone are deleted after a complete read (GG-L3);
+  connections carry `last_attempt_at`, `next_attempt_at` and `failure_count` (backoff, least recently attempted first,
+  outside-hours rows do not use the run limit, every failure is a per-connection code, GG-L5); titles cut to 1024
+  characters before the host key extractor (GG-I4); `CalendarConnectionService::revokeAllFor()` (GG-I8).
 - **Configuration** `calendar.*` (`enabled`, `credential_provider`, `task_key_resolver`, `providers`, `modes`,
   `lookback_days`, `suggestion_ttl_days`, `sync_interval_minutes`, `max_event_seconds`, `max_rules_per_user`,
   `max_pages`); incoherent combinations are refused at compile time.

@@ -79,8 +79,8 @@ final class CalendarValueObjectsTest extends TestCase
         self::assertFalse($settings->allowsProvider(CalendarProvider::Microsoft));
         self::assertTrue($settings->allowsMode(CalendarConnectionMode::Local));
         self::assertFalse($settings->allowsMode(CalendarConnectionMode::Server));
-        self::assertTrue((new CalendarSyncResult('c', ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0]))->isSuccess());
-        self::assertFalse((new CalendarSyncResult('c', ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0], 'rate_limited'))->isSuccess());
+        self::assertTrue((new CalendarSyncResult('c', ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0, 'stale' => 0]))->isSuccess());
+        self::assertFalse((new CalendarSyncResult('c', ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0, 'stale' => 0], 'rate_limited'))->isSuccess());
         self::assertSame('invalid_scope', (new CalendarException('invalid_scope'))->errorCode);
     }
 

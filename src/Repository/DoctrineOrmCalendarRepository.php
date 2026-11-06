@@ -15,9 +15,11 @@ use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionMode;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
+use Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Throwable;
 
+use function array_fill_keys;
 use function array_map;
 use function max;
 
@@ -97,21 +99,24 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     }
 
     /**
-     * Server-mode connections due for a sync, least recently synced first.
+     * Server-mode connections due for a sync, least recently attempted first (never attempted first of all).
      */
-    public function findConnectionsDue(DateTimeImmutable $syncedBefore, ?string $userId, int $limit): array
+    public function findConnectionsDue(DateTimeImmutable $now, ?string $userId, int $limit, int $offset = 0): array
     {
         $query = $this->entityManager->createQueryBuilder()
             ->select('c')
+            ->addSelect('CASE WHEN c.lastAttemptAt IS NULL THEN 0 ELSE 1 END AS HIDDEN attempted')
             ->from(CalendarConnection::class, 'c')
             ->where('c.mode = :server')
             ->andWhere('c.status IN (:statuses)')
-            ->andWhere('c.lastSyncAt IS NULL OR c.lastSyncAt < :before')
+            ->andWhere('c.nextAttemptAt IS NULL OR c.nextAttemptAt <= :now')
             ->setParameter('server', CalendarConnectionMode::Server->value)
             ->setParameter('statuses', [CalendarConnectionStatus::Active->value, CalendarConnectionStatus::Error->value])
-            ->setParameter('before', StorageTime::normalize($syncedBefore))
-            ->orderBy('c.lastSyncAt', SortDirection::Ascending->value)
+            ->setParameter('now', StorageTime::normalize($now))
+            ->orderBy('attempted', SortDirection::Ascending->value)
+            ->addOrderBy('c.lastAttemptAt', SortDirection::Ascending->value)
             ->addOrderBy('c.id', SortDirection::Ascending->value)
+            ->setFirstResult(max(0, $offset))
             ->setMaxResults(max(1, $limit));
         if ($userId !== null) {
             $query->andWhere('IDENTITY(c.user) = :user')->setParameter('user', $userId);
@@ -273,6 +278,40 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         }
         /** @var int $deleted */
         $deleted = $query->getQuery()->execute();
+
+        return $deleted;
+    }
+
+    /**
+     * Deletes the pending suggestions of a connection in the window that the sync did not see again.
+     */
+    public function deleteUnseenPending(string $connectionId, DateTimeImmutable $from, DateTimeImmutable $to, array $seenRefs): int
+    {
+        $query = $this->entityManager->createQueryBuilder()
+            ->select('s')
+            ->from(CalendarSuggestion::class, 's')
+            ->where('s.connection = :connection')
+            ->andWhere('s.status = :pending')
+            ->andWhere('s.startsAt >= :from')
+            ->andWhere('s.startsAt <= :to')
+            ->setParameter('connection', $connectionId)
+            ->setParameter('pending', CalendarSuggestionStatus::Pending->value)
+            ->setParameter('from', StorageTime::normalize($from))
+            ->setParameter('to', StorageTime::normalize($to));
+        $seen    = array_fill_keys($seenRefs, true);
+        $deleted = 0;
+        /** @var list<CalendarSuggestion> $pending */
+        $pending = $query->getQuery()->getResult();
+        foreach ($pending as $suggestion) {
+            if (!isset($seen[$suggestion->getEventRef()])) {
+                // ORM removal (not a DQL delete): the identity map of a worker never keeps a deleted row.
+                $this->entityManager->remove($suggestion);
+                ++$deleted;
+            }
+        }
+        if ($deleted > 0) {
+            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        }
 
         return $deleted;
     }

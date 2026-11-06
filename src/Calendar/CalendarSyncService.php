@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Calendar;
 
+use DateTimeImmutable;
 use DateTimeZone;
+use Generator;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionMode;
@@ -21,8 +23,11 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Throwable;
 
 use function count;
+use function max;
+use function min;
 use function str_replace;
 use function substr;
 
@@ -37,6 +42,15 @@ use function substr;
  */
 final readonly class CalendarSyncService
 {
+    /** Code of an unexpected failure (host, store or listener exception). */
+    public const INTERNAL_ERROR = 'internal_error';
+
+    /** Longest backoff after failures, in minutes (a day). */
+    public const MAX_BACKOFF_MINUTES = 1440;
+
+    /** Candidate pages read per scheduled run (outside-hours rows are skipped). */
+    public const MAX_DUE_PAGES = 10;
+
     private ClockInterface $clock;
 
     private LoggerInterface $logger;
@@ -72,24 +86,38 @@ final readonly class CalendarSyncService
     }
 
     /**
-     * Syncs the due connections (never synced, or not within `sync_interval_minutes`) whose owners are inside their
-     * working hours, then purges every expired suggestion.
+     * Syncs the due connections (never attempted, or whose next attempt has come: `sync_interval_minutes` after a
+     * success, an exponential backoff after failures, at most {@see self::MAX_BACKOFF_MINUTES}) whose owners are inside
+     * their working hours, least recently attempted first, then purges every expired suggestion. Connections skipped as
+     * outside working hours do not count against `$limit`; one failing connection never stops the batch.
      *
      * @return array{synced: int, failed: int, outside_hours: int, purged: int}
      */
     public function syncDue(?string $userId = null, int $limit = 200): array
     {
         $now    = $this->clock->now();
+        $limit  = max(1, $limit);
         $counts = ['synced' => 0, 'failed' => 0, 'outside_hours' => 0, 'purged' => 0];
         if ($this->isEnabled()) {
-            $before = $now->modify('-' . $this->settings->syncIntervalMinutes . ' minutes');
-            foreach ($this->connections->findConnectionsDue($before, $userId, $limit) as $connection) {
-                $owner = $connection->getUser();
-                if (!$owner instanceof UserInterface || !$this->workingHours->contains($owner, $now)) {
-                    ++$counts['outside_hours'];
-                    continue;
+            $offset = 0;
+            // Pages of candidates until `$limit` connections were attempted (outside-hours rows are skipped, not counted).
+            for ($page = 0; $page < self::MAX_DUE_PAGES && $limit > $counts['synced'] + $counts['failed']; ++$page) {
+                $due = $this->connections->findConnectionsDue($now, $userId, $limit, $offset);
+                foreach ($due as $connection) {
+                    $owner = $connection->getUser();
+                    if (!$owner instanceof UserInterface || !$this->workingHours->contains($owner, $now)) {
+                        ++$counts['outside_hours'];
+                        ++$offset;
+                        continue;
+                    }
+                    ++$counts[$this->sync($connection)->isSuccess() ? 'synced' : 'failed'];
+                    if ($limit === $counts['synced'] + $counts['failed']) {
+                        break 2;
+                    }
                 }
-                ++$counts[$this->sync($connection)->isSuccess() ? 'synced' : 'failed'];
+                if (count($due) < $limit) {
+                    break;
+                }
             }
         }
         $counts['purged'] = $this->suggestions->deleteExpiredSuggestions($now);
@@ -100,6 +128,7 @@ final readonly class CalendarSyncService
 
     /**
      * On-demand refresh by the owner: syncs the user's server-mode connections in the scope (all scopes when null).
+     * Failures come back as results with a code, never as an exception.
      *
      * @return list<CalendarSyncResult>
      */
@@ -116,12 +145,13 @@ final readonly class CalendarSyncService
     }
 
     /**
-     * Syncs one server-mode connection.
+     * Syncs one server-mode connection. Any failure (a provider code, or an unexpected exception of the host, the store
+     * or a listener: `internal_error`) is recorded on the connection with a backoff and returned, never thrown.
      */
     public function sync(CalendarConnection $connection): CalendarSyncResult
     {
         $now     = $this->clock->now();
-        $counts  = ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0];
+        $counts  = ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0, 'stale' => 0];
         $owner   = $connection->getUser();
         $matcher = $this->matcher;
         if (!$matcher instanceof CalendarEventMatcher || !$this->settings->enabled || !$owner instanceof UserInterface || $connection->getMode() !== CalendarConnectionMode::Server
@@ -130,20 +160,41 @@ final readonly class CalendarSyncService
         }
 
         try {
-            $events = $this->source($connection)->fetch($this->credential($owner, $connection), $now->modify('-' . $this->settings->lookbackDays . ' days'), $now);
-            $result = $matcher->match($owner, $connection, $events, $this->rules->findRulesByUser(UserIdResolver::getId($owner), $connection->getScopeKey()), $now);
+            return $this->run($connection, $owner, $matcher, $now, $counts);
         } catch (CalendarSyncException $exception) {
-            $connection->markFailed($exception->errorCode, $now);
-            $this->connections->saveConnection($connection);
-
-            return $this->finished($connection, $counts, $exception->errorCode);
+            $code = $exception->errorCode;
+        } catch (Throwable $exception) {
+            $code = self::INTERNAL_ERROR;
+            $this->logger->warning('TimeTrack calendar sync failed.', ['bundle' => 'time_track', 'action' => 'calendar_sync', 'exception' => $exception::class]);
         }
+        try {
+            $connection->markFailed($code, $now, $this->backoff($connection, $now));
+            $this->connections->saveConnection($connection);
+        } catch (Throwable $exception) {
+            $this->logger->warning('TimeTrack calendar sync failure could not be recorded.', ['bundle' => 'time_track', 'action' => 'calendar_sync', 'exception' => $exception::class]);
+        }
+
+        return $this->finished($connection, $counts, $code);
+    }
+
+    /**
+     * @param array{fetched: int, matched: int, ignored: int, new: int, updated: int, expired: int, stale: int} $counts
+     */
+    private function run(CalendarConnection $connection, UserInterface $owner, CalendarEventMatcher $matcher, DateTimeImmutable $now, array $counts): CalendarSyncResult
+    {
+        $from   = $now->modify('-' . $this->settings->lookbackDays . ' days');
+        $events = $this->source($connection)->fetch($this->credential($owner, $connection), $from, $now);
+        $result = $matcher->match($owner, $connection, $events, $this->rules->findRulesByUser(UserIdResolver::getId($owner), $connection->getScopeKey()), $now);
+        // A source that stopped at `max_pages` returns true: its window was not read in full.
+        $complete = !$events instanceof Generator || $events->getReturn() !== true;
 
         $counts['fetched'] = $result['fetched'];
         $counts['ignored'] = $result['ignored'];
         $counts['matched'] = count($result['matches']);
         $timezone          = $this->workingHours->timezone($owner);
+        $seen              = [];
         foreach ($result['matches'] as $match) {
+            $seen[]    = $match->eventRef;
             $groupKey  = $this->groupKey($match, $timezone);
             $expiresAt = $match->end->modify('+' . $this->settings->suggestionTtlDays . ' days');
             $existing  = $this->suggestions->findSuggestionByRef($connection->getId(), $match->eventRef);
@@ -155,11 +206,25 @@ final readonly class CalendarSyncService
             $this->suggestions->addSuggestion(new CalendarSuggestion($connection, $owner, $match->eventRef, $match->seriesRef, $groupKey, $match->taskId, $match->kind, $match->start, $match->end, $expiresAt, $now));
             ++$counts['new'];
         }
-        $connection->markSynced($now);
+        $connection->markSynced($now, $now->modify('+' . $this->settings->syncIntervalMinutes . ' minutes'));
         $this->connections->saveConnection($connection);
+        // GG-L3: pending suggestions of the synced window whose event is gone (moved, cancelled, declined, key removed).
+        if ($complete) {
+            $counts['stale'] = $this->suggestions->deleteUnseenPending($connection->getId(), $from, $now, $seen);
+        }
         $counts['expired'] = $this->suggestions->deleteExpiredSuggestions($now, $connection->getId());
 
         return $this->finished($connection, $counts, null);
+    }
+
+    /**
+     * Next attempt after a failure: twice the sync interval, doubled again per failure in a row, at most a day.
+     */
+    private function backoff(CalendarConnection $connection, DateTimeImmutable $now): DateTimeImmutable
+    {
+        $minutes = min(self::MAX_BACKOFF_MINUTES, $this->settings->syncIntervalMinutes * 2 ** min(10, $connection->getFailureCount() + 1));
+
+        return $now->modify('+' . $minutes . ' minutes');
     }
 
     /**
@@ -206,7 +271,7 @@ final readonly class CalendarSyncService
     }
 
     /**
-     * @param array{fetched: int, matched: int, ignored: int, new: int, updated: int, expired: int} $counts
+     * @param array{fetched: int, matched: int, ignored: int, new: int, updated: int, expired: int, stale: int} $counts
      */
     private function finished(CalendarConnection $connection, array $counts, ?string $errorCode): CalendarSyncResult
     {

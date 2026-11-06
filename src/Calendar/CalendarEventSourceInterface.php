@@ -19,7 +19,8 @@ interface CalendarEventSourceInterface
     public function provider(): CalendarProvider;
 
     /**
-     * Events overlapping `[from, to)`, expanded into occurrences.
+     * Events overlapping `[from, to)`, expanded into occurrences. A generator that stopped before the end of the
+     * window (page cap) returns `true`, so the sync does not treat the events it did not read as gone.
      *
      * @throws CalendarSyncException With a code (`token_expired`, `rate_limited`, `forbidden`, `provider_error`,
      *                               `invalid_response`, `too_large`), never a provider message

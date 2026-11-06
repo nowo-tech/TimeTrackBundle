@@ -40,7 +40,9 @@ final class CalendarEntitiesTest extends TestCase
         $connection->markFailed(str_repeat('x', 40), new DateTimeImmutable('2026-11-05 11:00'));
         self::assertSame([CalendarConnectionStatus::Error, str_repeat('x', 32)], [$connection->getStatus(), $connection->getLastErrorCode()]);
         self::assertSame('2026-11-05 11:00', $connection->getUpdatedAt()->format('Y-m-d H:i'));
-        $connection->markSynced(new DateTimeImmutable('2026-11-05 12:00'));
+        self::assertSame([1, '2026-11-05 11:00', null], [$connection->getFailureCount(), $connection->getLastAttemptAt()?->format('Y-m-d H:i'), $connection->getNextAttemptAt()]);
+        $connection->markSynced(new DateTimeImmutable('2026-11-05 12:00'), new DateTimeImmutable('2026-11-05 13:00'));
+        self::assertSame([0, '2026-11-05 12:00', '2026-11-05 13:00'], [$connection->getFailureCount(), $connection->getLastAttemptAt()?->format('Y-m-d H:i'), $connection->getNextAttemptAt()?->format('Y-m-d H:i')]);
         self::assertSame([CalendarConnectionStatus::Active, null, '2026-11-05 12:00'], [$connection->getStatus(), $connection->getLastErrorCode(), $connection->getLastSyncAt()?->format('Y-m-d H:i')]);
         $connection->markFailed('token_expired', new DateTimeImmutable('2026-11-05 13:00'));
         $connection->reconnect(CalendarConnectionMode::Local, null, 'v2', new DateTimeImmutable('2026-11-05 14:00'));
