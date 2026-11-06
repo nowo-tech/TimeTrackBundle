@@ -101,8 +101,11 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     /**
      * Server-mode connections due for a sync, least recently attempted first (never attempted first of all).
      */
-    public function findConnectionsDue(DateTimeImmutable $now, ?string $userId, int $limit, int $offset = 0): array
+    public function findConnectionsDue(DateTimeImmutable $now, ?string $userId, int $limit, int $offset = 0, ?array $providers = null): array
     {
+        if ($providers === []) {
+            return [];
+        }
         $query = $this->entityManager->createQueryBuilder()
             ->select('c')
             ->addSelect('CASE WHEN c.lastAttemptAt IS NULL THEN 0 ELSE 1 END AS HIDDEN attempted')
@@ -120,6 +123,9 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->setMaxResults(max(1, $limit));
         if ($userId !== null) {
             $query->andWhere('IDENTITY(c.user) = :user')->setParameter('user', $userId);
+        }
+        if ($providers !== null) {
+            $query->andWhere('c.provider IN (:providers)')->setParameter('providers', $providers);
         }
 
         /** @var list<CalendarConnection> $result */
@@ -287,7 +293,8 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
      */
     public function deleteUnseenPending(string $connectionId, DateTimeImmutable $from, DateTimeImmutable $to, array $seenRefs): int
     {
-        $query = $this->entityManager->createQueryBuilder()
+        /** @var list<CalendarSuggestion> $pending */
+        $pending = $this->entityManager->createQueryBuilder()
             ->select('s')
             ->from(CalendarSuggestion::class, 's')
             ->where('s.connection = :connection')
@@ -297,20 +304,32 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->setParameter('connection', $connectionId)
             ->setParameter('pending', CalendarSuggestionStatus::Pending->value)
             ->setParameter('from', StorageTime::normalize($from))
-            ->setParameter('to', StorageTime::normalize($to));
-        $seen    = array_fill_keys($seenRefs, true);
-        $deleted = 0;
-        /** @var list<CalendarSuggestion> $pending */
-        $pending = $query->getQuery()->getResult();
+            ->setParameter('to', StorageTime::normalize($to))
+            ->getQuery()
+            ->getResult();
+        $seen   = array_fill_keys($seenRefs, true);
+        $unseen = [];
         foreach ($pending as $suggestion) {
             if (!isset($seen[$suggestion->getEventRef()])) {
-                // ORM removal (not a DQL delete): the identity map of a worker never keeps a deleted row.
-                $this->entityManager->remove($suggestion);
-                ++$deleted;
+                $unseen[] = $suggestion;
             }
         }
-        if ($deleted > 0) {
-            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        if ($unseen === []) {
+            return 0;
+        }
+        // GG-D-5: the status is in the DELETE predicate, so a row a concurrent accept decided meanwhile is kept.
+        /** @var int $deleted */
+        $deleted = $this->entityManager->createQueryBuilder()
+            ->delete(CalendarSuggestion::class, 's')
+            ->where('s.id IN (:ids)')
+            ->andWhere('s.status = :pending')
+            ->setParameter('ids', array_map(static fn (CalendarSuggestion $s): string => $s->getId(), $unseen))
+            ->setParameter('pending', CalendarSuggestionStatus::Pending->value)
+            ->getQuery()
+            ->execute();
+        // The DQL delete bypasses the identity map: forget the rows it may have removed.
+        foreach ($unseen as $suggestion) {
+            $this->entityManager->detach($suggestion);
         }
 
         return $deleted;
