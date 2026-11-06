@@ -627,7 +627,7 @@ final readonly class TimeTrackClientApiController
                 return $this->responseFactory->error('forbidden', 'Forbidden.', Response::HTTP_FORBIDDEN, $request);
             }
 
-            $list = $this->timerService->listEntriesPage($user, $period['from'], $period['to'], 1 + intdiv($offset, $limit), $limit, $targetUserId)->entries;
+            $list = $this->timerService->listEntriesPage($user, $period['from'], $period['to'], 1 + intdiv($offset, $limit), $limit, $targetUserId, false)->entries;
         } else {
             $list = $this->timerService->listOwnEntries($user, $period['from'], $period['to'], $limit, $offset);
         }

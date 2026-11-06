@@ -102,6 +102,8 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         self::assertSame([], $platform->getAlterSchemaSQL($diff), 'the down script restores the 1.12 schema');
 
         $this->runSql($name . '-up.sql');
+        // Since 1.15 the mapping also has this index, from docs/sql/1.15.0.
+        $conn->executeStatement('CREATE INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets (owner_ref, period_end)');
         self::assertSame([], $tool->getUpdateSchemaSql($metadata), 'the up script is exactly the 1.13 mapping');
     }
 
@@ -314,11 +316,12 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         }
         self::assertSame(0, $writer->remove('clickup:dir-1', 'missing'));
 
-        // Bulk removals keep the locked entry; erasure removes everything.
+        // Bulk removals keep the locked entry; since 1.15 removeForUser() too: it is for re-association, not erasure.
         self::assertSame(1, $writer->removeForTasks('clickup:dir-1', ['task-1', 'task-2']));
         self::assertNotNull($repository->findByExternal('clickup:dir-1', 'e-1'));
         self::assertSame(0, $writer->removeForSource('clickup:dir-1'), 'a batch of locked entries only is skipped');
-        self::assertSame(1, $writer->removeForUser('clickup:dir-1', $this->user));
+        self::assertSame(0, $writer->removeForUser('clickup:dir-1', $this->user));
+        self::assertNotNull($repository->findByExternal('clickup:dir-1', 'e-1'));
 
         // Timer: a backdated start into the locked week is refused.
         $timer = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), $repository, $dispatcher, new MockClock('2026-10-12 09:00:00'), null, $guard, new SingleScopeProvider());

@@ -27,6 +27,8 @@ use Nowo\TimeTrackBundle\ValueObject\Uuid;
 #[ORM\UniqueConstraint(name: 'uniq_time_track_timesheets_period', columns: ['user_id', 'scope_key', 'period_kind', 'period_start'])]
 #[ORM\Index(name: 'idx_time_track_timesheets_queue', columns: ['scope_key', 'status', 'period_start'])]
 #[ORM\Index(name: 'idx_time_track_timesheets_lock', columns: ['user_id', 'scope_key', 'locked_at', 'period_end'])]
+// Since 1.15: the period lock of a deleted user, whose timesheets have only `owner_ref` left.
+#[ORM\Index(name: 'idx_time_track_timesheets_owner_ref', columns: ['owner_ref', 'period_end'])]
 class Timesheet
 {
     #[ORM\Id]

@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as DoctrineConfiguration;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
@@ -49,7 +50,7 @@ final class FunctionalKernel extends Kernel
     /**
      * @param array<string, mixed> $timeTrackConfig
      */
-    public function __construct(private readonly array $timeTrackConfig = [])
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false)
     {
         parent::__construct('test', true);
     }
@@ -83,7 +84,7 @@ final class FunctionalKernel extends Kernel
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -115,6 +116,10 @@ final class FunctionalKernel extends Kernel
             'http_client' => ['mock_response_factory' => NoNetworkHttpResponses::class],
         ]);
         $container->services()->set(NoNetworkHttpResponses::class)->public();
+        if ($this->plainEntryStore) {
+            // Since 1.15: a host's replacement store with no optional capability.
+            $container->services()->set(TimeEntryRepositoryInterface::class, InMemoryTimeEntryRepository::class)->public();
+        }
         // Since 1.14: a recording logger (public) so tests can scan log records for personal data.
         $container->services()->set('logger', RecordingLogger::class)->public();
         // Since 1.13: approver provider of the timesheet variants (public: tests configure it per case).

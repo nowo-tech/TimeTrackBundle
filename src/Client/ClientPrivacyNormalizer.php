@@ -11,11 +11,12 @@ use function in_array;
 use function is_array;
 use function is_string;
 use function parse_url;
+use function preg_match;
 use function strtolower;
 
 /**
- * Since 1.15: the `privacy` block of `GET me`. The clients open `url`, so one that is not an absolute `http(s)` URL is
- * sent as null (with a warning that names no value); everything else is the host's text, passed as is.
+ * Since 1.15: the `privacy` block of `GET me`. The clients open `url`, so one that is not a plain absolute `http(s)` URL (no
+ * credentials, blanks, controls or backslashes; a real host name or address) is sent as null (with a warning that names no value); everything else is the host's text, passed as is.
  */
 final class ClientPrivacyNormalizer
 {
@@ -39,10 +40,16 @@ final class ClientPrivacyNormalizer
 
     private static function isWebUrl(mixed $url): bool
     {
-        $parts = is_string($url) ? parse_url($url) : false;
+        // Blanks, controls and backslashes are read differently by parsers and browsers.
+        if (!is_string($url) || preg_match('/[\s\p{Cc}\\\\]/u', $url) !== 0) {
+            return false;
+        }
+        $parts = parse_url($url);
 
         return is_array($parts)
             && in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
-            && ($parts['host'] ?? '') !== '';
+            // Credentials make `https://ex.test@evil.test/` read as `ex.test`.
+            && !isset($parts['user']) && !isset($parts['pass'])
+            && preg_match('/^(?:\[[0-9A-Fa-f:.]+\]|[\p{L}\p{N}.-]+)$/u', $parts['host'] ?? '') === 1;
     }
 }

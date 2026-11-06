@@ -12,9 +12,11 @@ use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Event\TimeEntriesRemovedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimesheetLateEntryEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryClaim;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryDeleter;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
@@ -63,7 +65,8 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         self::assertArrayHasKey($entry->getId(), $this->guard()->blockedEntryIds([$entry]));
 
         $person = new ImportedTimeEntryPerson('p-1', 'Ana');
-        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsertForPerson($person, $this->data('locked', seconds: 60))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $this->writer()->upsertForPerson($person, $this->data('locked', seconds: 60))->outcome, 'a person never rewrites a deleted user');
+        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert(new ImportedTimeEntryClaim($this->managedUser(), 'user:' . $owner), $this->data('locked', seconds: 60))->outcome);
         self::assertSame(0, $this->writer()->remove(self::SOURCE, 'locked'), 'kept');
         self::assertSame(0, $this->writer()->removeForSource(self::SOURCE), 'kept');
         $this->entityManager()->clear();
@@ -85,7 +88,9 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         $entry = $this->reload('locked');
         self::assertNull($entry->getUser());
         self::assertFalse($this->guard()->isEntryWritable($entry), 'the timesheet lost user_id and keeps owner_ref');
-        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('locked', seconds: 60))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('locked', seconds: 60))->outcome);
+        $this->entityManager()->clear();
+        self::assertSame(3600, $this->reload('locked')->getDurationSeconds());
         self::assertSame(0, $this->writer()->removeForSource(self::SOURCE), 'a manager removal respects the lock');
     }
 
@@ -190,7 +195,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         $this->lockWeek();
         $this->entityManager()->clear();
 
-        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert($this->managedUser(), $this->data('free'))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert(new ImportedTimeEntryClaim($this->managedUser(), 'p-1'), $this->data('free'))->outcome);
         $this->entityManager()->clear();
         self::assertTrue($this->reload('free')->isOwnerless());
     }
@@ -204,8 +209,44 @@ final class FormerPeopleLockTest extends FunctionalTestCase
 
         self::assertFalse($this->guard()->isEntryWritable($entry));
         self::assertArrayHasKey($entry->getId(), $this->guard()->blockedEntryIds([$entry]));
-        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert($this->managedUser(), $this->data('e-1'))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $this->writer()->upsert($this->managedUser(), $this->data('e-1'))->outcome);
         self::assertSame(0, $this->writer()->removeForSource(self::SOURCE));
+    }
+
+    public function testAClaimOfAReleasedEntryCannotMoveItIntoTheOwnersLockedPeriod(): void
+    {
+        $start = new DateTimeImmutable('2026-01-20 10:00:00');
+        $this->writer()->upsert($this->user, new ImportedTimeEntryData(self::SOURCE, 'open', 'task-1', 'T', 'board-1', $start, $start->modify('+1 hour'), 3600));
+        $this->lockWeek();
+        $owner = 'user:' . $this->user->getId();
+        $this->people()->release($this->user, 'Ana');
+        $this->entityManager()->clear();
+
+        self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert(new ImportedTimeEntryClaim($this->managedUser(), $owner), $this->data('open'))->outcome);
+        $this->entityManager()->clear();
+        self::assertSame($start->getTimestamp(), $this->reload('open')->getStartedAt()->getTimestamp());
+    }
+
+    public function testARefusedRemovalLeavesARecord(): void
+    {
+        $events     = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(TimeTrackEvents::TIME_ENTRIES_REMOVED, static function (TimeEntriesRemovedEvent $event) use (&$events): void {
+            $events[] = $event;
+        });
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+        $writer = new ImportedTimeEntryWriter($repository, $dispatcher, periodLockGuard: $this->guard());
+        $writer->upsert($this->user, $this->data('locked'));
+        $this->lockWeek();
+
+        self::assertSame(0, $writer->removeForSource(self::SOURCE, 'manager-9'));
+        self::assertSame(0, $writer->removeForUser(self::SOURCE, $this->user, 'manager-9'), 're-association respects the lock too');
+
+        self::assertCount(2, $events);
+        self::assertSame(0, $events[0]->getCount());
+        self::assertSame(1, $events[0]->getKeptCount());
+        self::assertSame('manager-9', $events[0]->getActorId());
     }
 
     public function testErasureOutranksTheLock(): void
@@ -242,7 +283,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
     {
         $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
         self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
-        $entry = $repository->findByExternal(self::SOURCE, $externalId);
+        $entry = $repository->findByExternal(self::SOURCE, $externalId) ?? $repository->findByExternal(self::SOURCE, TimeEntry::anonymisedExternalId(self::SOURCE, $externalId));
         self::assertInstanceOf(TimeEntry::class, $entry);
 
         return $entry;

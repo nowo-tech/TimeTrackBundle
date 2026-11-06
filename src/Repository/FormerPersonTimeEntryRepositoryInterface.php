@@ -25,7 +25,8 @@ interface FormerPersonTimeEntryRepositoryInterface
     public function releaseOwner(string $userId, string $personRef, ?string $name): int;
 
     /**
-     * Anonymises the user's entries: no user, name, reference, description or metadata. Returns the entries changed.
+     * Anonymises the user's entries: no user, name, reference, description or task title, the external id hashed, the
+     * metadata down to the {@see TimeEntry::CLOSED_BY_USER_DELETION} mark. Returns the entries changed.
      */
     public function anonymiseOwner(string $userId, DateTimeImmutable $at): int;
 
@@ -33,6 +34,17 @@ interface FormerPersonTimeEntryRepositoryInterface
      * Anonymises the ownerless entries of a person reference. Returns the entries changed.
      */
     public function anonymisePerson(string $personRef, DateTimeImmutable $at): int;
+
+    /**
+     * Anonymises the ownerless entries with no person reference (a raw delete with no release before it). Returns the
+     * entries changed.
+     */
+    public function anonymiseUnidentified(DateTimeImmutable $at): int;
+
+    /**
+     * Anonymises the ownerless entries that ended before the cut-off: a retention term for names. Returns the entries changed.
+     */
+    public function anonymiseOwnerlessEndedBefore(DateTimeImmutable $cutOff, DateTimeImmutable $at): int;
 
     /**
      * Up to `$limit` ownerless entries of a person reference with an id after `$afterId`, by id.

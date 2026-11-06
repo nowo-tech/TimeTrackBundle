@@ -31,8 +31,8 @@ final class Version20261105000000 extends AbstractMigration
 
     public function down(Schema $schema): void
     {
-        // 1.10 cannot hydrate source = 'import': imported rows must go before the columns (UPGRADING "To 1.11.0").
-        $this->addSql("DELETE FROM time_track_entries WHERE source = 'import'");
+        // 1.10 cannot hydrate source = 'import', but a rollback never deletes tracked time: decide about those rows first.
+        $this->abortIf((int) $this->connection->fetchOne("SELECT COUNT(*) FROM time_track_entries WHERE source = 'import'") > 0, 'Imported time entries exist: a rollback does not delete tracked time.');
         $this->addSql('DROP INDEX time_track_entries_ended_idx ON time_track_entries');
         $this->addSql('DROP INDEX idx_time_track_entries_source ON time_track_entries');
         $this->addSql('DROP INDEX uniq_time_track_entries_external ON time_track_entries');

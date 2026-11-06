@@ -7,7 +7,12 @@ namespace Nowo\TimeTrackBundle\Import;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
 
+use function filter_var;
 use function mb_substr;
+use function preg_replace;
+use function trim;
+
+use const FILTER_VALIDATE_EMAIL;
 
 /**
  * Since 1.15: the person of an imported entry when no host user stands for them (a former colleague with no account).
@@ -37,16 +42,16 @@ final readonly class ImportedTimeEntryPerson
     }
 
     /**
-     * A name as stored: controls and bidi overrides stripped, one line, at most {@see self::MAX_NAME_LENGTH} code points,
-     * blank = null.
+     * A name as stored: controls, bidi overrides and every other invisible format character stripped, one line, at most
+     * {@see self::MAX_NAME_LENGTH} code points; blank, or an e-mail address (a contact detail, not a name), = null.
      */
     public static function cleanName(?string $name): ?string
     {
         if ($name === null) {
             return null;
         }
-        $clean = ImportedDescriptionSanitizer::oneLine($name);
+        $clean = trim((string) preg_replace('/\p{Cf}+/u', '', ImportedDescriptionSanitizer::oneLine($name)));
 
-        return $clean === '' ? null : mb_substr($clean, 0, self::MAX_NAME_LENGTH);
+        return $clean === '' || filter_var($clean, FILTER_VALIDATE_EMAIL) !== false ? null : mb_substr($clean, 0, self::MAX_NAME_LENGTH);
     }
 }

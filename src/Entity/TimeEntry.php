@@ -7,12 +7,14 @@ namespace Nowo\TimeTrackBundle\Entity;
 use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
+use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
+use function hash;
 use function str_starts_with;
 use function strlen;
 use function substr;
@@ -94,12 +96,11 @@ class TimeEntry
      * {@see self::USER_REF_PREFIX} + user id once the entry's user is being or was deleted. Null while a user owns the
      * entry, after a delete the bundle did not see and after anonymising.
      */
-    #[ORM\Column(name: 'person_ref', type: 'string', length: 64, nullable: true)]
+    #[ORM\Column(name: 'person_ref', type: 'string', length: 69, nullable: true)]
     private ?string $personRef = null;
 
     /** Since 1.15: when the person was anonymised; an anonymised entry is never written again. */
     #[ORM\Column(name: 'anonymised_at', type: 'datetime_immutable', nullable: true)]
-    // @phpstan-ignore property.unusedType (written by the store's bulk statement only)
     private ?DateTimeImmutable $anonymisedAt = null;
 
     /**
@@ -172,22 +173,79 @@ class TimeEntry
     }
 
     /**
-     * Since 1.15: the person of an ownerless imported entry changed its name (or it had no identity yet); true when a
-     * field changed. An entry that belonged to a user keeps that identity.
+     * Since 1.15: the person of this ownerless imported entry changed their name.
      *
      * @internal used by the imported-entry writer only
      */
-    public function applyPerson(ImportedTimeEntryPerson $person): bool
+    public function applyPersonName(?string $name): void
     {
-        if ($this->user !== null || $this->getFormerUserId() !== null || ($this->personRef === $person->ref && $this->personNameSnapshot === $person->name)) {
-            return false;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->personNameSnapshot = $name;
+    }
+
+    /**
+     * Since 1.15: this loaded entry's user is being deleted in the current flush: the same result the foreign key and the
+     * bulk snapshot give the rows, so the entity holds no reference to a removed user.
+     *
+     * @internal used by {@see FormerPersonSnapshotListener} only
+     */
+    public function detachDeletedUser(string $personRef, ?string $name): void
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->user = null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->personRef = $personRef;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->personNameSnapshot = $name;
+    }
+
+    /**
+     * Since 1.15: what anonymising does to this entity, for one loaded in the current flush (the store does the same in bulk).
+     *
+     * @internal used by {@see FormerPersonSnapshotListener} only
+     */
+    public function anonymiseInPlace(DateTimeImmutable $at): void
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->user = null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->personRef = null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->personNameSnapshot = null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->description = null;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->taskTitleSnapshot = '';
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->metadata = self::anonymisedMetadata($this->metadata);
+        if ($this->externalSource !== null && $this->externalId !== null) {
+            // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+            $this->externalId = self::anonymisedExternalId($this->externalSource, $this->externalId);
         }
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
-        $this->personRef = $person->ref;
-        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
-        $this->personNameSnapshot = $person->name;
+        $this->anonymisedAt = $at;
+    }
 
-        return true;
+    /**
+     * Since 1.15: the metadata an anonymised entry keeps: only the {@see self::CLOSED_BY_USER_DELETION} mark, which is not
+     * personal data and explains the end time.
+     *
+     * @param array<string, mixed>|null $metadata
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function anonymisedMetadata(?array $metadata): ?array
+    {
+        return (($metadata ?? [])['closed_by'] ?? null) === self::CLOSED_BY_USER_DELETION ? ['closed_by' => self::CLOSED_BY_USER_DELETION] : null;
+    }
+
+    /**
+     * Since 1.15: the external id an anonymised entry keeps: a hash, so a re-sync still finds it and writes nothing, and the
+     * remote entry is not named. A pseudonym: whoever holds the remote id can recompute it.
+     */
+    public static function anonymisedExternalId(string $externalSource, string $externalId): string
+    {
+        return 'anon:' . hash('sha256', $externalSource . "\0" . $externalId);
     }
 
     /**
@@ -311,7 +369,7 @@ class TimeEntry
 
     /**
      * Since 1.15: whether the entry comes from a timer that was still running when its user was deleted, so its end is the
-     * deletion time and not a stop by the person. Anonymising clears the metadata, and this mark with it.
+     * deletion time and not a stop by the person. Anonymising keeps this mark.
      */
     public function isClosedByUserDeletion(): bool
     {
@@ -319,7 +377,9 @@ class TimeEntry
     }
 
     /**
-     * Since 1.15: whether the person was anonymised (no name, no reference, no free text; the time stays).
+     * Since 1.15: whether the person was anonymised (no name, reference, free text or task title; the external id is
+     * hashed; the time stays). Pseudonymised rather than anonymous in the GDPR sense unless the host has assessed it: task
+     * id, board, tenant and exact times stay, and in a small team they can single someone out.
      */
     public function isAnonymised(): bool
     {

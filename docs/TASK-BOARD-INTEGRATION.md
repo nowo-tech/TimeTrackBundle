@@ -45,7 +45,11 @@ deleted only by an explicit manager action.
 Since 1.15 the hours of a person with no user are stored too:
 
 ```php
-$owner = $candidate->user() ?? new ImportedTimeEntryPerson($candidate->person->getId(), $candidate->person->isAnonymised() ? null : $candidate->person->getName(), $scopeKey);
+$person = $candidate->person;
+$user   = $candidate->user();
+$owner  = $user instanceof UserInterface
+    ? new ImportedTimeEntryClaim($user, $person->getId(), $scopeKey)
+    : new ImportedTimeEntryPerson($person->getId(), $person->isAnonymised() ? null : $person->getName(), $scopeKey);
 ```
 
 Rows go through `ImportedTimeEntryWriter::upsertMany([[$owner, $data], ...])`. See [Entries with no user](USAGE.md#entries-with-no-user-115).

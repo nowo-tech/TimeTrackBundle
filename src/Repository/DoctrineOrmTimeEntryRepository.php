@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
 use Doctrine\DBAL\LockMode;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -415,15 +416,18 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             }
             $rows    = [];
             $seconds = [];
+            $kept    = 0;
             foreach ($batch as $row) {
                 $lastId = $row['id'];
                 if ($keep(['id' => $row['id'], 'userId' => $row['userId'] === null ? null : (string) $row['userId'], 'personRef' => $row['personRef'], 'scopeKey' => $row['scopeKey'], 'startedAt' => $row['startedAt']])) {
+                    ++$kept;
                     continue;
                 }
                 $seconds[$row['taskId']] = ($seconds[$row['taskId']] ?? 0) + (int) $row['seconds'];
                 $rows[]                  = $row;
             }
             if ($rows === []) {
+                $removal = $removal->merge(new ImportedTimeEntryRemoval(kept: $kept));
                 continue;
             }
             $this->entityManager->createQueryBuilder()
@@ -436,7 +440,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             // Since 1.15 an ownerless entry has no owner id to report.
             $owners  = array_filter(array_column($rows, 'userId'), static fn (int|string|null $id): bool => $id !== null);
             $people  = array_filter(array_column($rows, 'personRef'), static fn (?string $ref): bool => $ref !== null);
-            $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(strval(...), array_values($owners)), array_values($people)));
+            $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(strval(...), array_values($owners)), array_values($people), $kept));
         } while (count($batch) === $batchSize);
 
         return $removal;
@@ -557,6 +561,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         return $this->updateInBatches(
             static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId),
             static fn (QueryBuilder $update): QueryBuilder => $update->set('e.personRef', ':ref')->set('e.personNameSnapshot', ':name')->setParameter('ref', $personRef)->setParameter('name', $name),
+            false,
         );
     }
 
@@ -576,21 +581,35 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function anonymiseOwner(string $userId, DateTimeImmutable $at): int
     {
-        return $this->updateInBatches(
-            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId),
-            fn (QueryBuilder $update): QueryBuilder => $this->anonymised($update, $at),
+        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId), $at);
+    }
+
+    /**
+     * Since 1.15: anonymises the entries of a person reference. A row is matched again in PHP: a MySQL collation may fold case.
+     */
+    public function anonymisePerson(string $personRef, DateTimeImmutable $at): int
+    {
+        return $this->anonymiseWhere(
+            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.personRef = :ref')->andWhere('e.user IS NULL')->setParameter('ref', $personRef),
+            $at,
+            static fn (array $row): bool => $row['personRef'] === $personRef,
         );
     }
 
     /**
-     * Since 1.15: anonymises the entries of a person reference.
+     * Since 1.15: anonymises the ownerless entries with no person reference.
      */
-    public function anonymisePerson(string $personRef, DateTimeImmutable $at): int
+    public function anonymiseUnidentified(DateTimeImmutable $at): int
     {
-        return $this->updateInBatches(
-            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.personRef = :ref')->andWhere('e.user IS NULL')->setParameter('ref', $personRef),
-            fn (QueryBuilder $update): QueryBuilder => $this->anonymised($update, $at),
-        );
+        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.user IS NULL')->andWhere('e.personRef IS NULL'), $at);
+    }
+
+    /**
+     * Since 1.15: anonymises the ownerless entries that ended before the cut-off.
+     */
+    public function anonymiseOwnerlessEndedBefore(DateTimeImmutable $cutOff, DateTimeImmutable $at): int
+    {
+        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.user IS NULL')->andWhere('e.endedAt < :cut')->setParameter('cut', $cutOff), $at);
     }
 
     /**
@@ -677,17 +696,60 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         return $query;
     }
 
-    /** The fields an anonymised entry loses: the time, the task snapshot and the external identity stay. */
-    private function anonymised(QueryBuilder $update, DateTimeImmutable $at): QueryBuilder
+    /**
+     * One statement per row, because the external id and the metadata depend on the row; no entity loaded, no flush. Same
+     * result as {@see TimeEntry::anonymiseInPlace()}. Already anonymised rows are skipped.
+     *
+     * @param callable(QueryBuilder): QueryBuilder $filter
+     * @param (callable(array{id: string, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}): bool)|null $accept
+     */
+    private function anonymiseWhere(callable $filter, DateTimeImmutable $at, ?callable $accept = null): int
     {
-        return $update
-            ->set('e.user', 'NULL')
-            ->set('e.personRef', 'NULL')
-            ->set('e.personNameSnapshot', 'NULL')
-            ->set('e.description', 'NULL')
-            ->set('e.metadata', 'NULL')
-            ->set('e.anonymisedAt', ':at')
-            ->setParameter('at', $at, 'datetime_immutable');
+        $changed = 0;
+        $lastId  = '';
+        do {
+            /** @var list<array{id: string, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}> $rows */
+            $rows = $filter($this->entityManager->createQueryBuilder()
+                ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.metadata AS metadata', 'e.personRef AS personRef')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.id > :lastId')
+                ->andWhere('e.anonymisedAt IS NULL')
+                ->setParameter('lastId', $lastId))
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(self::FORMER_PERSON_BATCH)
+                ->getQuery()
+                ->getArrayResult();
+            foreach ($rows as $row) {
+                $lastId = $row['id'];
+                if ($accept !== null && !$accept($row)) {
+                    // Needs a case-insensitive collation: testReferencesThatDifferOnlyByCase… on MySQL in CI.
+                    // @codeCoverageIgnoreStart
+                    continue;
+                    // @codeCoverageIgnoreEnd
+                }
+                $changed += (int) $this->entityManager->createQueryBuilder()
+                    ->update(TimeEntry::class, 'e')
+                    ->set('e.user', 'NULL')
+                    ->set('e.personRef', 'NULL')
+                    ->set('e.personNameSnapshot', 'NULL')
+                    ->set('e.description', 'NULL')
+                    ->set('e.taskTitleSnapshot', ':title')
+                    ->set('e.externalId', ':externalId')
+                    ->set('e.metadata', ':metadata')
+                    ->set('e.anonymisedAt', ':at')
+                    ->where('e.id = :id')
+                    ->setParameter('title', '')
+                    ->setParameter('externalId', $row['externalSource'] !== null && $row['externalId'] !== null ? TimeEntry::anonymisedExternalId($row['externalSource'], $row['externalId']) : null)
+                    ->setParameter('metadata', TimeEntry::anonymisedMetadata($row['metadata']), Types::JSON)
+                    ->setParameter('at', $at, Types::DATETIME_IMMUTABLE)
+                    ->setParameter('id', $row['id'])
+                    ->getQuery()
+                    ->execute();
+            }
+            $this->detachRemoved(array_column($rows, 'id'));
+        } while (count($rows) === self::FORMER_PERSON_BATCH);
+
+        return $changed;
     }
 
     /**
@@ -696,8 +758,9 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      *
      * @param callable(QueryBuilder): QueryBuilder $filter
      * @param callable(QueryBuilder): QueryBuilder $apply
+     * @param bool $detach false keeps loaded entries managed, with any pending change of the host
      */
-    private function updateInBatches(callable $filter, callable $apply): int
+    private function updateInBatches(callable $filter, callable $apply, bool $detach = true): int
     {
         $changed = 0;
         $lastId  = '';
@@ -718,7 +781,9 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->setParameter('ids', $ids)
                 ->getQuery()
                 ->execute();
-            $this->detachRemoved($ids);
+            if ($detach) {
+                $this->detachRemoved($ids);
+            }
         } while (count($rows) === self::FORMER_PERSON_BATCH);
 
         return $changed;

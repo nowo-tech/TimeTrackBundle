@@ -39,6 +39,7 @@ services:
             # Since 1.11: value objects and the writer / policy (the writer and the policy are defined by the extension).
             - '../../Import/ImportedTimeEntryData.php'
             - '../../Import/ImportedTimeEntryPerson.php'
+            - '../../Import/ImportedTimeEntryClaim.php'
             - '../../Import/ImportedTimeEntryResult.php'
             - '../../Import/ImportedTimeEntryBatchResult.php'
             - '../../Import/ImportedTimeEntryRemoval.php'

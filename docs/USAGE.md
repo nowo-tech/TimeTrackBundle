@@ -240,7 +240,7 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
   `too_old` / `future`). The title is cleaned to one line and cut to 255; the description
   is cleaned (controls and bidi overrides stripped, line breaks kept) and **never truncated**.
 - **The owner never changes**: re-associating someone's time is `removeForUser()` / `remove()` then `upsert()` for
-  the new user (the host audits it). Since 1.15 an entry of a person with no account may be claimed by a user.
+  the new user (the host audits it). Since 1.15 an entry of a person with no account may be claimed explicitly.
 - **A person with no account (1.15):** `$writer->upsertForPerson(new ImportedTimeEntryPerson($ref, $name, $scopeKey), $data)`.
   See [Entries with no user](#entries-with-no-user-115).
 - Imported entries are **read-only** (`TimeEntry::isReadOnly()`, `canEditEntry()` always false) and are not live
@@ -274,68 +274,97 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 
 ## Entries with no user (1.15)
 
-Owner rule: tracked time is not lost, including when a user is deleted. An entry has no user when it is a former person's
-imported time, or when its user was deleted (`user_id` is `ON DELETE SET NULL`).
+Owner rule: tracked time is not lost, including when a user is deleted. The rule keeps the hours; it does not require keeping
+the person. An entry has no user when it is a former person's imported time, or when its user was deleted (`user_id` is
+`ON DELETE SET NULL`).
 
 ```php
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryClaim;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 
 // A former colleague with no account: the entry has no owner and shows under the name.
 $writer->upsertForPerson(new ImportedTimeEntryPerson(ref: $personId, name: 'Ana Ruiz', scopeKey: $tenant), $data);
-$writer->upsertMany([[$user, $data1], [new ImportedTimeEntryPerson($personId, 'Ana Ruiz'), $data2]]);
+// A mapped person: the user owns new entries, and takes the entries of that person, in that tenant.
+$writer->upsert(new ImportedTimeEntryClaim($user, $personId, $tenant), $data);
 
-// Someone leaves: their entries stay under their name; the account can go.
+// Someone leaves: their running timer is saved and their entries stay under their name; the account can go.
 $people->release($user, 'Ana Ruiz');
-// An erasure request: the time stays, the person goes (also for a former person, by reference).
+// An erasure request: the time stays, the person goes. Also covers what release() or a delete left.
 $people->anonymiseUser($user);
-$people->anonymisePerson($personId);
-$people->anonymisePerson(FormerPersonTimeEntries::personRefOf($user)); // after release() or a delete
-// GDPR art. 15 / 20.
+$people->anonymisePerson($personId);                                    // a former person
+$people->anonymisePerson(FormerPersonTimeEntries::personRefOf($user)); // when you no longer hold the user
+$people->anonymiseUnidentified();                                       // what a raw DELETE left: all of it
+// The retention term for names and free text.
+$people->anonymiseOwnerlessEndedBefore($clock->now()->modify('-4 years'));
+// GDPR art. 15 / 20. Pass cells through TimeEntryCsv::cell() if you write a CSV.
 $rows = $people->export($personId);
 ```
 
 | An upsert naming | on an entry of | does |
 | --- | --- | --- |
-| a user | the same user | update |
-| a user | another user | `ImportedEntryOwnerMismatchException` |
-| a user | a former person, or no identity | claim: the user owns it, the snapshot goes |
-| a user | a deleted user | the same id: back to them; another: mismatch |
+| a user or a claim | the same user | update |
+| a user or a claim | another user | `ImportedEntryOwnerMismatchException` |
+| a plain user | a former person or a deleted user | mismatch: taking one must be explicit |
+| a claim, with the entry's reference and scope | a former person | claim: the user owns it, the snapshot goes |
+| a claim, with the entry's reference and scope | a deleted user | the same id: back to them; another: mismatch |
+| a claim with another reference or scope | an ownerless entry | mismatch |
 | a person | a user | mismatch: remove, then upsert |
-| a person | the same person | update, name included |
-| a person | another person | mismatch |
-| a person | a deleted user | update of the time; the entry keeps that identity and name |
-| anyone | an anonymised entry | `Unchanged`, nothing written: a re-sync never brings the name back |
+| a person, same reference and scope | that person | update, name included |
+| a person, another reference or scope | a former person | mismatch |
+| a person | a deleted user | `Unchanged`, nothing written |
+| a user, a claim or a person | an entry with no identity (a raw delete) | `Unchanged`, nothing written |
+| anyone | an anonymised entry | `Unchanged`, nothing written |
 
-- `ImportedTimeEntryPerson::$ref` is opaque and stable (`[A-Za-z0-9._:#-]{1,64}`, `user:` is reserved): never an e-mail. The
-  name is cleaned to one line and cut to 255; blank means none.
+A mismatch refuses the whole batch, as it always has. References compare case-sensitively.
+
+- `ImportedTimeEntryPerson::$ref` is opaque and stable (`[A-Za-z0-9._:#-]{1,64}`, `user:` is reserved in any case): never an e-mail.
+  The name is cleaned to one line with every invisible character stripped, cut to 255; blank or an e-mail means none.
 - **Who sees them:** nobody by default. A `TIME_ENTRY_LIST_QUERY` listener decides, with the viewer's tenant scopes:
-  `$event->includeOwnerless(['org-a'])`, or `null` for every scope (the only way to list an entry with no scope). They never
-  reach the client API or the owner's export, which read one user's entries.
+  `$event->includeOwnerless(['org-a'])`, or `null` for every scope (the only way to list an entry with no scope, so a host
+  listing by scope does not see those hours). They never reach the client API or the owner's export. On a MySQL
+  case-insensitive collation, keep tenant keys distinct regardless of case.
 - **Read-only:** `canEditEntry()` is false for them (no owner, or imported).
 - **Manager removal stays allowed** (owner ruling: "never deleted" means never as a side effect). `ImportedTimeEntryDeleter`
   (needs a `delete_imported` grant) and `remove()`, `removeForTasks()`, `removeForBoard()`, `removeForSource()` work on ownerless
   imported entries. An entry of a locked or submitted period of the deleted user, or with no identity while timesheets are on,
-  is kept and not counted. `TimeEntriesRemovedEvent` records each removal: count, `secondsByTask`, `userIds`, `personRefs` and
-  `actorId` (pass `$actorId` to the bulk calls). **The bundle keeps no audit table: store that event**, or the removal leaves
-  only a log line of counts. `removeForUser()` reaches only entries that still have that user.
+  is kept and not counted. `TimeEntriesRemovedEvent` records each one, a refusal included: count, `keptCount`, `secondsByTask`,
+  `userIds`, `personRefs` and `actorId` (pass `$actorId` to the bulk calls). **The bundle keeps no audit table: store that event**,
+  or the removal leaves only a log line of counts. `removeForUser()` reaches only entries that still have that user, and is
+  for re-association only.
 - **A timer still running when the user is deleted** is stopped and saved, so the time in progress is not lost: the end is the
-  deletion time, `isClosedByUserDeletion()` is true (`metadata.closed_by = user_deletion`, cleared by anonymising), and it gets the
+  deletion time, `isClosedByUserDeletion()` is true (`metadata.closed_by = user_deletion`, kept by anonymising), and it gets the
   name and reference like the rest. `$entityManager->remove($user)` does this. It is a normal stop: `TIMER_STOP` fires while the user
-  still exists (task totals follow), a locked period does not refuse it or block the deletion (`TIMESHEET_LATE_ENTRY` tells the
-  approver, and the entry stays locked), and no overlap is checked (ownerless entries are not in any overlap check). It flushes at
-  `remove()`, before the delete: if the delete then fails, the user keeps a stopped, marked entry. So do not `remove()` a user from
-  inside a flush.
-- **A raw `DELETE`** does not get any of this: `time_track_active_timers` is `ON DELETE CASCADE`, so the running timer goes with the
-  user, and the entries stay without a name. Call `$timerService->stopForUserDeletion($user)` and `$people->release($user, $name)`
-  first.
-- **Period lock:** a deleted user's entry stays locked by their timesheets (`owner_ref` is the same id); a former person has
-  none; an entry with no identity at all has an unknown owner and is not writable while timesheets are on. Anonymising outranks
-  the lock, and it changes no time.
+  still exists (task totals follow; a listener that throws stops the delete, and a retry goes through), a locked period does not
+  refuse it or block the deletion (`TIMESHEET_LATE_ENTRY` tells the approver, and the entry stays locked), and no overlap is checked
+  (ownerless entries are not in any overlap check). It flushes at `remove()`, before the delete, your pending work included. Wrap
+  the delete in a transaction to make it one unit; otherwise, if the delete fails, the user keeps a stopped, marked entry. Do not
+  `remove()` a user from inside a flush.
+- **A raw `DELETE` gets none of this.** `time_track_active_timers` is `ON DELETE CASCADE`, so the running timer goes with the user, and
+  the entries stay with no name and no reference, where no erasure or export can find one person's. **`$people->release($user, $name)` is
+  required before it.** Keeping the timer through the foreign key is not an option: a foreign key runs no code, so nothing could close the
+  timer at the deletion time or name it.
+- **Period lock:** a deleted user's entry stays locked by their timesheets (found by `owner_ref`); a former person has none; an entry with no
+  identity has an unknown owner and is not writable while timesheets are on. Anonymising outranks the lock, and it changes no time. An
+  approved timesheet keeps its stored totals, while a rebuild from the live entries differs.
 - Task totals (`loggedSecondsByTask()`) include them. Worked time, balance, timesheets and overlap checks read one user's live
-  entries and never see them.
-- Anonymising clears the name, the reference, `description` and `metadata` (the note). The task snapshot, the times, the
-  duration and the external identity stay: the identity keeps the re-sync idempotent.
+  entries and never see them. **Anonymising a living account takes its hours out of those views.** A deleted user's timesheet has
+  stored totals, but a rebuild reads zero, so an approver gets `stale`.
+- Anonymising clears the name, the reference, `description`, `task_title_snapshot` and `metadata` (except the `closed_by` mark), and hashes
+  `external_id`, so a re-sync still finds the row and writes nothing. `task_id`, `board_id_snapshot`, `scope_key` and the times stay: totals and tenant
+  isolation need them. An explicit manager removal of an anonymised row forgets it, and a later re-sync creates it again with the name.
+
+### What the host must do
+
+- **Choose what a delete means:** by default the name, description and note stay with no expiry. Set
+  `retention.anonymise_on_user_delete: true`, or call `anonymiseUser()` in your erasure flow. This is pseudonymisation unless you have assessed your
+  team size and titles (GDPR recital 26), and it is for your counsel to confirm.
+- **Set a retention term** with `anonymiseOwnerlessEndedBefore()` on a schedule. The bundle does not run it.
+- **Do not anonymise entries you use as a legal working-time register** within the legal term. The bundle marks its totals `legalRecord: false`.
+- **Show names only to those who need them.** If you keep data only for possible liabilities, block it (LOPDGDD art. 32) and do not list it.
+- **Store `TimeEntriesRemovedEvent`.**
+- **Call `release()` before a raw `DELETE`**, and `stopForUserDeletion()` before code that deletes `ActiveTimer` rows.
+- **Keep `external_id` opaque:** it is hashed on anonymise, but only then.
 
 ## Working time and timesheets (1.13)
 

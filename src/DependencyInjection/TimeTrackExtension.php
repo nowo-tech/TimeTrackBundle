@@ -322,7 +322,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     {
         /** @var array{max_entry_seconds: int} $imports */
         $imports = $config['imports'];
-        /** @var array{include_imported: bool} $retention */
+        /** @var array{include_imported: bool, anonymise_on_user_delete: bool} $retention */
         $retention = $config['retention'];
 
         $container->setParameter('nowo_time_track.imports.max_entry_seconds', $imports['max_entry_seconds']);
@@ -346,17 +346,20 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(FormerPersonTimeEntries::class, (new Definition(FormerPersonTimeEntries::class))
             ->setPublic(true)
             ->setArguments([
-                '$repository' => new Reference(TimeEntryRepositoryInterface::class),
-                '$profiles'   => new Reference(ClientUserProfileProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
-                '$clock'      => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
-                '$logger'     => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+                '$repository'            => new Reference(TimeEntryRepositoryInterface::class),
+                '$profiles'              => new Reference(ClientUserProfileProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'                 => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'                => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+                '$timers'                => new Reference(TimerService::class),
+                '$anonymiseOnUserDelete' => $retention['anonymise_on_user_delete'],
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(FormerPersonSnapshotListener::class, (new Definition(FormerPersonSnapshotListener::class))
             ->setArgument('$entries', new Reference(FormerPersonTimeEntries::class))
             ->setArgument('$userClass', $config['user_class'])
             ->setArgument('$timers', new Reference(TimerService::class))
-            ->addTag('doctrine.event_listener', ['event' => 'preRemove']));
+            ->addTag('doctrine.event_listener', ['event' => 'preRemove'])
+            ->addTag('doctrine.event_listener', ['event' => 'onFlush']));
     }
 
     /**

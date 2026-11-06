@@ -12,6 +12,7 @@ use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\Tools\SchemaTool;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 
 use function dirname;
@@ -37,6 +38,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         self::assertTrue($column['nullable'] ?? false);
         self::assertSame('SET NULL', strtoupper((string) ($column['onDelete'] ?? '')));
         self::assertSame(['person_ref'], $metadata->table['indexes']['idx_time_track_entries_person_ref']['columns'] ?? null);
+        self::assertSame(69, $metadata->getFieldMapping('personRef')->length, '"user:" and an owner_ref of 64');
+        self::assertSame(['owner_ref', 'period_end'], $this->entityManager()->getClassMetadata(Timesheet::class)->table['indexes']['idx_time_track_timesheets_owner_ref']['columns'] ?? null);
     }
 
     public function testTheReferenceMigrationsMatchTheMappingAndKeepTheRows(): void
@@ -59,41 +62,61 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         self::assertSame(['Kept', '3600'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT duration_seconds FROM time_track_entries')]);
     }
 
-    public function testTheRollbackRefusesToDropAnEntryWithNoUser(): void
+    public function testTheRollbackRefusesAnEntryWithNoUserAndChangesNothing(): void
     {
         $em   = $this->entityManager();
         $conn = $em->getConnection();
         $em->persist(new TimeEntry(null, 'task-1', 'Kept', null, new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Import));
         $em->flush();
 
-        $this->expectException(DbalException::class);
         try {
             $this->runSql($this->platformName() . '-down.sql');
-        } finally {
-            self::assertSame(1, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_entries'), 'nothing is deleted');
-            if ($conn->getDatabasePlatform() instanceof SQLitePlatform) {
-                $conn->executeStatement('DROP TABLE time_track_entries_old');
+            self::fail('expected a refusal');
+        } catch (DbalException) {
+            // What the runner does at the first error; the native clients are in .scripts/check-rollback-clients.sh.
+            if ($this->platformName() === 'mysql') {
+                $conn->executeStatement('SET SESSION sql_mode = @time_track_sql_mode');
+            } else {
+                $conn->executeStatement('ROLLBACK');
+            }
+            if ($this->platformName() === 'sqlite') {
                 $conn->executeStatement('PRAGMA foreign_keys = ON');
             }
         }
+
+        self::assertSame(1, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_entries'), 'nothing is deleted');
+        self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'nothing changed: columns, indexes and the SET NULL key are all there');
     }
 
     public function testTheDemoMigrationAndUpgradingCarryTheReferenceStatements(): void
     {
         $root      = dirname(__DIR__, 2);
-        $migration = (string) file_get_contents($root . '/demo/symfony8/migrations/Version20261108000000.php');
+        $migration = str_replace('FK_TIME_TRACK_ENTRIES_USER', 'FK_7CB77957A76ED395', (string) file_get_contents($root . '/demo/symfony8/migrations/Version20261108000000.php'));
         $upgrading = (string) file_get_contents($root . '/docs/UPGRADING.md');
         foreach (['mysql', 'postgresql', 'sqlite'] as $platform) {
             foreach (['up', 'down'] as $direction) {
                 foreach ($this->statements($platform . '-' . $direction . '.sql') as $statement) {
                     self::assertStringContainsString($statement . ';', $upgrading);
-                    // The demo's foreign key has its own name until this migration renames it.
-                    if ($platform === 'mysql' && ($direction !== 'up' || !str_contains($statement, 'DROP FOREIGN KEY')) && !str_contains($statement, 'ON DELETE CASCADE')) {
-                        self::assertStringContainsString("addSql('" . $statement . "')", $migration);
+                    if ($platform === 'mysql') {
+                        self::assertTrue(str_contains($migration, "addSql('" . $statement . "')") || str_contains($migration, 'addSql("' . $statement . '")'), $statement);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * The native clients run these files with their own defaults, so the safety must be in the files.
+     */
+    public function testTheRollbackFilesAreSafeWithTheNativeClientsDefaults(): void
+    {
+        $sql = static fn (string $file): string => (string) file_get_contents(dirname(__DIR__, 2) . '/docs/sql/1.15.0/' . $file);
+
+        self::assertMatchesRegularExpression('/^\\.bail on$/m', $sql('sqlite-down.sql'));
+        self::assertMatchesRegularExpression('/^\\\\set ON_ERROR_STOP on\nBEGIN;$/m', $sql('postgresql-down.sql'));
+        self::assertStringEndsWith("COMMIT;\n", $sql('postgresql-down.sql'));
+        self::assertMatchesRegularExpression('/^ALTER TABLE time_track_entries DROP FOREIGN KEY [^;]+, CHANGE user_id user_id INT NOT NULL;$/m', $sql('mysql-down.sql'), 'one atomic ALTER');
+        self::assertStringContainsString('STRICT_ALL_TABLES', $sql('mysql-down.sql'), 'without strict mode NOT NULL turns a null user into 0');
     }
 
     private function platformName(): string
@@ -124,7 +147,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $statements = [];
         foreach (explode("\n", (string) file_get_contents(dirname(__DIR__, 2) . '/docs/sql/1.15.0/' . $file)) as $line) {
             $line = trim($line);
-            if ($line !== '' && !str_starts_with($line, '--')) {
+            // `.bail on` and `\\set ON_ERROR_STOP on` are for the native clients.
+            if ($line !== '' && !str_starts_with($line, '--') && !str_starts_with($line, '.') && !str_starts_with($line, '\\')) {
                 $statements[] = rtrim($line, ';');
             }
         }

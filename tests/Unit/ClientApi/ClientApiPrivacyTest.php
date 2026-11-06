@@ -94,6 +94,14 @@ final class ClientApiPrivacyTest extends TestCase
         yield 'protocol-relative' => ['//evil.test/', null];
         yield 'no host' => ['https:///privacy', null];
         yield 'not a string' => [['x'], null];
+        yield 'ipv6' => ['https://[2001:db8::1]/privacy', 'https://[2001:db8::1]/privacy'];
+        yield 'credentials' => ['http://user:pass@ex.test/', null];
+        yield 'a host hidden behind credentials' => ['https://ex.test@evil.test/', null];
+        yield 'backslash' => ['https://ex.test\\@evil.test/', null];
+        yield 'newline in the path' => ["https://ex.test/a\nb", null];
+        yield 'trailing blank' => ['https://ex.test/ ', null];
+        yield 'blank in the host' => ['https://ex .test/', null];
+        yield 'markup as a host' => ['https://<script>/', null];
     }
 
     #[DataProvider('providerUrls')]

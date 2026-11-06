@@ -55,35 +55,35 @@
 
 ## Unreleased
 
-Target **1.15.0**, from **1.14.0**. Audit status: re-verification pending.
+Target **1.15.0**, from **1.14.0**.
 
-**Schema migration required (every host).** `time_track_entries.user_id` becomes nullable and `ON DELETE SET NULL`, and the
-table gets `person_name_snapshot`, `person_ref` and `anonymised_at`. Run `doctrine:migrations:diff`, or apply the reference
-SQL of your platform. Replace `users` and `INT` with your user table and primary-key type, and the foreign-key name if yours
-differs (Doctrine's default, also Beacon's, is `FK_7CB77957A76ED395`; the demo's own was `FK_TIME_TRACK_ENTRIES_USER`). No row
-is rewritten. The files are in `docs/sql/1.15.0/`, and the demo ships the MySQL one as
-`demo/symfony8/migrations/Version20261108000000.php`. On a large MySQL table the `ALTER` rebuilds the table: plan the window.
+Audit status: Appendix HA (2026-11-06, PR #73): audited at `ebe1629` as **Fail / High** (not released). Fixes pending independent re-verification. Not for release until then.
 
-**Rollback:** the down scripts fail while an entry has no user, on purpose: a rollback never deletes tracked time.
+**Read this first: a plain user delete no longer erases.** Deleting a user used to delete their tracked time. Now the hours stay (owner rule 2026-11-06: tracked time is not lost, including when a user is deleted), and so, by default, do their name, descriptions and notes, **with no expiry**. If "delete the user" is your erasure flow, you must act: set `retention.anonymise_on_user_delete: true`, or call `FormerPersonTimeEntries::anonymiseUser($user)`, and set a retention term with `anonymiseOwnerlessEndedBefore($cutOff)`. See [host duties](USAGE.md#what-the-host-must-do).
 
-<details><summary>MySQL 8 / MariaDB (docs/sql/1.15.0/mysql-up.sql)</summary>
+**Schema migration required (every host).** `time_track_entries.user_id` becomes nullable and `ON DELETE SET NULL`, the table gets `person_name_snapshot`, `person_ref` (69 long: `user:` and an `owner_ref` of 64) and `anonymised_at`, and `time_track_timesheets` gets an index on `(owner_ref, period_end)`. Run `doctrine:migrations:diff`, or apply the reference SQL of your platform. Replace `users` and `INT` with your user table and primary-key type, and the foreign-key name if yours differs (Doctrine's default, also Beacon's, is `FK_7CB77957A76ED395`; the demo's own was `FK_TIME_TRACK_ENTRIES_USER`). No row is rewritten. The files are in `docs/sql/1.15.0/`, and the demo ships the MySQL one as `demo/symfony8/migrations/Version20261108000000.php`. On a large MySQL table the `ALTER` rebuilds the table: plan the window.
+
+**Rollback.** While an entry has no user, every down script refuses and changes nothing: a rollback never deletes tracked time. Decide about those entries first. This holds with the native clients' default options, as `.scripts/check-rollback-clients.sh` proves in CI on `sqlite3`, `mysql`, `mariadb` and `psql`. Run the SQLite scripts with the `sqlite3` CLI: they rely on `.bail on`. Any other runner must skip the `.` and `\` lines, stop at the first error and roll back. Run them outside a transaction: on SQLite a surrounding transaction makes `PRAGMA foreign_keys` a no-op.
+
+<details><summary>MySQL 8 / MariaDB 10.6+ (docs/sql/1.15.0/mysql-up.sql)</summary>
 
 ```sql
--- TimeTrackBundle 1.15.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type, and FK_7CB77957A76ED395 with the name of your foreign key if it differs). Entries with no user; no row is rewritten.
-ALTER TABLE time_track_entries DROP FOREIGN KEY FK_7CB77957A76ED395;
-ALTER TABLE time_track_entries ADD person_name_snapshot VARCHAR(255) DEFAULT NULL, ADD person_ref VARCHAR(64) DEFAULT NULL, ADD anonymised_at DATETIME DEFAULT NULL, CHANGE user_id user_id INT DEFAULT NULL;
-CREATE INDEX idx_time_track_entries_person_ref ON time_track_entries (person_ref);
+-- TimeTrackBundle 1.15.0, MySQL 8 / MariaDB 10.6+ (default table prefix; replace `users` and INT with your user table and PK type, and FK_7CB77957A76ED395 with the name of your foreign key if it differs). Entries with no user; no row is rewritten. The first statement is one atomic change.
+ALTER TABLE time_track_entries DROP FOREIGN KEY FK_7CB77957A76ED395, ADD person_name_snapshot VARCHAR(255) DEFAULT NULL, ADD person_ref VARCHAR(69) DEFAULT NULL, ADD anonymised_at DATETIME DEFAULT NULL, CHANGE user_id user_id INT DEFAULT NULL, ADD INDEX idx_time_track_entries_person_ref (person_ref);
 ALTER TABLE time_track_entries ADD CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL;
+CREATE INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets (owner_ref, period_end);
 ```
 
 Rollback:
 
 ```sql
--- Rollback to 1.14 (MySQL 8 / MariaDB 10.6+): the CHANGE fails while an entry has no user, on purpose: rolling back never deletes tracked time. Decide about those entries first.
-ALTER TABLE time_track_entries DROP FOREIGN KEY FK_7CB77957A76ED395;
-DROP INDEX idx_time_track_entries_person_ref ON time_track_entries;
-ALTER TABLE time_track_entries DROP person_name_snapshot, DROP person_ref, DROP anonymised_at, CHANGE user_id user_id INT NOT NULL;
+-- Rollback to 1.14 (MySQL 8 / MariaDB 10.6+). While an entry has no user the first ALTER is refused and changes nothing: a rollback never deletes tracked time. Decide about those entries first. Strict mode is forced because without it NOT NULL would turn their user into 0.
+SET @time_track_sql_mode = @@SESSION.sql_mode;
+SET SESSION sql_mode = CONCAT_WS(',', NULLIF(@@SESSION.sql_mode, ''), 'STRICT_ALL_TABLES');
+ALTER TABLE time_track_entries DROP FOREIGN KEY FK_7CB77957A76ED395, DROP INDEX idx_time_track_entries_person_ref, DROP person_name_snapshot, DROP person_ref, DROP anonymised_at, CHANGE user_id user_id INT NOT NULL;
 ALTER TABLE time_track_entries ADD CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
+DROP INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets;
+SET SESSION sql_mode = @time_track_sql_mode;
 ```
 
 </details>
@@ -91,27 +91,35 @@ ALTER TABLE time_track_entries ADD CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (u
 <details><summary>PostgreSQL 13+ (docs/sql/1.15.0/postgresql-up.sql)</summary>
 
 ```sql
--- TimeTrackBundle 1.15.0, PostgreSQL 13+ (default table prefix; replace `users` with your user table, and fk_7cb77957a76ed395 with the name of your foreign key if it differs). Entries with no user; no row is rewritten.
+-- TimeTrackBundle 1.15.0, PostgreSQL 13+ (default table prefix; replace `users` with your user table, and fk_7cb77957a76ed395 with the name of your foreign key if it differs). Entries with no user; no row is rewritten. One transaction. A runner other than psql skips the backslash line and stops at the first error.
+\set ON_ERROR_STOP on
+BEGIN;
 ALTER TABLE time_track_entries DROP CONSTRAINT FK_7CB77957A76ED395;
 ALTER TABLE time_track_entries ADD person_name_snapshot VARCHAR(255) DEFAULT NULL;
-ALTER TABLE time_track_entries ADD person_ref VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_entries ADD person_ref VARCHAR(69) DEFAULT NULL;
 ALTER TABLE time_track_entries ADD anonymised_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL;
 ALTER TABLE time_track_entries ALTER user_id DROP NOT NULL;
 CREATE INDEX idx_time_track_entries_person_ref ON time_track_entries (person_ref);
 ALTER TABLE time_track_entries ADD CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE;
+CREATE INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets (owner_ref, period_end);
+COMMIT;
 ```
 
 Rollback:
 
 ```sql
--- Rollback to 1.14 (PostgreSQL 13+): SET NOT NULL fails while an entry has no user, on purpose: rolling back never deletes tracked time. Decide about those entries first.
+-- Rollback to 1.14 (PostgreSQL 13+). One transaction: while an entry has no user SET NOT NULL fails and nothing changes, a rollback never deletes tracked time. Decide about those entries first. A runner other than psql skips the backslash line and stops at the first error.
+\set ON_ERROR_STOP on
+BEGIN;
+ALTER TABLE time_track_entries ALTER user_id SET NOT NULL;
 ALTER TABLE time_track_entries DROP CONSTRAINT FK_7CB77957A76ED395;
 DROP INDEX idx_time_track_entries_person_ref;
 ALTER TABLE time_track_entries DROP person_name_snapshot;
 ALTER TABLE time_track_entries DROP person_ref;
 ALTER TABLE time_track_entries DROP anonymised_at;
-ALTER TABLE time_track_entries ALTER user_id SET NOT NULL;
 ALTER TABLE time_track_entries ADD CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE;
+DROP INDEX idx_time_track_timesheets_owner_ref;
+COMMIT;
 ```
 
 </details>
@@ -119,9 +127,11 @@ ALTER TABLE time_track_entries ADD CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (u
 <details><summary>SQLite 3.35+ (docs/sql/1.15.0/sqlite-up.sql)</summary>
 
 ```sql
--- TimeTrackBundle 1.15.0, SQLite 3.35+ (default table prefix; replace `users` with your user table). SQLite cannot change a column or a foreign key: the table is rebuilt, with foreign keys off so the rebuild touches no other table. Run it outside a transaction.
+-- TimeTrackBundle 1.15.0, SQLite 3.35+ (default table prefix; replace `users` with your user table). SQLite cannot change a column or a foreign key: the table is rebuilt, with foreign keys off so the rebuild touches no other table. Run it with the sqlite3 CLI, outside a transaction; any other runner skips the dot line and stops at the first error.
+.bail on
 PRAGMA foreign_keys = OFF;
-CREATE TABLE time_track_entries_new (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, external_source VARCHAR(64) DEFAULT NULL, external_id VARCHAR(128) DEFAULT NULL, billable BOOLEAN DEFAULT NULL, description CLOB DEFAULT NULL, scope_key VARCHAR(64) DEFAULT NULL, person_name_snapshot VARCHAR(255) DEFAULT NULL, person_ref VARCHAR(64) DEFAULT NULL, anonymised_at DATETIME DEFAULT NULL, task_id VARCHAR(36) NOT NULL, task_title_snapshot VARCHAR(255) NOT NULL, board_id_snapshot VARCHAR(36) DEFAULT NULL, started_at DATETIME NOT NULL, ended_at DATETIME NOT NULL, duration_seconds INTEGER NOT NULL, source VARCHAR(16) NOT NULL, metadata CLOB DEFAULT NULL, user_id INTEGER DEFAULT NULL, PRIMARY KEY (id), CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE);
+BEGIN;
+CREATE TABLE time_track_entries_new (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, external_source VARCHAR(64) DEFAULT NULL, external_id VARCHAR(128) DEFAULT NULL, billable BOOLEAN DEFAULT NULL, description CLOB DEFAULT NULL, scope_key VARCHAR(64) DEFAULT NULL, person_name_snapshot VARCHAR(255) DEFAULT NULL, person_ref VARCHAR(69) DEFAULT NULL, anonymised_at DATETIME DEFAULT NULL, task_id VARCHAR(36) NOT NULL, task_title_snapshot VARCHAR(255) NOT NULL, board_id_snapshot VARCHAR(36) DEFAULT NULL, started_at DATETIME NOT NULL, ended_at DATETIME NOT NULL, duration_seconds INTEGER NOT NULL, source VARCHAR(16) NOT NULL, metadata CLOB DEFAULT NULL, user_id INTEGER DEFAULT NULL, PRIMARY KEY (id), CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL NOT DEFERRABLE INITIALLY IMMEDIATE);
 INSERT INTO time_track_entries_new (id, created_at, external_source, external_id, billable, description, scope_key, task_id, task_title_snapshot, board_id_snapshot, started_at, ended_at, duration_seconds, source, metadata, user_id) SELECT id, created_at, external_source, external_id, billable, description, scope_key, task_id, task_title_snapshot, board_id_snapshot, started_at, ended_at, duration_seconds, source, metadata, user_id FROM time_track_entries;
 DROP TABLE time_track_entries;
 ALTER TABLE time_track_entries_new RENAME TO time_track_entries;
@@ -133,14 +143,18 @@ CREATE INDEX idx_time_track_entries_source ON time_track_entries (source);
 CREATE UNIQUE INDEX uniq_time_track_entries_external ON time_track_entries (external_source, external_id);
 CREATE INDEX idx_time_track_entries_user_scope_started ON time_track_entries (user_id, scope_key, started_at);
 CREATE INDEX idx_time_track_entries_person_ref ON time_track_entries (person_ref);
+CREATE INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets (owner_ref, period_end);
+COMMIT;
 PRAGMA foreign_keys = ON;
 ```
 
 Rollback:
 
 ```sql
--- Rollback to 1.14 (SQLite 3.35+): the INSERT fails while an entry has no user, on purpose: rolling back never deletes tracked time. Decide about those entries first. Run it outside a transaction.
+-- Rollback to 1.14 (SQLite 3.35+). While an entry has no user the INSERT fails and the transaction ends with nothing changed: a rollback never deletes tracked time. Decide about those entries first. Run it with the sqlite3 CLI, outside a transaction; any other runner skips the dot line and MUST stop at the first error and roll back.
+.bail on
 PRAGMA foreign_keys = OFF;
+BEGIN;
 CREATE TABLE time_track_entries_old (id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, external_source VARCHAR(64) DEFAULT NULL, external_id VARCHAR(128) DEFAULT NULL, billable BOOLEAN DEFAULT NULL, description CLOB DEFAULT NULL, scope_key VARCHAR(64) DEFAULT NULL, task_id VARCHAR(36) NOT NULL, task_title_snapshot VARCHAR(255) NOT NULL, board_id_snapshot VARCHAR(36) DEFAULT NULL, started_at DATETIME NOT NULL, ended_at DATETIME NOT NULL, duration_seconds INTEGER NOT NULL, source VARCHAR(16) NOT NULL, metadata CLOB DEFAULT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_7CB77957A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
 INSERT INTO time_track_entries_old (id, created_at, external_source, external_id, billable, description, scope_key, task_id, task_title_snapshot, board_id_snapshot, started_at, ended_at, duration_seconds, source, metadata, user_id) SELECT id, created_at, external_source, external_id, billable, description, scope_key, task_id, task_title_snapshot, board_id_snapshot, started_at, ended_at, duration_seconds, source, metadata, user_id FROM time_track_entries;
 DROP TABLE time_track_entries;
@@ -152,39 +166,28 @@ CREATE INDEX time_track_entries_ended_idx ON time_track_entries (ended_at, id);
 CREATE INDEX idx_time_track_entries_source ON time_track_entries (source);
 CREATE UNIQUE INDEX uniq_time_track_entries_external ON time_track_entries (external_source, external_id);
 CREATE INDEX idx_time_track_entries_user_scope_started ON time_track_entries (user_id, scope_key, started_at);
+DROP INDEX idx_time_track_timesheets_owner_ref;
+COMMIT;
 PRAGMA foreign_keys = ON;
 ```
 
 </details>
 
-**Behaviour changes for hosts** (owner rule 2026-11-06: tracked time is not lost, including when a user is deleted):
+**Behaviour changes for hosts:**
 
-- **Deleting a user keeps the entries.** They used to go with the user. A host that relied on the cascade to delete them must
-  decide: an erasure now calls `FormerPersonTimeEntries::anonymiseUser($user)`, which keeps the time and clears the person.
-- **`TimeEntry::getUser()` may return null.** Check your code that reads `getUser()`, `IDENTITY(e.user)`, `user_id`, or joins
-  the user. An inner join leaves ownerless entries out of a report (their hours disappear from totals by person), a cast
-  like `(int) $row['userId']` adds them to user 0, and SQL `user_id <> :x` does not match `NULL`. Listeners of
-  `TIME_ENTRY_IMPORTED` get ownerless entries too.
-- **`removeForUser()` is for re-association only** (remove, then upsert). Do not call it for a deleted or erased account any more:
-  it deletes time.
-- **A running timer is saved when the user is deleted.** `$entityManager->remove($user)` stops it and saves it as a marked entry
-  ending at the deletion time, with no refusal from a locked period. It flushes at `remove()`, so do not call that inside a flush.
-  **A raw `DELETE` still loses it** (`time_track_active_timers` stays `ON DELETE CASCADE`): call
-  `TimerService::stopForUserDeletion($user)` first. Code that deletes `ActiveTimer` rows itself, such as an eraser, loses the time in
-  progress as well.
-- **Manager removal of ownerless imported entries stays allowed**, respecting the period lock. Bulk `remove*()` take `$actorId`, and
-  `TimeEntriesRemovedEvent` has `getPersonRefs()`. The bundle keeps no audit table: listen to that event to record removals.
-- **Name snapshot.** `$entityManager->remove($user)` writes it from `client_api.profile_provider`'s `getDisplayName()`, and no
-  name when that is null. A delete by DQL or SQL writes nothing: call `FormerPersonTimeEntries::release($user, $name)` first.
-- **Nothing shows by default.** Ownerless entries are listed only for a viewer a `TIME_ENTRY_LIST_QUERY` listener allows with
-  `includeOwnerless($scopeKeys)`. A full override of `reports.html.twig` or of `nowo_ui_list_row` must add the name
-  (`row.ownerless`, `row.personName`, `reports.former_person`).
-- **Custom stores:** a timesheet store should implement `FormerOwnerTimesheetRepositoryInterface`, or a deleted user's entries count
-  as locked. A `removeImportedWhere()` `$keep` callback gets `personRef`, and `userId` may be null. Implement
-  `FormerPersonTimeEntryRepositoryInterface` to use `FormerPersonTimeEntries`.
+- **Deleting a user keeps the entries.** A host that relied on the cascade must decide, as above.
+- **`TimeEntry::getUser()` may return null.** Check your code that reads `getUser()`, `IDENTITY(e.user)`, `user_id`, or joins the user. An inner join leaves ownerless entries out of a report (their hours disappear from totals by person), a cast like `(int) $row['userId']` adds them to user 0, and SQL `user_id <> :x` does not match `NULL`. Listeners of `TIME_ENTRY_IMPORTED` get ownerless entries too.
+- **A running timer is saved when the user is deleted.** `$entityManager->remove($user)` stops it and saves it as a marked entry ending at the deletion time, with no refusal from a locked period. It flushes at `remove()`, your pending work included, because `TIMER_STOP` needs a live user and its listeners flush: wrap the delete in a transaction to make it one unit, and do not call it inside a flush.
+- **A raw `DELETE` must be preceded by `FormerPersonTimeEntries::release($user, $name)`**, which stops the timer and writes the name and reference. Without it the running timer is lost (`time_track_active_timers` stays `ON DELETE CASCADE`), and the entries have no name and no reference, so a later erasure or export cannot find one person's: only `anonymiseUnidentified()` reaches them, all at once. Code that deletes `ActiveTimer` rows itself, such as an eraser, loses the time in progress as well: call `TimerService::stopForUserDeletion($user)` first.
+- **`removeForUser()` is for re-association only** (remove, then upsert). Do not call it for a deleted or erased account any more: it deletes time. It now also respects the period lock: it used to skip it for erasure.
+- **A plain user row no longer takes an ownerless entry.** See the [table](USAGE.md#entries-with-no-user-115). Send `new ImportedTimeEntryClaim($user, $personRef, $scopeKey)` for a mapped person.
+- **Anonymising also blanks `task_title_snapshot` and hashes `external_id`**, and it keeps only the `closed_by` mark in `metadata`.
+- **Manager removal of ownerless imported entries stays allowed**, respecting the period lock. `TimeEntriesRemovedEvent` has `getPersonRefs()` and `getKeptCount()`, and it now also fires for a removal the lock refused. The bundle keeps no audit table: listen to that event to record removals, and pass `$actorId` to the bulk calls.
+- **Nothing shows by default.** Ownerless entries are listed only for a viewer a `TIME_ENTRY_LIST_QUERY` listener allows with `includeOwnerless($scopeKeys)`, and never on the client API. A full override of `reports.html.twig` or of `nowo_ui_list_row` must add the name (`row.ownerless`, `row.personName`, `reports.former_person`).
+- **Custom stores:** a timesheet store should implement `FormerOwnerTimesheetRepositoryInterface`, or a deleted user's entries count as locked. A `removeImportedWhere()` `$keep` callback gets `personRef`, and `userId` may be null. Implement `FormerPersonTimeEntryRepositoryInterface` to use `FormerPersonTimeEntries`; without it deletes work as usual and the entries stay with no name.
+- **SQLite:** with no `PRAGMA foreign_keys = ON` (DBAL's default, add `Doctrine\DBAL\Driver\AbstractSQLiteDriver\Middleware\EnableForeignKeys`), a deleted user's `user_id` dangles: the time stays, but `getUser()` then fails to load.
 
-**Optional:** implement `ClientUserPrivacyProviderInterface` on your `client_api.profile_provider` to send `privacy` on `GET me`.
-Without it the key stays absent.
+**Optional:** implement `ClientUserPrivacyProviderInterface` on your `client_api.profile_provider` to send `privacy` on `GET me`. Without it the key stays absent.
 
 ## To 1.14.0
 

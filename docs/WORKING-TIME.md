@@ -137,9 +137,9 @@ open ─auto-lock (system)─▶ open [locked: auto]
 path: timer start (backdated or now), switch (before the running timer stops), idle discard / split / reassign, the
 import writer (outcome `locked`, never written), imported-entry removals, `TeamAccessGuard::canEditEntry()` /
 `canDeleteImportedEntry()` (after the listener: a grant is ignored), the ledger. A stop is always allowed; an entry
-written into a period locked while its timer ran fires `TIMESHEET_LATE_ENTRY`. Retention purges, account erasure
-(`FormerPersonTimeEntries::anonymiseUser()`, which changes no time, since 1.15) and `ImportedTimeEntryWriter::removeForUser()`
-(re-association) are never blocked. **Host code that writes entries must call the guard.**
+written into a period locked while its timer ran fires `TIMESHEET_LATE_ENTRY`. Retention purges and account erasure
+(`FormerPersonTimeEntries::anonymiseUser()`, which changes no time, since 1.15) are never blocked; since 1.15
+`ImportedTimeEntryWriter::removeForUser()` (re-association) is. **Host code that writes entries must call the guard.**
 
 ## Audit chains
 

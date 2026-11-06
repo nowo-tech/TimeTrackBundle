@@ -105,7 +105,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
-     * Since 1.15: the same by `owner_ref`, which outlives the account. No index on it: only ownerless entries ask.
+     * Since 1.15: the same by `owner_ref`, which outlives the account.
      */
     public function findGuardingByOwnerRef(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
     {

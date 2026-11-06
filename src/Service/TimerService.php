@@ -227,9 +227,11 @@ final readonly class TimerService
      * Since 1.15 (owner ruling 2026-11-06): stops the running timer of a user who is being deleted, so the time in progress
      * is not lost. The end is now, and the entry is marked ({@see TimeEntry::isClosedByUserDeletion()}). Like every stop it
      * is written even in a locked period, without throwing (the approver gets {@see TimesheetLateEntryEvent}), and it checks
-     * no overlaps. It writes and flushes at once, so the task totals follow the usual stop event; if the delete then fails,
-     * the user keeps a stopped entry and nothing is lost. {@see FormerPersonSnapshotListener} calls it on the entity
-     * manager's `remove()`; a host deleting by SQL calls it first (the foreign key would delete the running timer).
+     * no overlaps. It writes and flushes at once, also the host's pending work: `TIMER_STOP` needs a live user and its
+     * listeners flush (the task totals), so it cannot wait for the host's flush. Delete inside a transaction to make the
+     * stop and the delete one unit; otherwise, if the delete then fails, the user keeps a stopped entry and nothing is lost.
+     * {@see FormerPersonSnapshotListener} calls it on the entity manager's `remove()`. **A host deleting by SQL must call it
+     * first**: the foreign key of the timers table deletes the running timer, with no code to close it.
      *
      * @return TimeEntry|null The recorded entry, or null when no timer was running (or a concurrent stop recorded it)
      */
@@ -510,13 +512,14 @@ final readonly class TimerService
      * @param DateTimeImmutable $from Period start (inclusive)
      * @param DateTimeImmutable $to Period end (inclusive)
      * @param string|null $targetUserId Entries of this user instead of the viewer (access checked by the caller)
+     * @param bool $allowOwnerless Since 1.15: false never lists ownerless entries, whatever a listener says (the client API)
      *
      * @return list<TimeEntry>
      */
-    public function listEntries(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId = null): array
+    public function listEntries(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId = null, bool $allowOwnerless = true): array
     {
         $entries = [];
-        $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId);
+        $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId, $allowOwnerless);
         // Since 1.15: with the ownerless entries a list-query listener let this viewer see.
         if ($query['includeOwnerless'] && $this->timeEntryRepository instanceof FormerPersonTimeEntryRepositoryInterface) {
             $total = $this->timeEntryRepository->countWithOwnerless($query['userIds'], $query['ownerlessScopeKeys'], $from, $to, $query['includeImported']);
@@ -546,16 +549,17 @@ final readonly class TimerService
      * @param int $page 1-based page number (clamped to the existing pages)
      * @param int $perPage Page size (values below 1 are read as 1)
      * @param string|null $targetUserId Entries of this user instead of the viewer (access checked by the caller)
+     * @param bool $allowOwnerless Since 1.15: false never lists ownerless entries, whatever a listener says (the client API)
      *
      * @return TimeEntryPage The entries of the page and the pagination totals
      */
-    public function listEntriesPage(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, int $page, int $perPage, ?string $targetUserId = null): TimeEntryPage
+    public function listEntriesPage(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, int $page, int $perPage, ?string $targetUserId = null, bool $allowOwnerless = true): TimeEntryPage
     {
         $perPage = max(1, $perPage);
 
         $repository = $this->timeEntryRepository;
         if ($repository instanceof PaginatedTimeEntryRepositoryInterface) {
-            $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId);
+            $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId, $allowOwnerless);
             $userIds = $query['userIds'];
             if ($query['includeOwnerless'] && $repository instanceof FormerPersonTimeEntryRepositoryInterface) {
                 $total = $repository->countWithOwnerless($userIds, $query['ownerlessScopeKeys'], $from, $to, $query['includeImported']);
@@ -577,7 +581,7 @@ final readonly class TimerService
             }
         }
 
-        $entries = $this->listEntries($viewer, $from, $to, $targetUserId);
+        $entries = $this->listEntries($viewer, $from, $to, $targetUserId, $allowOwnerless);
         $total   = count($entries);
         $page    = $this->clampPage($page, $total, $perPage);
 
@@ -658,7 +662,7 @@ final readonly class TimerService
     /**
      * @return array{userIds: list<string>, includeImported: bool, includeOwnerless: bool, ownerlessScopeKeys: list<string>|null}
      */
-    private function resolveEntryQuery(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId): array
+    private function resolveEntryQuery(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId, bool $allowOwnerless): array
     {
         $event = new TimeEntryListQueryEvent($viewer, $from, $to);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_LIST_QUERY);
@@ -669,7 +673,7 @@ final readonly class TimerService
             'userIds'         => $userIds === [] ? [$targetUserId ?? UserIdResolver::getId($viewer)] : $userIds,
             'includeImported' => $event->includesImported(),
             // Since 1.15.
-            'includeOwnerless'   => $event->includesOwnerless(),
+            'includeOwnerless'   => $allowOwnerless && $event->includesOwnerless(),
             'ownerlessScopeKeys' => $event->getOwnerlessScopeKeys(),
         ];
     }
@@ -784,6 +788,8 @@ final readonly class TimerService
      */
     private function startMetadata(array $metadata): array
     {
+        // Since 1.15: reserved for {@see self::stopForUserDeletion()}; a caller cannot forge the mark.
+        unset($metadata['closed_by']);
         if (!isset($metadata['note'])) {
             return $metadata;
         }
