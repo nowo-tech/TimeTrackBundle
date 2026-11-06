@@ -67,6 +67,16 @@ final class TimeEntriesRemovedEvent extends Event
     }
 
     /**
+     * Since 1.15: person references of the removed ownerless entries. Opaque ids, for the host's audit record.
+     *
+     * @return list<string>
+     */
+    public function getPersonRefs(): array
+    {
+        return $this->removal->personRefs;
+    }
+
+    /**
      * Get actor id.
      */
     public function getActorId(): ?string

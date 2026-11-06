@@ -8,8 +8,11 @@ use DateTimeImmutable;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
+use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Event\TimeEntriesRemovedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Import\ImportedEntryOwnerMismatchException;
@@ -25,6 +28,7 @@ use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_map;
@@ -357,6 +361,131 @@ final class FormerPeopleTest extends FunctionalTestCase
 
         self::assertSame(1, $writer->removeForUser(self::SOURCE, $this->user));
         self::assertNotNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
+    }
+
+    public function testARunningTimerIsSavedWhenTheUserIsDeleted(): void
+    {
+        $timers = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $timers);
+        $started = $timers->start($this->user, 'task-1', ClientType::Desktop, ['note' => 'In progress']);
+        $userId  = (string) $this->user->getId();
+        $timerId = $started->getId();
+
+        $this->enforceForeignKeys();
+        $this->entityManager()->remove($this->user);
+        $this->entityManager()->flush();
+        $this->entityManager()->clear();
+
+        $entries = $this->entityManager()->getRepository(TimeEntry::class)->findBy(['taskId' => 'task-1']);
+        self::assertCount(1, $entries);
+        $entry = $entries[0];
+        self::assertNull($entry->getUser());
+        self::assertTrue($entry->isClosedByUserDeletion());
+        self::assertSame('In progress', ($entry->getMetadata() ?? [])['note'] ?? null);
+        self::assertSame(TimeEntrySource::Desktop, $entry->getSource());
+        self::assertSame('user:' . $userId, $entry->getPersonRef());
+        self::assertSame($userId, $entry->getFormerUserId());
+        self::assertNull($this->entityManager()->find(ActiveTimer::class, $timerId));
+        self::assertTrue($this->people()->export('user:' . $userId)[0]['closedByUserDeletion']);
+    }
+
+    public function testAStoppedTimerIsNotMarkedAndNoTimerMeansNoEntry(): void
+    {
+        $timers = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $timers);
+        self::assertNull($timers->stopForUserDeletion($this->user));
+        $timers->start($this->user, 'task-1', ClientType::Web);
+        $entry = $timers->stop($this->user);
+
+        self::assertInstanceOf(TimeEntry::class, $entry);
+        self::assertFalse($entry->isClosedByUserDeletion());
+    }
+
+    public function testATimerThatOverlapsAnEntryStillClosesAndNobodysChecksSeeIt(): void
+    {
+        $timers = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $timers);
+        $repository = $this->repository();
+        $timers->start($this->user, 'task-1', ClientType::Web);
+        $now = new DateTimeImmutable();
+        $this->entityManager()->persist(new TimeEntry($this->user, 'task-2', 'Overlapping', null, $now->modify('-1 hour'), $now->modify('+1 hour'), 7200, TimeEntrySource::Manual));
+        $this->entityManager()->flush();
+        $other = $this->createUser('other@example.com');
+        $id    = (string) $this->user->getId();
+
+        $this->enforceForeignKeys();
+        $this->entityManager()->remove($this->user);
+        $this->entityManager()->flush();
+        $this->entityManager()->clear();
+
+        self::assertCount(2, $this->entityManager()->getRepository(TimeEntry::class)->findAll());
+        self::assertSame([], $repository->findLiveOverlapping((string) $other->getId(), $now->modify('-2 hours'), $now->modify('+2 hours')));
+        self::assertSame([], $repository->findLiveOverlapping($id, $now->modify('-2 hours'), $now->modify('+2 hours')));
+    }
+
+    public function testARawDeleteLosesTheTimerUnlessTheHostStopsItFirst(): void
+    {
+        $timers = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $timers);
+        $careless = $this->createUser('careless@example.com');
+        $timers->start($careless, 'task-1', ClientType::Web);
+        $timers->start($this->user, 'task-2', ClientType::Web);
+        $conn = $this->entityManager()->getConnection();
+        $this->enforceForeignKeys();
+
+        $conn->executeStatement('DELETE FROM app_user WHERE id = ?', [$careless->getId()]);
+        self::assertSame(0, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_entries'), 'documented: the foreign key takes the timer');
+        self::assertSame(1, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_active_timers'));
+
+        $timers->stopForUserDeletion($this->user);
+        $this->people()->release($this->user, 'Ana');
+        $conn->executeStatement('DELETE FROM app_user WHERE id = ?', [$this->user->getId()]);
+        $this->entityManager()->clear();
+        $entry = $this->entityManager()->getRepository(TimeEntry::class)->findOneBy(['taskId' => 'task-2']);
+        self::assertInstanceOf(TimeEntry::class, $entry);
+        self::assertSame('Ana', $entry->getPersonName());
+        self::assertTrue($entry->isClosedByUserDeletion());
+    }
+
+    public function testAManagerRemovalOfOwnerlessEntriesIsRecorded(): void
+    {
+        /** @var list<TimeEntriesRemovedEvent> $events */
+        $events     = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(TimeTrackEvents::TIME_ENTRIES_REMOVED, static function (TimeEntriesRemovedEvent $event) use (&$events): void {
+            $events[] = $event;
+        });
+        $writer = new ImportedTimeEntryWriter($this->repository(), $dispatcher);
+        $writer->upsert($this->user, $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-2', seconds: 1800));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-3', seconds: 1800));
+
+        self::assertSame(3, $writer->removeForBoard(self::SOURCE, 'board-1', 'manager-7'));
+
+        self::assertCount(1, $events);
+        self::assertSame('manager-7', $events[0]->getActorId());
+        self::assertSame(3, $events[0]->getCount());
+        self::assertSame(['task-1' => 7200], $events[0]->getSecondsByTask());
+        self::assertSame([(string) $this->user->getId()], $events[0]->getUserIds());
+        self::assertSame(['p-1'], $events[0]->getPersonRefs());
+    }
+
+    public function testTheOtherBulkRemovalsCarryTheActor(): void
+    {
+        /** @var list<string|null> $actors */
+        $actors     = [];
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(TimeTrackEvents::TIME_ENTRIES_REMOVED, static function (TimeEntriesRemovedEvent $event) use (&$actors): void {
+            $actors[] = $event->getActorId();
+        });
+        $writer = new ImportedTimeEntryWriter($this->repository(), $dispatcher);
+        $person = new ImportedTimeEntryPerson('p-1', 'Ana');
+        $writer->upsertForPerson($person, $this->data('e-1'));
+        $writer->removeForTasks(self::SOURCE, ['task-1'], 'manager-1');
+        $writer->upsertForPerson($person, $this->data('e-2'));
+        $writer->removeForSource(self::SOURCE, 'manager-2');
+
+        self::assertSame(['manager-1', 'manager-2'], $actors);
     }
 
     public function testNoOneListsOwnerlessEntriesByDefault(): void

@@ -27,7 +27,7 @@ use function max;
 /**
  * Since 1.13: Doctrine ORM timesheet store (timesheets, plus the retention purge and the verify listing).
  */
-final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface
+final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface, FormerOwnerTimesheetRepositoryInterface
 {
     /** Ids bound per `IN (...)` of the purge. */
     public const IDS_PER_QUERY = 1000;
@@ -101,14 +101,30 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuarding(string $ownerId, ?string $scopeKey, string $fromDate, string $toDate): array
     {
+        return $this->guarding('IDENTITY(t.user) = :owner', $ownerId, $scopeKey, $fromDate, $toDate);
+    }
+
+    /**
+     * Since 1.15: the same by `owner_ref`, which outlives the account. No index on it: only ownerless entries ask.
+     */
+    public function findGuardingByOwnerRef(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
+    {
+        return $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate);
+    }
+
+    /**
+     * @return list<Timesheet>
+     */
+    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate): array
+    {
         $query = $this->entityManager->createQueryBuilder()
             ->select('t')
             ->from(Timesheet::class, 't')
-            ->where('IDENTITY(t.user) = :owner')
+            ->where($ownerCondition)
             ->andWhere('t.periodEnd >= :from')
             ->andWhere('t.periodStart <= :to')
             ->andWhere('t.lockedAt IS NOT NULL OR t.status = :submitted')
-            ->setParameter('owner', $ownerId)
+            ->setParameter('owner', $owner)
             ->setParameter('from', Period::date($fromDate), Types::DATE_IMMUTABLE)
             ->setParameter('to', Period::date($toDate), Types::DATE_IMMUTABLE)
             ->setParameter('submitted', TimesheetStatus::Submitted->value)

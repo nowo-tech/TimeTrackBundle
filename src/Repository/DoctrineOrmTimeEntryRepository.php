@@ -435,7 +435,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             $this->detachRemoved(array_column($rows, 'id'));
             // Since 1.15 an ownerless entry has no owner id to report.
             $owners  = array_filter(array_column($rows, 'userId'), static fn (int|string|null $id): bool => $id !== null);
-            $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(strval(...), array_values($owners))));
+            $people  = array_filter(array_column($rows, 'personRef'), static fn (?string $ref): bool => $ref !== null);
+            $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(strval(...), array_values($owners)), array_values($people)));
         } while (count($batch) === $batchSize);
 
         return $removal;

@@ -355,6 +355,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(FormerPersonSnapshotListener::class, (new Definition(FormerPersonSnapshotListener::class))
             ->setArgument('$entries', new Reference(FormerPersonTimeEntries::class))
             ->setArgument('$userClass', $config['user_class'])
+            ->setArgument('$timers', new Reference(TimerService::class))
             ->addTag('doctrine.event_listener', ['event' => 'preRemove']));
     }
 

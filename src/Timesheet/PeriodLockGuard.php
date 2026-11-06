@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Repository\FormerOwnerTimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -184,12 +185,26 @@ final readonly class PeriodLockGuard
      */
     public function isRowBlocked(?string $userId, ?string $personRef, ?string $scopeKey, DateTimeInterface $startedAt): bool
     {
-        $ownerId = $userId ?? TimeEntry::formerUserIdOf($personRef);
-        if ($ownerId !== null) {
-            return $this->blockingTimesheetOf($ownerId, $scopeKey, $startedAt) instanceof Timesheet;
+        if ($userId !== null) {
+            return $this->blockingTimesheetOf($userId, $scopeKey, $startedAt) instanceof Timesheet;
+        }
+        $formerUserId = TimeEntry::formerUserIdOf($personRef);
+        if ($formerUserId === null) {
+            return $personRef === null;
+        }
+        // The account may be gone, and its timesheets with no `user_id`: they are found by `owner_ref`. A store that cannot
+        // do that fails closed.
+        if (!$this->timesheets instanceof FormerOwnerTimesheetRepositoryInterface) {
+            return true;
+        }
+        $utc = new DateTimeImmutable('@' . $startedAt->getTimestamp());
+        foreach ($this->timesheets->findGuardingByOwnerRef($formerUserId, $scopeKey, $utc->modify('-1 day')->format('Y-m-d'), $utc->modify('+1 day')->format('Y-m-d')) as $timesheet) {
+            if ($timesheet->covers($startedAt)) {
+                return true;
+            }
         }
 
-        return $personRef === null;
+        return false;
     }
 
     /**

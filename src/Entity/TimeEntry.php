@@ -52,6 +52,9 @@ class TimeEntry
     /** Since 1.15: prefix of the {@see self::$personRef} of an entry that belonged to a user account. */
     public const USER_REF_PREFIX = 'user:';
 
+    /** Since 1.15: `metadata.closed_by` of an entry whose running timer was closed because its user was being deleted. */
+    public const CLOSED_BY_USER_DELETION = 'user_deletion';
+
     #[ORM\Id]
     #[ORM\Column(type: 'string', length: 36)]
     private string $id;
@@ -304,6 +307,15 @@ class TimeEntry
     public static function formerUserIdOf(?string $personRef): ?string
     {
         return $personRef !== null && str_starts_with($personRef, self::USER_REF_PREFIX) ? substr($personRef, strlen(self::USER_REF_PREFIX)) : null;
+    }
+
+    /**
+     * Since 1.15: whether the entry comes from a timer that was still running when its user was deleted, so its end is the
+     * deletion time and not a stop by the person. Anonymising clears the metadata, and this mark with it.
+     */
+    public function isClosedByUserDeletion(): bool
+    {
+        return (($this->metadata ?? [])['closed_by'] ?? null) === self::CLOSED_BY_USER_DELETION;
     }
 
     /**

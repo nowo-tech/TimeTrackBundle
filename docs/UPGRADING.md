@@ -165,16 +165,22 @@ PRAGMA foreign_keys = ON;
   the user. An inner join leaves ownerless entries out of a report (their hours disappear from totals by person), a cast
   like `(int) $row['userId']` adds them to user 0, and SQL `user_id <> :x` does not match `NULL`. Listeners of
   `TIME_ENTRY_IMPORTED` get ownerless entries too.
-- **Do not call `removeForUser()` for a deleted or erased account any more.** It deletes time; it stays for re-association
-  (remove, then upsert).
-- **Running timers still go with the user** (`time_track_active_timers` stays `ON DELETE CASCADE`): call `TimerService::stop($user)`
-  first when the time so far must be kept.
+- **`removeForUser()` is for re-association only** (remove, then upsert). Do not call it for a deleted or erased account any more:
+  it deletes time.
+- **A running timer is saved when the user is deleted.** `$entityManager->remove($user)` stops it and saves it as a marked entry
+  ending at the deletion time, with no refusal from a locked period. It flushes at `remove()`, so do not call that inside a flush.
+  **A raw `DELETE` still loses it** (`time_track_active_timers` stays `ON DELETE CASCADE`): call
+  `TimerService::stopForUserDeletion($user)` first. Code that deletes `ActiveTimer` rows itself, such as an eraser, loses the time in
+  progress as well.
+- **Manager removal of ownerless imported entries stays allowed**, respecting the period lock. Bulk `remove*()` take `$actorId`, and
+  `TimeEntriesRemovedEvent` has `getPersonRefs()`. The bundle keeps no audit table: listen to that event to record removals.
 - **Name snapshot.** `$entityManager->remove($user)` writes it from `client_api.profile_provider`'s `getDisplayName()`, and no
   name when that is null. A delete by DQL or SQL writes nothing: call `FormerPersonTimeEntries::release($user, $name)` first.
 - **Nothing shows by default.** Ownerless entries are listed only for a viewer a `TIME_ENTRY_LIST_QUERY` listener allows with
   `includeOwnerless($scopeKeys)`. A full override of `reports.html.twig` or of `nowo_ui_list_row` must add the name
   (`row.ownerless`, `row.personName`, `reports.former_person`).
-- **Custom stores:** a `removeImportedWhere()` `$keep` callback gets `personRef`, and `userId` may be null. Implement
+- **Custom stores:** a timesheet store should implement `FormerOwnerTimesheetRepositoryInterface`, or a deleted user's entries count
+  as locked. A `removeImportedWhere()` `$keep` callback gets `personRef`, and `userId` may be null. Implement
   `FormerPersonTimeEntryRepositoryInterface` to use `FormerPersonTimeEntries`.
 
 **Optional:** implement `ClientUserPrivacyProviderInterface` on your `client_api.profile_provider` to send `privacy` on `GET me`.

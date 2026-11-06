@@ -246,6 +246,8 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 - Imported entries are **read-only** (`TimeEntry::isReadOnly()`, `canEditEntry()` always false) and are not live
   (`TimeEntrySource::isLive()`): keep them out of overlap checks, registers and clock-in rules
   (`findLiveByUserAndPeriod()`, `TimeEntryListQueryEvent::setIncludeImported(false)`).
+- **`removeForUser()` is for re-association only** (remove, then upsert for the new owner). Never call it for a deleted or
+  erased account: it deletes tracked time. Since 1.15 use [Entries with no user](#entries-with-no-user-115).
 - **Deleting** imported time is an explicit manager action: one entry through `ImportedTimeEntryDeleter` (needs a
   `delete_imported` grant on `TimeEntryAccessCheckEvent`), or in bulk through `remove*()` after the host's own check.
   **Never** call `removeForTasks()` / `removeForBoard()` from a task or board deletion: deleting tasks keeps tracked
@@ -310,8 +312,23 @@ $rows = $people->export($personId);
 - **Who sees them:** nobody by default. A `TIME_ENTRY_LIST_QUERY` listener decides, with the viewer's tenant scopes:
   `$event->includeOwnerless(['org-a'])`, or `null` for every scope (the only way to list an entry with no scope). They never
   reach the client API or the owner's export, which read one user's entries.
-- **Read-only:** `canEditEntry()` is false for them (no owner, or imported). Deleting one stays the explicit manager action of
-  [Imported entries](#imported-entries-111).
+- **Read-only:** `canEditEntry()` is false for them (no owner, or imported).
+- **Manager removal stays allowed** (owner ruling: "never deleted" means never as a side effect). `ImportedTimeEntryDeleter`
+  (needs a `delete_imported` grant) and `remove()`, `removeForTasks()`, `removeForBoard()`, `removeForSource()` work on ownerless
+  imported entries. An entry of a locked or submitted period of the deleted user, or with no identity while timesheets are on,
+  is kept and not counted. `TimeEntriesRemovedEvent` records each removal: count, `secondsByTask`, `userIds`, `personRefs` and
+  `actorId` (pass `$actorId` to the bulk calls). **The bundle keeps no audit table: store that event**, or the removal leaves
+  only a log line of counts. `removeForUser()` reaches only entries that still have that user.
+- **A timer still running when the user is deleted** is stopped and saved, so the time in progress is not lost: the end is the
+  deletion time, `isClosedByUserDeletion()` is true (`metadata.closed_by = user_deletion`, cleared by anonymising), and it gets the
+  name and reference like the rest. `$entityManager->remove($user)` does this. It is a normal stop: `TIMER_STOP` fires while the user
+  still exists (task totals follow), a locked period does not refuse it or block the deletion (`TIMESHEET_LATE_ENTRY` tells the
+  approver, and the entry stays locked), and no overlap is checked (ownerless entries are not in any overlap check). It flushes at
+  `remove()`, before the delete: if the delete then fails, the user keeps a stopped, marked entry. So do not `remove()` a user from
+  inside a flush.
+- **A raw `DELETE`** does not get any of this: `time_track_active_timers` is `ON DELETE CASCADE`, so the running timer goes with the
+  user, and the entries stay without a name. Call `$timerService->stopForUserDeletion($user)` and `$people->release($user, $name)`
+  first.
 - **Period lock:** a deleted user's entry stays locked by their timesheets (`owner_ref` is the same id); a former person has
   none; an entry with no identity at all has an unknown owner and is not writable while timesheets are on. Anonymising outranks
   the lock, and it changes no time.

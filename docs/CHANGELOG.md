@@ -62,6 +62,9 @@ Audit status: re-verification pending (independent auditor).
 - `TimeEntryListQueryEvent::includeOwnerless(?array $scopeKeys)`: lists ownerless entries for a viewer the host allows,
   limited to the viewer's tenant scopes. Off by default. The reports page shows the name beside the task (`reports.former_person` when
   there is none). `TimerService::hiddenTaskEntryIds($entries, ?$viewer)` judges an ownerless entry by the viewer.
+- `TimerService::stopForUserDeletion($user)`: a timer still running when its user is removed through the entity manager is stopped
+  and saved, ending at the deletion time and marked (`TimeEntry::isClosedByUserDeletion()`). A locked period does not refuse it.
+- `TimeEntriesRemovedEvent::getPersonRefs()`, and an optional `$actorId` on `removeForTasks()`, `removeForBoard()`, `removeForSource()`.
 - `FormerPersonTimeEntryRepositoryInterface` (optional store capability; the Doctrine store has it);
   `TimeEntry::isOwnerless()`, `getPersonName()`, `getPersonRef()`, `getFormerUserId()`, `isAnonymised()`,
   `getAnonymisedAt()`; `toArray()` has `person` for an ownerless entry only.
@@ -75,7 +78,8 @@ Audit status: re-verification pending (independent auditor).
 - **`time_track_entries.user_id` is nullable and `ON DELETE SET NULL`** (was `NOT NULL`, `ON DELETE CASCADE`): deleting a user
   keeps their entries. `TimeEntry::getUser()` returns `?object`. A user removed through the entity manager gets
   the snapshot first (`FormerPersonSnapshotListener`: the profile provider's display name and `user:<id>`).
-- `PeriodLockGuard`: an ownerless entry is judged by the deleted user's timesheets (same id as `owner_ref`); a former person's is
+- `PeriodLockGuard`: an ownerless entry is judged by the deleted user's timesheets, found by `owner_ref`
+  (`FormerOwnerTimesheetRepositoryInterface`; a store without it fails closed); a former person's is
   writable; one with no identity has an unknown owner, as before. `isRowBlocked()` is new.
 - `FilteredImportedTimeEntryRepositoryInterface::removeImportedWhere()`: the row has `personRef`, and `userId` may be null.
 - `ownersWithEntries()` and `findScopelessAfter()` skip ownerless entries.

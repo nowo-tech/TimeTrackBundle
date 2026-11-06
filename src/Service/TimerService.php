@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Dto\BackdateLimits;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
@@ -220,6 +221,26 @@ final readonly class TimerService
         }
 
         return $this->closeTimer($user, $timer, $endedAt ?? $this->clock->now(), $note);
+    }
+
+    /**
+     * Since 1.15 (owner ruling 2026-11-06): stops the running timer of a user who is being deleted, so the time in progress
+     * is not lost. The end is now, and the entry is marked ({@see TimeEntry::isClosedByUserDeletion()}). Like every stop it
+     * is written even in a locked period, without throwing (the approver gets {@see TimesheetLateEntryEvent}), and it checks
+     * no overlaps. It writes and flushes at once, so the task totals follow the usual stop event; if the delete then fails,
+     * the user keeps a stopped entry and nothing is lost. {@see FormerPersonSnapshotListener} calls it on the entity
+     * manager's `remove()`; a host deleting by SQL calls it first (the foreign key would delete the running timer).
+     *
+     * @return TimeEntry|null The recorded entry, or null when no timer was running (or a concurrent stop recorded it)
+     */
+    public function stopForUserDeletion(UserInterface $user): ?TimeEntry
+    {
+        $timer = $this->getActive($user);
+        if (!$timer instanceof ActiveTimer) {
+            return null;
+        }
+
+        return $this->closeTimer($user, $timer, $this->clock->now(), extraMetadata: ['closed_by' => TimeEntry::CLOSED_BY_USER_DELETION]);
     }
 
     /**
@@ -677,10 +698,11 @@ final readonly class TimerService
      * removes the timer; dispatches a stop event per recorded entry.
      *
      * @param list<TimeEntry> $extraEntries Entries recorded together with the timer's own entry (idle reassign)
+     * @param array<string, mixed> $extraMetadata Added to the metadata of the timer's own entry (since 1.15)
      *
      * @return TimeEntry|null The timer's entry, or null when a concurrent call removed the timer first
      */
-    private function closeTimer(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null, array $extraEntries = [], bool $recordOwnEntry = true): ?TimeEntry
+    private function closeTimer(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null, array $extraEntries = [], bool $recordOwnEntry = true, array $extraMetadata = []): ?TimeEntry
     {
         $duration = max(0, $endedAt->getTimestamp() - $timer->getStartedAt()->getTimestamp());
 
@@ -693,7 +715,7 @@ final readonly class TimerService
             $endedAt,
             $duration,
             $this->mapClientTypeToSource($timer->getClientType()),
-            $this->entryMetadata($timer->getMetadata(), $note),
+            $extraMetadata === [] ? $this->entryMetadata($timer->getMetadata(), $note) : [...($this->entryMetadata($timer->getMetadata(), $note) ?? []), ...$extraMetadata],
             $endedAt,
         );
         $entry->assignScopeKey($this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()));

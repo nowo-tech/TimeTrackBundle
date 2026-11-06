@@ -195,6 +195,10 @@ Audit status: re-verification pending (independent auditor).
 | Identity forged through a person reference | `user:` is reserved and refused from hosts' `ImportedTimeEntryPerson`, so a person can never pass as a deleted user or reach their timesheets; the reference is never serialised by `toArray()` |
 | A claim moves someone's locked time | A claim checks both the stored period and the new owner's; a deleted user's entry can only be claimed by that same id |
 | Personal data left after an erasure | `anonymiseUser()` and `anonymisePerson()` clear name, reference, description and metadata. `task_title_snapshot` and `external_id` stay: they identify the task and the remote entry, not the person by themselves; a host whose remote tool can resolve the id should weigh that |
+| Time in progress lost with the user | `remove($user)` stops the timer first through the normal stop (one entry even against a concurrent stop). A raw `DELETE` still cascades the timer; documented, with `stopForUserDeletion()` for those hosts |
+| A deleted user's locked period stops protecting their entries | Their timesheets lose `user_id` with the account, so the guard looks them up by `owner_ref` (`FormerOwnerTimesheetRepositoryInterface`); a store without that capability treats those entries as locked |
+| A locked period blocks an account deletion, or a late entry goes unseen | The stop is never refused, as for any stop; `TIMESHEET_LATE_ENTRY` tells the approver and the entry stays locked by the deleted user's timesheets |
+| Ownerless time removed with no trace or inside a locked period | Removal is an explicit manager call: the single path needs a `delete_imported` grant, bulk calls need the host's check; locked rows are kept; `TimeEntriesRemovedEvent` carries count, seconds, people and actor, and hosts must store it because the bundle has no audit table |
 | Personal data with no export path | `FormerPersonTimeEntries::export($ref)` for a person with no account |
 | Malicious `privacy.url` opened by a client | `ClientPrivacyNormalizer` parses it and sends null unless it is absolute `http(s)` with a host; the warning carries no value |
 

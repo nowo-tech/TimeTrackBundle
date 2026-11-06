@@ -52,8 +52,10 @@ use function strlen;
  * except {@see self::removeForUser()}.
  *
  * Owner rule (2026-11-05, widened 2026-11-06): deleting tasks, boards or users never deletes tracked time. `remove*()` are
- * for an explicit manager action on imported time (and `removeForUser()` for re-association), never a side effect of
- * deleting anything.
+ * for an explicit manager action on imported time, ownerless entries included (the owner's ruling: "never deleted" means
+ * never as a side effect), and `removeForUser()` is for re-association only. Each respects the period lock as stated
+ * on it and is recorded by {@see TimeEntriesRemovedEvent} (count, seconds, owners, people, actor) and a log line of counts;
+ * the bundle keeps no audit table of its own, so the host stores the event.
  */
 final readonly class ImportedTimeEntryWriter
 {
@@ -317,13 +319,14 @@ final readonly class ImportedTimeEntryWriter
     /**
      * Removes the imported entries of the source tracked on these tasks: an explicit manager action on imported time
      * only. Never call it from a task deletion (deleting tasks keeps all tracked time). Since 1.13 entries of locked or
-     * submitted periods are kept (not counted).
+     * submitted periods are kept (not counted). Since 1.15 `$actorId` goes on {@see TimeEntriesRemovedEvent}, the record
+     * of the removal.
      *
      * @param list<string> $taskIds
      */
-    public function removeForTasks(string $externalSource, array $taskIds): int
+    public function removeForTasks(string $externalSource, array $taskIds, ?string $actorId = null): int
     {
-        return $this->removeScope(ImportedTimeEntryScope::tasks($this->checkSource($externalSource), $taskIds), null);
+        return $this->removeScope(ImportedTimeEntryScope::tasks($this->checkSource($externalSource), $taskIds), $actorId);
     }
 
     /**
@@ -331,15 +334,15 @@ final readonly class ImportedTimeEntryWriter
      * imported time only. Never call it from a board deletion (deleting boards keeps all tracked time). Since 1.13
      * entries of locked or submitted periods are kept (not counted).
      */
-    public function removeForBoard(string $externalSource, string $boardId): int
+    public function removeForBoard(string $externalSource, string $boardId, ?string $actorId = null): int
     {
-        return $this->removeScope(ImportedTimeEntryScope::board($this->checkSource($externalSource), $boardId), null);
+        return $this->removeScope(ImportedTimeEntryScope::board($this->checkSource($externalSource), $boardId), $actorId);
     }
 
     /** Removes every imported entry of exactly this source (never a prefix match); since 1.13 locked periods are kept. */
-    public function removeForSource(string $externalSource): int
+    public function removeForSource(string $externalSource, ?string $actorId = null): int
     {
-        return $this->removeScope(ImportedTimeEntryScope::source($this->checkSource($externalSource)), null);
+        return $this->removeScope(ImportedTimeEntryScope::source($this->checkSource($externalSource)), $actorId);
     }
 
     /**

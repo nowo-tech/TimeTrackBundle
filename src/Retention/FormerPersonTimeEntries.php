@@ -115,18 +115,19 @@ final readonly class FormerPersonTimeEntries
                 $after  = $entry->getId();
                 $note   = ($entry->getMetadata() ?? [])['note'] ?? null;
                 $rows[] = [
-                    'id'              => $entry->getId(),
-                    'personName'      => $entry->getPersonName(),
-                    'taskId'          => $entry->getTaskId(),
-                    'taskTitle'       => $entry->getTaskTitleSnapshot(),
-                    'boardId'         => $entry->getBoardIdSnapshot(),
-                    'startedAt'       => $entry->getStartedAt()->format(DATE_ATOM),
-                    'endedAt'         => $entry->getEndedAt()->format(DATE_ATOM),
-                    'durationSeconds' => $entry->getDurationSeconds(),
-                    'source'          => $entry->getSource()->value,
-                    'billable'        => $entry->getBillable(),
-                    'description'     => $entry->getDescription(),
-                    'note'            => is_string($note) ? $note : null,
+                    'id'                   => $entry->getId(),
+                    'personName'           => $entry->getPersonName(),
+                    'taskId'               => $entry->getTaskId(),
+                    'taskTitle'            => $entry->getTaskTitleSnapshot(),
+                    'boardId'              => $entry->getBoardIdSnapshot(),
+                    'startedAt'            => $entry->getStartedAt()->format(DATE_ATOM),
+                    'endedAt'              => $entry->getEndedAt()->format(DATE_ATOM),
+                    'durationSeconds'      => $entry->getDurationSeconds(),
+                    'source'               => $entry->getSource()->value,
+                    'billable'             => $entry->getBillable(),
+                    'description'          => $entry->getDescription(),
+                    'note'                 => is_string($note) ? $note : null,
+                    'closedByUserDeletion' => $entry->isClosedByUserDeletion(),
                 ];
             }
         } while (count($entries) === self::EXPORT_BATCH);
