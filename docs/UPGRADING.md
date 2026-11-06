@@ -3,7 +3,8 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
-  - [To 1.14.0](#to-1140)
+- [To 1.14.0](#to-1140)
+  - [To 1.14.0](#to-1140-1)
 - [To 1.13.0](#to-1130)
 - [To 1.12.0](#to-1120)
 - [To 1.11.0](#to-1110)
@@ -55,7 +56,7 @@
 
 ## Unreleased
 
-### To 1.14.0
+## To 1.14.0
 
 From **1.13.0** (contract `timetrack-next` v1.1: calendar suggestions §6, `POST entries` and `resolve-keys` §6.6 / §10.3,
 meetings API §22):
