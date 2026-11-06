@@ -101,6 +101,9 @@ final readonly class ClientApiStack
 
     private TeamAccessGuard $teamGuard;
 
+    /**
+     * @param list<string> $enabledLocales
+     */
     public function apiController(
         ?TaskAccessCheckerInterface $taskAccess = null,
         bool $allowMetadata = false,
@@ -109,6 +112,7 @@ final readonly class ClientApiStack
         ?IdleCheckSettingsResolver $idleCheckResolver = null,
         ?ClientUserProfileProviderInterface $profileProvider = null,
         ?TranslatorInterface $translator = null,
+        array $enabledLocales = [],
     ): TimeTrackClientApiController {
         return new TimeTrackClientApiController(
             $this->authService,
@@ -128,6 +132,7 @@ final readonly class ClientApiStack
             settingsProvider: $this->settings,
             idleCheckResolver: $idleCheckResolver,
             translator: $translator,
+            enabledLocales: $enabledLocales,
         );
     }
 

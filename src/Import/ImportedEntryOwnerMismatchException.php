@@ -14,8 +14,10 @@ final class ImportedEntryOwnerMismatchException extends RuntimeException
 {
     /**
      * Creates the exception (the message names no user and no entry).
+     *
+     * @param string|null $externalId Since 1.15: the row that stopped the batch, for the host; kept out of the message
      */
-    public function __construct()
+    public function __construct(public readonly ?string $externalId = null)
     {
         parent::__construct('An imported time entry cannot change its owner; remove it and import it again.');
     }

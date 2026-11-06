@@ -35,4 +35,13 @@ final class ImportedDescriptionSanitizer
 
         return $text === '' ? null : $text;
     }
+
+    /**
+     * Since 1.15: the same rules on one line: every run of line breaks (LF, U+2028 line separator, U+2029 paragraph
+     * separator) and the blanks around it becomes one space. Nothing left = the empty string.
+     */
+    public static function oneLine(string $text): string
+    {
+        return (string) preg_replace('/\h*[\n\x{2028}\x{2029}][\n\x{2028}\x{2029}\h]*/u', ' ', self::clean($text) ?? '');
+    }
 }

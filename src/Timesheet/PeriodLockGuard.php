@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Repository\FormerOwnerTimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -157,7 +158,10 @@ final readonly class PeriodLockGuard
 
     /**
      * Whether an entry may be changed or deleted by any bundle path: false when its period (local start date, its
-     * scope or, without one, any scope of its owner) is locked or submitted, and when its owner is unknown.
+     * scope or, without one, any scope of its owner) is locked or submitted, and when its owner is unknown. Since 1.15
+     * an ownerless entry is judged by the deleted user's timesheets, which stay under the same id; a former person's
+     * entry has no timesheet, and an ownerless entry with no reference (the delete bypassed the bundle, or it was
+     * anonymised) has an unknown owner.
      */
     public function isEntryWritable(TimeEntry $entry): bool
     {
@@ -165,11 +169,42 @@ final readonly class PeriodLockGuard
             return true;
         }
         $owner = $entry->getUser();
+        if ($owner === null) {
+            return !$this->isRowBlocked(null, $entry->getPersonRef(), $entry->getScopeKey(), $entry->getStartedAt());
+        }
         if (!$owner instanceof UserInterface) {
             return false;
         }
 
         return !$this->blockingTimesheet($owner, $entry->getScopeKey(), $entry->getStartedAt()) instanceof Timesheet;
+    }
+
+    /**
+     * Since 1.15: the opposite of {@see self::isEntryWritable()} by ids, for bulk paths that only read ids. It does not
+     * check {@see self::isEnabled()}: callers ask only while the guard is on.
+     */
+    public function isRowBlocked(?string $userId, ?string $personRef, ?string $scopeKey, DateTimeInterface $startedAt): bool
+    {
+        if ($userId !== null) {
+            return $this->blockingTimesheetOf($userId, $scopeKey, $startedAt) instanceof Timesheet;
+        }
+        $formerUserId = TimeEntry::formerUserIdOf($personRef);
+        if ($formerUserId === null) {
+            return $personRef === null;
+        }
+        // The account may be gone, and its timesheets with no `user_id`: they are found by `owner_ref`. A store that cannot
+        // do that fails closed.
+        if (!$this->timesheets instanceof FormerOwnerTimesheetRepositoryInterface) {
+            return true;
+        }
+        $utc = new DateTimeImmutable('@' . $startedAt->getTimestamp());
+        foreach ($this->timesheets->findGuardingByOwnerRef($formerUserId, $scopeKey, $utc->modify('-1 day')->format('Y-m-d'), $utc->modify('+1 day')->format('Y-m-d')) as $timesheet) {
+            if ($timesheet->covers($startedAt)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -189,6 +224,12 @@ final readonly class PeriodLockGuard
         $blocked = [];
         foreach ($entries as $entry) {
             $owner = $entry->getUser();
+            if ($owner === null) {
+                if (!$this->isEntryWritable($entry)) {
+                    $blocked[$entry->getId()] = true;
+                }
+                continue;
+            }
             if (!$owner instanceof UserInterface) {
                 $blocked[$entry->getId()] = true;
                 continue;

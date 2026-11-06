@@ -6,6 +6,7 @@
   1.x variables, still passed for host overrides: entries, entry_page, from, to.
   1.11: hidden_task_entry_ids (entry id => true): imported entries whose task the owner cannot see show
   reports.task_not_visible instead of the title snapshot.
+  1.15: an entry with no user (only with a list-query listener) shows the person's name, else reports.former_person.
   Data block filled: nowo_ui_list_row (start time, duration in minutes, translated source on the badge_neutral slot).
 #}
 {% extends '@NowoUiKit/page/list.html.twig' %}
@@ -14,7 +15,7 @@
 {% block nowo_ui_list_row %}
     {% set _b = page.bundle %}
     {% set _cell = nowo_ui_class('table_cell', _b) %}
-    <td class="{{ _cell }}" data-label="{{ 'reports.task'|trans }}" data-required="1">{{ (hidden_task_entry_ids ?? {})[row.id] is defined ? 'reports.task_not_visible'|trans : row.taskTitleSnapshot }}</td>
+    <td class="{{ _cell }}" data-label="{{ 'reports.task'|trans }}" data-required="1">{{ (hidden_task_entry_ids ?? {})[row.id] is defined ? 'reports.task_not_visible'|trans : (row.anonymised and row.taskTitleSnapshot is same as('') ? 'reports.task_not_visible'|trans : row.taskTitleSnapshot) }}{% if row.ownerless %} <span class="{{ nowo_ui_class('badge_neutral', _b) }}" data-testid="time-track-former-person">{{ row.personName ?? 'reports.former_person'|trans }}</span>{% endif %}</td>
     <td class="{{ _cell }}" data-label="{{ 'reports.started'|trans }}"><time datetime="{{ row.startedAt|date('c') }}">{{ row.startedAt|date('Y-m-d H:i') }}</time></td>
     <td class="{{ _cell }} nowo-ui-cell--end" data-label="{{ 'reports.duration'|trans }}">{{ 'reports.minutes'|trans({'%minutes%': (row.durationSeconds / 60)|round(1)}) }}</td>
     <td class="{{ _cell }}" data-label="{{ 'reports.source'|trans }}" data-nowo-ui-priority="2"><span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ ('reports.source_' ~ row.source.value)|trans }}</span></td>

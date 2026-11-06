@@ -8,19 +8,23 @@ use function array_unique;
 use function array_values;
 
 /**
- * Since 1.11: what a removal deleted — the count, the seconds per task id (for hosts that keep task totals) and the
- * owners' ids.
+ * Since 1.11: what a removal deleted — the count, the seconds per task id (for hosts that keep task totals), the
+ * owners' ids and, since 1.15, the person references of the ownerless entries.
  */
 final readonly class ImportedTimeEntryRemoval
 {
     /**
      * @param array<string, int> $secondsByTask task id => removed seconds
      * @param list<string> $userIds owners of the removed entries (each once)
+     * @param list<string> $personRefs Since 1.15: person references of the removed ownerless entries (each once)
+     * @param int $kept Since 1.15: entries of the scope the period lock protected, not removed
      */
     public function __construct(
         public int $count = 0,
         public array $secondsByTask = [],
         public array $userIds = [],
+        public array $personRefs = [],
+        public int $kept = 0,
     ) {
     }
 
@@ -34,6 +38,6 @@ final readonly class ImportedTimeEntryRemoval
             $seconds[$taskId] = ($seconds[$taskId] ?? 0) + $value;
         }
 
-        return new self($this->count + $other->count, $seconds, array_values(array_unique([...$this->userIds, ...$other->userIds])));
+        return new self($this->count + $other->count, $seconds, array_values(array_unique([...$this->userIds, ...$other->userIds])), array_values(array_unique([...$this->personRefs, ...$other->personRefs])), $this->kept + $other->kept);
     }
 }

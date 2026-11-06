@@ -42,6 +42,18 @@ change in duration) and `TIME_ENTRIES_REMOVED` (subtracts `secondsByTask`). Its 
 event classes exist. Deleting tasks or boards never deletes TimeTrack entries (live or imported); imported time is
 deleted only by an explicit manager action.
 
+Since 1.15 the hours of a person with no user are stored too:
+
+```php
+$person = $candidate->person;
+$user   = $candidate->user();
+$owner  = $user instanceof UserInterface
+    ? new ImportedTimeEntryClaim($user, $person->getId(), $scopeKey)
+    : new ImportedTimeEntryPerson($person->getId(), $person->isAnonymised() ? null : $person->getName(), $scopeKey);
+```
+
+Rows go through `ImportedTimeEntryWriter::upsertMany([[$owner, $data], ...])`. See [Entries with no user](USAGE.md#entries-with-no-user-115).
+
 ## Entries without a timer (1.14)
 
 `POST entries` (sources `manual` and `calendar`) and accepted calendar suggestions create entries without a timer, so no

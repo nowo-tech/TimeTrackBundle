@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
 use Doctrine\DBAL\LockMode;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -22,17 +23,22 @@ use Throwable;
 
 use function array_chunk;
 use function array_column;
+use function array_filter;
 use function array_map;
+use function array_values;
 use function count;
 use function max;
 
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
+
+    /** Since 1.15: entries one bulk statement of a release or an anonymisation touches. */
+    public const FORMER_PERSON_BATCH = 500;
 
     /**
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
@@ -386,7 +392,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         $lastId = '';
         do {
             $query = $this->entityManager->createQueryBuilder()
-                ->select('e.id AS id', 'e.taskId AS taskId', 'e.durationSeconds AS seconds', 'IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey', 'e.startedAt AS startedAt')
+                ->select('e.id AS id', 'e.taskId AS taskId', 'e.durationSeconds AS seconds', 'IDENTITY(e.user) AS userId', 'e.personRef AS personRef', 'e.scopeKey AS scopeKey', 'e.startedAt AS startedAt')
                 ->from(TimeEntry::class, 'e')
                 ->where('e.source = :import')
                 ->andWhere('e.externalSource = :source')
@@ -403,22 +409,25 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ImportedTimeEntryScope::BOARD => $query->andWhere('e.boardIdSnapshot = :value')->setParameter('value', $scope->values[0]),
                 default                       => null,
             };
-            /** @var list<array{id: string, taskId: string, seconds: int|string, userId: int|string, scopeKey: string|null, startedAt: DateTimeImmutable}> $batch */
+            /** @var list<array{id: string, taskId: string, seconds: int|string, userId: int|string|null, personRef: string|null, scopeKey: string|null, startedAt: DateTimeImmutable}> $batch */
             $batch = $query->getQuery()->getArrayResult();
             if ($batch === []) {
                 break;
             }
             $rows    = [];
             $seconds = [];
+            $kept    = 0;
             foreach ($batch as $row) {
                 $lastId = $row['id'];
-                if ($keep(['id' => $row['id'], 'userId' => (string) $row['userId'], 'scopeKey' => $row['scopeKey'], 'startedAt' => $row['startedAt']])) {
+                if ($keep(['id' => $row['id'], 'userId' => $row['userId'] === null ? null : (string) $row['userId'], 'personRef' => $row['personRef'], 'scopeKey' => $row['scopeKey'], 'startedAt' => $row['startedAt']])) {
+                    ++$kept;
                     continue;
                 }
                 $seconds[$row['taskId']] = ($seconds[$row['taskId']] ?? 0) + (int) $row['seconds'];
                 $rows[]                  = $row;
             }
             if ($rows === []) {
+                $removal = $removal->merge(new ImportedTimeEntryRemoval(kept: $kept));
                 continue;
             }
             $this->entityManager->createQueryBuilder()
@@ -428,7 +437,10 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->getQuery()
                 ->execute();
             $this->detachRemoved(array_column($rows, 'id'));
-            $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(static fn (array $row): string => (string) $row['userId'], $rows)));
+            // Since 1.15 an ownerless entry has no owner id to report.
+            $owners  = array_filter(array_column($rows, 'userId'), static fn (int|string|null $id): bool => $id !== null);
+            $people  = array_filter(array_column($rows, 'personRef'), static fn (?string $ref): bool => $ref !== null);
+            $removal = $removal->merge(new ImportedTimeEntryRemoval(count($rows), $seconds, array_map(strval(...), array_values($owners)), array_values($people), $kept));
         } while (count($batch) === $batchSize);
 
         return $removal;
@@ -473,6 +485,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->distinct()
             ->from(TimeEntry::class, 'e')
             ->where('e.scopeKey IS NOT NULL')
+            // Since 1.15: ownerless entries have no timesheet to create.
+            ->andWhere('e.user IS NOT NULL')
             ->andWhere('e.startedAt >= :from')
             ->andWhere('e.startedAt <= :to')
             ->setParameter('from', $from)
@@ -492,7 +506,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.13: entries without a scope after an id (back-fill keyset).
+     * Since 1.13: entries without a scope after an id (back-fill keyset). Since 1.15 only entries with a user: the scope
+     * provider places entries by their owner, and an ownerless entry belongs to no timesheet.
      */
     public function findScopelessAfter(string $afterId, int $limit): array
     {
@@ -501,6 +516,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->select('e')
             ->from(TimeEntry::class, 'e')
             ->where('e.scopeKey IS NULL')
+            ->andWhere('e.user IS NOT NULL')
             ->andWhere('e.id > :after')
             ->setParameter('after', $afterId)
             ->orderBy('e.id', SortDirection::Ascending)
@@ -533,6 +549,294 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->execute();
             $this->detachRemoved($ids);
         }
+
+        return $changed;
+    }
+
+    /**
+     * Since 1.15: ids of the user's entries, by keyset. Reads only.
+     */
+    public function entryIdsOfOwner(string $userId): array
+    {
+        $ids    = [];
+        $lastId = '';
+        do {
+            /** @var list<array{id: string}> $rows */
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('e.id AS id')
+                ->from(TimeEntry::class, 'e')
+                ->where('IDENTITY(e.user) = :owner')
+                ->andWhere('e.id > :lastId')
+                ->setParameter('owner', $userId)
+                ->setParameter('lastId', $lastId)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(self::FORMER_PERSON_BATCH)
+                ->getQuery()
+                ->getArrayResult();
+            foreach ($rows as $row) {
+                $ids[]  = $row['id'];
+                $lastId = $row['id'];
+            }
+        } while (count($rows) === self::FORMER_PERSON_BATCH);
+
+        return $ids;
+    }
+
+    /**
+     * Since 1.15: the name and reference on these entries of a deleted user. Clears the user too, for a database that does not
+     * enforce the foreign key. Already anonymised rows are left alone.
+     */
+    public function settleDeletedOwner(array $entryIds, string $personRef, ?string $name): int
+    {
+        $changed = 0;
+        foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
+            $changed += (int) $this->entityManager->createQueryBuilder()
+                ->update(TimeEntry::class, 'e')
+                ->set('e.user', 'NULL')
+                ->set('e.personRef', ':ref')
+                ->set('e.personNameSnapshot', ':name')
+                ->where('e.id IN (:ids)')
+                ->andWhere('e.anonymisedAt IS NULL')
+                ->setParameter('ref', $personRef)
+                ->setParameter('name', $name)
+                ->setParameter('ids', $ids)
+                ->getQuery()
+                ->execute();
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Since 1.15: anonymises these entries. Already anonymised rows are left alone.
+     */
+    public function anonymiseEntries(array $entryIds, DateTimeImmutable $at): int
+    {
+        $changed = 0;
+        foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
+            $changed += $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.id IN (:ids)')->setParameter('ids', $ids), $at);
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Since 1.15: detaches the user's entries from the user, with the snapshot.
+     */
+    public function releaseOwner(string $userId, string $personRef, ?string $name): int
+    {
+        return $this->updateInBatches(
+            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId),
+            static fn (QueryBuilder $update): QueryBuilder => $update->set('e.user', 'NULL')->set('e.personRef', ':ref')->set('e.personNameSnapshot', ':name')->setParameter('ref', $personRef)->setParameter('name', $name),
+        );
+    }
+
+    /**
+     * Since 1.15: anonymises the user's entries.
+     */
+    public function anonymiseOwner(string $userId, DateTimeImmutable $at): int
+    {
+        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId), $at);
+    }
+
+    /**
+     * Since 1.15: anonymises the entries of a person reference. A row is matched again in PHP: a MySQL collation may fold case.
+     */
+    public function anonymisePerson(string $personRef, DateTimeImmutable $at): int
+    {
+        return $this->anonymiseWhere(
+            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.personRef = :ref')->andWhere('e.user IS NULL')->setParameter('ref', $personRef),
+            $at,
+            static fn (array $row): bool => $row['personRef'] === $personRef,
+        );
+    }
+
+    /**
+     * Since 1.15: anonymises the ownerless entries with no person reference.
+     */
+    public function anonymiseUnidentified(DateTimeImmutable $at): int
+    {
+        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.user IS NULL')->andWhere('e.personRef IS NULL'), $at);
+    }
+
+    /**
+     * Since 1.15: anonymises the ownerless entries that ended before the cut-off.
+     */
+    public function anonymiseOwnerlessEndedBefore(DateTimeImmutable $cutOff, DateTimeImmutable $at): int
+    {
+        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.user IS NULL')->andWhere('e.endedAt < :cut')->setParameter('cut', $cutOff), $at);
+    }
+
+    /**
+     * Since 1.15: entries of a person reference after an id (keyset).
+     */
+    public function findByPersonRef(string $personRef, string $afterId, int $limit): array
+    {
+        /** @var list<TimeEntry> $result */
+        $result = $this->entityManager->createQueryBuilder()
+            ->select('e')
+            ->from(TimeEntry::class, 'e')
+            ->where('e.personRef = :ref')
+            ->andWhere('e.user IS NULL')
+            ->andWhere('e.id > :after')
+            ->setParameter('ref', $personRef)
+            ->setParameter('after', $afterId)
+            ->orderBy('e.id', SortDirection::Ascending)
+            ->setMaxResults(max(1, $limit))
+            ->getQuery()
+            ->getResult();
+
+        return $result;
+    }
+
+    /**
+     * Since 1.15: one page of the users' entries and the ownerless entries, newest first.
+     */
+    public function findPageWithOwnerless(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported, int $offset, int $limit): array
+    {
+        /** @var list<TimeEntry> $result */
+        $result = $this->ownerlessPeriodQuery($userIds, $ownerlessScopeKeys, $from, $to, $includeImported)
+            ->select('e')
+            ->orderBy('e.startedAt', SortDirection::Descending)
+            ->addOrderBy('e.id', SortDirection::Descending)
+            ->setFirstResult(max(0, $offset))
+            ->setMaxResults(max(1, $limit))
+            ->getQuery()
+            ->getResult();
+
+        return $result;
+    }
+
+    /**
+     * Since 1.15: number of the users' entries and the ownerless entries of the period.
+     */
+    public function countWithOwnerless(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported): int
+    {
+        return (int) $this->ownerlessPeriodQuery($userIds, $ownerlessScopeKeys, $from, $to, $includeImported)
+            ->select('COUNT(e.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * @param list<string> $userIds
+     * @param list<string>|null $ownerlessScopeKeys
+     */
+    private function ownerlessPeriodQuery(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported): QueryBuilder
+    {
+        $query = $this->entityManager->createQueryBuilder()
+            ->from(TimeEntry::class, 'e')
+            ->where('e.startedAt >= :from')
+            ->andWhere('e.startedAt <= :to')
+            ->setParameter('from', $from)
+            ->setParameter('to', $to);
+        // An empty scope list lists no ownerless entry.
+        $ownerless = match (true) {
+            $ownerlessScopeKeys === null => 'e.user IS NULL',
+            $ownerlessScopeKeys === []   => '1 = 0',
+            default                      => 'e.user IS NULL AND e.scopeKey IN (:ownerlessScopes)',
+        };
+        if ($ownerlessScopeKeys !== null && $ownerlessScopeKeys !== []) {
+            $query->setParameter('ownerlessScopes', $ownerlessScopeKeys);
+        }
+        if ($userIds === []) {
+            $query->andWhere($ownerless);
+        } else {
+            $query->andWhere('IDENTITY(e.user) IN (:userIds) OR (' . $ownerless . ')')->setParameter('userIds', $userIds);
+        }
+        if (!$includeImported) {
+            $query->andWhere('e.source <> :import')->setParameter('import', TimeEntrySource::Import->value);
+        }
+
+        return $query;
+    }
+
+    /**
+     * One statement per row, because the external id and the metadata depend on the row; no entity loaded, no flush. Same
+     * result as {@see TimeEntry::anonymiseInPlace()}. Already anonymised rows are skipped.
+     *
+     * @param callable(QueryBuilder): QueryBuilder $filter
+     * @param (callable(array{id: string, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}): bool)|null $accept
+     */
+    private function anonymiseWhere(callable $filter, DateTimeImmutable $at, ?callable $accept = null): int
+    {
+        $changed = 0;
+        $lastId  = '';
+        do {
+            /** @var list<array{id: string, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}> $rows */
+            $rows = $filter($this->entityManager->createQueryBuilder()
+                ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.metadata AS metadata', 'e.personRef AS personRef')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.id > :lastId')
+                ->andWhere('e.anonymisedAt IS NULL')
+                ->setParameter('lastId', $lastId))
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(self::FORMER_PERSON_BATCH)
+                ->getQuery()
+                ->getArrayResult();
+            foreach ($rows as $row) {
+                $lastId = $row['id'];
+                if ($accept !== null && !$accept($row)) {
+                    // Needs a case-insensitive collation: testReferencesThatDifferOnlyByCase… on MySQL in CI.
+                    // @codeCoverageIgnoreStart
+                    continue;
+                    // @codeCoverageIgnoreEnd
+                }
+                $changed += (int) $this->entityManager->createQueryBuilder()
+                    ->update(TimeEntry::class, 'e')
+                    ->set('e.user', 'NULL')
+                    ->set('e.personRef', 'NULL')
+                    ->set('e.personNameSnapshot', 'NULL')
+                    ->set('e.description', 'NULL')
+                    ->set('e.taskTitleSnapshot', ':title')
+                    ->set('e.externalId', ':externalId')
+                    ->set('e.metadata', ':metadata')
+                    ->set('e.anonymisedAt', ':at')
+                    ->where('e.id = :id')
+                    ->setParameter('title', '')
+                    ->setParameter('externalId', $row['externalSource'] !== null && $row['externalId'] !== null ? TimeEntry::anonymisedExternalId($row['externalSource'], $row['externalId']) : null)
+                    ->setParameter('metadata', TimeEntry::anonymisedMetadata($row['metadata']), Types::JSON)
+                    ->setParameter('at', $at, Types::DATETIME_IMMUTABLE)
+                    ->setParameter('id', $row['id'])
+                    ->getQuery()
+                    ->execute();
+            }
+            $this->detachRemoved(array_column($rows, 'id'));
+        } while (count($rows) === self::FORMER_PERSON_BATCH);
+
+        return $changed;
+    }
+
+    /**
+     * Bulk statements only (no entity loaded, no flush: safe inside a host's erasure transaction), by keyset on the id;
+     * entries this entity manager had loaded are detached.
+     *
+     * @param callable(QueryBuilder): QueryBuilder $filter
+     * @param callable(QueryBuilder): QueryBuilder $apply
+     */
+    private function updateInBatches(callable $filter, callable $apply): int
+    {
+        $changed = 0;
+        $lastId  = '';
+        do {
+            /** @var list<array{id: string}> $rows */
+            $rows = $filter($this->entityManager->createQueryBuilder()->select('e.id AS id')->from(TimeEntry::class, 'e')->where('e.id > :lastId')->setParameter('lastId', $lastId))
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(self::FORMER_PERSON_BATCH)
+                ->getQuery()
+                ->getArrayResult();
+            if ($rows === []) {
+                break;
+            }
+            $ids    = array_column($rows, 'id');
+            $lastId = $ids[count($ids) - 1];
+            $changed += (int) $apply($this->entityManager->createQueryBuilder()->update(TimeEntry::class, 'e'))
+                ->where('e.id IN (:ids)')
+                ->setParameter('ids', $ids)
+                ->getQuery()
+                ->execute();
+            $this->detachRemoved($ids);
+        } while (count($rows) === self::FORMER_PERSON_BATCH);
 
         return $changed;
     }

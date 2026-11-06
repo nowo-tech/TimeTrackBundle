@@ -269,10 +269,13 @@ nowo_time_track:
     max_entry_seconds: 2678400   # longest single imported entry (31 days); 3600–31622400
   retention:
     include_imported: false      # imported entries stay out of retention purges
+    anonymise_on_user_delete: false   # since 1.15: true = a user removed through the entity manager leaves the hours, not the person
 ```
 
 - Imported entries are written by `Import\ImportedTimeEntryWriter` (host code). Their description is kept **in full**
   (unbounded text column, no length cap).
+- Since 1.15 `client_api.profile_provider` also gives the name kept on a deleted user's entries (`getDisplayName()`),
+  and, when it implements `ClientUserPrivacyProviderInterface`, the `privacy` block of `GET me`.
 - `retention.include_imported` feeds `Retention\TimeEntryRetentionPolicy`; the bundle ships no purge yet, so a host
   purge must apply `excludedSources()`.
 

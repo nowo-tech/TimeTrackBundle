@@ -46,6 +46,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).
+Audit status: Appendix HA (2026-11-06): Pass (conditional) / Medium at `38f5230`. The only open Medium was accepted by the owner on 2026-11-06; residuals in `docs/SECURITY.md`.
+
+### Added
+
+- **Entries with no user** (Beacon request 2026-11-06 §2, owner rule 2026-11-06: tracked time is not lost, including when
+  a user is deleted). `ImportedTimeEntryWriter::upsertForPerson(ImportedTimeEntryPerson, ImportedTimeEntryData)` and person rows
+  in `upsertMany()` store a former person's hours: no user, source `import`, read-only, with `person_name_snapshot` and the
+  opaque `person_ref`. A user takes such an entry only through an explicit `ImportedTimeEntryClaim` naming the reference, in
+  the same scope.
+- **`Retention\FormerPersonTimeEntries`** (public service): `release($user, ?$name)` stops a running timer and keeps a leaver's
+  entries under their name; `anonymiseUser($user)` stops the timer and covers released entries too; `anonymisePerson($ref)`,
+  `anonymiseUnidentified()`, `anonymiseOwnerlessEndedBefore($cutOff)`; `export($ref)` for GDPR art. 15 / 20; `personRefOf($user)`;
+  `isAvailable()`. Anonymising keeps the time and clears name, reference, description and task title, hashes the external
+  id, and keeps only the `closed_by` mark in `metadata`. An anonymised entry is never written again.
+- **`retention.anonymise_on_user_delete`** (default false): a user removed through the entity manager has their entries anonymised.
+- `TimerService::stopForUserDeletion($user)`: a timer still running when its user is removed through the entity manager is stopped
+  and saved, ending at the deletion time and marked (`TimeEntry::isClosedByUserDeletion()`). A locked period does not refuse it.
+- `TimeEntriesRemovedEvent::getPersonRefs()` and `getKeptCount()`; an optional `$actorId` on `removeForTasks()`, `removeForBoard()`,
+  `removeForSource()`, `removeForUser()`.
+- `TimeEntryListQueryEvent::includeOwnerless(?array $scopeKeys)`: lists ownerless entries for a viewer the host allows, limited to the
+  viewer's tenant scopes. Off by default, and never on the client API (`listEntries*(..., $allowOwnerless)`). The reports page shows
+  the name beside the task (`reports.former_person` when there is none). `TimerService::hiddenTaskEntryIds($entries, ?$viewer)` judges
+  an ownerless entry by the viewer.
+- `FormerPersonTimeEntryRepositoryInterface`, `FormerOwnerTimesheetRepositoryInterface` (optional store capabilities; the Doctrine stores
+  have them); `TimeEntry::isOwnerless()`, `getPersonName()`, `getPersonRef()`, `getFormerUserId()`, `isAnonymised()`, `getAnonymisedAt()`;
+  `toArray()` has `person` for an ownerless entry only.
+- **`privacy` on `GET me` (TT-1)**: `ClientUserPrivacyProviderInterface::getPrivacy(UserInterface $user, ?string $locale): ?array`,
+  optional extra of `client_api.profile_provider`. Without it the key is absent. The locale is the best match of `Accept-Language`
+  among `framework.enabled_locales`, or null without the header. A `url` that is not a plain absolute `http(s)` URL is sent as null.
+- `.scripts/check-rollback-clients.sh`: the reference SQL through the native clients, in CI. The functional suite also runs on MariaDB 10.6.
+
+### Changed
+
+- **`time_track_entries.user_id` is nullable and `ON DELETE SET NULL`** (was `NOT NULL`, `ON DELETE CASCADE`): deleting a user keeps their
+  entries. `TimeEntry::getUser()` returns `?object`. A flush that deletes a user writes the name snapshot on their entries
+  (`FormerPersonSnapshotListener`: after the commit, the profile provider's display name, never with an `@`, and `user:<id>`).
+- `PeriodLockGuard`: an ownerless entry is judged by the deleted user's timesheets, found by `owner_ref` (a store without the capability
+  fails closed); a former person's is writable; one with no identity has an unknown owner. A sync leaves an entry of a deleted user
+  or with no identity alone (`Unchanged`).
+- `FilteredImportedTimeEntryRepositoryInterface::removeImportedWhere()`: the row has `personRef`, and `userId` may be null.
+- `ownersWithEntries()` and `findScopelessAfter()` skip ownerless entries.
+- `ImportedEntryOwnerMismatchException::$externalId`: the row that stopped a batch, kept out of the message.
+- `ImportedTimeEntryWriter::removeForUser()` is for re-association only, and now respects the period lock.
+- `TimerService::start()` drops a reserved `closed_by` metadata key.
+- Demo: the 1.11 migration's rollback no longer deletes imported time.
+
 ## [1.14.0] - 2026-11-06
 
 Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, contract `timetrack-next` v1.1 §6, §10.3,

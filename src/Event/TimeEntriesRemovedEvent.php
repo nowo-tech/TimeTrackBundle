@@ -9,8 +9,8 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
- * Since 1.11 ({@see TimeTrackEvents::TIME_ENTRIES_REMOVED}): imported entries were deleted (one, or in bulk). Carries
- * ids and counts only. `secondsByTask` lets hosts that keep task totals subtract what was removed.
+ * Since 1.11 ({@see TimeTrackEvents::TIME_ENTRIES_REMOVED}): imported entries were deleted (one, or in bulk), or since 1.15
+ * the period lock refused to. Carries ids and counts only; the bundle has no audit table, so hosts store this event. `secondsByTask` lets hosts that keep task totals subtract what was removed.
  */
 final class TimeEntriesRemovedEvent extends Event
 {
@@ -64,6 +64,24 @@ final class TimeEntriesRemovedEvent extends Event
     public function getUserIds(): array
     {
         return $this->removal->userIds;
+    }
+
+    /**
+     * Since 1.15: person references of the removed ownerless entries. Opaque ids, for the host's audit record.
+     *
+     * @return list<string>
+     */
+    public function getPersonRefs(): array
+    {
+        return $this->removal->personRefs;
+    }
+
+    /**
+     * Since 1.15: entries the period lock kept: a refused removal fires this event too, with a count of 0.
+     */
+    public function getKeptCount(): int
+    {
+        return $this->removal->kept;
     }
 
     /**
