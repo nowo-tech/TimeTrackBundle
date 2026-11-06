@@ -225,6 +225,11 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
                 ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+            if ($repoClass === DoctrineOrmTimeEntryRepository::class) {
+                // Since the delta GG-D-2 fix: warns when a user row cannot be locked.
+                $repoDefinition->setArgument('$logger', new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+                $repoDefinition->addTag('monolog.logger', ['channel' => 'time_track']);
+            }
             if (in_array($repoClass, [DoctrineOrmClientTokenRepository::class, DoctrineOrmDeviceAuthorizationRepository::class], true)) {
                 $repoDefinition->setArgument('$clock', new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE));
             }

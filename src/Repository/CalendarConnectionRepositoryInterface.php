@@ -37,11 +37,13 @@ interface CalendarConnectionRepositoryInterface
 
     /**
      * Server-mode connections (active or in error) whose next attempt is due at `$now` (or never set), least recently
-     * attempted first (never attempted first of all).
+     * attempted first (never attempted first of all), of the given providers only (null = every provider).
+     *
+     * @param list<string>|null $providers Enabled provider values (`calendar.providers`)
      *
      * @return list<CalendarConnection>
      */
-    public function findConnectionsDue(DateTimeImmutable $now, ?string $userId, int $limit, int $offset = 0): array;
+    public function findConnectionsDue(DateTimeImmutable $now, ?string $userId, int $limit, int $offset = 0, ?array $providers = null): array;
 
     /**
      * Deletes the connection, its suggestions and the owner's rules in its scope, in one transaction.

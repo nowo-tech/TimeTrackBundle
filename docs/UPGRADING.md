@@ -218,8 +218,15 @@ before the new entry.
 
 **Concurrency.** Entries without a timer and accepted suggestions are written under a per-user row lock
 (`SELECT … FOR UPDATE` on your user row, inside a short transaction). A host replacement of `TimeEntryRepositoryInterface`
-should implement `UserSerialisedTimeEntryRepositoryInterface` too (without it the overlap check can race). Listeners of
-`nowo_time_track.time_entry.created` run after the commit; their exceptions are logged and do not undo the entry.
+should implement `UserSerialisedTimeEntryRepositoryInterface` too (without it the overlap check can race). A user the
+entity manager does not manage is locked by id through the mapped user class; when no row can be locked a warning is
+logged. **Your callbacks that run inside that lock must stay quick and must not write to tables that reference the user
+row from another connection:** `TimesheetScopeProviderInterface::scopeKeyForTask()`, `TaskAccessCheckerInterface` /
+the task provider's `findForUser()` (before the lock), and listeners of `nowo_time_track.period_lock.refused` (on
+PostgreSQL the lock also blocks concurrent inserts that reference the same user). Listeners of
+`nowo_time_track.time_entry.created` and `nowo_time_track.calendar.suggestion_decided` run after the commit; their
+exceptions are logged and do not undo anything. The `Idempotency-Key` answer of `POST entries` is stored after the
+commit.
 
 **Meetings API (spec 210) is off by default** (`meetings.enabled: false`) and adds no table. Implement
 `Meeting\MeetingProviderInterface` over your meeting read model and set `meetings.provider` ([MEETINGS.md](MEETINGS.md));

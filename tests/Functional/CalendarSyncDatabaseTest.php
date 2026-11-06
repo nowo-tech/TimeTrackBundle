@@ -248,6 +248,37 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertSame([[CalendarSuggestionStatus::Dismissed, '2026-11-04 09:00'], [CalendarSuggestionStatus::Pending, '2026-11-05 10:00']], array_map(static fn (CalendarSuggestion $s): array => [$s->getStatus(), $s->getStartsAt()->format('Y-m-d H:i')], $left), 'decided rows are kept');
     }
 
+    public function testDisabledProvidersNeitherStarveNorRepeat(): void
+    {
+        $google    = $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', 'v1');
+        $microsoft = $this->connections()->connect($this->user, 'org-b', CalendarProvider::Microsoft, CalendarConnectionMode::Server, 'host-cred-2', 'v1');
+        $repo      = $this->repository();
+        $matcher   = self::getContainer()->get(CalendarEventMatcher::class);
+        $hours     = self::getContainer()->get(CalendarWorkingHours::class);
+        self::assertInstanceOf(CalendarEventMatcher::class, $matcher);
+        self::assertInstanceOf(CalendarWorkingHours::class, $hours);
+        // The host removed Microsoft from calendar.providers after users connected it.
+        $sync = new CalendarSyncService($repo, $repo, $repo, new CalendarSettings(true, ['google']), $hours, $matcher, [new FakeCalendarEventSource()], $this->credentials(), $this->dispatcher, $this->clock, $this->logger);
+
+        self::assertSame(['synced' => 1, 'failed' => 0, 'outside_hours' => 0, 'purged' => 0], $sync->syncDue(null, 1), 'GG-D-1: the disabled provider is not even due');
+        self::assertSame([], $repo->findConnectionsDue($this->clock->now()->modify('+1 day'), null, 10, 0, []));
+        self::assertSame('not_syncable', $sync->sync($microsoft)->errorCode);
+        self::assertSame(['not_syncable', 1, '2026-11-06 14:00'], [$microsoft->getLastErrorCode(), $microsoft->getFailureCount(), $microsoft->getNextAttemptAt()?->format('Y-m-d H:i')], 'recorded with a backoff');
+        self::assertNotNull($google->getLastSyncAt());
+    }
+
+    public function testTheStaleCleanUpKeepsRowsDecidedMeanwhile(): void
+    {
+        $connection = $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', 'v1');
+        $this->sync(new FakeCalendarEventSource(CalendarProvider::Google, [$this->event('evt-a', null, '2026-11-04T09:00:00Z', 1800, '#task-1'), $this->event('evt-b', null, '2026-11-04T10:00:00Z', 1800, '#task-2')]))->sync($connection);
+        // A concurrent accept decided evt-a in the database after this process read it as pending.
+        $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_calendar_suggestions SET status = 'accepted' WHERE task_id = 'task-1'");
+
+        self::assertSame(1, $this->repository()->deleteUnseenPending($connection->getId(), new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-07'), []));
+        self::assertSame(['accepted'], array_values($this->entityManager()->getConnection()->fetchFirstColumn('SELECT status FROM time_track_calendar_suggestions')));
+        self::assertSame(0, $this->repository()->deleteUnseenPending($connection->getId(), new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-07'), []));
+    }
+
     public function testFailuresBackOffAndNeverStopTheBatch(): void
     {
         $other  = $this->createUser('other@example.com');

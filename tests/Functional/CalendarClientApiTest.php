@@ -209,6 +209,9 @@ final class CalendarClientApiTest extends FunctionalTestCase
         $dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_CREATED, static function (): never {
             throw new RuntimeException('listener down');
         });
+        $dispatcher->addListener(TimeTrackEvents::CALENDAR_SUGGESTION_DECIDED, static function (): never {
+            throw new RuntimeException('decided listener down');
+        });
 
         $accepted = $this->api('POST', '/api/time-track/suggestions/accept', ['ids' => [$raced->getId(), $broken->getId(), $fine->getId()]], $token);
 
@@ -224,6 +227,7 @@ final class CalendarClientApiTest extends FunctionalTestCase
         self::assertInstanceOf(RecordingLogger::class, $logger);
         self::assertContains('TimeTrack entry-created listener failed.', $logger->messages());
         self::assertContains('TimeTrack suggestion accept failed.', $logger->messages());
+        self::assertContains('TimeTrack suggestion-decided listener failed.', $logger->messages(), 'delta GG-D-4: the committed decision is still a 200');
 
         $this->api('POST', '/api/time-track/suggestions/dismiss', ['ids' => [$dismissed->getId()]], $token);
         self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['ids' => [$dismissed->getId()]], $token)['dismissed'] ?? null, 'a decided row is not dismissed');

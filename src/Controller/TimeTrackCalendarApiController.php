@@ -16,7 +16,6 @@ use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
-use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Exception\IdempotentReplayException;
@@ -344,8 +343,8 @@ final readonly class TimeTrackCalendarApiController
 
         $idempotencyKey = 'entries:' . $key;
         try {
-            // GG-L1: under the user's lock, a concurrent request with the same key is replayed, and the answer is stored
-            // before the lock is released.
+            // GG-L1: under the user's lock, a request with the same key whose answer is already stored is replayed; the
+            // answer is stored right after the commit.
             // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
             $entry = $this->entries->create($principal->user, $taskId, $start, $end, $source, $note, ['origin' => $source->value], null, function () use ($userId, $idempotencyKey, $bodyHash): void {
                 $again = $this->idempotency->find($userId, $idempotencyKey, $bodyHash);
@@ -356,11 +355,13 @@ final readonly class TimeTrackCalendarApiController
                     throw new IdempotentReplayException($again['status'], $again['body']);
                 }
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-            }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash): void {
-                $this->idempotency->save($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $entry->toArray() + ['locked' => false]]);
             });
 
-            return $this->responseFactory->json(['entry' => $entry->toArray() + ['locked' => false]], Response::HTTP_CREATED, $request);
+            // Delta GG-D-3: stored after the commit (a failed commit never leaves a 201 to replay).
+            $body = ['entry' => $entry->toArray() + ['locked' => false]];
+            $this->idempotency->save($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, $body);
+
+            return $this->responseFactory->json($body, Response::HTTP_CREATED, $request);
         } catch (IdempotentReplayException $replay) {
             return $this->responseFactory->json($replay->body, $replay->status, $request);
         } catch (ManualEntryException $e) {
