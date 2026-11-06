@@ -273,6 +273,8 @@ nowo_time_track:
 
 - Imported entries are written by `Import\ImportedTimeEntryWriter` (host code). Their description is kept **in full**
   (unbounded text column, no length cap).
+- Since 1.15 `client_api.profile_provider` also gives the name kept on a deleted user's entries (`getDisplayName()`),
+  and, when it implements `ClientUserPrivacyProviderInterface`, the `privacy` block of `GET me`.
 - `retention.include_imported` feeds `Retention\TimeEntryRetentionPolicy`; the bundle ships no purge yet, so a host
   purge must apply `excludedSources()`.
 

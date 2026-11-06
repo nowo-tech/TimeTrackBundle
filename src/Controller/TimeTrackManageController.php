@@ -146,7 +146,8 @@ final class TimeTrackManageController extends AbstractController
             'entries'    => $entryPage->entries,
             'entry_page' => $entryPage,
             // Since 1.11: imported entries whose task the owner cannot see (entry id => true); the template masks them.
-            'hidden_task_entry_ids' => $this->timerService->hiddenTaskEntryIds($entryPage->entries),
+            // Since 1.15 an ownerless entry is judged by what the viewer may track.
+            'hidden_task_entry_ids' => $this->timerService->hiddenTaskEntryIds($entryPage->entries, $user),
             'from'                  => $from,
             'to'                    => $to,
         ] + $pages->layoutContext());

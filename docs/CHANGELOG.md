@@ -46,6 +46,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).
+Audit status: re-verification pending (independent auditor).
+
+### Added
+
+- **Entries with no user** (Beacon request 2026-11-06 §2, owner rule 2026-11-06: tracked time is not lost, including when
+  a user is deleted). `ImportedTimeEntryWriter::upsertForPerson(ImportedTimeEntryPerson, ImportedTimeEntryData)` and
+  `upsertMany()` rows naming a person store a former person's hours: no user, source `import`, read-only, with
+  `person_name_snapshot` and the opaque `person_ref`. A later upsert naming a user claims the entry.
+- **`Retention\FormerPersonTimeEntries`** (public service): `release($user, ?$name)` keeps a leaver's entries under their
+  name with no user, `anonymiseUser($user)` / `anonymisePerson($ref)` keep the time and clear the name, reference,
+  description and metadata (an anonymised entry is never written again, so a re-sync cannot bring the name back),
+  `export($ref)` for GDPR art. 15 / 20, `personRefOf($user)`. Bulk statements, no flush.
+- `TimeEntryListQueryEvent::includeOwnerless(?array $scopeKeys)`: lists ownerless entries for a viewer the host allows,
+  limited to the viewer's tenant scopes. Off by default. The reports page shows the name beside the task (`reports.former_person` when
+  there is none). `TimerService::hiddenTaskEntryIds($entries, ?$viewer)` judges an ownerless entry by the viewer.
+- `FormerPersonTimeEntryRepositoryInterface` (optional store capability; the Doctrine store has it);
+  `TimeEntry::isOwnerless()`, `getPersonName()`, `getPersonRef()`, `getFormerUserId()`, `isAnonymised()`,
+  `getAnonymisedAt()`; `toArray()` has `person` for an ownerless entry only.
+- **`privacy` on `GET me` (TT-1)**: `ClientUserPrivacyProviderInterface::getPrivacy(UserInterface $user, ?string $locale): ?array`,
+  optional extra of `client_api.profile_provider`. Without it the key is absent. The locale is the best match of
+  `Accept-Language` among `framework.enabled_locales`, or null without the header. A `url` that is not absolute `http(s)` is
+  sent as null.
+
+### Changed
+
+- **`time_track_entries.user_id` is nullable and `ON DELETE SET NULL`** (was `NOT NULL`, `ON DELETE CASCADE`): deleting a user
+  keeps their entries. `TimeEntry::getUser()` returns `?object`. A user removed through the entity manager gets
+  the snapshot first (`FormerPersonSnapshotListener`: the profile provider's display name and `user:<id>`).
+- `PeriodLockGuard`: an ownerless entry is judged by the deleted user's timesheets (same id as `owner_ref`); a former person's is
+  writable; one with no identity has an unknown owner, as before. `isRowBlocked()` is new.
+- `FilteredImportedTimeEntryRepositoryInterface::removeImportedWhere()`: the row has `personRef`, and `userId` may be null.
+- `ownersWithEntries()` and `findScopelessAfter()` skip ownerless entries.
+- `ImportedTimeEntryWriter::removeForUser()` is for re-association only: no longer the account-erasure path.
+
 ## [1.14.0] - 2026-11-06
 
 Calendar suggestions, manual entries and the meetings API (TimeTrack 1.14.0, contract `timetrack-next` v1.1 §6, §10.3,

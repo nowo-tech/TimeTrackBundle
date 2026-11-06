@@ -36,6 +36,7 @@ reports:
   source_manual: "Manual"
   source_calendar: "Calendário"
   task_not_visible: Tarefa não visível
+  former_person: "Antiga pessoa"
 flash:
   timer_started: Temporizador iniciado.
   timer_already_active: Já tem um temporizador ativo.

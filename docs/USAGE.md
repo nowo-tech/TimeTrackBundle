@@ -8,6 +8,7 @@
 - [API (clients)](#api-clients)
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
 - [Imported entries (1.11)](#imported-entries-111)
+- [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Events](#events)
@@ -239,7 +240,9 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
   `too_old` / `future`). The title is cleaned to one line and cut to 255; the description
   is cleaned (controls and bidi overrides stripped, line breaks kept) and **never truncated**.
 - **The owner never changes**: re-associating someone's time is `removeForUser()` / `remove()` then `upsert()` for
-  the new user (the host audits it).
+  the new user (the host audits it). Since 1.15 an entry of a person with no account may be claimed by a user.
+- **A person with no account (1.15):** `$writer->upsertForPerson(new ImportedTimeEntryPerson($ref, $name, $scopeKey), $data)`.
+  See [Entries with no user](#entries-with-no-user-115).
 - Imported entries are **read-only** (`TimeEntry::isReadOnly()`, `canEditEntry()` always false) and are not live
   (`TimeEntrySource::isLive()`): keep them out of overlap checks, registers and clock-in rules
   (`findLiveByUserAndPeriod()`, `TimeEntryListQueryEvent::setIncludeImported(false)`).
@@ -266,6 +269,56 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
 - The client API's own `GET entries` (without `userId`) and `GET export` **always include** the token user's imported
   entries (flagged `readOnly`, `source: import`) and ignore `TimeEntryListQueryEvent::setIncludeImported(false)`:
   they are the user's copy of their own data (GDPR art. 15 / 20). The team `userId` path honours it.
+
+## Entries with no user (1.15)
+
+Owner rule: tracked time is not lost, including when a user is deleted. An entry has no user when it is a former person's
+imported time, or when its user was deleted (`user_id` is `ON DELETE SET NULL`).
+
+```php
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+
+// A former colleague with no account: the entry has no owner and shows under the name.
+$writer->upsertForPerson(new ImportedTimeEntryPerson(ref: $personId, name: 'Ana Ruiz', scopeKey: $tenant), $data);
+$writer->upsertMany([[$user, $data1], [new ImportedTimeEntryPerson($personId, 'Ana Ruiz'), $data2]]);
+
+// Someone leaves: their entries stay under their name; the account can go.
+$people->release($user, 'Ana Ruiz');
+// An erasure request: the time stays, the person goes (also for a former person, by reference).
+$people->anonymiseUser($user);
+$people->anonymisePerson($personId);
+$people->anonymisePerson(FormerPersonTimeEntries::personRefOf($user)); // after release() or a delete
+// GDPR art. 15 / 20.
+$rows = $people->export($personId);
+```
+
+| An upsert naming | on an entry of | does |
+| --- | --- | --- |
+| a user | the same user | update |
+| a user | another user | `ImportedEntryOwnerMismatchException` |
+| a user | a former person, or no identity | claim: the user owns it, the snapshot goes |
+| a user | a deleted user | the same id: back to them; another: mismatch |
+| a person | a user | mismatch: remove, then upsert |
+| a person | the same person | update, name included |
+| a person | another person | mismatch |
+| a person | a deleted user | update of the time; the entry keeps that identity and name |
+| anyone | an anonymised entry | `Unchanged`, nothing written: a re-sync never brings the name back |
+
+- `ImportedTimeEntryPerson::$ref` is opaque and stable (`[A-Za-z0-9._:#-]{1,64}`, `user:` is reserved): never an e-mail. The
+  name is cleaned to one line and cut to 255; blank means none.
+- **Who sees them:** nobody by default. A `TIME_ENTRY_LIST_QUERY` listener decides, with the viewer's tenant scopes:
+  `$event->includeOwnerless(['org-a'])`, or `null` for every scope (the only way to list an entry with no scope). They never
+  reach the client API or the owner's export, which read one user's entries.
+- **Read-only:** `canEditEntry()` is false for them (no owner, or imported). Deleting one stays the explicit manager action of
+  [Imported entries](#imported-entries-111).
+- **Period lock:** a deleted user's entry stays locked by their timesheets (`owner_ref` is the same id); a former person has
+  none; an entry with no identity at all has an unknown owner and is not writable while timesheets are on. Anonymising outranks
+  the lock, and it changes no time.
+- Task totals (`loggedSecondsByTask()`) include them. Worked time, balance, timesheets and overlap checks read one user's live
+  entries and never see them.
+- Anonymising clears the name, the reference, `description` and `metadata` (the note). The task snapshot, the times, the
+  duration and the external identity stay: the identity keeps the re-sync idempotent.
 
 ## Working time and timesheets (1.13)
 

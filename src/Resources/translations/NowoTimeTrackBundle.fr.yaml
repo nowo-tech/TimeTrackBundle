@@ -36,6 +36,7 @@ reports:
   source_manual: "Manuel"
   source_calendar: "Calendrier"
   task_not_visible: Tâche non visible
+  former_person: "Ancienne personne"
 flash:
   timer_started: Minuteur démarré.
   timer_already_active: Vous avez déjà un minuteur actif.

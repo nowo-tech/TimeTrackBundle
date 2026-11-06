@@ -316,6 +316,11 @@ when the user class has one. Values that are not a locale (`^[A-Za-z]{2,3}([_-][
 `getLocale()` that needs arguments is ignored. A masked entry (`taskVisible: false`) has `description: null` (and an
 empty CSV `description` cell) since 1.12.
 
+Since 1.15 the body has `privacy` when the host's profile provider also implements `ClientUserPrivacyProviderInterface`, and
+no such key otherwise: an object (usually `url`, `version`, `controllerName`, `dpoContact`, `noticeSummary`) or `null`. It is
+in the language of `Accept-Language` (best match among the host's enabled locales), else the user's own. A `url` that is not
+absolute `http(s)` is sent as `null`, so clients can open any `url` they get.
+
 #### Working hours (normalised since 1.12)
 
 `workingHours` is `null` only when the provider returns `null` (unknown: TimeTrack Desktop then notifies at any time),

@@ -8,7 +8,6 @@ use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
-use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\TimeEntriesRemovedEvent;
@@ -20,6 +19,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
@@ -33,21 +33,27 @@ use function count;
 use function mb_check_encoding;
 use function mb_substr;
 use function preg_match;
-use function preg_replace;
+use function str_starts_with;
+use function strlen;
 
 /**
  * Since 1.11: writes imported time entries ({@see TimeEntrySource::Import}), idempotently by
  * (externalSource, externalId). It never starts or stops a timer and never fires timer events; it never moves an entry
  * to another owner (remove, then upsert). The host authorises every call (who may import or delete).
  *
+ * Since 1.15 a row may name a person with no user account instead of a user ({@see ImportedTimeEntryPerson}): the entry
+ * has no owner and shows under the person's name. A later upsert naming a user claims it (nobody owned it, so nothing
+ * moves between users), unless it is anonymised: an anonymised entry is never written again (`Unchanged`), so a re-sync
+ * cannot bring a name back.
+ *
  * Since 1.13 (timesheets on): every written entry gets the tenant scope of its task, and a row whose entry is (or
  * would move) into a locked or submitted period is skipped with {@see ImportedTimeEntryOutcome::Locked} (contract
  * Q-O13); removals never delete an entry of such a period ({@see self::remove()} refuses, the bulk removals skip it),
- * except {@see self::removeForUser()} (account erasure outranks the lock, like retention).
+ * except {@see self::removeForUser()}.
  *
- * Owner rule (2026-11-05): deleting tasks or boards never deletes tracked time. `remove*()` are for an explicit
- * manager action on imported time (and `removeForUser()` for account erasure), never a side effect of deleting a task
- * or a board.
+ * Owner rule (2026-11-05, widened 2026-11-06): deleting tasks, boards or users never deletes tracked time. `remove*()` are
+ * for an explicit manager action on imported time (and `removeForUser()` for re-association), never a side effect of
+ * deleting anything.
  */
 final readonly class ImportedTimeEntryWriter
 {
@@ -107,6 +113,17 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
+     * Since 1.15: creates or updates the entry of a person with no user account (entry source `import`, no owner).
+     *
+     * @throws InvalidImportedTimeEntryException when the data or the person break a rule (nothing written)
+     * @throws ImportedEntryOwnerMismatchException when the entry exists for a user or for another person (nothing written)
+     */
+    public function upsertForPerson(ImportedTimeEntryPerson $person, ImportedTimeEntryData $data): ImportedTimeEntryResult
+    {
+        return $this->upsertMany([[$person, $data]])->results[0];
+    }
+
+    /**
      * Upserts up to {@see self::MAX_BATCH} rows with one flush. Every row is validated (and the owners checked) before
      * anything is written: one bad row refuses the whole batch, and so do two rows for one external identity
      * (`rows` / `duplicate`). When a concurrent run inserts one of the identities first (unique violation on flush,
@@ -115,7 +132,9 @@ final readonly class ImportedTimeEntryWriter
      * `ManagerRegistry` and no open host transaction): that row becomes an update and the new rows are created with
      * their owners re-attached. Otherwise the unique violation is rethrown and the host retries the slice.
      *
-     * @param list<array{0: UserInterface, 1: ImportedTimeEntryData}> $rows
+     * Since 1.15 a row may name a person instead of a user ({@see self::upsertForPerson()}).
+     *
+     * @param list<array{0: ImportedTimeEntryPerson|UserInterface, 1: ImportedTimeEntryData}> $rows
      */
     public function upsertMany(array $rows): ImportedTimeEntryBatchResult
     {
@@ -124,15 +143,16 @@ final readonly class ImportedTimeEntryWriter
         }
         $valid = [];
         $keys  = [];
-        foreach ($rows as [$user, $data]) {
-            $data = $this->validate($data);
-            $key  = $data->externalSource . "\0" . $data->externalId;
+        foreach ($rows as [$owner, $data]) {
+            $owner = $owner instanceof ImportedTimeEntryPerson ? $this->validatePerson($owner) : $owner;
+            $data  = $this->validate($data);
+            $key   = $data->externalSource . "\0" . $data->externalId;
             if (isset($keys[$key])) {
                 // Two rows for one external identity would insert it twice (unique violation): the host must send one.
                 throw new InvalidImportedTimeEntryException('rows', 'duplicate');
             }
             $keys[$key] = true;
-            $valid[]    = [$user, $data];
+            $valid[]    = [$owner, $data];
         }
 
         try {
@@ -147,8 +167,8 @@ final readonly class ImportedTimeEntryWriter
                 throw $exception;
             }
             $retry = [];
-            foreach ($valid as [$user, $data]) {
-                $retry[] = [$this->repository->attachUser($user), $data];
+            foreach ($valid as [$owner, $data]) {
+                $retry[] = [$owner instanceof UserInterface ? $this->repository->attachUser($owner) : $owner, $data];
             }
 
             return $this->write($retry);
@@ -156,28 +176,29 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
-     * @param list<array{0: UserInterface, 1: ImportedTimeEntryData}> $rows validated rows
+     * @param list<array{0: ImportedTimeEntryPerson|UserInterface, 1: ImportedTimeEntryData}> $rows validated rows
      */
     private function write(array $rows): ImportedTimeEntryBatchResult
     {
         $plan = [];
-        foreach ($rows as [$user, $data]) {
+        foreach ($rows as [$owner, $data]) {
             $existing = $this->repository->findByExternal($data->externalSource, $data->externalId);
-            if ($existing instanceof TimeEntry && !$this->sameOwner($existing, $user)) {
+            if ($existing instanceof TimeEntry && !$existing->isAnonymised() && !$this->sameOwner($existing, $owner)) {
                 throw new ImportedEntryOwnerMismatchException();
             }
-            $plan[] = [$user, $data, $existing];
+            $plan[] = [$owner, $data, $existing];
         }
 
         $results = [];
         $write   = [];
         $events  = [];
         $counts  = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'locked' => 0];
-        foreach ($plan as [$user, $data, $existing]) {
-            $scopeKey = $this->scopeProvider?->scopeKeyForTask($user, $data->taskId, $data->boardId);
+        foreach ($plan as [$owner, $data, $existing]) {
+            $user     = $owner instanceof UserInterface ? $owner : null;
+            $scopeKey = $user instanceof UserInterface ? $this->scopeProvider?->scopeKeyForTask($user, $data->taskId, $data->boardId) : null;
             if (!$existing instanceof TimeEntry) {
-                $entry = TimeEntry::imported($user, $data)->assignScopeKey($scopeKey);
-                if ($this->isLocked($user, $scopeKey, $data->startedAt)) {
+                $entry = $owner instanceof ImportedTimeEntryPerson ? TimeEntry::importedForPerson($owner, $data) : TimeEntry::imported($user, $data)->assignScopeKey($scopeKey);
+                if ($user instanceof UserInterface && $this->isLocked($user, $scopeKey, $data->startedAt)) {
                     $results[] = new ImportedTimeEntryResult($entry, ImportedTimeEntryOutcome::Locked);
                     ++$counts['locked'];
                     continue;
@@ -190,19 +211,26 @@ final readonly class ImportedTimeEntryWriter
             }
             $previousSeconds = $existing->getDurationSeconds();
             $previousTask    = $existing->getTaskId();
-            if (!$existing->differsFromImport($data)) {
+            $claimed         = $user instanceof UserInterface && $existing->isOwnerless();
+            $personChanges   = $owner instanceof ImportedTimeEntryPerson && $this->personChanges($existing, $owner);
+            if ($existing->isAnonymised() || (!$existing->differsFromImport($data) && !$claimed && !$personChanges)) {
                 $results[] = new ImportedTimeEntryResult($existing, ImportedTimeEntryOutcome::Unchanged);
                 ++$counts['unchanged'];
                 continue;
             }
             // The stored entry may not leave a locked period, and the new data may not enter one.
-            if ($this->isLocked($user, $existing->getScopeKey(), $existing->getStartedAt()) || $this->isLocked($user, $scopeKey, $data->startedAt)) {
+            if ($this->isEntryLocked($existing) || ($user instanceof UserInterface && $this->isLocked($user, $scopeKey, $data->startedAt))) {
                 $results[] = new ImportedTimeEntryResult($existing, ImportedTimeEntryOutcome::Locked);
                 ++$counts['locked'];
                 continue;
             }
             $existing->applyImport($data);
-            if ($this->scopeProvider instanceof TimesheetScopeProviderInterface) {
+            if ($owner instanceof ImportedTimeEntryPerson) {
+                $existing->applyPerson($owner);
+            } elseif ($claimed) {
+                $existing->claimFor($owner);
+            }
+            if ($user instanceof UserInterface && $this->scopeProvider instanceof TimesheetScopeProviderInterface) {
                 $existing->assignScopeKey($scopeKey);
             }
             $write[]   = $existing;
@@ -226,6 +254,26 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
+     * Since 1.15: whether a stored entry's period refuses the write: through the refusal path while it has a user,
+     * by the guard's ownerless rule otherwise.
+     */
+    private function isEntryLocked(TimeEntry $entry): bool
+    {
+        $owner = $entry->getUser();
+        if ($owner instanceof UserInterface) {
+            return $this->isLocked($owner, $entry->getScopeKey(), $entry->getStartedAt());
+        }
+
+        return $this->periodLockGuard instanceof PeriodLockGuard && !$this->periodLockGuard->isEntryWritable($entry);
+    }
+
+    /** Since 1.15: whether the upsert would change the person of an ownerless entry that belonged to no user. */
+    private function personChanges(TimeEntry $entry, ImportedTimeEntryPerson $person): bool
+    {
+        return $entry->getFormerUserId() === null && ($entry->getPersonRef() !== $person->ref || $entry->getPersonName() !== $person->name);
+    }
+
+    /**
      * Since 1.13: whether the period lock refuses a write of the user's time at `$instant` (the refusal event fires).
      */
     private function isLocked(UserInterface $user, ?string $scopeKey, DateTimeImmutable $instant): bool
@@ -238,6 +286,8 @@ final readonly class ImportedTimeEntryWriter
      *
      * @throws PeriodLockedException When the entry is in a locked period (since 1.13)
      * @throws PeriodSubmittedException When the entry is in a submitted period (since 1.13)
+     *
+     * Since 1.15 an ownerless entry the guard protects is kept and the count is 0.
      */
     public function remove(string $externalSource, string $externalId, ?string $actorId = null): int
     {
@@ -254,8 +304,10 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
-     * Removes every imported entry of the source owned by the user (account erasure, re-association). Since 1.13 this
-     * is the one removal the period lock does not stop: erasure outranks the lock, like retention.
+     * Removes every imported entry of the source owned by the user: re-association only (remove, then upsert). Since 1.15
+     * never for a deleted or erased account: tracked time is not lost, so use
+     * {@see FormerPersonTimeEntries} (`release()`, `anonymiseUser()`), or the `ON DELETE SET
+     * NULL`. Since 1.13 this is the one removal the period lock does not stop.
      */
     public function removeForUser(string $externalSource, UserInterface $user): int
     {
@@ -336,9 +388,7 @@ final readonly class ImportedTimeEntryWriter
         if ($data->description !== null && !mb_check_encoding($data->description, 'UTF-8')) {
             throw new InvalidImportedTimeEntryException('description', 'encoding');
         }
-        // The title is one line: the description rules (controls and bidi overrides stripped), then every run of line
-        // breaks (LF, U+2028 line separator, U+2029 paragraph separator) and the blanks around it becomes one space.
-        $title = (string) preg_replace('/\h*[\n\x{2028}\x{2029}][\n\x{2028}\x{2029}\h]*/u', ' ', ImportedDescriptionSanitizer::clean($data->taskTitle) ?? '');
+        $title = ImportedDescriptionSanitizer::oneLine($data->taskTitle);
 
         return new ImportedTimeEntryData(
             $data->externalSource,
@@ -364,7 +414,7 @@ final readonly class ImportedTimeEntryWriter
             // @igor-ignore - I/O delegate (repository / writer call); no worker state.
             $removal = $this->repository->removeImportedWhere(
                 $scope,
-                static fn (array $row): bool => $guard->blockingTimesheetOf($row['userId'], $row['scopeKey'], $row['startedAt']) instanceof Timesheet,
+                static fn (array $row): bool => $guard->isRowBlocked($row['userId'], $row['personRef'], $row['scopeKey'], $row['startedAt']),
             );
         } else {
             // @igor-ignore - I/O delegate (repository / writer call); no worker state.
@@ -378,11 +428,43 @@ final readonly class ImportedTimeEntryWriter
         return $removal->count;
     }
 
-    private function sameOwner(TimeEntry $entry, UserInterface $user): bool
+    /**
+     * Whether the upsert keeps the entry with its owner. Since 1.15: an entry with a user only takes that user; an entry
+     * of a deleted user takes a person (it keeps the identity it has) or that same user; an entry of a person takes that
+     * person or a user (the claim), and one with no identity at all takes either.
+     */
+    private function sameOwner(TimeEntry $entry, UserInterface|ImportedTimeEntryPerson $owner): bool
     {
-        $owner = $entry->getUser();
+        $current = $entry->getUser();
+        if ($current !== null) {
+            return $current instanceof UserInterface && $owner instanceof UserInterface && UserIdResolver::getId($current) === UserIdResolver::getId($owner);
+        }
+        $formerUserId = $entry->getFormerUserId();
+        if ($owner instanceof UserInterface) {
+            return $formerUserId === null || $formerUserId === UserIdResolver::getId($owner);
+        }
 
-        return $owner instanceof UserInterface && UserIdResolver::getId($owner) === UserIdResolver::getId($user);
+        return $formerUserId !== null || $entry->getPersonRef() === null || $entry->getPersonRef() === $owner->ref;
+    }
+
+    /**
+     * Since 1.15: the person as stored: reference pattern, name on one line and cut to 255 (blank = none).
+     *
+     * @throws InvalidImportedTimeEntryException
+     */
+    private function validatePerson(ImportedTimeEntryPerson $person): ImportedTimeEntryPerson
+    {
+        if (preg_match(ImportedTimeEntryPerson::REF_PATTERN, $person->ref) !== 1 || str_starts_with($person->ref, TimeEntry::USER_REF_PREFIX)) {
+            throw new InvalidImportedTimeEntryException('person.ref', 'pattern');
+        }
+        if ($person->name !== null && !mb_check_encoding($person->name, 'UTF-8')) {
+            throw new InvalidImportedTimeEntryException('person.name', 'encoding');
+        }
+        if ($person->scopeKey !== null && strlen($person->scopeKey) > ImportedTimeEntryPerson::MAX_SCOPE_KEY_LENGTH) {
+            throw new InvalidImportedTimeEntryException('person.scopeKey', 'length');
+        }
+
+        return new ImportedTimeEntryPerson($person->ref, ImportedTimeEntryPerson::cleanName($person->name), $person->scopeKey);
     }
 
     private function checkSource(string $externalSource): string

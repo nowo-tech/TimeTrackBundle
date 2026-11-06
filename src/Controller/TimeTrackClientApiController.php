@@ -16,10 +16,12 @@ use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientPrivacyNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientUserPrivacyProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
@@ -180,6 +182,8 @@ final readonly class TimeTrackClientApiController
         private ?CalendarConnectionService $calendar = null,
         private ?ManualEntryService $manualEntries = null,
         private ?MeetingContext $meetings = null,
+        /** @var list<string> Since 1.15: `framework.enabled_locales`, what the `privacy` language is chosen among */
+        private array $enabledLocales = [],
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -256,7 +260,8 @@ final readonly class TimeTrackClientApiController
      * `features` (object of booleans; `workday` and `monitoring` reserved, always false) and `limits` (backdate and
      * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null), and (1.12)
      * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
-     * shape ({@see ClientWorkingHoursNormalizer}).
+     * shape ({@see ClientWorkingHoursNormalizer}), and (1.15) `privacy` when the profile provider implements
+     * {@see ClientUserPrivacyProviderInterface} (no key otherwise).
      */
     public function me(Request $request): Response
     {
@@ -279,6 +284,9 @@ final readonly class TimeTrackClientApiController
         $minSupportedVersion = $this->minSupportedVersionProvider?->getMinSupportedVersion($principal->token->getClientType());
         if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
             $body['minSupportedVersion'] = $minSupportedVersion;
+        }
+        if ($this->profileProvider instanceof ClientUserPrivacyProviderInterface) {
+            $body['privacy'] = ClientPrivacyNormalizer::normalize($this->profileProvider->getPrivacy($user, $this->privacyLocale($request)), $this->logger);
         }
 
         $settings  = $this->settingsProvider->getSettings();
@@ -674,6 +682,20 @@ final readonly class TimeTrackClientApiController
         $response->headers->set('Cache-Control', 'no-store, private');
 
         return $response;
+    }
+
+    /**
+     * Since 1.15: the language `privacy` is asked in: the best match of `Accept-Language` among the enabled locales (any
+     * language without a list), or null without the header, so the host uses the user's own.
+     */
+    private function privacyLocale(Request $request): ?string
+    {
+        if (trim((string) $request->headers->get('Accept-Language')) === '') {
+            return null;
+        }
+        $locale = $request->getPreferredLanguage($this->enabledLocales === [] ? null : $this->enabledLocales);
+
+        return is_string($locale) && preg_match(self::LOCALE_PATTERN, $locale) === 1 ? $locale : null;
     }
 
     /**

@@ -53,6 +53,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
+use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
@@ -86,6 +87,7 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRetentionRepositoryInterface;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
@@ -340,6 +342,20 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(TimeEntryRetentionPolicy::class, (new Definition(TimeEntryRetentionPolicy::class))
             ->setArgument('$includeImported', $retention['include_imported']));
+        // Since 1.15: release, anonymise and export of a person's entries; public for host erasers and offboarding.
+        $container->setDefinition(FormerPersonTimeEntries::class, (new Definition(FormerPersonTimeEntries::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$repository' => new Reference(TimeEntryRepositoryInterface::class),
+                '$profiles'   => new Reference(ClientUserProfileProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'      => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'     => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(FormerPersonSnapshotListener::class, (new Definition(FormerPersonSnapshotListener::class))
+            ->setArgument('$entries', new Reference(FormerPersonTimeEntries::class))
+            ->setArgument('$userClass', $config['user_class'])
+            ->addTag('doctrine.event_listener', ['event' => 'preRemove']));
     }
 
     /**
@@ -936,6 +952,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $container->getDefinition(TimeTrackClientApiController::class)
             ->setArgument('$allowMetadata', $api['allow_metadata'])
+            ->setArgument('$enabledLocales', '%kernel.enabled_locales%')
             ->setArgument('$minSupportedVersionProvider', new Reference(ClientMinSupportedVersionProviderInterface::class))
             ->setArgument('$taskPresenter', new Reference(ClientTaskPresenter::class))
             ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class))

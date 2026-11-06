@@ -11,6 +11,7 @@
 - [Timesheets, balance and lock (1.13)](#timesheets-balance-and-lock-113)
 - [Task effort on the client API (1.13)](#task-effort-on-the-client-api-113)
 - [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
+- [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -107,6 +108,7 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 | Time lost when tasks or boards are deleted | `time_track_entries` has no foreign key to tasks or boards: entries keep their `task_id` and snapshots and simply stop being linked. The bundle never calls `remove*()` itself |
 | Deleting imported time without authority | Single deletion needs a `delete_imported` grant (default deny); bulk removals are host calls after its own check; never a side effect of deleting tasks or boards |
 | Personal data in logs | The writer logs counts and the scope kind only, never descriptions, titles or ids of people |
+| Bulk removal of a deleted user's locked time | Since 1.15 `isRowBlocked()` follows the deleted user's id in `person_ref`; a row with no identity is kept while timesheets are on |
 
 ## Timesheets, balance and lock (1.13)
 
@@ -178,6 +180,23 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
 | Meetings API: caches and logs | `Cache-Control: no-store`, `Pragma: no-cache`, `Vary: Authorization`, `nosniff`, no validators on every answer; nothing stored or cached by the bundle; the access log has status, count, dropped and duration only (join links often carry passcodes); provider exceptions answer 503 without their message and are logged by class |
 | Meetings API: feature probing (audit GG-I5) | With the feature off (or no provider) the route answers 404 before authentication, so an anonymous caller can tell whether meetings are on for the instance; it learns nothing about any user. Kept on purpose (contract §22.2: off = 404) |
 | Meetings API: polling abuse | 6 / min and 60 / h per token on top of the global limits; 429 with an integer `Retry-After`; clients respect `refreshAfterSeconds` |
+
+## Entries with no user (1.15)
+
+Audit status: re-verification pending (independent auditor).
+
+| Threat | Control |
+| --- | --- |
+| Tracked time lost when a user is deleted | `user_id` is `ON DELETE SET NULL`; the down scripts fail rather than delete; `removeForUser()` is documented as re-association only |
+| One tenant's manager reads another tenant's former people | Nobody lists ownerless entries by default. `includeOwnerless($scopeKeys)` is set by a host listener and filters by `scope_key`; only `null` lists every scope, and an entry with no scope needs `null` |
+| Task title leaked through an ownerless row | `hiddenTaskEntryIds($entries, $viewer)` asks about the viewer; without a viewer the row is masked. Host lists must pass the viewer |
+| Stored XSS through an imported name | The name is cleaned to one line, controls and bidi overrides stripped, cut to 255; Twig autoescapes it. Hosts printing `getPersonName()` must escape it |
+| A re-sync re-identifies an erased person | `anonymised_at` freezes the row: every upsert is `Unchanged`, whoever it names |
+| Identity forged through a person reference | `user:` is reserved and refused from hosts' `ImportedTimeEntryPerson`, so a person can never pass as a deleted user or reach their timesheets; the reference is never serialised by `toArray()` |
+| A claim moves someone's locked time | A claim checks both the stored period and the new owner's; a deleted user's entry can only be claimed by that same id |
+| Personal data left after an erasure | `anonymiseUser()` and `anonymisePerson()` clear name, reference, description and metadata. `task_title_snapshot` and `external_id` stay: they identify the task and the remote entry, not the person by themselves; a host whose remote tool can resolve the id should weigh that |
+| Personal data with no export path | `FormerPersonTimeEntries::export($ref)` for a person with no account |
+| Malicious `privacy.url` opened by a client | `ClientPrivacyNormalizer` parses it and sends null unless it is absolute `http(s)` with a host; the warning carries no value |
 
 ## Secrets & cryptography
 

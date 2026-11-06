@@ -36,6 +36,7 @@ reports:
   source_manual: "Manual"
   source_calendar: "Calendar"
   task_not_visible: Task not visible
+  former_person: "Former person"
 flash:
   timer_started: Timer started.
   timer_already_active: You already have an active timer.

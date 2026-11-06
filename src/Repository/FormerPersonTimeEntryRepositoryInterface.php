@@ -1,0 +1,59 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Nowo\TimeTrackBundle\Repository;
+
+use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
+
+/**
+ * Since 1.15: optional store capability for entries with no user. Every write is a bulk statement with no flush, so it
+ * is safe inside a host's erasure transaction. The Doctrine store implements it.
+ */
+interface FormerPersonTimeEntryRepositoryInterface
+{
+    /**
+     * Writes the person reference and name on the user's entries and keeps the user (the delete runs later, and the
+     * foreign key clears the user). Returns the entries changed.
+     */
+    public function snapshotOwner(string $userId, string $personRef, ?string $name): int;
+
+    /**
+     * Clears the user of the user's entries, with the person reference and name. Returns the entries changed.
+     */
+    public function releaseOwner(string $userId, string $personRef, ?string $name): int;
+
+    /**
+     * Anonymises the user's entries: no user, name, reference, description or metadata. Returns the entries changed.
+     */
+    public function anonymiseOwner(string $userId, DateTimeImmutable $at): int;
+
+    /**
+     * Anonymises the ownerless entries of a person reference. Returns the entries changed.
+     */
+    public function anonymisePerson(string $personRef, DateTimeImmutable $at): int;
+
+    /**
+     * Up to `$limit` ownerless entries of a person reference with an id after `$afterId`, by id.
+     *
+     * @return list<TimeEntry>
+     */
+    public function findByPersonRef(string $personRef, string $afterId, int $limit): array;
+
+    /**
+     * One page of the users' entries and the ownerless entries of the period, newest first.
+     *
+     * @param list<string> $userIds
+     * @param list<string>|null $ownerlessScopeKeys scopes of the ownerless entries the viewer may see (null = every one)
+     *
+     * @return list<TimeEntry>
+     */
+    public function findPageWithOwnerless(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported, int $offset, int $limit): array;
+
+    /**
+     * @param list<string> $userIds
+     * @param list<string>|null $ownerlessScopeKeys
+     */
+    public function countWithOwnerless(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported): int;
+}

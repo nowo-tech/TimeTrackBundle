@@ -35,6 +35,7 @@ use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
@@ -495,6 +496,12 @@ final readonly class TimerService
     {
         $entries = [];
         $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId);
+        // Since 1.15: with the ownerless entries a list-query listener let this viewer see.
+        if ($query['includeOwnerless'] && $this->timeEntryRepository instanceof FormerPersonTimeEntryRepositoryInterface) {
+            $total = $this->timeEntryRepository->countWithOwnerless($query['userIds'], $query['ownerlessScopeKeys'], $from, $to, $query['includeImported']);
+
+            return $total === 0 ? [] : $this->timeEntryRepository->findPageWithOwnerless($query['userIds'], $query['ownerlessScopeKeys'], $from, $to, $query['includeImported'], 0, $total);
+        }
         foreach ($query['userIds'] as $userId) {
             foreach ($this->timeEntryRepository->findByUserAndPeriod($userId, $from, $to) as $entry) {
                 if ($query['includeImported'] || $entry->getSource()->isLive()) {
@@ -529,6 +536,12 @@ final readonly class TimerService
         if ($repository instanceof PaginatedTimeEntryRepositoryInterface) {
             $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId);
             $userIds = $query['userIds'];
+            if ($query['includeOwnerless'] && $repository instanceof FormerPersonTimeEntryRepositoryInterface) {
+                $total = $repository->countWithOwnerless($userIds, $query['ownerlessScopeKeys'], $from, $to, $query['includeImported']);
+                $page  = $this->clampPage($page, $total, $perPage);
+
+                return new TimeEntryPage($total === 0 ? [] : $repository->findPageWithOwnerless($userIds, $query['ownerlessScopeKeys'], $from, $to, $query['includeImported'], ($page - 1) * $perPage, $perPage), $page, $perPage, $total);
+            }
             if ($query['includeImported']) {
                 $total = $repository->countByUsersAndPeriod($userIds, $from, $to);
                 $page  = $this->clampPage($page, $total, $perPage);
@@ -562,16 +575,28 @@ final readonly class TimerService
      * {@see BatchTaskProviderInterface}. The question is what the entry **owner** may track, not the viewer: a manager
      * sees what the member can see, and a task the owner can see but no longer track (closed) is masked too.
      *
+     * Since 1.15 an ownerless entry has no owner to ask: it is judged by what `$viewer` may track, and masked without one.
+     *
      * @param list<TimeEntry> $entries
      *
      * @return array<string, true> entry id => true
      */
-    public function hiddenTaskEntryIds(array $entries): array
+    public function hiddenTaskEntryIds(array $entries, ?UserInterface $viewer = null): array
     {
         $hidden = [];
         /** @var array<string, array{owner: UserInterface, entries: array<string, list<string>>}> $byOwner */
         $byOwner = [];
         foreach ($entries as $entry) {
+            if ($entry->isOwnerless()) {
+                if (!$viewer instanceof UserInterface) {
+                    $hidden[$entry->getId()] = true;
+                    continue;
+                }
+                $viewerId                                             = UserIdResolver::getId($viewer);
+                $byOwner[$viewerId]['owner']                          = $viewer;
+                $byOwner[$viewerId]['entries'][$entry->getTaskId()][] = $entry->getId();
+                continue;
+            }
             if ($entry->getSource()->isLive()) {
                 continue;
             }
@@ -610,7 +635,7 @@ final readonly class TimerService
     }
 
     /**
-     * @return array{userIds: list<string>, includeImported: bool}
+     * @return array{userIds: list<string>, includeImported: bool, includeOwnerless: bool, ownerlessScopeKeys: list<string>|null}
      */
     private function resolveEntryQuery(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId): array
     {
@@ -622,6 +647,9 @@ final readonly class TimerService
         return [
             'userIds'         => $userIds === [] ? [$targetUserId ?? UserIdResolver::getId($viewer)] : $userIds,
             'includeImported' => $event->includesImported(),
+            // Since 1.15.
+            'includeOwnerless'   => $event->includesOwnerless(),
+            'ownerlessScopeKeys' => $event->getOwnerlessScopeKeys(),
         ];
     }
 

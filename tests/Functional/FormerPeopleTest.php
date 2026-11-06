@@ -1,0 +1,604 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Nowo\TimeTrackBundle\Tests\Functional;
+
+use DateTimeImmutable;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
+use LogicException;
+use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
+use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Import\ImportedEntryOwnerMismatchException;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Import\InvalidImportedTimeEntryException;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+
+use function array_map;
+use function count;
+use function sprintf;
+use function str_repeat;
+
+/**
+ * Since 1.15: entries with no user. Owner rule 2026-11-06: tracked time is not lost, including when a user is deleted.
+ * Runs on SQLite, MySQL and PostgreSQL (`TIME_TRACK_TEST_DATABASE_URL`).
+ */
+final class FormerPeopleTest extends FunctionalTestCase
+{
+    private const SOURCE = 'clickup:dir-1';
+
+    public function testAPersonWithNoUserKeepsHoursUnderTheirName(): void
+    {
+        $result = $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana Ruiz', 'org-a'), $this->data('e-1'));
+        self::assertSame(ImportedTimeEntryOutcome::Created, $result->outcome);
+
+        $entry = $this->reload('e-1');
+        self::assertNull($entry->getUser());
+        self::assertTrue($entry->isOwnerless());
+        self::assertSame('Ana Ruiz', $entry->getPersonName());
+        self::assertSame('p-1', $entry->getPersonRef());
+        self::assertSame('org-a', $entry->getScopeKey());
+        self::assertSame(TimeEntrySource::Import, $entry->getSource());
+        self::assertTrue($entry->isReadOnly());
+        self::assertNull($entry->getFormerUserId());
+        self::assertFalse($entry->isAnonymised());
+        self::assertSame(['name' => 'Ana Ruiz', 'anonymised' => false], $entry->toArray()['person'] ?? null);
+        self::assertArrayNotHasKey('personRef', $entry->toArray());
+    }
+
+    public function testAnEntryWithAUserHasNoPersonKey(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $entry = $this->reload('e-1');
+
+        self::assertFalse($entry->isOwnerless());
+        self::assertNull($entry->getPersonName());
+        self::assertArrayNotHasKey('person', $entry->toArray());
+    }
+
+    public function testASecondUpsertIsIdempotentAndFollowsARename(): void
+    {
+        $writer = $this->writer();
+        $person = new ImportedTimeEntryPerson('p-1', 'Ana Ruiz');
+        $writer->upsertForPerson($person, $this->data('e-1'));
+        $this->entityManager()->clear();
+
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson($person, $this->data('e-1'))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana R. Ruiz'), $this->data('e-1'))->outcome);
+        self::assertSame('Ana R. Ruiz', $this->reload('e-1')->getPersonName());
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana R. Ruiz'), $this->data('e-1', seconds: 1800))->outcome);
+        self::assertSame(1800, $this->reload('e-1')->getDurationSeconds());
+    }
+
+    public function testABatchMixesUsersAndPeople(): void
+    {
+        $batch = $this->writer()->upsertMany([
+            [$this->user, $this->data('e-1')],
+            [new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-2')],
+        ]);
+
+        self::assertSame(2, $batch->created);
+        self::assertSame($this->user->getId(), $this->userIdOf($this->reload('e-1')));
+        self::assertNull($this->reload('e-2')->getUser());
+    }
+
+    /**
+     * @return iterable<string, array{0: ImportedTimeEntryPerson, 1: string, 2: string}>
+     */
+    public static function providerBadPeople(): iterable
+    {
+        yield 'empty reference' => [new ImportedTimeEntryPerson(''), 'person.ref', 'pattern'];
+        yield 'reference with a space' => [new ImportedTimeEntryPerson('a b'), 'person.ref', 'pattern'];
+        yield 'reference too long' => [new ImportedTimeEntryPerson(str_repeat('a', 65)), 'person.ref', 'pattern'];
+        yield 'reserved user reference' => [new ImportedTimeEntryPerson('user:42'), 'person.ref', 'pattern'];
+        yield 'name not UTF-8' => [new ImportedTimeEntryPerson('p-1', "\xFF"), 'person.name', 'encoding'];
+        yield 'scope too long' => [new ImportedTimeEntryPerson('p-1', 'Ana', str_repeat('s', 65)), 'person.scopeKey', 'length'];
+    }
+
+    #[DataProvider('providerBadPeople')]
+    public function testABadPersonIsRefusedAndNothingIsWritten(ImportedTimeEntryPerson $person, string $field, string $rule): void
+    {
+        try {
+            $this->writer()->upsertForPerson($person, $this->data('e-1'));
+            self::fail('expected a refusal');
+        } catch (InvalidImportedTimeEntryException $exception) {
+            self::assertSame([$field, $rule], [$exception->field, $exception->rule]);
+        }
+        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-1'));
+    }
+
+    public function testTheNameIsCleanedToOneLineAndCut(): void
+    {
+        $writer = $this->writer();
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', "\u{202E}Ana\r\nRuiz "), $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', str_repeat('ñ', 300)), $this->data('e-2'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-3', "  \u{200B} "), $this->data('e-3'));
+
+        self::assertSame('Ana Ruiz', $this->reload('e-1')->getPersonName());
+        self::assertSame(str_repeat('ñ', 255), $this->reload('e-2')->getPersonName());
+        self::assertNull($this->reload('e-3')->getPersonName());
+    }
+
+    public function testDeletingAUserThroughTheEntityManagerKeepsEveryEntry(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $live = new TimeEntry($this->user, 'task-2', 'Live task', 'board-1', new DateTimeImmutable('2026-01-02 10:00:00'), new DateTimeImmutable('2026-01-02 11:00:00'), 3600, TimeEntrySource::Web);
+        $this->entityManager()->persist($live);
+        $this->entityManager()->flush();
+        $liveId = $live->getId();
+        $userId = (string) $this->user->getId();
+
+        $this->enforceForeignKeys();
+        $this->entityManager()->remove($this->user);
+        $this->entityManager()->flush();
+        $this->entityManager()->clear();
+
+        $imported = $this->reload('e-1');
+        self::assertNull($imported->getUser());
+        self::assertSame('user:' . $userId, $imported->getPersonRef());
+        self::assertSame($userId, $imported->getFormerUserId());
+        $reloaded = $this->entityManager()->find(TimeEntry::class, $liveId);
+        self::assertInstanceOf(TimeEntry::class, $reloaded);
+        self::assertNull($reloaded->getUser());
+        self::assertSame(3600, $reloaded->getDurationSeconds());
+        self::assertFalse($reloaded->isReadOnly());
+    }
+
+    public function testASqlDeleteOfTheUserKeepsTheEntriesThroughTheForeignKey(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $this->enforceForeignKeys();
+        $this->entityManager()->getConnection()->executeStatement('DELETE FROM app_user WHERE id = ?', [$this->user->getId()]);
+        $this->entityManager()->clear();
+
+        $entry = $this->reload('e-1');
+        self::assertNull($entry->getUser());
+        self::assertNull($entry->getPersonName());
+        self::assertNull($entry->getPersonRef());
+        self::assertSame(['name' => null, 'anonymised' => false], $entry->toArray()['person'] ?? null);
+    }
+
+    public function testTheListenerIgnoresOtherEntitiesAndSnapshotsTheConfiguredUser(): void
+    {
+        self::assertInstanceOf(FormerPersonSnapshotListener::class, self::getContainer()->get(FormerPersonSnapshotListener::class));
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $entry = $this->reload('e-1');
+
+        // Removing an entry is not removing a user: nothing is snapshotted on the others.
+        $this->writer()->upsert($this->user, $this->data('e-2'));
+        $this->entityManager()->remove($entry);
+        $this->entityManager()->flush();
+        $this->entityManager()->clear();
+
+        self::assertNull($this->reload('e-2')->getPersonRef());
+    }
+
+    public function testReleaseKeepsTheEntriesUnderTheName(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $userId = (string) $this->user->getId();
+
+        self::assertSame(1, $this->people()->release($this->user, "Ana\nRuiz"));
+        $this->entityManager()->clear();
+
+        $entry = $this->reload('e-1');
+        self::assertNull($entry->getUser());
+        self::assertSame('Ana Ruiz', $entry->getPersonName());
+        self::assertSame($userId, $entry->getFormerUserId());
+        self::assertCount(1, $this->people()->export(FormerPersonTimeEntries::personRefOf($this->user)));
+        // The user can be deleted afterwards, and the name stays.
+        $user = $this->entityManager()->find(AppUser::class, (int) $userId);
+        self::assertInstanceOf(AppUser::class, $user);
+        $this->entityManager()->remove($user);
+        $this->entityManager()->flush();
+        $this->entityManager()->clear();
+        self::assertSame('Ana Ruiz', $this->reload('e-1')->getPersonName());
+    }
+
+    public function testAnonymisingAUserClearsThePersonAndKeepsTheTime(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1', description: 'Client call with Ana'));
+        $live = new TimeEntry($this->user, 'task-2', 'Live task', null, new DateTimeImmutable('2026-01-02 10:00:00'), new DateTimeImmutable('2026-01-02 11:00:00'), 3600, TimeEntrySource::Web, ['note' => 'Ana was sick']);
+        $this->entityManager()->persist($live);
+        $this->entityManager()->flush();
+        $liveId = $live->getId();
+
+        self::assertSame(2, $this->people()->anonymiseUser($this->user));
+        $this->entityManager()->clear();
+
+        $entry = $this->reload('e-1');
+        self::assertNull($entry->getUser());
+        self::assertNull($entry->getPersonName());
+        self::assertNull($entry->getPersonRef());
+        self::assertNull($entry->getDescription());
+        self::assertTrue($entry->isAnonymised());
+        self::assertInstanceOf(DateTimeImmutable::class, $entry->getAnonymisedAt());
+        self::assertSame(3600, $entry->getDurationSeconds());
+        self::assertSame('Implement login API', $entry->getTaskTitleSnapshot());
+        self::assertSame(['name' => null, 'anonymised' => true], $entry->toArray()['person'] ?? null);
+        $reloaded = $this->entityManager()->find(TimeEntry::class, $liveId);
+        self::assertInstanceOf(TimeEntry::class, $reloaded);
+        self::assertNull($reloaded->getMetadata());
+    }
+
+    public function testAnonymisingAPersonClearsTheNameAndOnlyThatPerson(): void
+    {
+        $writer = $this->writer();
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis'), $this->data('e-2'));
+        $writer->upsert($this->user, $this->data('e-3'));
+
+        self::assertCount(1, $this->people()->export('p-1'));
+        self::assertSame('Ana', $this->people()->export('p-1')[0]['personName']);
+        self::assertSame(1, $this->people()->anonymisePerson('p-1'));
+        $this->entityManager()->clear();
+
+        self::assertNull($this->reload('e-1')->getPersonName());
+        self::assertSame(3600, $this->reload('e-1')->getDurationSeconds());
+        self::assertSame('Luis', $this->reload('e-2')->getPersonName());
+        self::assertSame($this->user->getId(), $this->userIdOf($this->reload('e-3')));
+        self::assertSame([], $this->people()->export('p-1'));
+        self::assertSame(0, $this->people()->anonymisePerson('p-1'));
+    }
+
+    public function testAReSyncNeverBringsAnAnonymisedPersonBack(): void
+    {
+        $writer = $this->writer();
+        $person = new ImportedTimeEntryPerson('p-1', 'Ana');
+        $writer->upsertForPerson($person, $this->data('e-1', description: 'Secret'));
+        $this->people()->anonymisePerson('p-1');
+        $this->entityManager()->clear();
+
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson($person, $this->data('e-1', description: 'Secret'))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsert($this->managedUser(), $this->data('e-1', seconds: 60))->outcome, 'neither a user can claim it');
+        $this->entityManager()->clear();
+
+        $entry = $this->reload('e-1');
+        self::assertNull($entry->getUser());
+        self::assertNull($entry->getPersonName());
+        self::assertNull($entry->getDescription());
+        self::assertSame(3600, $entry->getDurationSeconds());
+    }
+
+    public function testAUserClaimsAFormerPersonsEntry(): void
+    {
+        $writer = $this->writer();
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
+        $this->entityManager()->clear();
+
+        $result = $writer->upsert($this->managedUser(), $this->data('e-1'));
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $result->outcome);
+        $entry = $this->reload('e-1');
+        self::assertSame($this->user->getId(), $this->userIdOf($entry));
+        self::assertNull($entry->getPersonName());
+        self::assertNull($entry->getPersonRef());
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsert($this->managedUser(), $this->data('e-1'))->outcome);
+    }
+
+    public function testAnEntryNeverMovesBetweenOwners(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('owned'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('person'));
+        $writer->upsert($this->createUser('leaver@example.com'), $this->data('released'));
+
+        $this->assertMismatch(fn (): mixed => $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('owned')), 'a person cannot take a user\'s entry');
+        $this->assertMismatch(fn (): mixed => $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis'), $this->data('person')), 'another person cannot take it');
+
+        $leaver = $this->reload('released')->getUser();
+        self::assertInstanceOf(AppUser::class, $leaver);
+        $this->people()->release($leaver, 'Leaver');
+        $this->entityManager()->clear();
+        $this->assertMismatch(fn (): mixed => $writer->upsert($this->managedUser(), $this->data('released')), 'another user cannot take a deleted user\'s entry');
+    }
+
+    public function testADeletedUsersEntryKeepsItsIdentityWhenThePersonIsImportedAgain(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1'));
+        $this->people()->release($this->user, 'Ana');
+        $this->entityManager()->clear();
+        $person = new ImportedTimeEntryPerson('p-1', 'Other spelling');
+
+        self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson($person, $this->data('e-1'))->outcome);
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsertForPerson($person, $this->data('e-1', seconds: 1800))->outcome);
+        $entry = $this->reload('e-1');
+        self::assertSame(1800, $entry->getDurationSeconds());
+        self::assertSame('Ana', $entry->getPersonName());
+        self::assertSame('user:' . $this->user->getId(), $entry->getPersonRef());
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsert($this->managedUser(), $this->data('e-1', seconds: 1800))->outcome, 'the same user comes back');
+        self::assertSame($this->user->getId(), $this->userIdOf($this->reload('e-1')));
+    }
+
+    public function testAnEntryThatLostItsUserInSqlTakesAPersonOrAUser(): void
+    {
+        $writer = $this->writer();
+        $conn   = $this->entityManager()->getConnection();
+        $other  = $this->createUser('other@example.com');
+        foreach (['e-1', 'e-2'] as $id) {
+            $writer->upsert($other, $this->data($id));
+        }
+        $conn->executeStatement('UPDATE time_track_entries SET user_id = NULL');
+        $this->entityManager()->clear();
+
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'))->outcome);
+        self::assertSame('Ana', $this->reload('e-1')->getPersonName());
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsert($this->managedUser(), $this->data('e-2'))->outcome);
+    }
+
+    public function testBulkRemovalsHandleOwnerlessEntriesAndReportOnlyRealOwners(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-2'));
+
+        self::assertSame(2, $writer->removeForSource(self::SOURCE));
+        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
+    }
+
+    public function testRemoveForUserNeverTouchesAFormerPerson(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-2'));
+
+        self::assertSame(1, $writer->removeForUser(self::SOURCE, $this->user));
+        self::assertNotNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
+    }
+
+    public function testNoOneListsOwnerlessEntriesByDefault(): void
+    {
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
+
+        self::assertSame(0, $this->service()->listEntriesPage($this->user, ...[...$this->period(), 1, 10])->total);
+        self::assertSame([], $this->service()->listEntries($this->user, ...$this->period()));
+    }
+
+    public function testAListenerLetsAViewerSeeTheOwnerlessEntriesOfTheirScopes(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('own', start: new DateTimeImmutable('2026-01-01 09:00:00'), end: new DateTimeImmutable('2026-01-01 10:00:00')));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-a'), $this->data('a'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis', 'org-b'), $this->data('b'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-3', 'Noscope'), $this->data('none'));
+        $scopes = ['org-a'];
+        $this->dispatcher()->addListener(TimeTrackEvents::TIME_ENTRY_LIST_QUERY, static function (TimeEntryListQueryEvent $event) use (&$scopes): void {
+            $event->includeOwnerless($scopes);
+        });
+
+        $page = $this->service()->listEntriesPage($this->user, ...[...$this->period(), 1, 10]);
+        self::assertSame(2, $page->total);
+        self::assertSame(['a', 'own'], array_map(static fn (TimeEntry $entry): ?string => $entry->getExternalId(), $page->entries));
+        self::assertCount(2, $this->service()->listEntries($this->user, ...$this->period()));
+
+        $scopes = null;
+        self::assertSame(4, $this->service()->listEntriesPage($this->user, ...[...$this->period(), 1, 10])->total);
+
+        $scopes = [];
+        self::assertSame(1, $this->service()->listEntriesPage($this->user, ...[...$this->period(), 1, 10])->total, 'no scope, no ownerless entry');
+        self::assertCount(1, $this->service()->listEntries($this->user, ...$this->period()));
+    }
+
+    public function testTheStoreCanListOnlyOwnerlessEntries(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('own'));
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('person'));
+        [$from, $to] = $this->period();
+
+        self::assertSame(1, $this->repository()->countWithOwnerless([], null, $from, $to, true));
+        self::assertSame(['person'], array_map(static fn (TimeEntry $entry): ?string => $entry->getExternalId(), $this->repository()->findPageWithOwnerless([], null, $from, $to, true, 0, 10)));
+    }
+
+    public function testALiveOnlyViewLeavesImportedOwnerlessEntriesOut(): void
+    {
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
+        $this->dispatcher()->addListener(TimeTrackEvents::TIME_ENTRY_LIST_QUERY, static function (TimeEntryListQueryEvent $event): void {
+            $event->includeOwnerless(null);
+            $event->setIncludeImported(false);
+        });
+
+        self::assertSame(0, $this->service()->listEntriesPage($this->user, ...[...$this->period(), 1, 10])->total);
+        self::assertSame([], $this->service()->listEntries($this->user, ...$this->period()));
+    }
+
+    public function testTheEntryStoreMustHaveTheCapability(): void
+    {
+        $this->expectException(LogicException::class);
+        new FormerPersonTimeEntries(new InMemoryTimeEntryRepository());
+    }
+
+    public function testOwnerlessTaskTitlesFollowTheViewer(): void
+    {
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
+        $entry = $this->reload('e-1');
+
+        self::assertSame([$entry->getId() => true], $this->service()->hiddenTaskEntryIds([$entry]), 'without a viewer it is masked');
+        self::assertSame([], $this->service()->hiddenTaskEntryIds([$entry], $this->user), 'a viewer who may track the task sees it');
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), new ImportedTimeEntryData(self::SOURCE, 'e-2', 'gone', 'Secret task', null, new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600));
+        $hiddenEntry = $this->reload('e-2');
+        self::assertSame([$hiddenEntry->getId() => true], $this->service()->hiddenTaskEntryIds([$hiddenEntry], $this->user), 'one who may not, does not');
+    }
+
+    public function testTheReportsPageShowsTheNameEscapedAndTheGenericLabel(): void
+    {
+        $writer = $this->writer();
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', '<b>Ana</b>'), $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2'), $this->data('e-2'));
+        $this->dispatcher()->addListener(TimeTrackEvents::TIME_ENTRY_LIST_QUERY, static function (TimeEntryListQueryEvent $event): void {
+            $event->includeOwnerless(null);
+        });
+
+        $this->client->loginUser($this->user, 'main');
+        $this->client->request('GET', '/tools/time-track/reports?from=2026-01-01&to=2026-01-02');
+        self::assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('&lt;b&gt;Ana&lt;/b&gt;', $html);
+        self::assertStringContainsString('Former person', $html);
+        self::assertStringNotContainsString('<b>Ana</b>', $html);
+    }
+
+    public function testTheReportsPageIsUnchangedWithoutOwnerlessRows(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+
+        $this->client->loginUser($this->user, 'main');
+        $this->client->request('GET', '/tools/time-track/reports?from=2026-01-01&to=2026-01-02');
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('time-track-former-person', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testTheTaskTotalCountsAFormerPersonsHours(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-2', seconds: 1800));
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+
+        self::assertSame(['task-1' => 5400], $repository->loggedSecondsByTask(['task-1']));
+        self::assertSame(['task-1' => 3600], $repository->loggedSecondsByTask(['task-1'], (string) $this->user->getId()));
+    }
+
+    public function testOwnerQueriesSkipOwnerlessEntries(): void
+    {
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-a'), $this->data('scoped'));
+        $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis'), $this->data('scopeless'));
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+
+        self::assertSame([], $repository->ownersWithEntries(...$this->period()), 'no timesheet is created for nobody');
+        self::assertSame([], $repository->findScopelessAfter('', 10), 'the back-fill asks by owner');
+        self::assertSame([], $repository->findByUserAndPeriod((string) $this->user->getId(), ...$this->period()));
+    }
+
+    public function testManyEntriesAreChangedInBatches(): void
+    {
+        $writer = $this->writer();
+        $rows   = [];
+        for ($i = 0; $i < DoctrineOrmTimeEntryRepository::FORMER_PERSON_BATCH + 2; ++$i) {
+            $rows[] = [new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data(sprintf('e-%d', $i))];
+            if (count($rows) === ImportedTimeEntryWriter::MAX_BATCH) {
+                $writer->upsertMany($rows);
+                $rows = [];
+            }
+        }
+        $writer->upsertMany($rows);
+        $this->entityManager()->clear();
+
+        self::assertCount(DoctrineOrmTimeEntryRepository::FORMER_PERSON_BATCH + 2, $this->people()->export('p-1'));
+        self::assertSame(DoctrineOrmTimeEntryRepository::FORMER_PERSON_BATCH + 2, $this->people()->anonymisePerson('p-1'));
+    }
+
+    /** SQLite checks foreign keys only when asked (per connection). */
+    private function enforceForeignKeys(): void
+    {
+        $conn = $this->entityManager()->getConnection();
+        if ($conn->getDatabasePlatform() instanceof SQLitePlatform) {
+            $conn->executeStatement('PRAGMA foreign_keys = ON');
+        }
+    }
+
+    private function managedUser(): AppUser
+    {
+        $user = $this->entityManager()->find(AppUser::class, $this->user->getId());
+        self::assertInstanceOf(AppUser::class, $user);
+
+        return $user;
+    }
+
+    private function assertMismatch(callable $call, string $message): void
+    {
+        try {
+            $call();
+            self::fail($message);
+        } catch (ImportedEntryOwnerMismatchException) {
+            $this->addToAssertionCount(1);
+        }
+    }
+
+    /**
+     * @return array{DateTimeImmutable, DateTimeImmutable}
+     */
+    private function period(): array
+    {
+        return [new DateTimeImmutable('2026-01-01 00:00:00'), new DateTimeImmutable('2026-01-02 00:00:00')];
+    }
+
+    private function userIdOf(TimeEntry $entry): ?int
+    {
+        $user = $entry->getUser();
+
+        return $user instanceof AppUser ? $user->getId() : null;
+    }
+
+    private function reload(string $externalId): TimeEntry
+    {
+        $entry = $this->repository()->findByExternal(self::SOURCE, $externalId);
+        self::assertInstanceOf(TimeEntry::class, $entry);
+
+        return $entry;
+    }
+
+    private function writer(): ImportedTimeEntryWriter
+    {
+        return new ImportedTimeEntryWriter($this->repository());
+    }
+
+    private function people(): FormerPersonTimeEntries
+    {
+        $people = self::getContainer()->get(FormerPersonTimeEntries::class);
+        self::assertInstanceOf(FormerPersonTimeEntries::class, $people);
+
+        return $people;
+    }
+
+    private function repository(): DoctrineOrmTimeEntryRepository
+    {
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+
+        return $repository;
+    }
+
+    private function service(): TimerService
+    {
+        $service = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $service);
+
+        return $service;
+    }
+
+    private function dispatcher(): EventDispatcherInterface
+    {
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+
+        return $dispatcher;
+    }
+
+    private function data(
+        string $id,
+        int $seconds = 3600,
+        ?string $description = 'Imported from ClickUp',
+        ?DateTimeImmutable $start = null,
+        ?DateTimeImmutable $end = null,
+    ): ImportedTimeEntryData {
+        $start ??= new DateTimeImmutable('2026-01-01 10:00:00');
+        $end ??= $start->modify('+1 hour');
+
+        return new ImportedTimeEntryData(self::SOURCE, $id, 'task-1', 'Implement login API', 'board-1', $start, $end, $seconds, true, $description);
+    }
+}

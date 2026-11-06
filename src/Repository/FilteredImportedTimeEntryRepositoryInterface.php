@@ -18,7 +18,9 @@ interface FilteredImportedTimeEntryRepositoryInterface extends ImportedTimeEntry
      * Like {@see ImportedTimeEntryRepositoryInterface::removeImported()}, but a row for which `$keep` returns true is
      * not deleted (nor counted).
      *
-     * @param callable(array{id: string, userId: string, scopeKey: string|null, startedAt: DateTimeImmutable}): bool $keep
+     * Since 1.15 `userId` is null for an ownerless entry, and the row has its `personRef`.
+     *
+     * @param callable(array{id: string, userId: string|null, personRef: string|null, scopeKey: string|null, startedAt: DateTimeImmutable}): bool $keep
      */
     public function removeImportedWhere(ImportedTimeEntryScope $scope, callable $keep, int $batchSize = 500): ImportedTimeEntryRemoval;
 }
