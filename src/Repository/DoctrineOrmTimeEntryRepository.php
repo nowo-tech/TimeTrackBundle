@@ -14,6 +14,8 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Psr\Log\LoggerInterface;
 use SortDirection;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Throwable;
@@ -39,6 +41,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -257,9 +260,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         $connection = $this->entityManager->getConnection();
         $connection->beginTransaction();
         try {
-            if ($this->entityManager->contains($user)) {
-                $this->entityManager->lock($user, LockMode::PESSIMISTIC_WRITE);
-            }
+            $this->lockUser($user);
             $result = $operation();
             $connection->commit();
 
@@ -271,6 +272,24 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             RecoveringFlusher::resetIfClosed($this->entityManager, $this->managerRegistry);
 
             throw $exception;
+        }
+    }
+
+    /**
+     * The user's row lock: on the managed entity, else (a user from another manager or provider, delta GG-D-2) by id
+     * through the mapped user class; a warning when no row could be locked.
+     */
+    private function lockUser(object $user): void
+    {
+        if ($this->entityManager->contains($user)) {
+            $this->entityManager->lock($user, LockMode::PESSIMISTIC_WRITE);
+
+            return;
+        }
+        $class  = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
+        $locked = $user instanceof UserInterface ? $this->entityManager->find($class, UserIdResolver::getId($user), LockMode::PESSIMISTIC_WRITE) : null;
+        if ($locked === null) {
+            $this->logger?->warning('TimeTrack could not lock the user row; this write is not serialised.', ['bundle' => 'time_track', 'action' => 'entry_lock']);
         }
     }
 

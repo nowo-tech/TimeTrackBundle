@@ -152,7 +152,7 @@ final readonly class CalendarSuggestionService
         }
         if ($accepted !== []) {
             // After every commit; a listener cannot undo the decisions.
-            $this->eventDispatcher?->dispatch(new CalendarSuggestionDecidedEvent($userId, $accepted, 'accepted', $entryIds), TimeTrackEvents::CALENDAR_SUGGESTION_DECIDED);
+            $this->decided(new CalendarSuggestionDecidedEvent($userId, $accepted, 'accepted', $entryIds));
         }
 
         return $outcomes;
@@ -185,7 +185,7 @@ final readonly class CalendarSuggestionService
             return $dismissed;
         });
         if ($dismissed !== []) {
-            $this->eventDispatcher?->dispatch(new CalendarSuggestionDecidedEvent(UserIdResolver::getId($user), $dismissed, 'dismissed'), TimeTrackEvents::CALENDAR_SUGGESTION_DECIDED);
+            $this->decided(new CalendarSuggestionDecidedEvent(UserIdResolver::getId($user), $dismissed, 'dismissed'));
         }
 
         return $dismissed;
@@ -223,6 +223,19 @@ final readonly class CalendarSuggestionService
         }
 
         return $matches;
+    }
+
+    /**
+     * Dispatches a decision after the commits; a throwing listener is logged (class only) and does not turn the
+     * committed decisions into an error (delta GG-D-4).
+     */
+    private function decided(CalendarSuggestionDecidedEvent $event): void
+    {
+        try {
+            $this->eventDispatcher?->dispatch($event, TimeTrackEvents::CALENDAR_SUGGESTION_DECIDED);
+        } catch (Throwable $exception) {
+            $this->logger->warning('TimeTrack suggestion-decided listener failed.', ['bundle' => 'time_track', 'action' => 'suggestion_decided', 'exception' => $exception::class]);
+        }
     }
 
     /**
