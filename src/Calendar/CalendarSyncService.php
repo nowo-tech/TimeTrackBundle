@@ -42,6 +42,9 @@ use function substr;
  */
 final readonly class CalendarSyncService
 {
+    /** Code of a connection the configuration does not sync (provider no longer enabled, local mode, feature off). */
+    public const NOT_SYNCABLE = 'not_syncable';
+
     /** Code of an unexpected failure (host, store or listener exception). */
     public const INTERNAL_ERROR = 'internal_error';
 
@@ -100,11 +103,19 @@ final readonly class CalendarSyncService
         $counts = ['synced' => 0, 'failed' => 0, 'outside_hours' => 0, 'purged' => 0];
         if ($this->isEnabled()) {
             $offset = 0;
+            $seen   = [];
             // Pages of candidates until `$limit` connections were attempted (outside-hours rows are skipped, not counted).
+            // Only connections of enabled providers are due (GG-D-1); a row met twice in one run (its next attempt could
+            // not be recorded) is skipped like an outside-hours row, so nothing is re-fetched forever.
             for ($page = 0; $page < self::MAX_DUE_PAGES && $limit > $counts['synced'] + $counts['failed']; ++$page) {
-                $due = $this->connections->findConnectionsDue($now, $userId, $limit, $offset);
+                $due = $this->connections->findConnectionsDue($now, $userId, $limit, $offset, $this->settings->providers);
                 foreach ($due as $connection) {
-                    $owner = $connection->getUser();
+                    if (isset($seen[$connection->getId()])) {
+                        ++$offset;
+                        continue;
+                    }
+                    $seen[$connection->getId()] = true;
+                    $owner                      = $connection->getUser();
                     if (!$owner instanceof UserInterface || !$this->workingHours->contains($owner, $now)) {
                         ++$counts['outside_hours'];
                         ++$offset;
@@ -154,9 +165,14 @@ final readonly class CalendarSyncService
         $counts  = ['fetched' => 0, 'matched' => 0, 'ignored' => 0, 'new' => 0, 'updated' => 0, 'expired' => 0, 'stale' => 0];
         $owner   = $connection->getUser();
         $matcher = $this->matcher;
-        if (!$matcher instanceof CalendarEventMatcher || !$this->settings->enabled || !$owner instanceof UserInterface || $connection->getMode() !== CalendarConnectionMode::Server
-            || !$this->settings->allowsProvider($connection->getProvider())) {
-            return new CalendarSyncResult($connection->getId(), $counts, 'not_syncable');
+        if (!$matcher instanceof CalendarEventMatcher || !$this->settings->enabled || !$owner instanceof UserInterface || $connection->getMode() !== CalendarConnectionMode::Server) {
+            return new CalendarSyncResult($connection->getId(), $counts, self::NOT_SYNCABLE);
+        }
+        if (!$this->settings->allowsProvider($connection->getProvider())) {
+            // GG-D-1: a provider removed from `calendar.providers` is recorded with a backoff, never retried at once.
+            $this->recordFailure($connection, self::NOT_SYNCABLE, $now);
+
+            return new CalendarSyncResult($connection->getId(), $counts, self::NOT_SYNCABLE);
         }
 
         try {
@@ -167,14 +183,22 @@ final readonly class CalendarSyncService
             $code = self::INTERNAL_ERROR;
             $this->logger->warning('TimeTrack calendar sync failed.', ['bundle' => 'time_track', 'action' => 'calendar_sync', 'exception' => $exception::class]);
         }
+        $this->recordFailure($connection, $code, $now);
+
+        return $this->finished($connection, $counts, $code);
+    }
+
+    /**
+     * Records a failure and its backoff; a store failure here is logged (class only), never thrown.
+     */
+    private function recordFailure(CalendarConnection $connection, string $code, DateTimeImmutable $now): void
+    {
         try {
             $connection->markFailed($code, $now, $this->backoff($connection, $now));
             $this->connections->saveConnection($connection);
         } catch (Throwable $exception) {
             $this->logger->warning('TimeTrack calendar sync failure could not be recorded.', ['bundle' => 'time_track', 'action' => 'calendar_sync', 'exception' => $exception::class]);
         }
-
-        return $this->finished($connection, $counts, $code);
     }
 
     /**

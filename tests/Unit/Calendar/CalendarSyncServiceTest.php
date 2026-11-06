@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarRuleRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarSuggestionRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\DaysOffProfileProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\RecordingTaskAccessChecker;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
@@ -33,6 +34,26 @@ use Symfony\Component\Clock\MockClock;
  */
 final class CalendarSyncServiceTest extends TestCase
 {
+    public function testARowMetTwiceInOneRunIsNotFetchedForever(): void
+    {
+        $connection  = new CalendarConnection(new TestUser('1', 'u@example.com'), '', CalendarProvider::Google, CalendarConnectionMode::Server, 'c', 'v1', new DateTimeImmutable());
+        $offsets     = [];
+        $connections = $this->createMock(CalendarConnectionRepositoryInterface::class);
+        $connections->method('saveConnection')->willThrowException(new RuntimeException('database gone'));
+        $connections->method('findConnectionsDue')->willReturnCallback(static function (DateTimeImmutable $now, ?string $userId, int $limit, int $offset) use (&$offsets, $connection): array {
+            $offsets[] = $offset;
+
+            // The next attempt could not be recorded: the row stays due and comes back.
+            return $offset === 0 ? [$connection, $connection] : [];
+        });
+        $settings = new CalendarSettings(true);
+        $matcher  = new CalendarEventMatcher(new StubTaskKeyResolver(), new RecordingTaskAccessChecker(), new CalendarRefHasher('s'), $settings);
+        $service  = new CalendarSyncService($connections, $this->createMock(CalendarSuggestionRepositoryInterface::class), $this->createMock(CalendarRuleRepositoryInterface::class), $settings, new CalendarWorkingHours(new MutableProfileProvider()), $matcher, [new FakeCalendarEventSource(CalendarProvider::Google, [], CalendarSyncException::RATE_LIMITED)], new StubCalendarCredentialProvider(), null, new MockClock('2026-11-06 12:00:00'));
+
+        self::assertSame(['synced' => 0, 'failed' => 1, 'outside_hours' => 0, 'purged' => 0], $service->syncDue(null, 2));
+        self::assertSame([0, 1], $offsets);
+    }
+
     public function testAFailureThatCannotBeRecordedIsStillAResult(): void
     {
         $connections = $this->createMock(CalendarConnectionRepositoryInterface::class);
