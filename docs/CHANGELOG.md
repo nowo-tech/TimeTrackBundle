@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.15.0] - 2026-11-06](#1150---2026-11-06)
 - [[1.14.0] - 2026-11-06](#1140---2026-11-06)
 - [[1.13.0] - 2026-11-05](#1130---2026-11-05)
 - [[1.12.0] - 2026-11-05](#1120---2026-11-05)
@@ -45,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.15.0] - 2026-11-06
 
 Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).
 Audit status: Appendix HA (2026-11-06): Pass (conditional) / Medium at `38f5230`. The only open Medium was accepted by the owner on 2026-11-06; residuals in `docs/SECURITY.md`.
@@ -1060,7 +1063,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.15.0...HEAD
+[1.15.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.11.0...v1.12.0

@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.15.0](#to-1150)
 - [To 1.14.0](#to-1140)
 - [To 1.13.0](#to-1130)
 - [To 1.12.0](#to-1120)
@@ -54,6 +55,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.15.0
+
+From **1.14.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Target **1.15.0**, from **1.14.0**.
 
