@@ -285,6 +285,9 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertInstanceOf(MutableProfileProvider::class, $profile);
         $profile->hoursByUser[(string) $this->user->getId()] = null;
         $this->clock->modify('+1 day');
+        // The healthy one is attempted last, so the failing one (outside hours now) comes first in the due order.
+        $sync->sync($healthy);
+        $this->clock->modify('+61 minutes');
         self::assertSame(['synced' => 1, 'failed' => 0, 'outside_hours' => 1, 'purged' => 0], $sync->syncDue(null, 1));
     }
 
