@@ -48,11 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Audit status: Appendix HM: Pass (good) / Low at `6848136`; fixes at `<final>`, re-verification pending. No schema change, no contract change.
+Audit status: Appendix HQ: Pass (good) / Low at `1fe4dd1`. No schema change, no contract change.
 
 ### Fixed
 
-- HM-L7: a move reads the ids with no lock, then locks the rows by primary key and checks them again. On MySQL 8 its locking read also locked the gaps of the source's index, so a sync into that source, or next to it, waited for the whole move or deadlocked.
+- HM-L7: a move reads the ids with no lock, then locks the rows by primary key and checks them again. On MySQL 8 its locking read also locked the gaps of the source's index, so a sync into that source, or next to it, waited for the whole move or deadlocked. Now that wait is rare instead of constant: on MySQL and MariaDB a sync's insert can still occasionally wait for the rest of a move (audit HQ-L1).
 - HM-L8: with `retention.anonymise_on_user_delete`, on a database without foreign key enforcement, rows that were not loaded are anonymised too.
 - HM-I7: a move no longer refreshes a managed `Timesheet`, which dropped its pending changes.
 

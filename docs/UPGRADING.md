@@ -57,7 +57,7 @@
 
 ## Unreleased
 
-Target **1.16.1**, from **1.16.0**. **No schema change, no contract change, nothing to do.** Audit status: Appendix HM: Pass (good) / Low at `6848136`; fixes at `<final>`, re-verification pending.
+Target **1.16.1**, from **1.16.0**. **No schema change, no contract change, nothing to do.** Audit status: Appendix HQ: Pass (good) / Low at `1fe4dd1`.
 
 - A move no longer makes a sync wait on MySQL unless it touches the same rows.
 - With `retention.anonymise_on_user_delete`, on SQLite without foreign keys, rows that were not loaded are now anonymised too.
