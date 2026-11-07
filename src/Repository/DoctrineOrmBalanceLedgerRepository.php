@@ -52,12 +52,16 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
     }
 
     /**
-     * The head of an owner and scope chain.
+     * The head of an owner and scope chain: since 1.16.2 (audit HQ-L3) the line no other line follows, because a sort alone can
+     * pick an older line (two lines in one millisecond, or a clock behind), which then refused every later line for good. The
+     * unique `(owner_ref, scope_key, prev_hash)` key serves the subquery; `scope_key` is never NULL. The sort is only a tie-break,
+     * for a chain that forked at its start before 1.16.2.
      */
     public function findLast(string $ownerRef, string $scopeKey): ?BalanceLedgerLine
     {
         /** @var BalanceLedgerLine|null $line */
         $line = $this->chain($ownerRef, $scopeKey)
+            ->andWhere('NOT EXISTS (SELECT 1 FROM ' . BalanceLedgerLine::class . ' n WHERE n.ownerRef = l.ownerRef AND n.scopeKey = l.scopeKey AND n.prevHash = l.hash)')
             ->orderBy('l.createdAt', SortDirection::Descending->value)
             ->addOrderBy('l.id', SortDirection::Descending->value)
             ->setMaxResults(1)

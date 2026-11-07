@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Audit status: Appendix HT: Pass (good) / Low at `ad1de5c`. No schema change, no contract change. A new chain's first line stores a different value in `prev_hash`: see UPGRADING.
+
+### Fixed
+
+- HQ-L3: `findLast()` follows the chain: the head is the line no other line follows. Sorting by time and id could pick an older line (two lines in one millisecond, or a clock behind), after which every later line and approval was refused with `conflict` while `verify` said intact. A chain already stuck goes on after the upgrade.
+- HQ-L4: a new chain's first line stores a marker in `prev_hash`, so two concurrent first lines collide on the unique key and the second is refused, instead of both committing as two starts. `getPrevHash()` and the hash read the marker as NULL. Chains that already have two starts keep them.
+
+### Changed
+
+- `testAMoveLeavesARowThatLeftBetweenItsReadAndItsLock` replaces a test that passed with the recheck removed (HQ-I1).
+
 ## [1.16.1] - 2026-11-07
 
 Audit status: Appendix HQ: Pass (good) / Low at `1fe4dd1`. No schema change, no contract change.

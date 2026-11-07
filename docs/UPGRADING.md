@@ -58,6 +58,22 @@
 
 ## Unreleased
 
+Target **1.16.2**, from **1.16.1**. **No schema change, no contract change, nothing to do for most hosts.** Audit status: Appendix HT: Pass (good) / Low at `ad1de5c`.
+
+- **A ledger chain stuck on `conflict` goes on by itself after the upgrade**, with no repair: the head is now the line no other line follows. `verify` keeps saying intact.
+- **Two concurrent first lines of a new chain:** the second is now refused with `conflict`, like any concurrent append; retry it. A chain that already has two starts keeps them: `verify` keeps reporting "the chain has 2 starts", which is a false alarm if those two lines are both real. It cannot be repaired by hand, because the hashes cover the rows; a retention purge removing them clears it. New lines go on from the newest and both lines count in the balance. **While the alarm stands, `verify` does not check that chain's links**, only each line's hash. Since the bundle no longer writes NULL there, list these chains right after upgrading and keep the list: a chain that joins it later was edited by hand.
+
+  ```sql
+  SELECT owner_ref, scope_key, COUNT(*) FROM time_track_balance_ledger WHERE prev_hash IS NULL GROUP BY owner_ref, scope_key HAVING COUNT(*) > 1;
+  ```
+- **`prev_hash` of a new chain's first line now holds 64 zeros in the database,** not NULL. `getPrevHash()` and the hash treat it as NULL, so exports and `verify` do not change. SQL of your own reading that column should treat both as a first line. **Rolling back to 1.16.1 or older makes `verify` report those first lines as broken**, because older code hashes the column as stored; the balance is not affected, and this repairs it (lift any append-only trigger for it first):
+
+  ```sql
+  UPDATE time_track_balance_ledger SET prev_hash = NULL WHERE prev_hash = '0000000000000000000000000000000000000000000000000000000000000000';
+  ```
+
+  On PostgreSQL, run `ANALYZE time_track_balance_ledger` after a bulk load of ledger lines: with no statistics, finding a chain's head is very slow on long chains.
+
 ## To 1.16.1
 
 From **1.16.0**:
