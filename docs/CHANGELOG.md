@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Audit status: re-verification pending. No schema change, no contract change.
+Audit status: Appendix HT: Pass (good) / Low at `ad1de5c`. No schema change, no contract change. A new chain's first line stores a different value in `prev_hash`: see UPGRADING.
 
 ### Fixed
 
