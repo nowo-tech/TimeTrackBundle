@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.16.1] - 2026-11-07](#1161---2026-11-07)
 - [[1.16.0] - 2026-11-07](#1160---2026-11-07)
 - [[1.15.0] - 2026-11-06](#1150---2026-11-06)
 - [[1.14.0] - 2026-11-06](#1140---2026-11-06)
@@ -47,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.16.1] - 2026-11-07
 
 Audit status: Appendix HQ: Pass (good) / Low at `1fe4dd1`. No schema change, no contract change.
 
@@ -1092,7 +1095,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.1...HEAD
+[1.16.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.13.0...v1.14.0

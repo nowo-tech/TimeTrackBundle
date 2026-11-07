@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.16.1](#to-1161)
 - [To 1.16.0](#to-1160)
 - [To 1.15.0](#to-1150)
 - [To 1.14.0](#to-1140)
@@ -56,6 +57,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.16.1
+
+From **1.16.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Target **1.16.1**, from **1.16.0**. **No schema change, no contract change, nothing to do.** Audit status: Appendix HQ: Pass (good) / Low at `1fe4dd1`.
 
