@@ -101,7 +101,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         $em->flush();
     }
 
-    public function testAConcurrentFirstLineGetsAConflictAndARetrySucceeds(): void
+    public function testAConcurrentFirstLineGetsAConflict(): void
     {
         $em   = $this->entityManager();
         $conn = $em->getConnection();
