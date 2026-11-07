@@ -10,6 +10,7 @@ use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 
 /**
  * Since 1.15 (HA-M5): `retention.anonymise_on_user_delete`: the hours stay and the person goes.
@@ -50,6 +51,49 @@ final class FormerPeopleAnonymiseOnDeleteTest extends FunctionalTestCase
         } finally {
             $conn->executeStatement('DROP TABLE block_user_delete');
         }
+    }
+
+    public function testRowsNotLoadedAreReachedWithoutForeignKeyEnforcement(): void
+    {
+        $em   = $this->entityManager();
+        $conn = $em->getConnection();
+        $em->persist(new TimeEntry($this->user, 'task-1', 'Onboarding of Ana', 'board-1', new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Web, ['note' => 'Secret']));
+        $em->flush();
+        $em->clear();
+        if ($conn->getDatabasePlatform() instanceof SQLitePlatform) {
+            $conn->executeStatement('PRAGMA foreign_keys = OFF');
+        }
+        $user = $em->find($this->user::class, $this->user->getId());
+        self::assertNotNull($user);
+
+        $em->remove($user);
+        $em->flush();
+
+        $row = $conn->fetchAssociative('SELECT user_id, person_ref, anonymised_at, metadata, duration_seconds FROM time_track_entries');
+        self::assertIsArray($row);
+        self::assertNull($row['user_id']);
+        self::assertNull($row['person_ref']);
+        self::assertNotNull($row['anonymised_at']);
+        self::assertStringNotContainsString('Secret', (string) $row['metadata']);
+        self::assertSame('3600', (string) $row['duration_seconds']);
+    }
+
+    public function testAnEntryMovedToAnotherUserMeanwhileIsNotAnonymised(): void
+    {
+        $em    = $this->entityManager();
+        $other = $this->createUser('other@example.com');
+        $entry = new TimeEntry($other, 'task-1', 'Theirs', null, new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Web);
+        $em->persist($entry);
+        $em->flush();
+        $people = self::getContainer()->get(FormerPersonTimeEntries::class);
+        self::assertInstanceOf(FormerPersonTimeEntries::class, $people);
+
+        self::assertSame(0, $people->anonymiseDeleted([$entry->getId()], FormerPersonTimeEntries::personRefOf($this->user)));
+        $em->clear();
+        $stored = $em->find(TimeEntry::class, $entry->getId());
+        self::assertInstanceOf(TimeEntry::class, $stored);
+        self::assertFalse($stored->isAnonymised());
+        self::assertNotNull($stored->getUser());
     }
 
     public function testDeletingAUserKeepsTheHoursAndNotThePerson(): void

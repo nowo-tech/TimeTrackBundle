@@ -122,6 +122,8 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         $guard = self::getContainer()->get(PeriodLockGuard::class);
         self::assertInstanceOf(PeriodLockGuard::class, $guard);
         $em->clear();
+        // A managed copy of the open timesheet must not hide the lock from the move.
+        self::assertInstanceOf(Timesheet::class, $em->find(Timesheet::class, $id));
 
         $result = (new ImportedTimeEntryWriter($repository, periodLockGuard: $guard, scopeProvider: $scopes))->moveBetweenUsers(self::SOURCE, $this->managedUser(), $this->managedTarget($target));
         $other->close();
@@ -176,6 +178,85 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
 
         self::assertSame($result->moved * 3600, $result->secondsMoved);
         self::assertSame(2, $calls, 'the provider was asked for both rows');
+    }
+
+    public function testASyncIntoOrNextToTheSourceDoesNotWaitForAMove(): void
+    {
+        $conn = $this->entityManager()->getConnection();
+        if ($conn->getDatabasePlatform() instanceof SQLitePlatform) {
+            self::markTestSkipped('The in-memory database has no second connection.');
+        }
+        $target = $this->createUser('target@example.com');
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1', '2026-02-02 10:00:00'));
+        $writer->upsert($this->user, $this->data('e-2', '2026-02-02 12:00:00'));
+        $other = DriverManager::getConnection($conn->getParams());
+        if ($conn->getDatabasePlatform() instanceof AbstractMySQLPlatform) {
+            $other->executeStatement('SET SESSION innodb_lock_wait_timeout = 1');
+        } else {
+            $other->executeStatement("SET lock_timeout = '1s'");
+        }
+        $userId   = $target->getId();
+        $inserted = [];
+        $calls    = 0;
+        $scopes   = $this->createStub(TimesheetScopeProviderInterface::class);
+        $scopes->method('scopesFor')->willReturn([new TimesheetScope('', '')]);
+        $scopes->method('scopeKeyForTask')->willReturnCallback(static function () use ($other, $userId, &$inserted, &$calls): string {
+            if (++$calls === 1) {
+                foreach ([self::SOURCE, 'clickup:dir-0', 'clickup:dir-2'] as $index => $source) {
+                    $other->insert('time_track_entries', ['id' => 'sync-' . $index, 'created_at' => '2026-02-02 10:00:00', 'task_id' => 'task-1', 'task_title_snapshot' => 'T', 'started_at' => '2026-02-02 10:00:00', 'ended_at' => '2026-02-02 11:00:00', 'duration_seconds' => 3600, 'source' => 'import', 'external_source' => $source, 'external_id' => 'zz-' . $index, 'scope_key' => '', 'user_id' => $userId]);
+                    $inserted[] = $source;
+                }
+            }
+
+            return '';
+        });
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+        $this->entityManager()->clear();
+        $to = $this->entityManager()->find(AppUser::class, $userId);
+        self::assertInstanceOf(AppUser::class, $to);
+
+        $result = (new ImportedTimeEntryWriter($repository, scopeProvider: $scopes))->moveBetweenUsers(self::SOURCE, $this->managedUser(), $to);
+        $other->close();
+
+        self::assertSame([self::SOURCE, 'clickup:dir-0', 'clickup:dir-2'], $inserted);
+        self::assertSame(2, $result->moved);
+    }
+
+    public function testAMoveDoesNotOverwriteAPendingChangeOnAManagedTimesheet(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1', '2026-01-01 10:00:00'));
+        $this->lockWeek($this->user);
+        $this->entityManager()->clear();
+        $timesheets = $this->entityManager()->getRepository(Timesheet::class)->findAll();
+        self::assertCount(1, $timesheets);
+        $timesheets[0]->applyReopen(new DateTimeImmutable('2026-01-11 08:00:00'), 'approver', 'Pending reopen');
+
+        $result = $writer->moveToPerson(self::SOURCE, $this->managedUser(), new ImportedTimeEntryPerson('p-1', 'Ana', ''));
+
+        self::assertSame(1, $result->keptLocked, 'the database still says locked');
+        self::assertFalse($timesheets[0]->isLocked(), 'the pending change is still there');
+    }
+
+    public function testAMoveSkipsARowThatLeftBeforeItWasLocked(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('e-1', '2026-02-02 10:00:00'));
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+        $other = $this->createUser('other@example.com');
+        $conn  = $this->entityManager()->getConnection();
+        $conn->beginTransaction();
+        self::assertCount(1, $repository->findForOwnerMove(self::SOURCE, (string) $this->user->getId(), null, null, '', 10));
+        $conn->commit();
+        $writer->moveBetweenUsers(self::SOURCE, $this->user, $other);
+
+        $conn->beginTransaction();
+        self::assertSame([], $repository->findForOwnerMove(self::SOURCE, (string) $this->user->getId(), null, null, '', 10));
+        self::assertCount(1, $repository->findForOwnerMove(self::SOURCE, (string) $other->getId(), null, ['e-1'], '', 10));
+        $conn->commit();
     }
 
     public function testASubmittedPeriodAlsoKeepsARowOfADeletedUser(): void

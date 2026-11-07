@@ -216,6 +216,8 @@ Audit status: Appendix HA (2026-11-06, PR #73): first audit at `39c0b06` Fail / 
 
 Audit status: Appendix HM (2026-11-07, PR #74): first audit at `30c00f9` Pass (conditional) / Medium; fixes re-verified at `6848136`: **Pass (good) / Low**, no open Critical, High or Medium. Residuals (Low): on MySQL 8 a sync into the moved source, or one next to it in sort order, can wait for the whole move or fail with a deadlock, with no time lost and the next run repeating it, so run big moves outside sync windows; on SQLite without foreign keys, `anonymise_on_user_delete` does not reach rows that were not loaded. A move refreshes managed `Timesheet` entities, so flush pending changes to them first.
 
+Since then, 1.16.1 addresses both of those Low residuals (fixes at `<final>`, re-verification pending).
+
 | Threat | Control |
 | --- | --- |
 | Re-associating time deletes it | Moves only update the owner columns; there is no delete statement on that path |
@@ -223,7 +225,7 @@ Audit status: Appendix HM (2026-11-07, PR #74): first audit at `30c00f9` Pass (c
 | A move or a claim crosses tenants | The row's scope must be exactly the target's, null included, compared in PHP; the scope is never rewritten. With a scope provider it must also be among `scopesFor()` of the new user, so this is only as strong as that method. **With no provider the host vouches for the scope it passes,** and a null scope moves when none is passed: such a row has no tenant. A deleted user's reference only goes back to that id. Source, ids and references compare case-sensitively in PHP |
 | A crafted id list moves other rows | Ids must be strings of the id pattern, so a cast such as `12` matching `12abc` or a trailing NUL cannot reach the database |
 | A move misses a period locked meanwhile | The guard reads timesheets under a shared lock inside the move's transaction, so on MySQL and MariaDB such a lock is seen or waits for the move. A custom timesheet store without `LockingGuardTimesheetRepositoryInterface` reads as usual |
-| A half-done move | One transaction. The rows are read with a write lock, so what is read is what changes and `secondsMoved` is exact; each `UPDATE` also requires the old owner |
+| A half-done move | One transaction. The ids are read with no lock, then the rows are locked by primary key and their source and owner checked again, so what is locked is what changes and `secondsMoved` is exact. Only those rows are locked: since 1.16.1 a sync elsewhere does not wait on MySQL |
 | Settling overwrites a move | After a user's delete, settling touches only rows with no owner and no reference, or still with that user |
 | Who moved it is unknown | `TimeEntriesMovedEvent` carries owners, counts and actor, and the log counts and whether an actor was given. **Residual:** `$actorId` is optional and the bundle has no audit table, so hosts store the event. The host authorises every call |
 | A soft-erased user gets a person back | The bundle cannot know it; the host must not call a move for such an account |

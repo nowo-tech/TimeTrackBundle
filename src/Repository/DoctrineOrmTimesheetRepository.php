@@ -9,7 +9,6 @@ use Doctrine\Common\Collections\Order as SortDirection;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
@@ -115,7 +114,9 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
-     * Since 1.16: the same by `owner_ref` under a shared lock, inside the caller's transaction.
+     * Since 1.16: the same by `owner_ref` under a shared lock, inside the caller's transaction. Since 1.16.1 a managed timesheet is not
+     * refreshed, so a pending change on it survives: the guard needs only that the database returned the row, and its period, which
+     * never changes.
      */
     public function findGuardingForMove(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
     {
@@ -144,7 +145,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         }
 
         /** @var list<Timesheet> $result */
-        $result = ($lock instanceof LockMode ? $query->getQuery()->setLockMode($lock)->setHint(Query::HINT_REFRESH, true) : $query->getQuery())->getResult();
+        $result = ($lock instanceof LockMode ? $query->getQuery()->setLockMode($lock) : $query->getQuery())->getResult();
 
         return $result;
     }

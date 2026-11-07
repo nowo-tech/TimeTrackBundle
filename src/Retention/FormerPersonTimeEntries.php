@@ -131,13 +131,21 @@ final readonly class FormerPersonTimeEntries
     }
 
     /**
-     * Part of a delete the bundle sees, after the commit, with `retention.anonymise_on_user_delete`.
+     * Part of a delete the bundle sees, after the commit, with `retention.anonymise_on_user_delete`. Since 1.16.1 with the deleted
+     * user's reference: the entries are settled first, which also reaches rows with a dangling `user_id` on a database that does not
+     * enforce the foreign key, then anonymised by that reference.
      *
      * @param list<string> $entryIds
      */
-    public function anonymiseDeleted(array $entryIds): int
+    public function anonymiseDeleted(array $entryIds, ?string $personRef = null): int
     {
-        return $this->logged('anonymise_on_delete', $this->store()->anonymiseEntries($entryIds, $this->now()));
+        $store = $this->store();
+        if ($personRef === null) {
+            return $this->logged('anonymise_on_delete', $store->anonymiseEntries($entryIds, $this->now()));
+        }
+        $store->settleDeletedOwner($entryIds, $personRef, null);
+
+        return $this->logged('anonymise_on_delete', $store->anonymisePerson($personRef, $this->now()));
     }
 
     /**

@@ -28,6 +28,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
 use RuntimeException;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -51,6 +52,8 @@ use const DATE_ATOM;
  */
 final class CalendarClientApiTest extends FunctionalTestCase
 {
+    use ClockSensitiveTrait;
+
     /** @var list<object> */
     private array $events = [];
 
@@ -254,6 +257,7 @@ final class CalendarClientApiTest extends FunctionalTestCase
 
     public function testResolveKeys(): void
     {
+        self::mockTime();
         $token  = $this->token(ClientScope::SuggestionsRead);
         $result = $this->api('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-1', '#task-9', '#cafebabe', '#task-1']], $token);
         self::assertResponseIsSuccessful();
@@ -267,10 +271,12 @@ final class CalendarClientApiTest extends FunctionalTestCase
             $this->api('POST', '/api/time-track/suggestions/resolve-keys', $bad, $token);
             self::assertResponseStatusCodeSame(400);
         }
-        // The limiter's window is fixed and the clock is real: twice the limit reaches it even across a window's end.
-        for ($i = 0; $i < 121 && $this->client->getResponse()->getStatusCode() !== 429; ++$i) {
+        // The clock is frozen, so the limiter's fixed window cannot end here: exactly 60 valid requests per token (the limiter runs after validation; two were made above).
+        for ($used = 2; $used < 60; ++$used) {
             $this->api('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-2']], $token);
+            self::assertResponseIsSuccessful();
         }
+        $this->api('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-2']], $token);
         self::assertResponseStatusCodeSame(429);
     }
 
