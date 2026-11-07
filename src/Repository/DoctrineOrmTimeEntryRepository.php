@@ -576,40 +576,65 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * Since 1.16: imported entries of exactly this source held by this owner, by keyset, locked until the move's commit: what
-     * this read returns is what the update changes, so the moved seconds are exact and a concurrent move waits.
+     * this returns is what the update changes, so the moved seconds are exact and a concurrent move waits. Since 1.16.1 (audit
+     * HM-L7) the ids are read with no lock and the rows are then locked by primary key, which takes record locks only: on MySQL a
+     * locking read through the source's index also locked its gaps, so a sync into that source or next to it waited for
+     * the whole move or deadlocked. A row is checked again once locked, because it may have moved in between.
      */
     public function findForOwnerMove(string $externalSource, ?string $fromUserId, ?string $fromPersonRef, ?array $externalIds, string $afterId, int $limit): array
     {
-        $query = $this->entityManager->createQueryBuilder()
-            ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef')
-            ->from(TimeEntry::class, 'e')
-            ->where('e.source = :import')
-            ->andWhere('e.externalSource = :source')
-            ->andWhere('e.anonymisedAt IS NULL')
-            ->andWhere('e.id > :after')
-            ->setParameter('import', TimeEntrySource::Import->value)
-            ->setParameter('source', $externalSource)
-            ->setParameter('after', $afterId)
-            ->orderBy('e.id', SortDirection::Ascending)
-            ->setMaxResults(max(1, $limit));
-        $this->whereOwner($query, $fromUserId, $fromPersonRef);
-        if ($externalIds !== null) {
-            $query->andWhere('e.externalId IN (:externalIds)')->setParameter('externalIds', $externalIds);
-        }
+        do {
+            $query = $this->entityManager->createQueryBuilder()
+                ->select('e.id AS id')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.source = :import')
+                ->andWhere('e.externalSource = :source')
+                ->andWhere('e.anonymisedAt IS NULL')
+                ->andWhere('e.id > :after')
+                ->setParameter('import', TimeEntrySource::Import->value)
+                ->setParameter('source', $externalSource)
+                ->setParameter('after', $afterId)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(max(1, $limit));
+            $this->whereOwner($query, $fromUserId, $fromPersonRef);
+            if ($externalIds !== null) {
+                $query->andWhere('e.externalId IN (:externalIds)')->setParameter('externalIds', $externalIds);
+            }
+            /** @var list<string> $ids */
+            $ids = array_column($query->getQuery()->getArrayResult(), 'id');
+            if ($ids === []) {
+                return [];
+            }
+            $afterId = $ids[count($ids) - 1];
 
-        /** @var list<array{id: string, externalSource: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}> $rows */
-        $rows = $query->getQuery()->setLockMode(LockMode::PESSIMISTIC_WRITE)->getArrayResult();
+            /** @var list<array{id: string, externalSource: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null, userId: int|string|null, anonymisedAt: DateTimeImmutable|null}> $locked */
+            $locked = $this->entityManager->createQueryBuilder()
+                ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef', 'IDENTITY(e.user) AS userId', 'e.anonymisedAt AS anonymisedAt')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.id IN (:ids)')
+                ->setParameter('ids', $ids)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->getQuery()
+                ->setLockMode(LockMode::PESSIMISTIC_WRITE)
+                ->getArrayResult();
+            $rows = array_values(array_filter(
+                $locked,
+                static fn (array $row): bool => $row['externalSource'] === $externalSource
+                    && $row['anonymisedAt'] === null
+                    && ($fromUserId !== null ? (string) $row['userId'] === $fromUserId : ($row['userId'] === null && $row['personRef'] === $fromPersonRef)),
+            ));
+        } while ($rows === []);
 
         return $rows;
     }
 
     /**
-     * Since 1.16: gives these entries a new owner, only while they still have the old one.
+     * Since 1.16: gives these entries a new owner. Since 1.16.1 by primary key alone: {@see self::findForOwnerMove()} has locked them
+     * and checked their owner, and another index here would lock its gaps.
      */
     public function applyOwnerMove(array $entryIds, ?string $fromUserId, ?string $fromPersonRef, ?object $toUser, ?string $toPersonRef, ?string $toPersonName): int
     {
         $update = $this->entityManager->createQueryBuilder()->update(TimeEntry::class, 'e')->where('e.id IN (:ids)')->setParameter('ids', $entryIds);
-        $this->whereOwner($update, $fromUserId, $fromPersonRef);
         if ($toUser !== null) {
             $update->set('e.user', ':toUser')->set('e.personRef', 'NULL')->set('e.personNameSnapshot', 'NULL')->setParameter('toUser', $toUser);
         } else {

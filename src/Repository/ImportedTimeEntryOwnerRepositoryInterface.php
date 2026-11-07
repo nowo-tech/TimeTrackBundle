@@ -36,7 +36,8 @@ interface ImportedTimeEntryOwnerRepositoryInterface
     public function findForOwnerMove(string $externalSource, ?string $fromUserId, ?string $fromPersonRef, ?array $externalIds, string $afterId, int $limit): array;
 
     /**
-     * Gives these entries a new owner, only while they still have the old one; returns the entries changed. A user clears
+     * Gives these entries a new owner; returns the entries changed. The caller holds them from {@see self::findForOwnerMove()}, whose
+     * lock and check are what guarantee they still have the old owner. A user clears
      * the person; no user sets the reference and name. Seconds, times, task and external id do not change. Loaded entries
      * are detached.
      *

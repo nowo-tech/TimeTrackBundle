@@ -104,7 +104,7 @@ final class FormerPersonSnapshotListener implements ResetInterface
                 continue;
             }
             if ($settle['anonymise']) {
-                $this->entries->anonymiseDeleted($settle['ids']);
+                $this->entries->anonymiseDeleted($settle['ids'], $settle['personRef']);
             } else {
                 $this->entries->settleDeleted($settle['ids'], $settle['personRef'], $settle['name']);
             }
