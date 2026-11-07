@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Audit status: Appendix HM (2026-11-07): Pass (conditional) / Medium at `30c00f9`; fixes at `<final>`, re-verification pending. No schema change.
+Audit status: Appendix HM (2026-11-07): Pass (good) / Low at `6848136`; residuals in `docs/SECURITY.md`. No schema change.
 
 ### Added
 

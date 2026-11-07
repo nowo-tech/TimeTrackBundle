@@ -214,7 +214,7 @@ Audit status: Appendix HA (2026-11-06, PR #73): first audit at `39c0b06` Fail / 
 
 ## Moving imported time between owners (1.16)
 
-Audit status: Appendix HM (2026-11-07, PR #74): audited at `30c00f9`: **Pass (conditional) / Medium**, no High. Fixes at `<final>`, re-verification pending.
+Audit status: Appendix HM (2026-11-07, PR #74): first audit at `30c00f9` Pass (conditional) / Medium; fixes re-verified at `6848136`: **Pass (good) / Low**, no open Critical, High or Medium. Residuals (Low): on MySQL 8 a sync into the moved source, or one next to it in sort order, can wait for the whole move or fail with a deadlock, with no time lost and the next run repeating it, so run big moves outside sync windows; on SQLite without foreign keys, `anonymise_on_user_delete` does not reach rows that were not loaded. A move refreshes managed `Timesheet` entities, so flush pending changes to them first.
 
 | Threat | Control |
 | --- | --- |

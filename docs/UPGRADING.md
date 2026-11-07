@@ -56,7 +56,7 @@
 
 ## Unreleased
 
-Target **1.16.0**, from **1.15.0**. **No schema change.** Audit status: Appendix HM (2026-11-07): Pass (conditional) / Medium at `30c00f9`; fixes at `<final>`, re-verification pending.
+Target **1.16.0**, from **1.15.0**. **No schema change.** Audit status: Appendix HM (2026-11-07): Pass (good) / Low at `6848136`; residuals in `docs/SECURITY.md`.
 
 **New: moving imported time between owners.** `ImportedTimeEntryWriter::moveToPerson()`, `moveToUser()` and `moveBetweenUsers()` move a source's imported entries in one transaction, keeping seconds, times, task and external ids. They never delete time. Stop using remove-then-upsert, or direct SQL, for this.
 
