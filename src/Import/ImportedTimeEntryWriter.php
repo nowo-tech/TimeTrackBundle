@@ -24,6 +24,7 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -32,7 +33,10 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 use function array_chunk;
+use function array_map;
 use function count;
+use function in_array;
+use function is_string;
 use function mb_check_encoding;
 use function mb_substr;
 use function preg_match;
@@ -279,7 +283,11 @@ final readonly class ImportedTimeEntryWriter
             $this->eventDispatcher?->dispatch($event, TimeTrackEvents::TIME_ENTRY_IMPORTED);
         }
         if ($write !== []) {
-            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked']]);
+            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked'], 'mismatched' => $counts['mismatched']]);
+        }
+        if ($counts['mismatched'] > 0) {
+            // Audit HM-L5: a skipped row is a refusal; counts only, never ids.
+            $this->logger->warning('TimeTrack imported entries skipped: another owner holds them.', ['bundle' => 'nowo_time_track', 'mismatched' => $counts['mismatched']]);
         }
 
         return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged'], $counts['locked'], $counts['mismatched']);
@@ -404,7 +412,7 @@ final readonly class ImportedTimeEntryWriter
     /**
      * Since 1.16: moves the source's imported entries of the claim's person to its user, the same way as {@see self::moveToPerson()}.
      * The claim's rules apply per row: a row whose scope is not exactly the target's (the scope provider's for that task, else
-     * the claim's) is refused and stays, and a deleted user's reference only goes back to that same id. A row in a locked or
+     * the claim's), or with a provider is not among `scopesFor()` of the new owner, is refused and stays, and a deleted user's reference only goes back to that same id. A row in a locked or
      * submitted period, of the deleted user or of the new owner, stays.
      *
      * @param list<string>|null $externalIds only these entries, when given
@@ -497,6 +505,11 @@ final readonly class ImportedTimeEntryWriter
     private function move(string $externalSource, ?UserInterface $fromUser, ?string $fromRef, ?UserInterface $toUser, ?ImportedTimeEntryPerson $toPerson, ?string $toScope, ?array $externalIds, ?string $actorId): ImportedTimeEntryMoveResult
     {
         $this->checkSource($externalSource);
+        foreach ($externalIds ?? [] as $externalId) {
+            if (!is_string($externalId) || preg_match(self::ID_PATTERN, $externalId) !== 1) {
+                throw new InvalidImportedTimeEntryException('externalIds', 'pattern');
+            }
+        }
         if (!$this->repository instanceof ImportedTimeEntryOwnerRepositoryInterface) {
             throw new LogicException('Moving imported entries requires a repository implementing ImportedTimeEntryOwnerRepositoryInterface.');
         }
@@ -509,12 +522,14 @@ final readonly class ImportedTimeEntryWriter
         $formerUser = TimeEntry::formerUserIdOf($fromRef);
         $refuseAll  = $formerUser !== null && $formerUser !== $toUserId;
         $chunks     = $externalIds === null ? [null] : array_chunk($externalIds, self::MOVE_BATCH);
+        $tenants    = $toUser instanceof UserInterface ? $this->tenantsOf($toUser) : null;
 
         // @igor-ignore - I/O delegate (repository / writer call); no worker state.
-        $result = $store->inOwnerMoveTransaction(function () use ($store, $externalSource, $fromUserId, $fromRef, $toUser, $toUserId, $toPerson, $toScope, $chunks, $refuseAll): ImportedTimeEntryMoveResult {
+        $result = $store->inOwnerMoveTransaction(function () use ($store, $externalSource, $fromUserId, $fromRef, $toUser, $toUserId, $toPerson, $toScope, $chunks, $refuseAll, $tenants): ImportedTimeEntryMoveResult {
             $total = new ImportedTimeEntryMoveResult();
             foreach ($chunks as $chunk) {
                 $after = '';
+                // Until a read finds nothing: a locking read that waited can return fewer rows than its limit.
                 do {
                     $rows    = $store->findForOwnerMove($externalSource, $fromUserId, $fromRef, $chunk, $after, self::MOVE_BATCH);
                     $move    = [];
@@ -523,14 +538,14 @@ final readonly class ImportedTimeEntryWriter
                     $refused = 0;
                     foreach ($rows as $row) {
                         $after = $row['id'];
-                        // A MySQL collation may fold case: the reference is compared here too.
-                        if ($fromRef !== null && $row['personRef'] !== $fromRef) {
+                        // A MySQL collation may fold case, and a cast may match more: everything named is compared here too.
+                        if ($row['externalSource'] !== $externalSource || ($chunk !== null && !in_array($row['externalId'], $chunk, true)) || ($fromRef !== null && $row['personRef'] !== $fromRef)) {
                             // @codeCoverageIgnoreStart
                             continue;
                             // @codeCoverageIgnoreEnd
                         }
                         $scope = $toPerson instanceof ImportedTimeEntryPerson ? $toScope : ($toUser instanceof UserInterface ? $this->scopeProvider?->scopeKeyForTask($toUser, $row['taskId'], $row['boardId']) : null) ?? $toScope;
-                        if ($refuseAll || $row['scopeKey'] !== $scope) {
+                        if ($refuseAll || $row['scopeKey'] !== $scope || ($tenants !== null && !in_array($row['scopeKey'], $tenants, true))) {
                             ++$refused;
                             continue;
                         }
@@ -543,7 +558,7 @@ final readonly class ImportedTimeEntryWriter
                     }
                     $moved = $move === [] ? 0 : $store->applyOwnerMove($move, $fromUserId, $fromRef, $toUser, $toPerson?->ref, $toPerson?->name);
                     $total = $total->merge(new ImportedTimeEntryMoveResult($moved, $kept, $refused, $seconds));
-                } while (count($rows) === self::MOVE_BATCH);
+                } while ($rows !== []);
             }
 
             return $total;
@@ -557,6 +572,19 @@ final readonly class ImportedTimeEntryWriter
         return $result;
     }
 
+    /**
+     * Since 1.16 (audit HM-M1): the tenants a user belongs to, by the scope provider; null without one, when the host vouches
+     * for the scope it passes. A provider's task answer says where the task is, not whether this user is there.
+     *
+     * @return list<string>|null
+     */
+    private function tenantsOf(UserInterface $user): ?array
+    {
+        return $this->scopeProvider instanceof TimesheetScopeProviderInterface
+            ? array_map(static fn (TimesheetScope $scope): string => $scope->key, $this->scopeProvider->scopesFor($user))
+            : null;
+    }
+
     /** Since 1.16: whether the period lock keeps a row where it is, for its current owner or for the new user. */
     private function isMoveLocked(?string $fromUserId, ?string $fromRef, ?string $toUserId, ?string $scopeKey, DateTimeImmutable $startedAt): bool
     {
@@ -565,8 +593,8 @@ final readonly class ImportedTimeEntryWriter
             return false;
         }
 
-        return $guard->isRowBlocked($fromUserId, $fromRef, $scopeKey, $startedAt)
-            || ($toUserId !== null && $guard->isRowBlocked($toUserId, null, $scopeKey, $startedAt));
+        return $guard->isMoveBlocked($fromUserId, $fromRef, $scopeKey, $startedAt)
+            || ($toUserId !== null && $guard->isMoveBlocked($toUserId, null, $scopeKey, $startedAt));
     }
 
     private function removeScope(ImportedTimeEntryScope $scope, ?string $actorId): int
@@ -633,6 +661,12 @@ final readonly class ImportedTimeEntryWriter
         if (!$owner instanceof ImportedTimeEntryClaim || $owner->personRef !== $personRef
             || ($formerUser !== null && $formerUser !== UserIdResolver::getId($owner->user))
             || $storedScope !== $scopeKey) {
+            throw new ImportedEntryOwnerMismatchException($externalId);
+        }
+
+        // Audit HM-M1: the provider's task answer says where the task is, not whether this user is there.
+        $tenants = $this->tenantsOf($owner->user);
+        if ($tenants !== null && !in_array($storedScope, $tenants, true)) {
             throw new ImportedEntryOwnerMismatchException($externalId);
         }
 

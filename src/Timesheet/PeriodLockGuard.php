@@ -16,6 +16,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Repository\FormerOwnerTimesheetRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\LockingGuardTimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -122,6 +123,27 @@ final readonly class PeriodLockGuard
         }
 
         return null;
+    }
+
+    /**
+     * Since 1.16 (audit HM-L4): {@see self::isRowBlocked()} for a move, inside its transaction: with a store that can, the
+     * timesheets are read with a shared lock, so on MySQL and MariaDB a period locked during the move is seen or waits for it,
+     * instead of being hidden by the transaction's snapshot.
+     */
+    public function isMoveBlocked(?string $userId, ?string $personRef, ?string $scopeKey, DateTimeInterface $startedAt): bool
+    {
+        $ownerId = $userId ?? TimeEntry::formerUserIdOf($personRef);
+        if ($ownerId === null || !$this->timesheets instanceof LockingGuardTimesheetRepositoryInterface) {
+            return $this->isRowBlocked($userId, $personRef, $scopeKey, $startedAt);
+        }
+        $utc = new DateTimeImmutable('@' . $startedAt->getTimestamp());
+        foreach ($this->timesheets->findGuardingForMove($ownerId, $scopeKey, $utc->modify('-1 day')->format('Y-m-d'), $utc->modify('+1 day')->format('Y-m-d')) as $timesheet) {
+            if ($timesheet->covers($startedAt)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

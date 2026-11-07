@@ -305,7 +305,7 @@ $rows = $people->export($personId);
 | a user or a claim | the same user | update |
 | a user or a claim | another user | `ImportedEntryOwnerMismatchException` |
 | a plain user | a former person or a deleted user | mismatch: taking one must be explicit |
-| a claim, with the entry's reference and exactly its scope | a former person | claim: the user owns it, the snapshot goes |
+| a claim, with the entry's reference and exactly its scope (with a scope provider, also among `scopesFor()` of the user) | a former person | claim: the user owns it, the snapshot goes |
 | a claim, with the entry's reference and exactly its scope | a deleted user | the same id: back to them; another: mismatch |
 | a claim with another reference or scope, or with a scope on an entry that has none | an ownerless entry | mismatch |
 | a person | a user | mismatch: use `moveToPerson()` |
@@ -372,11 +372,13 @@ $result = $writer->moveToPerson($source, $user, $person, ['clickup-1', 'clickup-
 // $result->moved, keptLocked, refusedScope, secondsMoved
 ```
 
-- **Never deletes.** Only the owner columns change: seconds, times, task, description, external id and scope stay. One transaction, nested into yours when there is one. Bulk statements, no flush; loaded rows of a move are detached, so read them again.
+- **Never deletes.** Only the owner columns change: seconds, times, task, description, external id and scope stay. One transaction, nested into yours when there is one. Bulk statements, no flush; loaded rows of a move are detached, so read them again, and a change you had pending on one is not written. The rows being moved are locked until the commit, so a concurrent move or sync of those rows waits.
 - Only `source = import` rows of exactly that source that the `from` owner holds now, and never an anonymised one.
 - **Period lock:** a row in a locked or submitted period, of its current owner or of the new user, stays and counts in `keptLocked`. There is no exception. With timesheets off it is always 0.
-- **Scope, the claim's rule:** the row's scope must be exactly the target's, a null one included (the scope provider's for that task when it gives one, else the one you pass). Otherwise the row stays and counts in `refusedScope`. A deleted user's reference (`user:<id>`) only goes back to that same id.
-- **A row that stayed mismatches the next sync's row for the new owner:** use `upsertMany($rows, skipMismatches: true)`.
+- **Scope, the claim's rule:** the row's scope must be exactly the target's, a null one included (the scope provider's for that task when it gives one, else the one you pass), and **with a scope provider it must be among `scopesFor()` of the new user**. Otherwise the row stays and counts in `refusedScope`. With no provider you vouch for the scope you pass, and a row with no scope moves when you pass none. A deleted user's reference (`user:<id>`) only goes back to that same id.
+- **Source and ids are compared exactly**, also on a case-insensitive collation. `$externalIds` must be strings of the id pattern: anything else throws `InvalidImportedTimeEntryException` (`externalIds`, `pattern`).
+- **A move to a person writes the name only on the rows it moves,** so one reference can hold two names.
+- **A row that stayed mismatches the next sync's row for the new owner:** use `upsertMany($rows, skipMismatches: true)`, and read `$result->mismatched`: skipped rows leave only that count and a warning in the log.
 - `TimeEntriesMovedEvent` (`TIME_ENTRIES_MOVED`) carries the source, both owners, the counts and the actor, also when every row stayed, after the move's own commit (so before yours if you wrap it). **The bundle has no audit table: store it.** Task totals do not change, so no `TIME_ENTRY_IMPORTED` fires.
 - The bundle cannot know a soft-erased user: do not move time to a person from an account you have erased; anonymise it.
 

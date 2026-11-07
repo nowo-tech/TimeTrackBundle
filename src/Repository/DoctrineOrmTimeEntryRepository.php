@@ -575,12 +575,13 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.16: imported entries of exactly this source held by this owner, by keyset.
+     * Since 1.16: imported entries of exactly this source held by this owner, by keyset, locked until the move's commit: what
+     * this read returns is what the update changes, so the moved seconds are exact and a concurrent move waits.
      */
     public function findForOwnerMove(string $externalSource, ?string $fromUserId, ?string $fromPersonRef, ?array $externalIds, string $afterId, int $limit): array
     {
         $query = $this->entityManager->createQueryBuilder()
-            ->select('e.id AS id', 'e.externalId AS externalId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef')
+            ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef')
             ->from(TimeEntry::class, 'e')
             ->where('e.source = :import')
             ->andWhere('e.externalSource = :source')
@@ -596,8 +597,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             $query->andWhere('e.externalId IN (:externalIds)')->setParameter('externalIds', $externalIds);
         }
 
-        /** @var list<array{id: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}> $rows */
-        $rows = $query->getQuery()->getArrayResult();
+        /** @var list<array{id: string, externalSource: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}> $rows */
+        $rows = $query->getQuery()->setLockMode(LockMode::PESSIMISTIC_WRITE)->getArrayResult();
 
         return $rows;
     }
@@ -661,7 +662,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * Since 1.15: the name and reference on these entries of a deleted user. Clears the user too, for a database that does not
-     * enforce the foreign key. Already anonymised rows are left alone.
+     * enforce the foreign key. Since 1.16 (audit HM-L1) only rows that have not found another owner since they were read: no user and
+     * no reference, or still that user. Already anonymised rows are left alone.
      */
     public function settleDeletedOwner(array $entryIds, string $personRef, ?string $name): int
     {
@@ -674,6 +676,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->set('e.personNameSnapshot', ':name')
                 ->where('e.id IN (:ids)')
                 ->andWhere('e.anonymisedAt IS NULL')
+                ->andWhere('(e.user IS NULL AND e.personRef IS NULL) OR IDENTITY(e.user) = :deleted')
+                ->setParameter('deleted', (string) TimeEntry::formerUserIdOf($personRef))
                 ->setParameter('ref', $personRef)
                 ->setParameter('name', $name)
                 ->setParameter('ids', $ids)
@@ -685,13 +689,14 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.15: anonymises these entries. Already anonymised rows are left alone.
+     * Since 1.15: anonymises these entries of a deleted user. Since 1.16 (audit HM-L1) only rows that have not found another owner
+     * since they were read: no user and no reference. Already anonymised rows are left alone.
      */
     public function anonymiseEntries(array $entryIds, DateTimeImmutable $at): int
     {
         $changed = 0;
         foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
-            $changed += $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.id IN (:ids)')->setParameter('ids', $ids), $at);
+            $changed += $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.id IN (:ids)')->andWhere('e.user IS NULL')->andWhere('e.personRef IS NULL')->setParameter('ids', $ids), $at);
         }
 
         return $changed;

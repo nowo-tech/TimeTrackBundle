@@ -6,8 +6,10 @@ namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
 use Doctrine\Common\Collections\Order as SortDirection;
+use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
@@ -27,7 +29,7 @@ use function max;
 /**
  * Since 1.13: Doctrine ORM timesheet store (timesheets, plus the retention purge and the verify listing).
  */
-final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface, FormerOwnerTimesheetRepositoryInterface
+final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface, FormerOwnerTimesheetRepositoryInterface, LockingGuardTimesheetRepositoryInterface
 {
     /** Ids bound per `IN (...)` of the purge. */
     public const IDS_PER_QUERY = 1000;
@@ -113,9 +115,17 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
+     * Since 1.16: the same by `owner_ref` under a shared lock, inside the caller's transaction.
+     */
+    public function findGuardingForMove(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
+    {
+        return $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate, LockMode::PESSIMISTIC_READ);
+    }
+
+    /**
      * @return list<Timesheet>
      */
-    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate): array
+    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate, ?LockMode $lock = null): array
     {
         $query = $this->entityManager->createQueryBuilder()
             ->select('t')
@@ -134,7 +144,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         }
 
         /** @var list<Timesheet> $result */
-        $result = $query->getQuery()->getResult();
+        $result = ($lock instanceof LockMode ? $query->getQuery()->setLockMode($lock)->setHint(Query::HINT_REFRESH, true) : $query->getQuery())->getResult();
 
         return $result;
     }

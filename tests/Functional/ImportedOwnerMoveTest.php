@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Import\ImportedEntryOwnerMismatchException;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryClaim;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryMoveResult;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
@@ -23,7 +24,9 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
+use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
+use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -226,6 +229,97 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertSame(501, $writer->moveToPerson(self::SOURCE, $this->user, new ImportedTimeEntryPerson('p-1'))->moved);
     }
 
+    public function testAProviderMustListTheRowsScopeForTheNewUser(): void
+    {
+        $outsider = $this->createUser('outsider@example.com');
+        $member   = $this->createUser('member@example.com');
+        // The test provider answers from the board alone: `org-a` for this task, whoever asks.
+        $scopes = new FixedScopeProvider([(string) $outsider->getId() => ['org-b'], (string) $member->getId() => ['org-a'], (string) $this->user->getId() => ['org-a']]);
+        $writer = new ImportedTimeEntryWriter($this->store(), scopeProvider: $scopes);
+        $writer->upsert($this->user, $this->data('owned'));
+        $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-a'), $this->data('person'));
+
+        self::assertSame([0, 1], $this->counts($writer->moveBetweenUsers(self::SOURCE, $this->user, $outsider)));
+        self::assertSame([0, 1], $this->counts($writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($outsider, 'p-1'))));
+        $this->assertMismatchOf('person', fn (): mixed => $writer->upsert(new ImportedTimeEntryClaim($outsider, 'p-1'), $this->data('person')));
+        $this->entityManager()->clear();
+        self::assertTrue($this->reload('person')->isOwnerless());
+
+        $member = $this->entityManager()->find(AppUser::class, $member->getId());
+        self::assertInstanceOf(AppUser::class, $member);
+        self::assertSame([1, 0], $this->counts($writer->moveBetweenUsers(self::SOURCE, $this->managedUser(), $member)));
+        self::assertSame([1, 0], $this->counts($writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($member, 'p-1'))));
+    }
+
+    public function testSourcesAndIdsAreComparedExactly(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('x1'));
+        $writer->upsert($this->user, $this->data('12abc'));
+        $writer->upsert($this->user, $this->data('12'));
+        $person = new ImportedTimeEntryPerson('p-1');
+
+        self::assertSame(0, $writer->moveToPerson('clickup:DIR-1', $this->user, $person)->moved, 'another source, on any collation');
+        self::assertSame(0, $writer->moveToPerson(self::SOURCE, $this->user, $person, ['X1'])->moved, 'another id, on any collation');
+        foreach ([[12], ["x1\0"], [null], ['']] as $bad) {
+            try {
+                // @phpstan-ignore argument.type (what a host could pass)
+                $writer->moveToPerson(self::SOURCE, $this->user, $person, $bad);
+                self::fail('expected a refusal');
+            } catch (InvalidImportedTimeEntryException $exception) {
+                self::assertSame(['externalIds', 'pattern'], [$exception->field, $exception->rule]);
+            }
+        }
+        self::assertSame(1, $writer->moveToPerson(self::SOURCE, $this->user, $person, ['12'])->moved, '12 is not 12abc');
+        $this->entityManager()->clear();
+        self::assertNotNull($this->reload('12abc')->getUser());
+        self::assertNull($this->reload('12')->getUser());
+    }
+
+    public function testSettlingNeverOverwritesAnOwnerFoundMeanwhile(): void
+    {
+        $other  = $this->createUser('other@example.com');
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('to-user'));
+        $writer->upsert($this->user, $this->data('to-person'));
+        $writer->upsert($this->user, $this->data('anon-to-user'));
+        $writer->upsert($this->user, $this->data('stays'));
+        $ids        = array_map(fn (string $id): string => $this->reload($id)->getId(), ['to-user', 'to-person', 'stays']);
+        $anonymised = [$this->reload('anon-to-user')->getId()];
+        $writer->moveBetweenUsers(self::SOURCE, $this->user, $other, null, ['to-user', 'anon-to-user']);
+        $writer->moveToPerson(self::SOURCE, $this->user, new ImportedTimeEntryPerson('p-2', 'Luis'), ['to-person']);
+        $people = self::getContainer()->get(FormerPersonTimeEntries::class);
+        self::assertInstanceOf(FormerPersonTimeEntries::class, $people);
+
+        $people->anonymiseDeleted($anonymised);
+        self::assertSame(1, $people->settleDeleted($ids, FormerPersonTimeEntries::personRefOf($this->user), 'Ana'), 'only the row still with the deleted user');
+        $this->entityManager()->clear();
+
+        $owner = $this->reload('to-user')->getUser();
+        self::assertInstanceOf(AppUser::class, $owner);
+        self::assertSame($other->getId(), $owner->getId());
+        self::assertSame('p-2', $this->reload('to-person')->getPersonRef());
+        self::assertSame('Luis', $this->reload('to-person')->getPersonName());
+        self::assertFalse($this->reload('anon-to-user')->isAnonymised());
+        self::assertNotNull($this->reload('anon-to-user')->getUser());
+        self::assertNull($this->reload('stays')->getUser());
+        self::assertSame('Ana', $this->reload('stays')->getPersonName());
+    }
+
+    public function testSkippedRowsLeaveAWarningWithoutIds(): void
+    {
+        $writer = $this->writer();
+        $writer->upsert($this->user, $this->data('owned'));
+        $logger = new RecordingLogger();
+        $quiet  = new ImportedTimeEntryWriter($this->store(), logger: $logger);
+
+        $quiet->upsertMany([[new ImportedTimeEntryPerson('p-1'), $this->data('owned')]], skipMismatches: true);
+
+        self::assertCount(1, $logger->records);
+        self::assertStringNotContainsString('owned', (string) json_encode($logger->records));
+        self::assertStringContainsString('"mismatched":1', (string) json_encode($logger->records));
+    }
+
     public function testAMismatchStaysABatchFailureByDefaultAndIsAPerRowOutcomeOnRequest(): void
     {
         $writer = $this->writer();
@@ -290,6 +384,24 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
     {
         parent::setUp();
         $this->events = [];
+    }
+
+    /**
+     * @return array{int, int}
+     */
+    private function counts(ImportedTimeEntryMoveResult $result): array
+    {
+        return [$result->moved, $result->refusedScope];
+    }
+
+    private function assertMismatchOf(string $externalId, callable $call): void
+    {
+        try {
+            $call();
+            self::fail('expected a mismatch');
+        } catch (ImportedEntryOwnerMismatchException $exception) {
+            self::assertSame($externalId, $exception->externalId);
+        }
     }
 
     private function lastEvent(): TimeEntriesMovedEvent

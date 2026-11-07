@@ -26,11 +26,12 @@ interface ImportedTimeEntryOwnerRepositoryInterface
 
     /**
      * Imported entries of exactly this source held by this owner (a user id, or else a person reference with no user),
-     * not anonymised, after an id, by id.
+     * not anonymised, after an id, by id, locked until the transaction ends where the store can. A caller compares the source and
+     * ids again: a collation may fold case.
      *
      * @param list<string>|null $externalIds only these, when given
      *
-     * @return list<array{id: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}>
+     * @return list<array{id: string, externalSource: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}>
      */
     public function findForOwnerMove(string $externalSource, ?string $fromUserId, ?string $fromPersonRef, ?array $externalIds, string $afterId, int $limit): array;
 
