@@ -32,7 +32,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -554,6 +554,84 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
+     * Since 1.16: one transaction, nested into the caller's when there is one.
+     */
+    public function inOwnerMoveTransaction(callable $operation): mixed
+    {
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
+        try {
+            $result = $operation();
+            $connection->commit();
+
+            return $result;
+        } catch (Throwable $exception) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Since 1.16: imported entries of exactly this source held by this owner, by keyset, locked until the move's commit: what
+     * this read returns is what the update changes, so the moved seconds are exact and a concurrent move waits.
+     */
+    public function findForOwnerMove(string $externalSource, ?string $fromUserId, ?string $fromPersonRef, ?array $externalIds, string $afterId, int $limit): array
+    {
+        $query = $this->entityManager->createQueryBuilder()
+            ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef')
+            ->from(TimeEntry::class, 'e')
+            ->where('e.source = :import')
+            ->andWhere('e.externalSource = :source')
+            ->andWhere('e.anonymisedAt IS NULL')
+            ->andWhere('e.id > :after')
+            ->setParameter('import', TimeEntrySource::Import->value)
+            ->setParameter('source', $externalSource)
+            ->setParameter('after', $afterId)
+            ->orderBy('e.id', SortDirection::Ascending)
+            ->setMaxResults(max(1, $limit));
+        $this->whereOwner($query, $fromUserId, $fromPersonRef);
+        if ($externalIds !== null) {
+            $query->andWhere('e.externalId IN (:externalIds)')->setParameter('externalIds', $externalIds);
+        }
+
+        /** @var list<array{id: string, externalSource: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}> $rows */
+        $rows = $query->getQuery()->setLockMode(LockMode::PESSIMISTIC_WRITE)->getArrayResult();
+
+        return $rows;
+    }
+
+    /**
+     * Since 1.16: gives these entries a new owner, only while they still have the old one.
+     */
+    public function applyOwnerMove(array $entryIds, ?string $fromUserId, ?string $fromPersonRef, ?object $toUser, ?string $toPersonRef, ?string $toPersonName): int
+    {
+        $update = $this->entityManager->createQueryBuilder()->update(TimeEntry::class, 'e')->where('e.id IN (:ids)')->setParameter('ids', $entryIds);
+        $this->whereOwner($update, $fromUserId, $fromPersonRef);
+        if ($toUser !== null) {
+            $update->set('e.user', ':toUser')->set('e.personRef', 'NULL')->set('e.personNameSnapshot', 'NULL')->setParameter('toUser', $toUser);
+        } else {
+            $update->set('e.user', 'NULL')->set('e.personRef', ':toRef')->set('e.personNameSnapshot', ':toName')->setParameter('toRef', $toPersonRef)->setParameter('toName', $toPersonName);
+        }
+        $changed = (int) $update->getQuery()->execute();
+        $this->detachRemoved($entryIds);
+
+        return $changed;
+    }
+
+    private function whereOwner(QueryBuilder $query, ?string $userId, ?string $personRef): void
+    {
+        if ($userId !== null) {
+            $query->andWhere('IDENTITY(e.user) = :fromUser')->setParameter('fromUser', $userId);
+
+            return;
+        }
+        $query->andWhere('e.user IS NULL')->andWhere('e.personRef = :fromRef')->setParameter('fromRef', $personRef);
+    }
+
+    /**
      * Since 1.15: ids of the user's entries, by keyset. Reads only.
      */
     public function entryIdsOfOwner(string $userId): array
@@ -584,7 +662,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * Since 1.15: the name and reference on these entries of a deleted user. Clears the user too, for a database that does not
-     * enforce the foreign key. Already anonymised rows are left alone.
+     * enforce the foreign key. Since 1.16 (audit HM-L1) only rows that have not found another owner since they were read: no user and
+     * no reference, or still that user. Already anonymised rows are left alone.
      */
     public function settleDeletedOwner(array $entryIds, string $personRef, ?string $name): int
     {
@@ -597,6 +676,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->set('e.personNameSnapshot', ':name')
                 ->where('e.id IN (:ids)')
                 ->andWhere('e.anonymisedAt IS NULL')
+                ->andWhere('(e.user IS NULL AND e.personRef IS NULL) OR IDENTITY(e.user) = :deleted')
+                ->setParameter('deleted', (string) TimeEntry::formerUserIdOf($personRef))
                 ->setParameter('ref', $personRef)
                 ->setParameter('name', $name)
                 ->setParameter('ids', $ids)
@@ -608,13 +689,14 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.15: anonymises these entries. Already anonymised rows are left alone.
+     * Since 1.15: anonymises these entries of a deleted user. Since 1.16 (audit HM-L1) only rows that have not found another owner
+     * since they were read: no user and no reference. Already anonymised rows are left alone.
      */
     public function anonymiseEntries(array $entryIds, DateTimeImmutable $at): int
     {
         $changed = 0;
         foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
-            $changed += $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.id IN (:ids)')->setParameter('ids', $ids), $at);
+            $changed += $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('e.id IN (:ids)')->andWhere('e.user IS NULL')->andWhere('e.personRef IS NULL')->setParameter('ids', $ids), $at);
         }
 
         return $changed;

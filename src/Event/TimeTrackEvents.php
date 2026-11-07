@@ -50,6 +50,9 @@ final class TimeTrackEvents
     /** {@see TimesheetAccessCheckEvent}: deny-only check of a timesheet action (1.13). */
     public const TIMESHEET_ACCESS_CHECK = 'nowo_time_track.timesheet.access_check';
 
+    /** {@see TimeEntriesMovedEvent}: imported entries moved between a user and a person, or kept by a lock or the scope rule (1.16). */
+    public const TIME_ENTRIES_MOVED = 'nowo_time_track.time_entries.moved';
+
     /** {@see TimesheetLateEntryEvent}: an entry was written into a period locked while its timer ran (1.13). */
     public const TIMESHEET_LATE_ENTRY = 'nowo_time_track.timesheet.late_entry';
 

@@ -56,6 +56,22 @@
 
 ## Unreleased
 
+Target **1.16.0**, from **1.15.0**. **No schema change.** Audit status: Appendix HM (2026-11-07): Pass (good) / Low at `6848136`; residuals in `docs/SECURITY.md`.
+
+**New: moving imported time between owners.** `ImportedTimeEntryWriter::moveToPerson()`, `moveToUser()` and `moveBetweenUsers()` move a source's imported entries in one transaction, keeping seconds, times, task and external ids. They never delete time. Stop using remove-then-upsert, or direct SQL, for this.
+
+**What `keptLocked` means when your host shows no period locks.** A row in a locked or submitted timesheet period, of its current owner or of the new user, does not move and counts in `ImportedTimeEntryMoveResult::$keptLocked`. With timesheets off nothing is ever locked and it is always 0. Once timesheets are on it can be above 0 even if your UI shows no locks, for example through `timesheets.auto_lock_after_days`: those hours stay with their current owner, in reports too, and the move still succeeds for the other rows. Nothing is lost and no exception is thrown. Read the count, or `TimeEntriesMovedEvent::getKeptCount()`, and tell the manager whose hours stayed: they move only once the period is open again (reopened if locked or approved, withdrawn or rejected if submitted) and the move is run again.
+
+**`$refusedScope`** counts rows whose `scope_key` is not exactly the target's, a null one included: they stay too, and the scope is never rewritten. Back-fill `scope_key` on existing rows before relying on a move: run the back-fill command, which needs a scope provider and skips ownerless rows. A sync does not fill the scope of a row that has not changed.
+
+**Scope provider: `scopesFor()` must be truthful.** With `timesheets.scope_provider`, a move or a claim to a user also needs the row's scope among `scopesFor($user)`, and it is refused otherwise: a provider that answers `scopeKeyForTask()` from the task alone says where the task is, not whether this user belongs there. **With no scope provider this check does not run:** the row's scope must equal the scope you pass, so the host vouches for it, and a null scope with no scope passed moves across anything, because such a row has no tenant. Authorise the target user yourself.
+
+**Mismatch as a per-row outcome (opt-in).** `upsertMany($rows, skipMismatches: true)` gives a row naming another owner the new outcome `ImportedTimeEntryOutcome::Mismatch`, writes nothing for it and writes the others; `ImportedTimeEntryBatchResult::$mismatched` counts them. The default stays a refusal of the whole batch (`ImportedEntryOwnerMismatchException`, with `$externalId`), and a `match` on the outcome only meets the new case if you pass the flag. Use it when moves can leave rows behind: a kept row mismatches the next sync.
+
+**Custom stores:** the moves need `ImportedTimeEntryOwnerRepositoryInterface`; without it they throw `LogicException`, and nothing else changes. Store `TIME_ENTRIES_MOVED`: the bundle has no audit table.
+
+**`FormerPersonSnapshotListener`:** its `postFlush` tag now has priority 1000, so a host `postFlush` listener that flushes cannot cancel the settling unless it has a higher priority. It settles only if the user row is really gone, so a `remove($user)` inside another listener's `onFlush`, with nothing else to flush, changes nothing on that user's rows. Calling `remove()` inside a flush stays unsupported.
+
 ## To 1.15.0
 
 From **1.14.0**:

@@ -239,14 +239,13 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
   `imports.max_entry_seconds` (31 days by default), start year ≥ 1970 and end at most one day after now (since 1.12;
   `too_old` / `future`). The title is cleaned to one line and cut to 255; the description
   is cleaned (controls and bidi overrides stripped, line breaks kept) and **never truncated**.
-- **The owner never changes**: re-associating someone's time is `removeForUser()` / `remove()` then `upsert()` for
-  the new user (the host audits it). Since 1.15 an entry of a person with no account may be claimed explicitly.
+- **An upsert never changes the owner**: re-associating someone's time is a move (since 1.16, [below](#moving-imported-time-between-owners-116)), which deletes nothing. An entry of a person with no account may also be claimed explicitly.
 - **A person with no account (1.15):** `$writer->upsertForPerson(new ImportedTimeEntryPerson($ref, $name, $scopeKey), $data)`.
   See [Entries with no user](#entries-with-no-user-115).
 - Imported entries are **read-only** (`TimeEntry::isReadOnly()`, `canEditEntry()` always false) and are not live
   (`TimeEntrySource::isLive()`): keep them out of overlap checks, registers and clock-in rules
   (`findLiveByUserAndPeriod()`, `TimeEntryListQueryEvent::setIncludeImported(false)`).
-- **`removeForUser()` is for re-association only** (remove, then upsert for the new owner). Never call it for a deleted or
+- **`removeForUser()` deletes time: since 1.16 use a move to re-associate it.** Never call it for a deleted or
   erased account: it deletes tracked time. Since 1.15 use [Entries with no user](#entries-with-no-user-115).
 - **Deleting** imported time is an explicit manager action: one entry through `ImportedTimeEntryDeleter` (needs a
   `delete_imported` grant on `TimeEntryAccessCheckEvent`), or in bulk through `remove*()` after the host's own check.
@@ -306,10 +305,10 @@ $rows = $people->export($personId);
 | a user or a claim | the same user | update |
 | a user or a claim | another user | `ImportedEntryOwnerMismatchException` |
 | a plain user | a former person or a deleted user | mismatch: taking one must be explicit |
-| a claim, with the entry's reference and exactly its scope | a former person | claim: the user owns it, the snapshot goes |
+| a claim, with the entry's reference and exactly its scope (with a scope provider, also among `scopesFor()` of the user) | a former person | claim: the user owns it, the snapshot goes |
 | a claim, with the entry's reference and exactly its scope | a deleted user | the same id: back to them; another: mismatch |
 | a claim with another reference or scope, or with a scope on an entry that has none | an ownerless entry | mismatch |
-| a person | a user | mismatch: remove, then upsert |
+| a person | a user | mismatch: use `moveToPerson()` |
 | a person, same reference and scope | that person | update, name included |
 | a person, another reference or scope | a former person | mismatch |
 | a person | a deleted user | `Unchanged`, nothing written |
@@ -362,6 +361,26 @@ drift from the remote. To take a remote change, a manager removes the entry and 
   tenant isolation need them, and so do `billable`, `source`, `external_source` (which can hold a directory id) and `created_at`. Task totals stay. Timesheets
   keep `owner_ref` and `totals.byTask`, which can re-link task time to an id. The hash is unsalted: whoever holds the remote id can recompute it, and a small
   id space can be enumerated (a 6-digit id took 0.36 s in the audit). An explicit manager removal of an anonymised row forgets it, and a later re-sync creates it again with the name.
+
+### Moving imported time between owners (1.16)
+
+```php
+$result = $writer->moveToPerson($source, $user, new ImportedTimeEntryPerson($personId, $name, $tenant), actorId: $managerId); // unmapped
+$result = $writer->moveToUser($source, new ImportedTimeEntryClaim($user, $personId, $tenant), actorId: $managerId);           // mapped
+$result = $writer->moveBetweenUsers($source, $previous, $user, $tenant, actorId: $managerId);                                 // remapped
+$result = $writer->moveToPerson($source, $user, $person, ['clickup-1', 'clickup-2']);                                         // only these rows
+// $result->moved, keptLocked, refusedScope, secondsMoved
+```
+
+- **Never deletes.** Only the owner columns change: seconds, times, task, description, external id and scope stay. One transaction, nested into yours when there is one. Bulk statements, no flush; loaded rows of a move are detached, so read them again, and a change you had pending on one is not written. The rows being moved are locked until the commit, so a concurrent move or sync of those rows waits.
+- Only `source = import` rows of exactly that source that the `from` owner holds now, and never an anonymised one.
+- **Period lock:** a row in a locked or submitted period, of its current owner or of the new user, stays and counts in `keptLocked`. There is no exception. With timesheets off it is always 0.
+- **Scope, the claim's rule:** the row's scope must be exactly the target's, a null one included (the scope provider's for that task when it gives one, else the one you pass), and **with a scope provider it must be among `scopesFor()` of the new user**. Otherwise the row stays and counts in `refusedScope`. With no provider you vouch for the scope you pass, and a row with no scope moves when you pass none. A deleted user's reference (`user:<id>`) only goes back to that same id.
+- **Source and ids are compared exactly**, also on a case-insensitive collation. `$externalIds` must be strings of the id pattern: anything else throws `InvalidImportedTimeEntryException` (`externalIds`, `pattern`).
+- **A move to a person writes the name only on the rows it moves,** so one reference can hold two names.
+- **A row that stayed mismatches the next sync's row for the new owner:** use `upsertMany($rows, skipMismatches: true)`, and read `$result->mismatched`: skipped rows leave only that count and a warning in the log.
+- `TimeEntriesMovedEvent` (`TIME_ENTRIES_MOVED`) carries the source, both owners, the counts and the actor, also when every row stayed, after the move's own commit (so before yours if you wrap it). **The bundle has no audit table: store it.** Task totals do not change, so no `TIME_ENTRY_IMPORTED` fires.
+- The bundle cannot know a soft-erased user: do not move time to a person from an account you have erased; anonymise it.
 
 ### What the host must do
 

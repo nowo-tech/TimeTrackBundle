@@ -9,6 +9,7 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
@@ -120,6 +121,10 @@ final class FunctionalKernel extends Kernel
             // Since 1.15: a host's replacement store with no optional capability.
             $container->services()->set(TimeEntryRepositoryInterface::class, InMemoryTimeEntryRepository::class)->public();
         }
+        // Since 1.16: host Doctrine listeners a test switches on (off by default).
+        $container->services()->set(HostFlushListener::class)->public()
+            ->tag('doctrine.event_listener', ['event' => 'onFlush', 'priority' => 2000])
+            ->tag('doctrine.event_listener', ['event' => 'postFlush', 'priority' => 100]);
         // Since 1.14: a recording logger (public) so tests can scan log records for personal data.
         $container->services()->set('logger', RecordingLogger::class)->public();
         // Since 1.13: approver provider of the timesheet variants (public: tests configure it per case).

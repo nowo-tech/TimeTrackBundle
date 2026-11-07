@@ -52,7 +52,7 @@ $owner  = $user instanceof UserInterface
     : new ImportedTimeEntryPerson($person->getId(), $person->isAnonymised() ? null : $person->getName(), $scopeKey);
 ```
 
-Rows go through `ImportedTimeEntryWriter::upsertMany([[$owner, $data], ...])`. See [Entries with no user](USAGE.md#entries-with-no-user-115).
+Rows go through `ImportedTimeEntryWriter::upsertMany([[$owner, $data], ...])`. When a person is unmapped or remapped, move what the source holds with `moveToPerson()`, `moveToUser()` or `moveBetweenUsers()` (since 1.16): remove-then-upsert deletes time. See [Entries with no user](USAGE.md#entries-with-no-user-115).
 
 ## Entries without a timer (1.14)
 

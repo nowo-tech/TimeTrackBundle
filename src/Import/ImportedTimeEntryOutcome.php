@@ -18,4 +18,9 @@ enum ImportedTimeEntryOutcome: string
      * built from the data (never persisted).
      */
     case Locked = 'locked';
+    /**
+     * Since 1.16, only with `upsertMany($rows, skipMismatches: true)`: skipped, nothing written: the row names another owner
+     * than the stored entry's. The result's entry is the stored one.
+     */
+    case Mismatch = 'mismatch';
 }

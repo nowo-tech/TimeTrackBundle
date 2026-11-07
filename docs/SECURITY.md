@@ -12,6 +12,7 @@
 - [Task effort on the client API (1.13)](#task-effort-on-the-client-api-113)
 - [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
+- [Moving imported time between owners (1.16)](#moving-imported-time-between-owners-116)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -210,6 +211,24 @@ Audit status: Appendix HA (2026-11-06, PR #73): first audit at `39c0b06` Fail / 
 | `closed_by` forged | `start()` drops the reserved key |
 | Malicious `privacy.url` opened by a client | `ClientPrivacyNormalizer` parses it and sends null unless it is absolute `http(s)` with a real host, no credentials, blanks, controls or backslashes; the warning carries no value |
 | A host's entry store breaks every delete | The service fails only when used; the listener does nothing without the capability |
+
+## Moving imported time between owners (1.16)
+
+Audit status: Appendix HM (2026-11-07, PR #74): first audit at `30c00f9` Pass (conditional) / Medium; fixes re-verified at `6848136`: **Pass (good) / Low**, no open Critical, High or Medium. Residuals (Low): on MySQL 8 a sync into the moved source, or one next to it in sort order, can wait for the whole move or fail with a deadlock, with no time lost and the next run repeating it, so run big moves outside sync windows; on SQLite without foreign keys, `anonymise_on_user_delete` does not reach rows that were not loaded. A move refreshes managed `Timesheet` entities, so flush pending changes to them first.
+
+| Threat | Control |
+| --- | --- |
+| Re-associating time deletes it | Moves only update the owner columns; there is no delete statement on that path |
+| A move changes a closed period | A row in a locked or submitted period of its owner, or of the new user, stays and is counted, also for a deleted user's timesheets by `owner_ref` |
+| A move or a claim crosses tenants | The row's scope must be exactly the target's, null included, compared in PHP; the scope is never rewritten. With a scope provider it must also be among `scopesFor()` of the new user, so this is only as strong as that method. **With no provider the host vouches for the scope it passes,** and a null scope moves when none is passed: such a row has no tenant. A deleted user's reference only goes back to that id. Source, ids and references compare case-sensitively in PHP |
+| A crafted id list moves other rows | Ids must be strings of the id pattern, so a cast such as `12` matching `12abc` or a trailing NUL cannot reach the database |
+| A move misses a period locked meanwhile | The guard reads timesheets under a shared lock inside the move's transaction, so on MySQL and MariaDB such a lock is seen or waits for the move. A custom timesheet store without `LockingGuardTimesheetRepositoryInterface` reads as usual |
+| A half-done move | One transaction. The rows are read with a write lock, so what is read is what changes and `secondsMoved` is exact; each `UPDATE` also requires the old owner |
+| Settling overwrites a move | After a user's delete, settling touches only rows with no owner and no reference, or still with that user |
+| Who moved it is unknown | `TimeEntriesMovedEvent` carries owners, counts and actor, and the log counts and whether an actor was given. **Residual:** `$actorId` is optional and the bundle has no audit table, so hosts store the event. The host authorises every call |
+| A soft-erased user gets a person back | The bundle cannot know it; the host must not call a move for such an account |
+| `skipMismatches` hides a refusal | Opt-in; each skipped row has its own outcome and a count, and the log gets a warning with the count. The default still refuses the batch |
+| A host listener cancels or misdirects settling | `postFlush` priority 1000 (HA-L18), and settling only if the user row is gone (HA-L19). A host listener with a higher priority that flushes can still cancel it, and `remove()` inside a flush stays unsupported |
 
 ## Secrets & cryptography
 

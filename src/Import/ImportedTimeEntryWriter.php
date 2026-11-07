@@ -10,6 +10,7 @@ use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\WriteKind;
+use Nowo\TimeTrackBundle\Event\TimeEntriesMovedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntriesRemovedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryImportedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
@@ -17,11 +18,13 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryOwnerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -29,7 +32,11 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
+use function array_chunk;
+use function array_map;
 use function count;
+use function in_array;
+use function is_string;
 use function mb_check_encoding;
 use function mb_substr;
 use function preg_match;
@@ -40,7 +47,7 @@ use function strtolower;
 /**
  * Since 1.11: writes imported time entries ({@see TimeEntrySource::Import}), idempotently by
  * (externalSource, externalId). It never starts or stops a timer and never fires timer events; it never moves an entry
- * to another owner (remove, then upsert). The host authorises every call (who may import or delete).
+ * to another owner by an upsert (since 1.16 use {@see self::moveToPerson()} and its siblings, which delete nothing). The host authorises every call (who may import or delete).
  *
  * Since 1.15 a row may name a person with no user account instead of a user ({@see ImportedTimeEntryPerson}): the entry
  * has no owner and shows under the person's name. A user takes it only through an explicit
@@ -83,9 +90,13 @@ final readonly class ImportedTimeEntryWriter
     /** Tolerance between the duration and the span start → end (the source rounds). */
     private const SPAN_TOLERANCE_SECONDS = 60;
 
-    private const TRANSITION_KEEP   = 'keep';
-    private const TRANSITION_CLAIM  = 'claim';
-    private const TRANSITION_FROZEN = 'frozen';
+    private const TRANSITION_KEEP     = 'keep';
+    private const TRANSITION_CLAIM    = 'claim';
+    private const TRANSITION_FROZEN   = 'frozen';
+    private const TRANSITION_MISMATCH = 'mismatch';
+
+    /** Since 1.16: rows one read of a move handles. */
+    private const MOVE_BATCH = 500;
 
     private ImportedTimeEntryRepositoryInterface $repository;
 
@@ -141,9 +152,12 @@ final readonly class ImportedTimeEntryWriter
      * Since 1.15 a row may name a person instead of a user ({@see self::upsertForPerson()}), or claim for a user
      * ({@see ImportedTimeEntryClaim}).
      *
+     * Since 1.16 `$skipMismatches` makes a row naming another owner a per-row outcome ({@see ImportedTimeEntryOutcome::Mismatch},
+     * nothing written for it) instead of refusing the whole batch with {@see ImportedEntryOwnerMismatchException}.
+     *
      * @param list<array{0: ImportedTimeEntryClaim|ImportedTimeEntryPerson|UserInterface, 1: ImportedTimeEntryData}> $rows
      */
-    public function upsertMany(array $rows): ImportedTimeEntryBatchResult
+    public function upsertMany(array $rows, bool $skipMismatches = false): ImportedTimeEntryBatchResult
     {
         if (count($rows) > self::MAX_BATCH) {
             throw new InvalidImportedTimeEntryException('rows', 'max_batch');
@@ -163,7 +177,7 @@ final readonly class ImportedTimeEntryWriter
         }
 
         try {
-            return $this->write($valid);
+            return $this->write($valid, $skipMismatches);
         } catch (UniqueConstraintViolationException $exception) {
             // A concurrent run inserted one of these identities between our read and our flush. Nothing was written
             // (the flush rolled back). Without a usable store (no registry reset it, or a host transaction is still
@@ -182,14 +196,14 @@ final readonly class ImportedTimeEntryWriter
                 }, $data];
             }
 
-            return $this->write($retry);
+            return $this->write($retry, $skipMismatches);
         }
     }
 
     /**
      * @param list<array{0: ImportedTimeEntryClaim|ImportedTimeEntryPerson|UserInterface, 1: ImportedTimeEntryData}> $rows validated rows
      */
-    private function write(array $rows): ImportedTimeEntryBatchResult
+    private function write(array $rows, bool $skipMismatches): ImportedTimeEntryBatchResult
     {
         $plan = [];
         foreach ($rows as [$owner, $data]) {
@@ -197,13 +211,21 @@ final readonly class ImportedTimeEntryWriter
             $scopeKey = $user instanceof UserInterface ? ($this->scopeProvider?->scopeKeyForTask($user, $data->taskId, $data->boardId) ?? ($owner instanceof ImportedTimeEntryClaim ? $owner->scopeKey : null)) : null;
             $existing = $this->repository->findByExternal($data->externalSource, $data->externalId)
                 ?? $this->repository->findByExternal($data->externalSource, TimeEntry::anonymisedExternalId($data->externalSource, $data->externalId));
-            $plan[] = [$owner, $user, $scopeKey, $data, $existing, $existing instanceof TimeEntry ? $this->transition($existing, $owner, $user, $scopeKey, $data->externalId) : null];
+            try {
+                $transition = $existing instanceof TimeEntry ? $this->transition($existing, $owner, $user, $scopeKey, $data->externalId) : null;
+            } catch (ImportedEntryOwnerMismatchException $exception) {
+                if (!$skipMismatches) {
+                    throw $exception;
+                }
+                $transition = self::TRANSITION_MISMATCH;
+            }
+            $plan[] = [$owner, $user, $scopeKey, $data, $existing, $transition];
         }
 
         $results = [];
         $write   = [];
         $events  = [];
-        $counts  = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'locked' => 0];
+        $counts  = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'locked' => 0, 'mismatched' => 0];
         foreach ($plan as [$owner, $user, $scopeKey, $data, $existing, $transition]) {
             if (!$existing instanceof TimeEntry) {
                 $entry = $owner instanceof ImportedTimeEntryPerson ? TimeEntry::importedForPerson($owner, $data) : TimeEntry::imported($user, $data)->assignScopeKey($scopeKey);
@@ -216,6 +238,11 @@ final readonly class ImportedTimeEntryWriter
                 $results[] = new ImportedTimeEntryResult($entry, ImportedTimeEntryOutcome::Created);
                 $events[]  = new TimeEntryImportedEvent($entry, ImportedTimeEntryOutcome::Created);
                 ++$counts['created'];
+                continue;
+            }
+            if ($transition === self::TRANSITION_MISMATCH) {
+                $results[] = new ImportedTimeEntryResult($existing, ImportedTimeEntryOutcome::Mismatch);
+                ++$counts['mismatched'];
                 continue;
             }
             $previousSeconds = $existing->getDurationSeconds();
@@ -256,10 +283,14 @@ final readonly class ImportedTimeEntryWriter
             $this->eventDispatcher?->dispatch($event, TimeTrackEvents::TIME_ENTRY_IMPORTED);
         }
         if ($write !== []) {
-            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked']]);
+            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked'], 'mismatched' => $counts['mismatched']]);
+        }
+        if ($counts['mismatched'] > 0) {
+            // Audit HM-L5: a skipped row is a refusal; counts only, never ids.
+            $this->logger->warning('TimeTrack imported entries skipped: another owner holds them.', ['bundle' => 'nowo_time_track', 'mismatched' => $counts['mismatched']]);
         }
 
-        return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged'], $counts['locked']);
+        return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged'], $counts['locked'], $counts['mismatched']);
     }
 
     /**
@@ -320,7 +351,8 @@ final readonly class ImportedTimeEntryWriter
     }
 
     /**
-     * Removes every imported entry of the source owned by the user: **re-association only** (remove, then upsert). Never for
+     * Removes every imported entry of the source owned by the user: an explicit manager action. To re-associate time, since 1.16
+     * use {@see self::moveToPerson()} and its siblings, which delete nothing. Never for
      * a deleted or erased account: tracked time is not lost, so use
      * {@see FormerPersonTimeEntries} (`release()`, `anonymiseUser()`), or the `ON DELETE SET
      * NULL`. Since 1.15 it respects the period lock like the other removals (1.13 and 1.14 skipped it for erasure).
@@ -357,6 +389,52 @@ final readonly class ImportedTimeEntryWriter
     public function removeForSource(string $externalSource, ?string $actorId = null): int
     {
         return $this->removeScope(ImportedTimeEntryScope::source($this->checkSource($externalSource)), $actorId);
+    }
+
+    /**
+     * Since 1.16: moves the source's imported entries from a user to a person, who holds them with no owner. Never deletes
+     * time: seconds, times, task and external id stay. One transaction, nested into the caller's when there is one; bulk
+     * statements, no flush, and loaded rows of the move are detached. The host authorises the call.
+     *
+     * A row in a locked or submitted period of the user stays ({@see ImportedTimeEntryMoveResult::$keptLocked}). A row whose scope
+     * is not exactly the person's stays ({@see ImportedTimeEntryMoveResult::$refusedScope}): the scope is never rewritten. A row
+     * that stays will mismatch a later person row: use `upsertMany($rows, skipMismatches: true)`.
+     *
+     * @param list<string>|null $externalIds only these entries, when given
+     *
+     * @throws InvalidImportedTimeEntryException when the source or the person break a rule (nothing written)
+     */
+    public function moveToPerson(string $externalSource, UserInterface $from, ImportedTimeEntryPerson $to, ?array $externalIds = null, ?string $actorId = null): ImportedTimeEntryMoveResult
+    {
+        return $this->move($externalSource, $from, null, null, $this->validatePerson($to), $to->scopeKey, $externalIds, $actorId);
+    }
+
+    /**
+     * Since 1.16: moves the source's imported entries of the claim's person to its user, the same way as {@see self::moveToPerson()}.
+     * The claim's rules apply per row: a row whose scope is not exactly the target's (the scope provider's for that task, else
+     * the claim's), or with a provider is not among `scopesFor()` of the new owner, is refused and stays, and a deleted user's reference only goes back to that same id. A row in a locked or
+     * submitted period, of the deleted user or of the new owner, stays.
+     *
+     * @param list<string>|null $externalIds only these entries, when given
+     *
+     * @throws InvalidImportedTimeEntryException when the source breaks a rule (nothing written)
+     */
+    public function moveToUser(string $externalSource, ImportedTimeEntryClaim $to, ?array $externalIds = null, ?string $actorId = null): ImportedTimeEntryMoveResult
+    {
+        return $this->move($externalSource, null, $to->personRef, $to->user, null, $to->scopeKey, $externalIds, $actorId);
+    }
+
+    /**
+     * Since 1.16: moves the source's imported entries from one user to another, the same way as {@see self::moveToUser()}.
+     *
+     * @param string|null $scopeKey the new owner's scope, used when `timesheets.scope_provider` gives none
+     * @param list<string>|null $externalIds only these entries, when given
+     *
+     * @throws InvalidImportedTimeEntryException when the source breaks a rule (nothing written)
+     */
+    public function moveBetweenUsers(string $externalSource, UserInterface $from, UserInterface $to, ?string $scopeKey = null, ?array $externalIds = null, ?string $actorId = null): ImportedTimeEntryMoveResult
+    {
+        return $this->move($externalSource, $from, null, $to, null, $scopeKey, $externalIds, $actorId);
     }
 
     /**
@@ -419,6 +497,104 @@ final readonly class ImportedTimeEntryWriter
             $data->billable,
             ImportedDescriptionSanitizer::clean($data->description),
         );
+    }
+
+    /**
+     * @param list<string>|null $externalIds
+     */
+    private function move(string $externalSource, ?UserInterface $fromUser, ?string $fromRef, ?UserInterface $toUser, ?ImportedTimeEntryPerson $toPerson, ?string $toScope, ?array $externalIds, ?string $actorId): ImportedTimeEntryMoveResult
+    {
+        $this->checkSource($externalSource);
+        foreach ($externalIds ?? [] as $externalId) {
+            if (!is_string($externalId) || preg_match(self::ID_PATTERN, $externalId) !== 1) {
+                throw new InvalidImportedTimeEntryException('externalIds', 'pattern');
+            }
+        }
+        if (!$this->repository instanceof ImportedTimeEntryOwnerRepositoryInterface) {
+            throw new LogicException('Moving imported entries requires a repository implementing ImportedTimeEntryOwnerRepositoryInterface.');
+        }
+        $store      = $this->repository;
+        $fromUserId = $fromUser instanceof UserInterface ? UserIdResolver::getId($fromUser) : null;
+        $toUserId   = $toUser instanceof UserInterface ? UserIdResolver::getId($toUser) : null;
+        if ($fromUserId !== null && $fromUserId === $toUserId) {
+            return new ImportedTimeEntryMoveResult();
+        }
+        $formerUser = TimeEntry::formerUserIdOf($fromRef);
+        $refuseAll  = $formerUser !== null && $formerUser !== $toUserId;
+        $chunks     = $externalIds === null ? [null] : array_chunk($externalIds, self::MOVE_BATCH);
+        $tenants    = $toUser instanceof UserInterface ? $this->tenantsOf($toUser) : null;
+
+        // @igor-ignore - I/O delegate (repository / writer call); no worker state.
+        $result = $store->inOwnerMoveTransaction(function () use ($store, $externalSource, $fromUserId, $fromRef, $toUser, $toUserId, $toPerson, $toScope, $chunks, $refuseAll, $tenants): ImportedTimeEntryMoveResult {
+            $total = new ImportedTimeEntryMoveResult();
+            foreach ($chunks as $chunk) {
+                $after = '';
+                // Until a read finds nothing: a locking read that waited can return fewer rows than its limit.
+                do {
+                    $rows    = $store->findForOwnerMove($externalSource, $fromUserId, $fromRef, $chunk, $after, self::MOVE_BATCH);
+                    $move    = [];
+                    $seconds = 0;
+                    $kept    = 0;
+                    $refused = 0;
+                    foreach ($rows as $row) {
+                        $after = $row['id'];
+                        // A MySQL collation may fold case, and a cast may match more: everything named is compared here too.
+                        if ($row['externalSource'] !== $externalSource || ($chunk !== null && !in_array($row['externalId'], $chunk, true)) || ($fromRef !== null && $row['personRef'] !== $fromRef)) {
+                            // @codeCoverageIgnoreStart
+                            continue;
+                            // @codeCoverageIgnoreEnd
+                        }
+                        $scope = $toPerson instanceof ImportedTimeEntryPerson ? $toScope : ($toUser instanceof UserInterface ? $this->scopeProvider?->scopeKeyForTask($toUser, $row['taskId'], $row['boardId']) : null) ?? $toScope;
+                        if ($refuseAll || $row['scopeKey'] !== $scope || ($tenants !== null && !in_array($row['scopeKey'], $tenants, true))) {
+                            ++$refused;
+                            continue;
+                        }
+                        if ($this->isMoveLocked($fromUserId, $fromRef, $toUserId, $row['scopeKey'], $row['startedAt'])) {
+                            ++$kept;
+                            continue;
+                        }
+                        $move[] = $row['id'];
+                        $seconds += (int) $row['seconds'];
+                    }
+                    $moved = $move === [] ? 0 : $store->applyOwnerMove($move, $fromUserId, $fromRef, $toUser, $toPerson?->ref, $toPerson?->name);
+                    $total = $total->merge(new ImportedTimeEntryMoveResult($moved, $kept, $refused, $seconds));
+                } while ($rows !== []);
+            }
+
+            return $total;
+        });
+
+        if ($result->moved > 0 || $result->keptLocked > 0 || $result->refusedScope > 0) {
+            $this->eventDispatcher?->dispatch(new TimeEntriesMovedEvent($externalSource, $fromUserId, $fromRef, $toUserId, $toPerson?->ref, $result, $actorId), TimeTrackEvents::TIME_ENTRIES_MOVED);
+            $this->logger->info('TimeTrack imported entries moved.', ['bundle' => 'nowo_time_track', 'moved' => $result->moved, 'kept' => $result->keptLocked, 'refused' => $result->refusedScope, 'has_actor' => $actorId !== null]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Since 1.16 (audit HM-M1): the tenants a user belongs to, by the scope provider; null without one, when the host vouches
+     * for the scope it passes. A provider's task answer says where the task is, not whether this user is there.
+     *
+     * @return list<string>|null
+     */
+    private function tenantsOf(UserInterface $user): ?array
+    {
+        return $this->scopeProvider instanceof TimesheetScopeProviderInterface
+            ? array_map(static fn (TimesheetScope $scope): string => $scope->key, $this->scopeProvider->scopesFor($user))
+            : null;
+    }
+
+    /** Since 1.16: whether the period lock keeps a row where it is, for its current owner or for the new user. */
+    private function isMoveLocked(?string $fromUserId, ?string $fromRef, ?string $toUserId, ?string $scopeKey, DateTimeImmutable $startedAt): bool
+    {
+        $guard = $this->periodLockGuard;
+        if (!$guard instanceof PeriodLockGuard || !$guard->isEnabled()) {
+            return false;
+        }
+
+        return $guard->isMoveBlocked($fromUserId, $fromRef, $scopeKey, $startedAt)
+            || ($toUserId !== null && $guard->isMoveBlocked($toUserId, null, $scopeKey, $startedAt));
     }
 
     private function removeScope(ImportedTimeEntryScope $scope, ?string $actorId): int
@@ -485,6 +661,12 @@ final readonly class ImportedTimeEntryWriter
         if (!$owner instanceof ImportedTimeEntryClaim || $owner->personRef !== $personRef
             || ($formerUser !== null && $formerUser !== UserIdResolver::getId($owner->user))
             || $storedScope !== $scopeKey) {
+            throw new ImportedEntryOwnerMismatchException($externalId);
+        }
+
+        // Audit HM-M1: the provider's task answer says where the task is, not whether this user is there.
+        $tenants = $this->tenantsOf($owner->user);
+        if ($tenants !== null && !in_array($storedScope, $tenants, true)) {
             throw new ImportedEntryOwnerMismatchException($externalId);
         }
 

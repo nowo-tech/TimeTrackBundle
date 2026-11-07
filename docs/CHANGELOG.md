@@ -47,6 +47,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Audit status: Appendix HM (2026-11-07): Pass (good) / Low at `6848136`; residuals in `docs/SECURITY.md`. No schema change.
+
+### Added
+
+- `ImportedTimeEntryWriter::moveToPerson()`, `moveToUser()`, `moveBetweenUsers()`: move a source's imported entries between owners in one transaction, never deleting time. Locked rows stay (`keptLocked`), rows whose scope is not exactly the target's stay (`refusedScope`). `ImportedTimeEntryMoveResult`, `TimeEntriesMovedEvent` (`TimeTrackEvents::TIME_ENTRIES_MOVED`), `ImportedTimeEntryOwnerRepositoryInterface` and `LockingGuardTimesheetRepositoryInterface` (optional store capabilities; the Doctrine stores have them). With a scope provider a move or a claim also needs the row's scope among `scopesFor()` of the new owner.
+- `upsertMany($rows, skipMismatches: true)`: a row naming another owner gets `ImportedTimeEntryOutcome::Mismatch` and the rest are written; `ImportedTimeEntryBatchResult::$mismatched`. The default is unchanged.
+
+### Fixed
+
+- A claim (`upsert`, `upsertMany`) with a scope provider is refused unless the entry's scope is among `scopesFor()` of the user: the provider's task answer says where the task is, not whether this user is there (audit HM-M1).
+- HA-L18: the listener's `postFlush` runs first (priority 1000), so a host `postFlush` that flushes cannot cancel the settling.
+- HA-L19: the listener settles only if the user row is gone, so a `remove($user)` in another listener's `onFlush`, with nothing else to flush, leaves that living user's rows alone.
+- HM-L1: settling after a user's delete leaves alone a row that found another owner meanwhile.
+
 ## [1.15.0] - 2026-11-06
 
 Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).
