@@ -6,7 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
 use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -83,6 +83,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         if ($conn->getDatabasePlatform() instanceof SQLitePlatform) {
             self::markTestSkipped('The in-memory database has no second connection; SQLite has no snapshot reads across writers here.');
         }
+        $target = $this->createUser('target@example.com');
         $writer = $this->writer();
         $writer->upsert($this->user, $this->data('one', '2026-01-01 10:00:00'));
         $writer->upsert($this->user, $this->data('two', '2026-01-01 12:00:00'));
@@ -108,8 +109,9 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
                 try {
                     $other->executeStatement('UPDATE time_track_timesheets SET locked_at = ?, lock_reason = ? WHERE id = ?', ['2026-01-10 09:00:00', 'manual', $id]);
                     $committed = true;
-                } catch (DbalException) {
-                    // The move's shared lock holds it off until the move ends.
+                } catch (DriverException $exception) {
+                    // The move's shared lock holds it off until the move ends; anything else is a broken test.
+                    self::assertStringContainsStringIgnoringCase('lock', $exception->getMessage());
                 }
             }
 
@@ -121,9 +123,10 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         self::assertInstanceOf(PeriodLockGuard::class, $guard);
         $em->clear();
 
-        $result = (new ImportedTimeEntryWriter($repository, periodLockGuard: $guard, scopeProvider: $scopes))->moveToPerson(self::SOURCE, $this->managedUser(), new ImportedTimeEntryPerson('p-1', 'Ana', ''));
+        $result = (new ImportedTimeEntryWriter($repository, periodLockGuard: $guard, scopeProvider: $scopes))->moveBetweenUsers(self::SOURCE, $this->managedUser(), $this->managedTarget($target));
         $other->close();
 
+        self::assertSame(2, $calls, 'the provider was asked for both rows');
         // Either the lock waited, so both rows left before it, or the second row saw it and stayed.
         self::assertSame($committed ? [1, 1] : [2, 0], [$result->moved, $result->keptLocked]);
     }
@@ -135,6 +138,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
             self::markTestSkipped('The in-memory database has no second connection.');
         }
         $thief  = $this->createUser('thief@example.com');
+        $target = $this->createUser('target@example.com');
         $writer = $this->writer();
         $start  = new DateTimeImmutable('2026-02-02 10:00:00');
         foreach (['task-1', 'task-2'] as $task) {
@@ -155,8 +159,9 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
             if (++$calls === 1) {
                 try {
                     $other->executeStatement('UPDATE time_track_entries SET user_id = ? WHERE task_id <> ?', [$thief->getId(), $taskId]);
-                } catch (DbalException) {
-                    // The move's lock holds it off.
+                } catch (DriverException $exception) {
+                    // The move's lock holds it off; anything else is a broken test.
+                    self::assertStringContainsStringIgnoringCase('lock', $exception->getMessage());
                 }
             }
 
@@ -166,10 +171,11 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
         $this->entityManager()->clear();
 
-        $result = (new ImportedTimeEntryWriter($repository, scopeProvider: $scopes))->moveToPerson(self::SOURCE, $this->managedUser(), new ImportedTimeEntryPerson('p-1', 'Ana', ''));
+        $result = (new ImportedTimeEntryWriter($repository, scopeProvider: $scopes))->moveBetweenUsers(self::SOURCE, $this->managedUser(), $this->managedTarget($target));
         $other->close();
 
         self::assertSame($result->moved * 3600, $result->secondsMoved);
+        self::assertSame(2, $calls, 'the provider was asked for both rows');
     }
 
     public function testASubmittedPeriodAlsoKeepsARowOfADeletedUser(): void
@@ -184,6 +190,14 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         $this->entityManager()->clear();
 
         self::assertSame(1, $writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($this->managedUser(), $reference, ''))->keptLocked);
+    }
+
+    private function managedTarget(AppUser $target): AppUser
+    {
+        $user = $this->entityManager()->find(AppUser::class, $target->getId());
+        self::assertInstanceOf(AppUser::class, $user);
+
+        return $user;
     }
 
     private function managedUser(): AppUser
