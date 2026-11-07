@@ -47,6 +47,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Audit status: re-verification pending (an independent audit follows). No schema change.
+
+### Added
+
+- `ImportedTimeEntryWriter::moveToPerson()`, `moveToUser()`, `moveBetweenUsers()`: move a source's imported entries between owners in one transaction, never deleting time. Locked rows stay (`keptLocked`), rows whose scope is not exactly the target's stay (`refusedScope`). `ImportedTimeEntryMoveResult`, `TimeEntriesMovedEvent` (`TimeTrackEvents::TIME_ENTRIES_MOVED`), `ImportedTimeEntryOwnerRepositoryInterface` (optional store capability; the Doctrine store has it).
+- `upsertMany($rows, skipMismatches: true)`: a row naming another owner gets `ImportedTimeEntryOutcome::Mismatch` and the rest are written; `ImportedTimeEntryBatchResult::$mismatched`. The default is unchanged.
+
+### Fixed
+
+- HA-L18: the listener's `postFlush` runs first (priority 1000), so a host `postFlush` that flushes cannot cancel the settling.
+- HA-L19: the listener settles only if the user row is gone, so a `remove($user)` in another listener's `onFlush`, with nothing else to flush, leaves that living user's rows alone.
+
 ## [1.15.0] - 2026-11-06
 
 Entries with no user, and `privacy` on `GET me`. **Schema migration required for every host** (`docs/UPGRADING.md`).

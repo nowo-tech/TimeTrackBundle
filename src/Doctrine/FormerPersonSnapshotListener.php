@@ -41,12 +41,12 @@ final class FormerPersonSnapshotListener implements ResetInterface
      * What each entity manager's flush settles after its commit. State between `onFlush` and `postFlush` of one flush only:
      * `onFlush` starts it again, so a failed flush leaves nothing behind, and {@see self::reset()} clears it between requests.
      *
-     * @var array<int, list<array{ids: list<string>, personRef: string, name: string|null, anonymise: bool}>>
+     * @var array<int, list<array{userId: string, loaded: list<TimeEntry>, ids: list<string>, personRef: string, name: string|null, anonymise: bool}>>
      */
     private array $pending = [];
 
     /**
-     * @param class-string|string $userClass `user_class`
+     * @param class-string $userClass `user_class`
      */
     public function __construct(
         private readonly FormerPersonTimeEntries $entries,
@@ -86,14 +86,23 @@ final class FormerPersonSnapshotListener implements ResetInterface
     }
 
     /**
-     * After the commit: the user is gone, so the other entries are settled.
+     * After the commit: the user is gone, so the other entries are settled. Since 1.16 (HA-L19) only if the row really is gone:
+     * a `remove()` inside another listener's `onFlush`, with nothing else to flush, deletes nothing. Loaded entries prepared
+     * for a delete that did not happen are read again.
      */
     public function postFlush(PostFlushEventArgs $args): void
     {
         $key     = spl_object_id($args->getObjectManager());
         $pending = $this->pending[$key] ?? [];
         unset($this->pending[$key]);
+        $entityManager = $args->getObjectManager();
         foreach ($pending as $settle) {
+            if ($this->userStillExists($entityManager, $settle['userId'])) {
+                foreach ($settle['loaded'] as $entry) {
+                    $entityManager->refresh($entry);
+                }
+                continue;
+            }
             if ($settle['anonymise']) {
                 $this->entries->anonymiseDeleted($settle['ids']);
             } else {
@@ -118,7 +127,8 @@ final class FormerPersonSnapshotListener implements ResetInterface
         $userId    = UserIdResolver::getId($user);
         $metadata  = $entityManager->getClassMetadata(TimeEntry::class);
 
-        $this->pending[$key][] = ['ids' => $this->entries->entryIdsOf($user), 'personRef' => $personRef, 'name' => $name, 'anonymise' => $anonymise];
+        $ids    = $this->entries->entryIdsOf($user);
+        $loaded = [];
         foreach ([...array_values($unitOfWork->getIdentityMap()[TimeEntry::class] ?? []), ...array_values($unitOfWork->getScheduledEntityInsertions())] as $entry) {
             $owner = $entry instanceof TimeEntry ? $entry->getUser() : null;
             if (!$entry instanceof TimeEntry || !$owner instanceof UserInterface || UserIdResolver::getId($owner) !== $userId) {
@@ -130,7 +140,22 @@ final class FormerPersonSnapshotListener implements ResetInterface
                 $entry->detachDeletedUser($personRef, $name);
             }
             $unitOfWork->recomputeSingleEntityChangeSet($metadata, $entry);
+            if ($unitOfWork->isInIdentityMap($entry) && !$unitOfWork->isScheduledForInsert($entry)) {
+                $loaded[] = $entry;
+            }
         }
+        $this->pending[$key][] = ['userId' => $userId, 'loaded' => $loaded, 'ids' => $ids, 'personRef' => $personRef, 'name' => $name, 'anonymise' => $anonymise];
+    }
+
+    private function userStillExists(EntityManagerInterface $entityManager, string $userId): bool
+    {
+        return (int) $entityManager->createQueryBuilder()
+            ->select('COUNT(u)')
+            ->from($this->userClass, 'u')
+            ->where('u.id = :id')
+            ->setParameter('id', $userId)
+            ->getQuery()
+            ->getSingleScalarResult() > 0;
     }
 
     /**

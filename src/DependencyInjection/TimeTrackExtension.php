@@ -360,7 +360,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$timers', new Reference(TimerService::class))
             ->addTag('doctrine.event_listener', ['event' => 'preRemove'])
             ->addTag('doctrine.event_listener', ['event' => 'onFlush'])
-            ->addTag('doctrine.event_listener', ['event' => 'postFlush'])
+            // Since 1.16 (HA-L18): first, so a host's postFlush listener that flushes cannot cancel the settling.
+            ->addTag('doctrine.event_listener', ['event' => 'postFlush', 'priority' => 1000])
             ->addTag('kernel.reset', ['method' => 'reset']));
     }
 

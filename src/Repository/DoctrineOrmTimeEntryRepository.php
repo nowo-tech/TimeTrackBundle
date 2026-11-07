@@ -32,7 +32,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -551,6 +551,83 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         }
 
         return $changed;
+    }
+
+    /**
+     * Since 1.16: one transaction, nested into the caller's when there is one.
+     */
+    public function inOwnerMoveTransaction(callable $operation): mixed
+    {
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
+        try {
+            $result = $operation();
+            $connection->commit();
+
+            return $result;
+        } catch (Throwable $exception) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Since 1.16: imported entries of exactly this source held by this owner, by keyset.
+     */
+    public function findForOwnerMove(string $externalSource, ?string $fromUserId, ?string $fromPersonRef, ?array $externalIds, string $afterId, int $limit): array
+    {
+        $query = $this->entityManager->createQueryBuilder()
+            ->select('e.id AS id', 'e.externalId AS externalId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef')
+            ->from(TimeEntry::class, 'e')
+            ->where('e.source = :import')
+            ->andWhere('e.externalSource = :source')
+            ->andWhere('e.anonymisedAt IS NULL')
+            ->andWhere('e.id > :after')
+            ->setParameter('import', TimeEntrySource::Import->value)
+            ->setParameter('source', $externalSource)
+            ->setParameter('after', $afterId)
+            ->orderBy('e.id', SortDirection::Ascending)
+            ->setMaxResults(max(1, $limit));
+        $this->whereOwner($query, $fromUserId, $fromPersonRef);
+        if ($externalIds !== null) {
+            $query->andWhere('e.externalId IN (:externalIds)')->setParameter('externalIds', $externalIds);
+        }
+
+        /** @var list<array{id: string, externalId: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null}> $rows */
+        $rows = $query->getQuery()->getArrayResult();
+
+        return $rows;
+    }
+
+    /**
+     * Since 1.16: gives these entries a new owner, only while they still have the old one.
+     */
+    public function applyOwnerMove(array $entryIds, ?string $fromUserId, ?string $fromPersonRef, ?object $toUser, ?string $toPersonRef, ?string $toPersonName): int
+    {
+        $update = $this->entityManager->createQueryBuilder()->update(TimeEntry::class, 'e')->where('e.id IN (:ids)')->setParameter('ids', $entryIds);
+        $this->whereOwner($update, $fromUserId, $fromPersonRef);
+        if ($toUser !== null) {
+            $update->set('e.user', ':toUser')->set('e.personRef', 'NULL')->set('e.personNameSnapshot', 'NULL')->setParameter('toUser', $toUser);
+        } else {
+            $update->set('e.user', 'NULL')->set('e.personRef', ':toRef')->set('e.personNameSnapshot', ':toName')->setParameter('toRef', $toPersonRef)->setParameter('toName', $toPersonName);
+        }
+        $changed = (int) $update->getQuery()->execute();
+        $this->detachRemoved($entryIds);
+
+        return $changed;
+    }
+
+    private function whereOwner(QueryBuilder $query, ?string $userId, ?string $personRef): void
+    {
+        if ($userId !== null) {
+            $query->andWhere('IDENTITY(e.user) = :fromUser')->setParameter('fromUser', $userId);
+
+            return;
+        }
+        $query->andWhere('e.user IS NULL')->andWhere('e.personRef = :fromRef')->setParameter('fromRef', $personRef);
     }
 
     /**

@@ -12,6 +12,7 @@
 - [Task effort on the client API (1.13)](#task-effort-on-the-client-api-113)
 - [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
+- [Moving imported time between owners (1.16)](#moving-imported-time-between-owners-116)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -210,6 +211,21 @@ Audit status: Appendix HA (2026-11-06, PR #73): first audit at `39c0b06` Fail / 
 | `closed_by` forged | `start()` drops the reserved key |
 | Malicious `privacy.url` opened by a client | `ClientPrivacyNormalizer` parses it and sends null unless it is absolute `http(s)` with a real host, no credentials, blanks, controls or backslashes; the warning carries no value |
 | A host's entry store breaks every delete | The service fails only when used; the listener does nothing without the capability |
+
+## Moving imported time between owners (1.16)
+
+Audit status: re-verification pending (an independent audit follows).
+
+| Threat | Control |
+| --- | --- |
+| Re-associating time deletes it | Moves only update the owner columns; there is no delete statement on that path |
+| A move changes a closed period | A row in a locked or submitted period of its owner, or of the new user, stays and is counted, also for a deleted user's timesheets by `owner_ref` |
+| A move crosses tenants | The row's scope must be exactly the target's, null included, compared in PHP; the scope is never rewritten. A deleted user's reference only goes back to that id. References compare case-sensitively in PHP |
+| A half-done move | One transaction, and each `UPDATE` also requires the old owner, so a row taken meanwhile is not moved |
+| Who moved it is unknown | `TimeEntriesMovedEvent` carries owners, counts and actor, and the log counts and whether an actor was given. **Residual:** `$actorId` is optional and the bundle has no audit table, so hosts store the event. The host authorises every call |
+| A soft-erased user gets a person back | The bundle cannot know it; the host must not call a move for such an account |
+| `skipMismatches` hides a refusal | Opt-in; each skipped row has its own outcome and a count. The default still refuses the batch |
+| A host listener cancels or misdirects settling | `postFlush` priority 1000 (HA-L18), and settling only if the user row is gone (HA-L19). A host listener with a higher priority that flushes can still cancel it, and `remove()` inside a flush stays unsupported |
 
 ## Secrets & cryptography
 
