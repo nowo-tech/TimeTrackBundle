@@ -21,7 +21,7 @@ use const DATE_ATOM;
  * compensated overtime or a reversal of another line. Lines are never edited; each one is chained per
  * `(owner_ref, scope_key)` by `hash = sha256(prev_hash ‖ canonical_json(row without hash))`.
  *
- * The unique `(owner_ref, scope_key, prev_hash)` index stops two concurrent writers from forking a chain (the second
+ * The unique `(owner_ref, scope_key, prev_hash)` index stops two concurrent writers from forking a chain, at its start too since 1.16.2 (the second
  * append fails and is reported as a conflict). `purged_before` is set by the retention purge on the first line it keeps:
  * the chain restarts there (its `prev_hash` names a purged line); it is not part of the hash.
  */
@@ -33,6 +33,12 @@ use const DATE_ATOM;
 #[ORM\UniqueConstraint(name: 'uniq_time_track_balance_ledger_chain', columns: ['owner_ref', 'scope_key', 'prev_hash'])]
 class BalanceLedgerLine
 {
+    /**
+     * Since 1.16.2: what a new chain's first line stores as `prev_hash`, so a second concurrent first line hits the unique key
+     * and is refused. It is never a real hash and is not hashed: {@see self::getPrevHash()} reads it as null.
+     */
+    public const FIRST_LINE_PREV_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
+
     #[ORM\Id]
     #[ORM\Column(type: 'string', length: 36)]
     private string $id;
@@ -84,6 +90,8 @@ class BalanceLedgerLine
         #[ORM\Column(name: 'actor_ref', type: 'string', length: 64, nullable: true)]
         private ?string $actorRef = null,
     ) {
+        // Since 1.16.2 (audit HQ-L4): NULL does not collide on the unique key, so two concurrent first lines both committed.
+        $this->prevHash ??= self::FIRST_LINE_PREV_HASH;
         $this->id            = Uuid::generateV7()->toString();
         $this->effectiveDate = Period::date($effectiveDate);
         $this->createdAt     = StorageTime::normalize($createdAt);
@@ -95,7 +103,7 @@ class BalanceLedgerLine
      */
     public function computeHash(): string
     {
-        return CanonicalJson::hash($this->canonicalRow(), $this->prevHash ?? '');
+        return CanonicalJson::hash($this->canonicalRow(), $this->getPrevHash() ?? '');
     }
 
     /**
@@ -118,7 +126,7 @@ class BalanceLedgerLine
             'reversesId'    => $this->reversesId,
             'actorRef'      => $this->actorRef,
             'createdAt'     => StorageTime::utc($this->createdAt),
-            'prevHash'      => $this->prevHash,
+            'prevHash'      => $this->getPrevHash(),
         ];
     }
 
@@ -195,9 +203,13 @@ class BalanceLedgerLine
     }
 
     /** Hash of the previous line of the owner and scope (null for the first). */
+    /**
+     * Previous line's hash; null on a chain's first line. A marker in the column ({@see self::FIRST_LINE_PREV_HASH}) or a NULL
+     * from before 1.16.2 both read as null here, and hash the same.
+     */
     public function getPrevHash(): ?string
     {
-        return $this->prevHash;
+        return $this->prevHash === self::FIRST_LINE_PREV_HASH ? null : $this->prevHash;
     }
 
     /** Stored hash. */

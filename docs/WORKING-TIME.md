@@ -147,7 +147,7 @@ Each timesheet transition appends one row to `time_track_timesheet_events` (`seq
 canonical_json(row))`; the timesheet keeps the head hash). Ledger lines are chained per owner and scope. The repositories
 have no update or delete method (only the retention purge deletes). `nowo:time-track:timesheets:verify` recomputes every
 chain and names the first broken link. A unique `(owner_ref, scope_key, prev_hash)` index stops concurrent appends from
-forking a ledger chain. After a retention purge a ledger chain restarts at the first line kept (marked `purged_before`;
+forking a ledger chain, at its first line too since 1.16.2. After a retention purge a ledger chain restarts at the first line kept (marked `purged_before`;
 not hashed), so `verify` keeps passing; a chain with its oldest lines deleted by hand, or with two starts, is reported.
 The ledger has no stored head: the newest lines deleted by hand are not detected. Hosts MAY add database triggers that refuse `UPDATE` / `DELETE` on both tables for
 every user but the purge user; the bundle does not create them.

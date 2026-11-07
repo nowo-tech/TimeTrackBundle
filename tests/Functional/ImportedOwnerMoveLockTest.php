@@ -9,6 +9,9 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
+use Doctrine\ORM\Decorator\EntityManagerDecorator;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\QueryBuilder;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
@@ -240,23 +243,43 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         self::assertFalse($timesheets[0]->isLocked(), 'the pending change is still there');
     }
 
-    public function testAMoveSkipsARowThatLeftBeforeItWasLocked(): void
+    public function testAMoveLeavesARowThatLeftBetweenItsReadAndItsLock(): void
     {
         $writer = $this->writer();
-        $writer->upsert($this->user, $this->data('e-1', '2026-02-02 10:00:00'));
-        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
-        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
-        $other = $this->createUser('other@example.com');
-        $conn  = $this->entityManager()->getConnection();
-        $conn->beginTransaction();
-        self::assertCount(1, $repository->findForOwnerMove(self::SOURCE, (string) $this->user->getId(), null, null, '', 10));
-        $conn->commit();
-        $writer->moveBetweenUsers(self::SOURCE, $this->user, $other);
+        $writer->upsert($this->user, $this->data('stays-with-thief', '2026-02-02 10:00:00'));
+        $writer->upsert($this->user, $this->data('anonymised', '2026-02-02 12:00:00'));
+        $writer->upsert($this->user, $this->data('moves', '2026-02-02 14:00:00'));
+        $thief  = $this->createUser('thief@example.com');
+        $target = $this->createUser('target@example.com');
+        $em     = $this->entityManager();
+        // Runs right before the second query of a read, the locking one: the rows the first query saw change owner there.
+        $store = new DoctrineOrmTimeEntryRepository(new class($em, (int) $thief->getId()) extends EntityManagerDecorator {
+            private int $queries = 0;
 
-        $conn->beginTransaction();
-        self::assertSame([], $repository->findForOwnerMove(self::SOURCE, (string) $this->user->getId(), null, null, '', 10));
-        self::assertCount(1, $repository->findForOwnerMove(self::SOURCE, (string) $other->getId(), null, ['e-1'], '', 10));
-        $conn->commit();
+            public function __construct(EntityManagerInterface $wrapped, private readonly int $thiefId)
+            {
+                parent::__construct($wrapped);
+            }
+
+            public function createQueryBuilder(): QueryBuilder
+            {
+                if (++$this->queries === 2) {
+                    $connection = $this->wrapped->getConnection();
+                    $connection->executeStatement('UPDATE time_track_entries SET user_id = ? WHERE external_id = ?', [$this->thiefId, 'stays-with-thief']);
+                    $connection->executeStatement("UPDATE time_track_entries SET user_id = NULL, anonymised_at = '2026-02-03 08:00:00' WHERE external_id = ?", ['anonymised']);
+                }
+
+                return parent::createQueryBuilder();
+            }
+        });
+
+        $result = (new ImportedTimeEntryWriter($store, periodLockGuard: $this->guard(), scopeProvider: $this->scopes()))->moveBetweenUsers(self::SOURCE, $this->user, $target);
+
+        self::assertSame([1, 3600], [$result->moved, $result->secondsMoved], 'only the row still with the old owner');
+        $conn = $em->getConnection();
+        self::assertSame((string) $thief->getId(), (string) $conn->fetchOne('SELECT user_id FROM time_track_entries WHERE external_id = ?', ['stays-with-thief']));
+        self::assertNull($conn->fetchOne('SELECT user_id FROM time_track_entries WHERE external_id = ?', ['anonymised']));
+        self::assertSame((string) $target->getId(), (string) $conn->fetchOne('SELECT user_id FROM time_track_entries WHERE external_id = ?', ['moves']));
     }
 
     public function testASubmittedPeriodAlsoKeepsARowOfADeletedUser(): void
@@ -306,6 +329,22 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         self::assertInstanceOf(TimeEntry::class, $entry);
 
         return $entry;
+    }
+
+    private function guard(): PeriodLockGuard
+    {
+        $guard = self::getContainer()->get(PeriodLockGuard::class);
+        self::assertInstanceOf(PeriodLockGuard::class, $guard);
+
+        return $guard;
+    }
+
+    private function scopes(): TimesheetScopeProviderInterface
+    {
+        $scopes = self::getContainer()->get(TimesheetScopeProviderInterface::class);
+        self::assertInstanceOf(TimesheetScopeProviderInterface::class, $scopes);
+
+        return $scopes;
     }
 
     private function writer(): ImportedTimeEntryWriter

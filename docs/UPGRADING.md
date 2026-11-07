@@ -58,6 +58,12 @@
 
 ## Unreleased
 
+Target **1.16.2**, from **1.16.1**. **No schema change, no contract change, nothing to do.** Audit status: re-verification pending.
+
+- **A ledger chain stuck on `conflict` goes on by itself after the upgrade**, with no repair: the head is now the line no other line follows. `verify` keeps saying intact.
+- **Two concurrent first lines of a new chain:** the second is now refused with `conflict`, like any concurrent append; retry it. A chain that already has two starts keeps them: `verify` keeps reporting "the chain has 2 starts", which is not tampering if those two lines are both real. It cannot be repaired, because the hashes cover the rows. New lines go on from the newest and both lines count in the balance.
+- **`prev_hash` of a new chain's first line now holds 64 zeros in the database,** not NULL. `getPrevHash()` and the hash treat it as NULL, so exports and `verify` do not change. SQL of your own reading that column should treat both as a first line. **Rolling back to 1.16.1 or older makes `verify` report those first lines as broken**, because older code hashes the column as stored; the balance is not affected.
+
 ## To 1.16.1
 
 From **1.16.0**:
