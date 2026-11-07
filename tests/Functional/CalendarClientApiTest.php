@@ -267,7 +267,8 @@ final class CalendarClientApiTest extends FunctionalTestCase
             $this->api('POST', '/api/time-track/suggestions/resolve-keys', $bad, $token);
             self::assertResponseStatusCodeSame(400);
         }
-        for ($i = 0; $i < 60; ++$i) {
+        // The limiter's window is fixed and the clock is real: twice the limit reaches it even across a window's end.
+        for ($i = 0; $i < 121 && $this->client->getResponse()->getStatusCode() !== 429; ++$i) {
             $this->api('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-2']], $token);
         }
         self::assertResponseStatusCodeSame(429);
