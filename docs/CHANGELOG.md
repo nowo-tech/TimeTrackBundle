@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.17.1] - 2026-11-08](#1171---2026-11-08)
 - [[1.17.0] - 2026-11-08](#1170---2026-11-08)
 - [[1.16.2] - 2026-11-07](#1162---2026-11-07)
 - [[1.16.1] - 2026-11-07](#1161---2026-11-07)
@@ -51,7 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Audit status: re-verification pending. No schema change, no contract change.
+## [1.17.1] - 2026-11-08
+
+The ledger purge follows the chain's links (HT-L1) and `verify` reports lines not linked behind a two-starts alarm (HT-L2).
+
+Audited: Appendix IE, Pass (good) / Info. No schema change, no contract change.
 
 ### Fixed
 
@@ -1129,7 +1134,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.1...HEAD
+[1.17.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.2...v1.17.0
 [1.16.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.1...v1.16.2
 [1.16.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.0...v1.16.1
