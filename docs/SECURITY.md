@@ -13,6 +13,7 @@
 - [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Moving imported time between owners (1.16)](#moving-imported-time-between-owners-116)
+- [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -231,6 +232,25 @@ Since then, Appendix HQ (2026-11-07, PR #75): **Pass (good) / Low** at `1fe4dd1`
 | A soft-erased user gets a person back | The bundle cannot know it; the host must not call a move for such an account |
 | `skipMismatches` hides a refusal | Opt-in; each skipped row has its own outcome and a count, and the log gets a warning with the count. The default still refuses the batch |
 | A host listener cancels or misdirects settling | `postFlush` priority 1000 (HA-L18), and settling only if the user row is gone (HA-L19). A host listener with a higher priority that flushes can still cancel it, and `remove()` inside a flush stays unsupported |
+
+## Task time follows a board move (Unreleased)
+
+Audit status: Appendix ID (2026-11-08, PR #77) at `c9de79c`: Medium (docs) / Low; fixes for ID-M1, ID-L1, ID-L2 and ID-I1 and the owner decision of 2026-11-08 since then. Audit ID (2026-11-08): Pass (good) / Info at `41e0ef2`.
+
+| Threat | Control |
+| --- | --- |
+| A move deletes or creates time | One bulk `UPDATE` of `board_id_snapshot` and `scope_key` by primary key (timers: `board_id_snapshot` only); there is no insert or delete on this path. Tests compare every other column before and after, and count and total per user |
+| A move rewrites what a closed period billed | With timesheets on, on a move into another scope, an entry whose period is locked, approved or submitted, in its current scope or in the target scope, is kept and reported. Within one scope it follows in `board_id_snapshot` only, which neither `entries_hash` nor `totals` covers (owner decision 2026-11-08; a test compares hash and totals before and after). The timesheet `entries_hash`, `totals` and the audit and ledger hash chains are never touched, so `verify` stays intact. Timesheets are read under a shared lock inside the batch's transaction, as for owner moves: on MySQL and MariaDB a lock **committed** before or during the batch is seen or waits. A submit still in flight (its snapshot built before the move, the period not yet submitted) is not seen: its stored hash then includes a moved entry, and `approve()` recomputes the hash and refuses it as `stale`, so the owner withdraws and submits again (audit ID-I1) |
+| A move rewrites anonymised or unattributable rows | Anonymised entries are kept always; entries with no user and no reference are kept while timesheets are on (the guard's rule) |
+| Time moves into a tenant it should not reach | **The host vouches for the target board and scope:** the service checks neither against the actor nor against the scope provider. A wrong target shows the entries' hours, task titles, descriptions and notes in the other tenant's reports, exports and bills. It must only be called for a move TaskBoard has authorised and committed. No route, no controller |
+| A stale or replayed call pulls the time back (audit ID-M1) | The last call wins. With `fromBoardId` only entries and timers on the board the move left change; entries on a third board are kept as `on_another_board`. USAGE resolves the target from the task's current board at handling time. **Residual:** without `fromBoardId`, or with a host that takes the target from an old payload, a replay still moves the time. Two moves of one task handled at the same time can leave the time on the wrong board (audit ID-I2): USAGE asks hosts to re-dispatch every move after a delay or to handle moves of one task one at a time |
+| A crafted task id list moves other rows | Ids must be non-empty strings of at most 36 bytes, bound as parameters; the locked rows' task id is compared again in PHP, case-sensitively |
+| A half-done move | Each batch is one transaction; a failure rolls that batch back and leaves the rest with the old snapshot, with no time lost. The same call finishes it; already-moved rows are counted, not written |
+| A stale managed entity writes the old board back | Loaded entries and timers of the batch are detached after the update |
+| A timer stopped during a move leaves its entry behind (audit ID-L2) | The time is safe (count and totals per user unchanged) but counts in the source until another call. **Residual, host side:** USAGE asks for a delayed second call, or a check of new entries against the task's board |
+| The audit record is lost (audit ID-L1) | `TaskTimeMovedEvent` fires after each committed batch, also for entries already at the target, so a retry reports what an earlier call committed and a failed batch does not hide earlier ones. A throwing listener is logged; the move finishes and the call then throws `TaskTimeMoveEventException` with the full result. The bundle has no audit table, so hosts store the event. `alreadyAtTarget`, `kept` and `secondsKept` repeat in every call's event, so summing them across calls counts twice (audit ID-I3) |
+
+Residuals (author's view, for the auditor): kept entries keep counting in the source tenant until the period is reopened and the call repeated (owner decision 1); a batch holds row locks on up to 500 entries until its commit; with a listener that throws, other listeners of that one event dispatch do not run until the next call.
 
 ## Secrets & cryptography
 

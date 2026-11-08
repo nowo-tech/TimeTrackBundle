@@ -9,6 +9,7 @@
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
 - [Imported entries (1.11)](#imported-entries-111)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
+- [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Events](#events)
@@ -409,6 +410,93 @@ $eraser->erase($user, $actor);               // throws on a veto; your eraser bl
 Limits: it is not atomic, so if the erase fails the timer stays stopped (the time is safe). A timer started between the stop and the eraser is still deleted by an
 eraser that deletes `ActiveTimer` rows. `stop()` adds no `closed_by` mark, which suits a user who is not being deleted. A `TIMER_STOP` listener that throws stops
 the erasure before it starts.
+
+## Task time follows a board move (Unreleased)
+
+Owner decision (Beacon spec 217 FR-008): **the time follows the task.** When TaskBoard moves a task and its subtasks to another board,
+also in another tenant, the entries' `board_id_snapshot` and `scope_key` move with it, so the source's reports stop counting those hours
+and the target's count them, billing included. `TaskTimeMover` is a public service with no route; the host authorises the move.
+
+Wire it to TaskBoard's `TASK_BOARD_CHANGED` (TaskBoard 2.3, dispatched after the move's commit). The mover trusts the target it is given
+and the last call wins, so **take the target from the task's current board when you handle the message, not from the event payload,
+and pass the board the move left as `fromBoardId`.** A message handled late, or retried after a later move, then cannot pull the time
+back to a board the task already left:
+
+```php
+use Nowo\TaskBoardBundle\Event\TaskBoardChangedEvent;
+use Nowo\TaskBoardBundle\Event\TaskBoardEvents;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeKeptReason;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+
+#[AsEventListener(event: TaskBoardEvents::TASK_BOARD_CHANGED)]
+final readonly class MoveTaskTime
+{
+    // TaskBoards: your own service over TaskBoard's tasks and boards; TenantScopes: what your scope provider answers.
+    public function __construct(private TaskTimeMover $mover, private TaskBoards $tasks, private TenantScopes $scopes) {}
+
+    public function __invoke(TaskBoardChangedEvent $event): void
+    {
+        // The task's board now, read at handling time; a later move may have happened since the event.
+        $boardId = $this->tasks->currentBoardIdOf($event->getTask()->getId());
+        if ($boardId === null) {
+            return; // the task is gone: its time stays where it is
+        }
+        foreach (array_chunk($event->taskIds, 200) as $taskIds) {
+            $result = $this->mover->moveTasks(
+                $taskIds,
+                $boardId,
+                $this->scopes->scopeKeyOfBoard($boardId),
+                actorId: $this->scopes->actorIdOf($event),   // optional, for TASK_TIME_MOVED
+                fromBoardId: $event->sourceBoardId,           // entries on any other board stay (on_another_board)
+            );
+            // $result->moved, alreadyAtTarget, secondsMoved, timersMoved
+            // $result->kept: entry id => TaskTimeKeptReason; keptIds(TaskTimeKeptReason::SourcePeriodLocked), secondsKept
+        }
+    }
+}
+```
+
+- **A wrong target is a data leak, not only a wrong number.** The entries' hours, task titles, descriptions and notes then show in the
+  other tenant's reports, exports and bills. The service checks the target against neither the actor nor the scope provider: you vouch for
+  the board and the scope. Pass the scope your `timesheets.scope_provider` returns for tasks of that board; `null` is for hosts without
+  tenant scopes.
+- **`fromBoardId`** (optional, recommended): only entries and running timers on that board move; an entry already on the target board
+  counts in `alreadyAtTarget`; any other entry stays and is reported as `on_another_board`. Without it, every entry of the tasks moves,
+  whatever its board.
+- **Only two columns change**, `board_id_snapshot` and `scope_key` (for a running timer, only `board_id_snapshot`: the entry it becomes takes the scope of its
+  board when it stops). Duration, times, user, person, task, title, source, read-only state, notes and external ids stay. Nothing is created or deleted, so count
+  and total per user are the same before and after.
+- **Every entry of the tasks:** live, manual, calendar and imported, of users and of people with no account.
+- **Batches:** 500 entries per transaction; the ids are read with no lock, then locked by primary key and checked again; one bulk `UPDATE` by id; loaded entries and
+  timers are detached, so read them again after the call. Task ids go 200 to a read; pass as many as you like.
+- **Retry:** if your listener fails (or the worker dies), the entries are still there with the old snapshot. Call again with the same arguments: rows already at the
+  target count in `alreadyAtTarget` and are not written. Running it from a message handler with retries is fine once the target is resolved at handling time.
+- **What stays, and why** (`TaskTimeMoveResult::$kept`, by entry id). With timesheets on, on a move **into another scope**:
+  - `source_period_locked`: the entry's period is locked, approved or submitted in its current scope (also for a deleted user's timesheets, by `owner_ref`).
+    Its timesheet's `entries_hash` and totals were taken over the entries of that scope: moving it would change what an approved or locked period bills.
+  - `target_period_locked`: the owner's period at that date is locked, approved or submitted in the target scope; the hours would land in it.
+
+  On a move **within one scope** (the entry's scope is already the target's), such an entry follows in `board_id_snapshot` only and counts in `moved`: its scope,
+  hours, timesheet totals and `entries_hash` do not change, because neither covers the board (owner decision 2026-11-08). In every case:
+  - `anonymised`: an anonymised entry is never written again.
+  - `owner_unknown`: with timesheets on, an entry with no user and no person reference; the guard cannot check its period.
+  - `on_another_board`: you passed `fromBoardId` and the entry is on a third board.
+
+  Kept hours keep counting where they are. To move locked ones, reopen the period (or withdraw or reject a submitted one) through the audited timesheet flow and
+  call again with the same arguments. With timesheets off only anonymised entries (and, with `fromBoardId`, entries on a third board) stay.
+- **Two moves of one task handled at the same time** (two workers, each with its own message) can leave the time on the wrong board, because each resolves the current board before the other commits. Re-dispatch every move after a delay of a few seconds (it is idempotent, and the late call sees the final board), or handle the moves of one task one at a time (for example a Messenger lock or a single-consumer queue per task).
+- **A timer stopping during the move** may have read the timer before the move updated it, and then writes its entry with the old board and scope. The time is
+  safe, but it counts in the source until another call. `TASK_BOARD_CHANGED` fires once, so schedule that call yourself: dispatch the same message again with a
+  delay of a few seconds (it is idempotent), or, on `TIME_ENTRY_CREATED` / `TIMER_STOP`, compare the new entry's `board_id_snapshot` with the task's current board
+  and call the mover for that task.
+- **Ledger:** balance ledger lines are not touched. Working-time balance derived from task time (`TaskTimeWorkedTimeSource`) moves with the entries for open
+  periods; a locked period's balance is frozen in its timesheet, whose entries stay.
+- **`TaskTimeMovedEvent` (`TASK_TIME_MOVED`) fires after each committed batch**, with that batch's task ids, target board and scope, result and actor, whenever the
+  batch met any entry or timer, including entries that were all already at the target. So a retry reports what an earlier call committed, and a batch that
+  failed does not hide the ones before it. **The bundle has no audit table: store the event**, and expect the same entries more than once: `alreadyAtTarget`, `kept` and `secondsKept` repeat in every call's event, so a host that sums them across calls counts them twice.
+  A listener that throws does not stop the move: the rest is done and committed, then the call throws `TaskTimeMoveEventException`, whose `getResult()` says
+  what was done and whose previous exception is the listener's. Call again to have the event dispatched again.
 
 ## Working time and timesheets (1.13)
 
