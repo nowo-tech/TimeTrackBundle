@@ -27,12 +27,13 @@ use function array_filter;
 use function array_map;
 use function array_values;
 use function count;
+use function in_array;
 use function max;
 
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -641,6 +642,78 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             $update->set('e.user', 'NULL')->set('e.personRef', ':toRef')->set('e.personNameSnapshot', ':toName')->setParameter('toRef', $toPersonRef)->setParameter('toName', $toPersonName);
         }
         $changed = (int) $update->getQuery()->execute();
+        $this->detachRemoved($entryIds);
+
+        return $changed;
+    }
+
+    /**
+     * Since 1.17: {@see self::inOwnerMoveTransaction()} for a batch of a task move.
+     */
+    public function inTaskMoveTransaction(callable $operation): mixed
+    {
+        return $this->inOwnerMoveTransaction($operation);
+    }
+
+    /**
+     * Since 1.17: entries of these tasks by keyset, locked until the batch's commit, the way {@see self::findForOwnerMove()} does:
+     * the ids are read with no lock, then the rows are locked by primary key (record locks only) and their task is checked again.
+     */
+    public function findForTaskMove(array $taskIds, string $afterId, int $limit): array
+    {
+        if ($taskIds === []) {
+            return [];
+        }
+        do {
+            /** @var list<string> $ids */
+            $ids = array_column($this->entityManager->createQueryBuilder()
+                ->select('e.id AS id')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.taskId IN (:taskIds)')
+                ->andWhere('e.id > :after')
+                ->setParameter('taskIds', $taskIds)
+                ->setParameter('after', $afterId)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(max(1, $limit))
+                ->getQuery()
+                ->getArrayResult(), 'id');
+            if ($ids === []) {
+                return [];
+            }
+            $afterId = $ids[count($ids) - 1];
+
+            /** @var list<array{id: string, taskId: string, boardId: string|null, scopeKey: string|null, seconds: int|string, startedAt: DateTimeImmutable, personRef: string|null, userId: int|string|null, anonymisedAt: DateTimeImmutable|null}> $locked */
+            $locked = $this->entityManager->createQueryBuilder()
+                ->select('e.id AS id', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.startedAt AS startedAt', 'e.personRef AS personRef', 'IDENTITY(e.user) AS userId', 'e.anonymisedAt AS anonymisedAt')
+                ->from(TimeEntry::class, 'e')
+                ->where('e.id IN (:ids)')
+                ->setParameter('ids', $ids)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->getQuery()
+                ->setLockMode(LockMode::PESSIMISTIC_WRITE)
+                ->getArrayResult();
+            $rows = array_values(array_filter($locked, static fn (array $row): bool => in_array($row['taskId'], $taskIds, true)));
+        } while ($rows === []);
+
+        return $rows;
+    }
+
+    /**
+     * Since 1.17: sets the board snapshot and scope of these entries by primary key alone ({@see self::findForTaskMove()} has
+     * locked them). Nothing else changes.
+     */
+    public function applyTaskMove(array $entryIds, ?string $boardId, ?string $scopeKey): int
+    {
+        $changed = (int) $this->entityManager->createQueryBuilder()
+            ->update(TimeEntry::class, 'e')
+            ->set('e.boardIdSnapshot', ':boardId')
+            ->set('e.scopeKey', ':scopeKey')
+            ->where('e.id IN (:ids)')
+            ->setParameter('boardId', $boardId)
+            ->setParameter('scopeKey', $scopeKey)
+            ->setParameter('ids', $entryIds)
+            ->getQuery()
+            ->execute();
         $this->detachRemoved($entryIds);
 
         return $changed;

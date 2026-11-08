@@ -98,6 +98,7 @@ use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
@@ -342,6 +343,17 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(TimeEntryRetentionPolicy::class, (new Definition(TimeEntryRetentionPolicy::class))
             ->setArgument('$includeImported', $retention['include_imported']));
+        // Since 1.17 (Beacon spec 217 FR-008): the time of tasks moved to another board follows them; public, no route.
+        $container->setDefinition(TaskTimeMover::class, (new Definition(TaskTimeMover::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$entries'         => new Reference(TimeEntryRepositoryInterface::class),
+                '$timers'          => new Reference(ActiveTimerRepositoryInterface::class),
+                '$periodLockGuard' => new Reference(PeriodLockGuard::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         // Since 1.15: release, anonymise and export of a person's entries; public for host erasers and offboarding.
         $container->setDefinition(FormerPersonTimeEntries::class, (new Definition(FormerPersonTimeEntries::class))
             ->setPublic(true)

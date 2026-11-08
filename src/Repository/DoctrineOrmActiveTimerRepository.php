@@ -10,10 +10,12 @@ use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Throwable;
 
+use function array_column;
+
 /**
  * Doctrine ORM store of the running timers.
  */
-final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActiveTimerRepositoryInterface
+final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActiveTimerRepositoryInterface, TaskTimerMoveRepositoryInterface
 {
     /**
      * Receives the entity manager and the registry (worker-mode recovery).
@@ -99,5 +101,48 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
             ->getOneOrNullResult();
 
         return $timer;
+    }
+
+    /**
+     * Since 1.17: sets the board snapshot of the running timers of these tasks that do not have it yet, by id; nothing else
+     * changes. A loaded timer is detached, so a later flush does not write its old board back.
+     */
+    public function moveTimersToBoard(array $taskIds, ?string $boardId): int
+    {
+        if ($taskIds === []) {
+            return 0;
+        }
+        $query = $this->entityManager->createQueryBuilder()
+            ->select('t.id AS id')
+            ->from(ActiveTimer::class, 't')
+            ->where('t.taskId IN (:taskIds)')
+            ->setParameter('taskIds', $taskIds);
+        if ($boardId === null) {
+            $query->andWhere('t.boardIdSnapshot IS NOT NULL');
+        } else {
+            $query->andWhere('(t.boardIdSnapshot IS NULL OR t.boardIdSnapshot <> :boardId)')->setParameter('boardId', $boardId);
+        }
+        /** @var list<string> $ids */
+        $ids = array_column($query->getQuery()->getArrayResult(), 'id');
+        if ($ids === []) {
+            return 0;
+        }
+        $changed = (int) $this->entityManager->createQueryBuilder()
+            ->update(ActiveTimer::class, 't')
+            ->set('t.boardIdSnapshot', ':boardId')
+            ->where('t.id IN (:ids)')
+            ->setParameter('boardId', $boardId)
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->execute();
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        foreach ($ids as $id) {
+            $loaded = $unitOfWork->tryGetById($id, ActiveTimer::class);
+            if ($loaded instanceof ActiveTimer) {
+                $this->entityManager->detach($loaded);
+            }
+        }
+
+        return $changed;
     }
 }

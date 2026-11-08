@@ -59,6 +59,17 @@
 
 ## Unreleased
 
+**No schema change, nothing to do unless you move tasks between boards.** Audit status: re-verification pending.
+
+**New: the time of a moved task follows it.** When a task (with its subtasks) moves to another board, possibly in another tenant, call `TaskTimeMover::moveTasks($taskIds, $targetBoardId, $targetScopeKey)` after the move is committed; USAGE has the listener for TaskBoard's `TASK_BOARD_CHANGED`. Until you call it, entries keep the old `board_id_snapshot` and `scope_key`, which is what every earlier version did.
+
+- **Pass the scope your scope provider gives for the target board's tasks.** The bundle does not ask the provider (it needs a user per entry), so the host vouches for it. A null scope takes the entries out of every timesheet: pass it only on hosts without tenant scopes.
+- **Read `TaskTimeMoveResult::$kept`.** With timesheets on, an entry in a locked, approved or submitted period, in its current scope or in the target one, stays with the old board and scope, and so do anonymised entries. Those hours keep counting in the source tenant. Nothing is lost and nothing is thrown: tell the manager, and to move them reopen (or withdraw or reject) the period through the audited flow and call again with the same arguments.
+- **Safe to retry.** A listener that failed leaves entries with the old snapshot; the same call later finishes it and counts what was already moved in `alreadyAtTarget`.
+- **Loaded entries and timers of those tasks are detached:** read them again after the call; a change you had pending on one is not written.
+- **Custom stores:** the service needs `TaskTimeMoveRepositoryInterface` on the entry store and `TaskTimerMoveRepositoryInterface` on the timer store, and throws `LogicException` without them. Nothing else changes.
+- Store `TASK_TIME_MOVED` (`TaskTimeMovedEvent`) if you keep an audit trail: the bundle has no audit table.
+
 ## To 1.16.2
 
 From **1.16.1**:

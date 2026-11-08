@@ -13,6 +13,7 @@
 - [Calendar suggestions and meetings (1.14)](#calendar-suggestions-and-meetings-114)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Moving imported time between owners (1.16)](#moving-imported-time-between-owners-116)
+- [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -231,6 +232,23 @@ Since then, Appendix HQ (2026-11-07, PR #75): **Pass (good) / Low** at `1fe4dd1`
 | A soft-erased user gets a person back | The bundle cannot know it; the host must not call a move for such an account |
 | `skipMismatches` hides a refusal | Opt-in; each skipped row has its own outcome and a count, and the log gets a warning with the count. The default still refuses the batch |
 | A host listener cancels or misdirects settling | `postFlush` priority 1000 (HA-L18), and settling only if the user row is gone (HA-L19). A host listener with a higher priority that flushes can still cancel it, and `remove()` inside a flush stays unsupported |
+
+## Task time follows a board move (Unreleased)
+
+Audit status: **re-verification pending** (new in this release; the author's own review only).
+
+| Threat | Control |
+| --- | --- |
+| A move deletes or creates time | One bulk `UPDATE` of `board_id_snapshot` and `scope_key` by primary key (timers: `board_id_snapshot` only); there is no insert or delete on this path. Tests compare every other column before and after, and count and total per user |
+| A move rewrites what a closed period billed | With timesheets on, an entry whose period is locked, approved or submitted, in its current scope or in the target scope, is kept and reported, also when only the board changes. The timesheet `entries_hash`, `totals` and the audit and ledger hash chains are never touched, so `verify` stays intact. Timesheets read under a shared lock inside the batch's transaction (as for owner moves), so on MySQL and MariaDB a period locked meanwhile is seen or waits |
+| A move rewrites anonymised or unattributable rows | Anonymised entries are kept always; entries with no user and no reference are kept while timesheets are on (the guard's rule) |
+| Time moves into a tenant it should not reach | **The host vouches for the target board and scope:** the service checks neither against the actor nor against the scope provider. It must only be called for a move TaskBoard has authorised and committed (the `TASK_BOARD_CHANGED` listener). No route, no controller |
+| A crafted task id list moves other rows | Ids must be non-empty strings of at most 36 bytes, bound as parameters; the locked rows' task id is compared again in PHP, case-sensitively |
+| A half-done move | Each batch is one transaction; a failure rolls that batch back and leaves the rest with the old snapshot, with no time lost. The same call finishes it; already-moved rows are counted, not written |
+| A stale managed entity writes the old board back | Loaded entries and timers of the batch are detached after the update |
+| Who moved it is unknown | `TaskTimeMovedEvent` carries task ids, target, counts, kept ids and reasons and the optional actor; the log has counts only. The bundle has no audit table, so hosts store the event |
+
+Residuals (author's view, for the auditor): a timer stopping while a move runs can leave its new entry with the old board until the next call; kept entries keep counting in the source tenant until the period is reopened and the call repeated, which is an owner decision recorded in the PR; a batch holds row locks on up to 500 entries until its commit.
 
 ## Secrets & cryptography
 

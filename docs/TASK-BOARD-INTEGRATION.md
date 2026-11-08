@@ -9,6 +9,7 @@
 - [Recommended TaskBoard features](#recommended-taskboard-features)
 - [Imported time (1.11)](#imported-time-111)
 - [Entries without a timer (1.14)](#entries-without-a-timer-114)
+- [A task moved to another board (Unreleased)](#a-task-moved-to-another-board-unreleased)
 
 ## Interfaces (implemented by TaskBoard)
 
@@ -62,3 +63,8 @@ entry, `origin` `manual` / `calendar`) after the flush. TaskBoard keeps `total_t
 (guarded by `class_exists(TimeEntryCreatedEvent::class)`), released as a TaskBoard patch next to TimeTrack 1.14
 (contract §9.3).
 
+## A task moved to another board (Unreleased)
+
+TaskBoard 2.3 dispatches `TASK_BOARD_CHANGED` (`TaskBoardChangedEvent::$taskIds`, `$targetBoardId`) after a move's commit. The host
+listens to it and calls `TaskTimeMover::moveTasks()` with the target board and its tenant scope, so the time follows the task. Entries in
+locked, approved or submitted periods stay and are reported. Listener, rules and retry: [USAGE.md](USAGE.md#task-time-follows-a-board-move-unreleased).

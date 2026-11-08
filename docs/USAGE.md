@@ -9,6 +9,7 @@
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
 - [Imported entries (1.11)](#imported-entries-111)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
+- [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Events](#events)
@@ -409,6 +410,69 @@ $eraser->erase($user, $actor);               // throws on a veto; your eraser bl
 Limits: it is not atomic, so if the erase fails the timer stays stopped (the time is safe). A timer started between the stop and the eraser is still deleted by an
 eraser that deletes `ActiveTimer` rows. `stop()` adds no `closed_by` mark, which suits a user who is not being deleted. A `TIMER_STOP` listener that throws stops
 the erasure before it starts.
+
+## Task time follows a board move (Unreleased)
+
+Owner decision (Beacon spec 217 FR-008): **the time follows the task.** When TaskBoard moves a task and its subtasks to another board,
+also in another tenant, the entries' `board_id_snapshot` and `scope_key` move with it, so the source's reports stop counting those hours
+and the target's count them, billing included. `TaskTimeMover` is a public service with no route; the host authorises the move.
+
+Wire it to TaskBoard's `TASK_BOARD_CHANGED` (TaskBoard 2.3, dispatched after the move's commit):
+
+```php
+use Nowo\TaskBoardBundle\Event\TaskBoardChangedEvent;
+use Nowo\TaskBoardBundle\Event\TaskBoardEvents;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeKeptReason;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+
+#[AsEventListener(event: TaskBoardEvents::TASK_BOARD_CHANGED)]
+final readonly class MoveTaskTime
+{
+    public function __construct(private TaskTimeMover $mover, private TenantScopes $scopes) {} // TenantScopes: your own service
+
+    public function __invoke(TaskBoardChangedEvent $event): void
+    {
+        foreach (array_chunk($event->taskIds, 200) as $taskIds) {
+            $result = $this->mover->moveTasks(
+                $taskIds,
+                $event->targetBoardId,
+                $this->scopes->scopeKeyOfBoard($event->targetBoardId), // what your scope provider answers for tasks on that board
+                actorId: $this->scopes->actorIdOf($event),              // optional, for TASK_TIME_MOVED
+            );
+            // $result->moved, alreadyAtTarget, secondsMoved, timersMoved
+            // $result->kept: entry id => TaskTimeKeptReason; keptIds(TaskTimeKeptReason::SourcePeriodLocked), secondsKept
+        }
+    }
+}
+```
+
+- **Only two columns change**, `board_id_snapshot` and `scope_key` (for a running timer, only `board_id_snapshot`: the entry it becomes takes the scope of its
+  board when it stops). Duration, times, user, person, task, title, source, read-only state, notes and external ids stay. Nothing is created or deleted, so count
+  and total per user are the same before and after.
+- **Every entry of the tasks:** live, manual, calendar and imported, of users and of people with no account.
+- **Batches:** 500 entries per transaction; the ids are read with no lock, then locked by primary key and checked again; one bulk `UPDATE` by id; loaded entries and
+  timers are detached, so read them again after the call. Task ids go 200 to a read; pass as many as you like.
+- **Retry:** if your listener fails (or the worker dies), the entries are still there with the old snapshot. Call again with the same arguments: rows already at the
+  target count in `alreadyAtTarget` and are not written; a repeated call that has nothing left changes nothing and fires no event. Running it from a message
+  handler with retries is fine.
+- **What stays, and why** (`TaskTimeMoveResult::$kept`, by entry id):
+  - `source_period_locked`: with timesheets on, the entry's period is locked, approved or submitted in its current scope (also for a deleted user's
+    timesheets, by `owner_ref`). Its timesheet's `entries_hash` and totals were taken over the entries of that scope: moving it would change what an approved or
+    locked period bills, so it stays, also when the scope does not change.
+  - `target_period_locked`: the owner's period at that date is locked, approved or submitted in the target scope; the hours would land in it.
+  - `anonymised`: an anonymised entry is never written again.
+  - `owner_unknown`: with timesheets on, an entry with no user and no person reference; the guard cannot check its period.
+
+  Kept hours keep counting in the source tenant. To move them, reopen the period (or withdraw or reject a submitted one) through the audited timesheet flow and
+  call again with the same arguments. With timesheets off only anonymised entries stay.
+- **Scope:** pass the scope your `timesheets.scope_provider` returns for tasks of the target board. The service does not ask the provider and does not check the
+  scope against the actor: you vouch for it, as for the board. `null` is for hosts without tenant scopes.
+- **Ledger:** balance ledger lines are not touched. Working-time balance derived from task time (`TaskTimeWorkedTimeSource`) moves with the entries for open
+  periods; a locked period's balance is frozen in its timesheet, whose entries stay.
+- `TaskTimeMovedEvent` (`TASK_TIME_MOVED`) carries the task ids, the target board and scope, the result and the actor, once per call after the last commit, when
+  anything moved or was kept. **The bundle has no audit table: store it.** A timer that stops while the move runs can leave its new entry with the old board; the
+  next call (or a retry) moves it.
 
 ## Working time and timesheets (1.13)
 
