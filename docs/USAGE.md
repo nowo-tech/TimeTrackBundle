@@ -485,6 +485,7 @@ final readonly class MoveTaskTime
 
   Kept hours keep counting where they are. To move locked ones, reopen the period (or withdraw or reject a submitted one) through the audited timesheet flow and
   call again with the same arguments. With timesheets off only anonymised entries (and, with `fromBoardId`, entries on a third board) stay.
+- **Two moves of one task handled at the same time** (two workers, each with its own message) can leave the time on the wrong board, because each resolves the current board before the other commits. Re-dispatch every move after a delay of a few seconds (it is idempotent, and the late call sees the final board), or handle the moves of one task one at a time (for example a Messenger lock or a single-consumer queue per task).
 - **A timer stopping during the move** may have read the timer before the move updated it, and then writes its entry with the old board and scope. The time is
   safe, but it counts in the source until another call. `TASK_BOARD_CHANGED` fires once, so schedule that call yourself: dispatch the same message again with a
   delay of a few seconds (it is idempotent), or, on `TIME_ENTRY_CREATED` / `TIMER_STOP`, compare the new entry's `board_id_snapshot` with the task's current board
@@ -493,7 +494,7 @@ final readonly class MoveTaskTime
   periods; a locked period's balance is frozen in its timesheet, whose entries stay.
 - **`TaskTimeMovedEvent` (`TASK_TIME_MOVED`) fires after each committed batch**, with that batch's task ids, target board and scope, result and actor, whenever the
   batch met any entry or timer, including entries that were all already at the target. So a retry reports what an earlier call committed, and a batch that
-  failed does not hide the ones before it. **The bundle has no audit table: store the event**, and expect the same entries more than once (`alreadyAtTarget`).
+  failed does not hide the ones before it. **The bundle has no audit table: store the event**, and expect the same entries more than once: `alreadyAtTarget`, `kept` and `secondsKept` repeat in every call's event, so a host that sums them across calls counts them twice.
   A listener that throws does not stop the move: the rest is done and committed, then the call throws `TaskTimeMoveEventException`, whose `getResult()` says
   what was done and whose previous exception is the listener's. Call again to have the event dispatched again.
 

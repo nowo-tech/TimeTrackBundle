@@ -59,7 +59,7 @@
 
 ## Unreleased
 
-**No schema change, nothing to do unless you move tasks between boards.** Audit status: re-verification pending.
+**No schema change, nothing to do unless you move tasks between boards.** Target **1.17.0**. Audit status: Audit ID (2026-11-08): Pass (good) / Info at `41e0ef2`.
 
 **New: the time of a moved task follows it.** When a task (with its subtasks) moves to another board, possibly in another tenant, call `TaskTimeMover::moveTasks($taskIds, $targetBoardId, $targetScopeKey)` after the move is committed; USAGE has the listener for TaskBoard's `TASK_BOARD_CHANGED`. Until you call it, entries keep the old `board_id_snapshot` and `scope_key`, which is what every earlier version did.
 
@@ -69,7 +69,7 @@
 - **Safe to retry.** A listener that failed leaves entries with the old snapshot; the same call later finishes it and counts what was already moved in `alreadyAtTarget`.
 - **Loaded entries and timers of those tasks are detached:** read them again after the call; a change you had pending on one is not written.
 - **Custom stores:** the service needs `TaskTimeMoveRepositoryInterface` on the entry store and `TaskTimerMoveRepositoryInterface` on the timer store, and throws `LogicException` without them. Nothing else changes.
-- Store `TASK_TIME_MOVED` (`TaskTimeMovedEvent`) if you keep an audit trail: the bundle has no audit table. It fires once per committed batch, also for entries already at the target, so expect repeats. A listener that throws makes the call throw `TaskTimeMoveEventException` after the move finished; call again to get the event again.
+- Store `TASK_TIME_MOVED` (`TaskTimeMovedEvent`) if you keep an audit trail: the bundle has no audit table. It fires once per committed batch, also for entries already at the target, so expect repeats: `alreadyAtTarget`, `kept` and `secondsKept` repeat in every call's event, so a host that sums them across calls counts twice. Two moves of one task handled at the same time can leave the time on the wrong board: re-dispatch every move after a delay, or handle moves of one task one at a time. A listener that throws makes the call throw `TaskTimeMoveEventException` after the move finished; call again to get the event again.
 - **A timer stopping during a move** can leave its entry on the old board: re-send the same message a few seconds later, or check new entries against the task's board (USAGE).
 
 ## To 1.16.2

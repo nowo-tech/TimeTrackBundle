@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Audit status: re-verification pending. No schema change; nothing changes for hosts that do not call the new service.
+Target **1.17.0**. Audit status: Audit ID (2026-11-08): Pass (good) / Info at `41e0ef2`. No schema change; nothing changes for hosts that do not call the new service.
 
 ### Added
 
