@@ -21,11 +21,14 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TaskTimeMoveRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\TaskMove\TaskTimeKeptReason;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeMoveEventException;
 use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
+use Nowo\TimeTrackBundle\TaskMove\TaskTimeMoveResult;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
 use PHPUnit\Framework\MockObject\Stub;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -87,7 +90,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertCount(1, $this->events);
         self::assertSame(['task-1', 'task-2'], $this->events[0]->getTaskIds());
         self::assertSame(['board-b', 'tenant-b', 'actor-7'], [$this->events[0]->getTargetBoardId(), $this->events[0]->getTargetScopeKey(), $this->events[0]->getActorId()]);
-        self::assertSame($result, $this->events[0]->getResult());
+        self::assertEquals($result, $this->events[0]->getResult(), 'one batch: its result is the whole result');
     }
 
     public function testOnlyTheBoardSnapshotAndTheScopeChange(): void
@@ -144,7 +147,9 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         $again = $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b');
         self::assertSame([0, 2, 0], [$again->moved, $again->alreadyAtTarget, $again->secondsMoved]);
         self::assertFalse($again->hasChanges());
-        self::assertCount(1, $this->events, 'a call that changed nothing fires nothing');
+        // Audit ID-L1: a repeated call still reports what is at the target, so an audit record lost earlier is written again.
+        self::assertCount(2, $this->events);
+        self::assertSame([0, 2], [$this->events[1]->getResult()->moved, $this->events[1]->getResult()->alreadyAtTarget]);
         self::assertSame(2, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
         self::assertNotSame($first, $second);
     }
@@ -186,16 +191,141 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertSame(['board-b', 'tenant-b'], $this->boardAndScope($lockedSource));
     }
 
-    public function testAMoveWithinOneScopeStillLeavesALockedPeriodAlone(): void
+    public function testWithinOneScopeLockedEntriesFollowInTheBoardOnly(): void
     {
-        $id = $this->entry('task-1', '2026-01-01 10:00:00', 3600);
+        $locked   = $this->entry('task-1', '2026-01-01 10:00:00', 3600);
+        $approved = $this->entry('task-1', '2026-01-28 10:00:00', 1800);
         $this->timesheet($this->user, 'tenant-a', '2026-W01')->applyLock(new DateTimeImmutable('2026-01-10 08:00:00'), TimesheetLockReason::Manual);
+        $this->timesheet($this->user, 'tenant-a', '2026-W05')->applyApprove(new DateTimeImmutable('2026-02-02 08:00:00'), 'approver', 'hash', null);
         $this->entityManager()->flush();
+        $before = [$this->snapshot('2026-W01'), $this->snapshot('2026-W05')];
 
         $result = $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-a');
 
-        self::assertSame([TaskTimeKeptReason::SourcePeriodLocked], array_values($result->kept));
-        self::assertSame(['board-a', 'tenant-a'], $this->boardAndScope($id));
+        // Owner decision 2026-11-08: the board follows; scope, hours, totals and entries hash stay.
+        self::assertSame([2, 0, 5400], [$result->moved, $result->keptCount(), $result->secondsMoved]);
+        self::assertSame(['board-b', 'tenant-a'], $this->boardAndScope($locked));
+        self::assertSame(['board-b', 'tenant-a'], $this->boardAndScope($approved));
+        $this->entityManager()->clear();
+        self::assertSame($before, [$this->snapshot('2026-W01'), $this->snapshot('2026-W05')]);
+    }
+
+    public function testAStaleOrReplayedCallLeavesTimeOnTheTasksNewerBoard(): void
+    {
+        $id = $this->entry('task-1', '2026-02-02 09:00:00', 3600);
+        $em = $this->entityManager();
+        $em->persist(new ActiveTimer($this->user, 'task-1', 'Task', 'board-a', ClientType::Web));
+        $em->flush();
+        self::assertSame([1, 1], $this->movedAndTimers($this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b', fromBoardId: 'board-a')));
+        self::assertSame([1, 1], $this->movedAndTimers($this->mover()->moveTasks(['task-1'], 'board-c', 'tenant-c', fromBoardId: 'board-b')));
+
+        // Audit ID-M1: the A to B message, retried after B to C committed.
+        $replay = $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b', fromBoardId: 'board-a');
+
+        self::assertSame([0, 0], $this->movedAndTimers($replay));
+        self::assertSame([$id => TaskTimeKeptReason::OnAnotherBoard], $replay->kept);
+        self::assertSame(['board-c', 'tenant-c'], $this->boardAndScope($id));
+        self::assertSame('board-c', (string) $em->getConnection()->fetchOne('SELECT board_id_snapshot FROM time_track_active_timers'));
+        // The same call again (a retry of the B to C message) finds it at the target.
+        self::assertSame(1, $this->mover()->moveTasks(['task-1'], 'board-c', 'tenant-c', fromBoardId: 'board-b')->alreadyAtTarget);
+    }
+
+    public function testAFailingAuditListenerDoesNotHideCommittedWork(): void
+    {
+        $id         = $this->entry('task-1', '2026-02-02 09:00:00', 3600);
+        $fail       = true;
+        $dispatcher = self::getContainer()->get(EventDispatcherInterface::class);
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->addListener(TimeTrackEvents::TASK_TIME_MOVED, static function () use (&$fail): void {
+            if ($fail) {
+                $fail = false;
+
+                throw new RuntimeException('audit store down');
+            }
+        }, -10);
+
+        try {
+            $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b', 'actor-1');
+            self::fail('The listener failure is not hidden.');
+        } catch (TaskTimeMoveEventException $exception) {
+            self::assertSame(1, $exception->getResult()->moved);
+            self::assertInstanceOf(RuntimeException::class, $exception->getPrevious());
+        }
+        self::assertSame(['board-b', 'tenant-b'], $this->boardAndScope($id));
+
+        // Audit ID-L1: the retry finds nothing to move but reports the entry at the target again.
+        $retry = $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b', 'actor-1');
+        self::assertSame([0, 1], [$retry->moved, $retry->alreadyAtTarget]);
+        self::assertCount(2, $this->events);
+        self::assertSame(1, $this->events[1]->getResult()->alreadyAtTarget);
+    }
+
+    public function testBatchesCommittedBeforeAFailureAreReported(): void
+    {
+        $this->entry('task-1', '2026-02-02 09:00:00', 3600);
+        $this->entry('task-2', '2026-02-02 11:00:00', 600);
+        $store = $this->store();
+        /** @var Stub&TaskTimeMoveRepositoryInterface&TimeEntryRepositoryInterface $failing */
+        $failing = $this->createStubForIntersectionOfInterfaces([TimeEntryRepositoryInterface::class, TaskTimeMoveRepositoryInterface::class]);
+        $failing->method('inTaskMoveTransaction')->willReturnCallback(static fn (callable $operation): mixed => $store->inTaskMoveTransaction($operation));
+        $failing->method('findForTaskMove')->willReturnCallback(static fn (array $taskIds, string $after, int $limit): array => $store->findForTaskMove(array_map(strval(...), array_values($taskIds)), $after, $limit));
+        $calls = 0;
+        $failing->method('applyTaskMove')->willReturnCallback(static function (array $ids, ?string $board, ?string $scope) use ($store, &$calls): int {
+            if (++$calls === 2) {
+                throw new RuntimeException('database gone');
+            }
+
+            return $store->applyTaskMove(array_map(strval(...), array_values($ids)), $board, $scope);
+        });
+        $timers = self::getContainer()->get(ActiveTimerRepositoryInterface::class);
+        self::assertInstanceOf(ActiveTimerRepositoryInterface::class, $timers);
+        $dispatcher = self::getContainer()->get(EventDispatcherInterface::class);
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        // The second chunk holds task-2: one chunk of task-1 and padding, then task-2.
+        $tasks = ['task-1'];
+        for ($n = 1; $n < TaskTimeMover::TASK_CHUNK; ++$n) {
+            $tasks[] = 'pad-' . $n;
+        }
+        $tasks[] = 'task-2';
+
+        try {
+            (new TaskTimeMover($failing, $timers, $this->guard(), $dispatcher))->moveTasks($tasks, 'board-b', 'tenant-b');
+            self::fail('The failure is not hidden.');
+        } catch (RuntimeException $exception) {
+            self::assertSame('database gone', $exception->getMessage());
+        }
+
+        self::assertCount(1, $this->events, 'the first chunk committed and was reported');
+        self::assertSame([1, 3600], [$this->events[0]->getResult()->moved, $this->events[0]->getResult()->secondsMoved]);
+        self::assertSame(['tenant-a'], $this->column('scope_key', "task_id = 'task-2'"));
+    }
+
+    public function testATimerStoppedFromAStaleCopyIsMovedByTheNextCall(): void
+    {
+        $em = $this->entityManager();
+        $em->persist(new ActiveTimer($this->user, 'task-1', 'Task', 'board-a', ClientType::Web));
+        $em->flush();
+        self::assertSame(1, $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b', fromBoardId: 'board-a')->timersMoved);
+        // Audit ID-L2: what a stop that loaded the timer before the move writes: the old board and scope.
+        $late = $this->entry('task-1', '2026-02-02 09:00:00', 1200);
+
+        $again = $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b', fromBoardId: 'board-a');
+
+        self::assertSame(1, $again->moved);
+        self::assertSame(['board-b', 'tenant-b'], $this->boardAndScope($late));
+    }
+
+    public function testASubmitRacingAMoveIsCaughtByTheApprovalHash(): void
+    {
+        $this->entry('task-1', '2026-02-02 09:00:00', 3600);
+        $before = $this->snapshot('2026-W06');
+        self::assertSame(1, $before[1]['entries']);
+
+        $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b');
+        $this->entityManager()->clear();
+
+        // Audit ID-I1: a snapshot taken before the move no longer matches, which is approve()'s `stale` refusal.
+        self::assertNotSame($before[0], $this->snapshot('2026-W06')[0]);
     }
 
     public function testAnonymisedEntriesAndEntriesOfNobodyStay(): void
@@ -288,6 +418,26 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertInstanceOf(DoctrineOrmActiveTimerRepository::class, $timers);
         self::assertSame(0, $timers->moveTimersToBoard([], 'board-b'));
         self::assertInstanceOf(TaskTimeMover::class, self::getContainer()->get(TaskTimeMover::class));
+    }
+
+    /**
+     * @return array{0: string, 1: array<string, mixed>} the entries hash and totals of the user's tenant-a week
+     */
+    private function snapshot(string $week): array
+    {
+        $builder = self::getContainer()->get(TimesheetSnapshotBuilder::class);
+        self::assertInstanceOf(TimesheetSnapshotBuilder::class, $builder);
+        $snapshot = $builder->build(null, (string) $this->user->getId(), 'tenant-a', Period::fromKey(TimesheetPeriodKind::Week, $week), 'UTC');
+
+        return [$snapshot->entriesHash, $snapshot->totals];
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function movedAndTimers(TaskTimeMoveResult $result): array
+    {
+        return [$result->moved, $result->timersMoved];
     }
 
     private function mover(): TaskTimeMover

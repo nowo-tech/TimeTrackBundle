@@ -58,6 +58,23 @@ final class TaskTimeMoverTest extends TestCase
         (new TaskTimeMover($entries, $this->timers()))->moveTasks($taskIds, $boardId, $scopeKey);
     }
 
+    public function testAnInvalidSourceBoardWritesNothing(): void
+    {
+        /** @var MockObject&TaskTimeMoveRepositoryInterface&TimeEntryRepositoryInterface $entries */
+        $entries = $this->createMockForIntersectionOfInterfaces([TimeEntryRepositoryInterface::class, TaskTimeMoveRepositoryInterface::class]);
+        $entries->expects(self::never())->method('inTaskMoveTransaction');
+
+        $this->expectException(InvalidArgumentException::class);
+        (new TaskTimeMover($entries, $this->timers()))->moveTasks(['task'], 'board', 'scope', fromBoardId: '');
+    }
+
+    public function testResultEmptiness(): void
+    {
+        self::assertTrue((new TaskTimeMoveResult())->isEmpty());
+        self::assertFalse((new TaskTimeMoveResult(alreadyAtTarget: 1))->isEmpty());
+        self::assertFalse((new TaskTimeMoveResult(moved: 1))->isEmpty());
+    }
+
     public function testStoresWithoutTheCapabilityAreRefused(): void
     {
         $this->expectException(LogicException::class);

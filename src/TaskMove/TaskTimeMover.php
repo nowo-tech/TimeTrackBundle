@@ -17,6 +17,7 @@ use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Throwable;
 
 use function array_chunk;
 use function array_keys;
@@ -37,10 +38,18 @@ use function strlen;
  * transaction (read, lock, check, bulk update, loaded entries detached), so a call that fails half way leaves the rest with the
  * old snapshot, and calling again with the same arguments finishes it: an entry already at the target is counted, not written.
  *
- * With timesheets on, an entry whose period is locked, approved or submitted, in its current scope or in the target scope, is
- * kept where it is and reported ({@see TaskTimeKeptReason}): its timesheet's entries hash and totals were taken over the
- * entries of its scope, and moving it would change what that period bills. An audited reopen of the period and a new call
- * moves it. Anonymised entries are never written again and are kept too. The balance ledger is not touched.
+ * With timesheets on, on a move into another scope, an entry whose period is locked, approved or submitted, in its current
+ * scope or in the target scope, is kept where it is and reported ({@see TaskTimeKeptReason}): its timesheet's entries hash and
+ * totals were taken over the entries of its scope, and moving it would change what that period bills. An audited reopen of the
+ * period and a new call moves it. On a move within one scope such an entry follows in `board_id_snapshot` only, which neither
+ * the hash nor the totals cover (owner decision 2026-11-08). Anonymised entries are never written again and are kept too. The
+ * balance ledger is not touched.
+ *
+ * The target is trusted as given, and the last call wins (audit ID-M1): pass `$fromBoardId`, the board the move left, so a
+ * stale or replayed call leaves entries that are on a third board ({@see TaskTimeKeptReason::OnAnotherBoard}), and resolve the
+ * target at handling time. {@see TaskTimeMovedEvent} fires after each committed batch (audit ID-L1), also for a batch whose
+ * entries were all already at the target, so a retry reports what an earlier call committed. A listener that throws does not
+ * stop the move: the rest is done, then {@see TaskTimeMoveEventException} carries the full result.
  */
 final readonly class TaskTimeMover
 {
@@ -76,13 +85,20 @@ final readonly class TaskTimeMover
      * @param string|null $targetScopeKey the scope of that board's tenant: what the scope provider answers for those tasks now
      *                                    (null only on hosts without tenant scopes)
      * @param string|null $actorId the user who moved the tasks, for the event
+     * @param string|null $fromBoardId the board the move left (`TaskBoardChangedEvent::$sourceBoardId`): when given, only entries
+     *                                 and timers on that board (or already on the target board) move, others are kept as
+     *                                 {@see TaskTimeKeptReason::OnAnotherBoard}
      *
      * @throws InvalidArgumentException when an argument breaks a rule (nothing written)
      * @throws LogicException when a store lacks the capability (nothing written)
+     * @throws TaskTimeMoveEventException when a {@see TimeTrackEvents::TASK_TIME_MOVED} listener threw (everything else was done)
      */
-    public function moveTasks(array $taskIds, ?string $targetBoardId, ?string $targetScopeKey, ?string $actorId = null): TaskTimeMoveResult
+    public function moveTasks(array $taskIds, ?string $targetBoardId, ?string $targetScopeKey, ?string $actorId = null, ?string $fromBoardId = null): TaskTimeMoveResult
     {
         $taskIds = $this->validate($taskIds, $targetBoardId, $targetScopeKey);
+        if ($fromBoardId !== null && ($fromBoardId === '' || strlen($fromBoardId) > self::MAX_ID_LENGTH)) {
+            throw new InvalidArgumentException('The source board id must be null or a non-empty string of at most 36 bytes.');
+        }
         if (!$this->entries instanceof TaskTimeMoveRepositoryInterface || !$this->timers instanceof TaskTimerMoveRepositoryInterface) {
             throw new LogicException('Moving the time of tasks requires stores implementing TaskTimeMoveRepositoryInterface and TaskTimerMoveRepositoryInterface.');
         }
@@ -93,23 +109,51 @@ final readonly class TaskTimeMover
             return $total;
         }
 
+        $failure = null;
         foreach (array_chunk($taskIds, self::TASK_CHUNK) as $chunk) {
             // Timers first: a timer that stops after this writes its entry with the new board.
-            $total = $total->merge(new TaskTimeMoveResult(timersMoved: $timers->moveTimersToBoard($chunk, $targetBoardId)));
-            $after = '';
+            $timersBatch = new TaskTimeMoveResult(timersMoved: $timers->moveTimersToBoard($chunk, $targetBoardId, $fromBoardId));
+            $total       = $total->merge($timersBatch);
+            $failure     = $this->report($timersBatch, $chunk, $targetBoardId, $targetScopeKey, $actorId, $failure);
+            $after       = '';
             do {
                 // @igor-ignore - I/O delegate (repository call); no worker state.
-                [$batch, $after, $read] = $entries->inTaskMoveTransaction(fn (): array => $this->batch($entries, $chunk, $after, $targetBoardId, $targetScopeKey));
+                [$batch, $after, $read] = $entries->inTaskMoveTransaction(fn (): array => $this->batch($entries, $chunk, $after, $targetBoardId, $targetScopeKey, $fromBoardId));
                 $total                  = $total->merge($batch);
+                $failure                = $this->report($batch, $chunk, $targetBoardId, $targetScopeKey, $actorId, $failure);
             } while ($read);
         }
 
         if ($total->hasChanges()) {
-            $this->eventDispatcher?->dispatch(new TaskTimeMovedEvent($taskIds, $targetBoardId, $targetScopeKey, $total, $actorId), TimeTrackEvents::TASK_TIME_MOVED);
             $this->logger->info('TimeTrack task time moved.', ['bundle' => 'nowo_time_track', 'tasks' => count($taskIds), 'moved' => $total->moved, 'already' => $total->alreadyAtTarget, 'kept' => $total->keptCount(), 'timers' => $total->timersMoved, 'has_actor' => $actorId !== null]);
         }
 
+        if ($failure instanceof Throwable) {
+            throw new TaskTimeMoveEventException($total, $failure);
+        }
+
         return $total;
+    }
+
+    /**
+     * Dispatches the event of one committed batch; a listener's exception is logged and kept (the first one) for the end.
+     *
+     * @param list<string> $chunk
+     */
+    private function report(TaskTimeMoveResult $batch, array $chunk, ?string $boardId, ?string $scopeKey, ?string $actorId, ?Throwable $failure): ?Throwable
+    {
+        if ($batch->isEmpty() || !$this->eventDispatcher instanceof EventDispatcherInterface) {
+            return $failure;
+        }
+        try {
+            $this->eventDispatcher->dispatch(new TaskTimeMovedEvent($chunk, $boardId, $scopeKey, $batch, $actorId), TimeTrackEvents::TASK_TIME_MOVED);
+        } catch (Throwable $exception) {
+            $this->logger->error('TimeTrack task time moved, but a TASK_TIME_MOVED listener failed.', ['bundle' => 'nowo_time_track', 'exception' => $exception::class, 'moved' => $batch->moved, 'already' => $batch->alreadyAtTarget, 'kept' => $batch->keptCount(), 'timers' => $batch->timersMoved]);
+
+            return $failure ?? $exception;
+        }
+
+        return $failure;
     }
 
     /**
@@ -119,7 +163,7 @@ final readonly class TaskTimeMover
      *
      * @return array{0: TaskTimeMoveResult, 1: string, 2: bool} the batch's result, the cursor, whether rows were read
      */
-    private function batch(TaskTimeMoveRepositoryInterface $entries, array $chunk, string $after, ?string $boardId, ?string $scopeKey): array
+    private function batch(TaskTimeMoveRepositoryInterface $entries, array $chunk, string $after, ?string $boardId, ?string $scopeKey, ?string $fromBoardId): array
     {
         $rows    = $entries->findForTaskMove($chunk, $after, self::BATCH);
         $move    = [];
@@ -139,7 +183,9 @@ final readonly class TaskTimeMover
                 ++$already;
                 continue;
             }
-            $reason = $this->keptReason($row, $scopeKey);
+            $reason = $fromBoardId !== null && $row['boardId'] !== $fromBoardId && $row['boardId'] !== $boardId
+                ? TaskTimeKeptReason::OnAnotherBoard
+                : $this->keptReason($row, $scopeKey);
             if ($reason instanceof TaskTimeKeptReason) {
                 $kept[$row['id']] = $reason;
                 $keptSec += (int) $row['seconds'];
@@ -171,10 +217,14 @@ final readonly class TaskTimeMover
         if ($userId === null && $row['personRef'] === null) {
             return TaskTimeKeptReason::OwnerUnknown;
         }
+        // Within one scope only the board snapshot changes, which no timesheet hash or total covers (owner decision 2026-11-08).
+        if ($targetScope === $row['scopeKey']) {
+            return null;
+        }
         if ($guard->isMoveBlocked($userId, $row['personRef'], $row['scopeKey'], $row['startedAt'])) {
             return TaskTimeKeptReason::SourcePeriodLocked;
         }
-        if ($targetScope !== $row['scopeKey'] && $guard->isMoveBlocked($userId, $row['personRef'], $targetScope, $row['startedAt'])) {
+        if ($guard->isMoveBlocked($userId, $row['personRef'], $targetScope, $row['startedAt'])) {
             return TaskTimeKeptReason::TargetPeriodLocked;
         }
 

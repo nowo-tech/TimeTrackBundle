@@ -105,9 +105,9 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
 
     /**
      * Since 1.17: sets the board snapshot of the running timers of these tasks that do not have it yet, by id; nothing else
-     * changes. A loaded timer is detached, so a later flush does not write its old board back.
+     * changes; with `$fromBoardId`, only timers on that board. A loaded timer is detached, so a later flush does not write its old board back.
      */
-    public function moveTimersToBoard(array $taskIds, ?string $boardId): int
+    public function moveTimersToBoard(array $taskIds, ?string $boardId, ?string $fromBoardId = null): int
     {
         if ($taskIds === []) {
             return 0;
@@ -117,6 +117,9 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
             ->from(ActiveTimer::class, 't')
             ->where('t.taskId IN (:taskIds)')
             ->setParameter('taskIds', $taskIds);
+        if ($fromBoardId !== null) {
+            $query->andWhere('t.boardIdSnapshot = :fromBoardId')->setParameter('fromBoardId', $fromBoardId);
+        }
         if ($boardId === null) {
             $query->andWhere('t.boardIdSnapshot IS NOT NULL');
         } else {

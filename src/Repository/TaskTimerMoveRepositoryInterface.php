@@ -15,9 +15,9 @@ interface TaskTimerMoveRepositoryInterface
 {
     /**
      * Sets the board snapshot of the running timers of these tasks that do not have it yet, and nothing else; returns the timers
-     * changed. Loaded timers are detached.
+     * changed. Loaded timers are detached. With `$fromBoardId`, only timers on that board move.
      *
      * @param list<string> $taskIds
      */
-    public function moveTimersToBoard(array $taskIds, ?string $boardId): int;
+    public function moveTimersToBoard(array $taskIds, ?string $boardId, ?string $fromBoardId = null): int;
 }

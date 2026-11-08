@@ -84,6 +84,14 @@ final readonly class TaskTimeMoveResult
     }
 
     /**
+     * Whether the call or batch met nothing at all: no entry (moved, already there or kept) and no timer.
+     */
+    public function isEmpty(): bool
+    {
+        return !$this->hasChanges() && $this->alreadyAtTarget === 0;
+    }
+
+    /**
      * Both results added up (a move reads in batches).
      */
     public function merge(self $other): self
