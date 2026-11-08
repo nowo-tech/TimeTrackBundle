@@ -60,6 +60,11 @@
 
 ## Unreleased
 
+No schema change, no contract change, nothing to do for most hosts.
+
+- **`verify` on a chain with two starts** (audit HT-L2) now also checks that chain's links. If a line is missing behind the alarm, the message gains `, and K line(s) are not linked to them`. A host that matches the exact text `the chain has 2 starts` keeps matching the start of it. The baseline list of two-start chains from the 1.16.2 notes stays valid.
+- **Retention purge** (audit HT-L1): the ledger prefix now follows the chain's links. On a chain where a line was written on a clock behind, the purge stops where the chain reaches the first line effective on or after the cut-off, so it may keep a line the sort order would have taken; it no longer cuts a line out of the middle of the chain.
+
 ## To 1.17.0
 
 From **1.16.2**:

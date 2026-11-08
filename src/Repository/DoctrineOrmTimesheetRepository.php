@@ -276,7 +276,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
 
     /**
      * Deletes, per chain with lines effective before the date, the longest chain-order prefix of such lines and marks
-     * the first line kept; returns the lines deleted.
+     * the first line kept; returns the lines deleted. Chain order follows the links ({@see self::chainOrder()}).
      */
     private function purgeLedgerPrefixes(DateTimeImmutable $before): int
     {
@@ -291,9 +291,9 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getArrayResult();
         $deleted = 0;
         foreach ($chains as $chain) {
-            /** @var list<array{id: string, effectiveDate: DateTimeImmutable}> $lines */
+            /** @var list<array{id: string, effectiveDate: DateTimeImmutable, hash: string, prevHash: ?string, purgedBefore: ?DateTimeImmutable}> $lines */
             $lines = $this->entityManager->createQueryBuilder()
-                ->select('l.id AS id', 'l.effectiveDate AS effectiveDate')
+                ->select('l.id AS id', 'l.effectiveDate AS effectiveDate', 'l.hash AS hash', 'l.prevHash AS prevHash', 'l.purgedBefore AS purgedBefore')
                 ->from(BalanceLedgerLine::class, 'l')
                 ->where('l.ownerRef = :owner')
                 ->andWhere('l.scopeKey = :scope')
@@ -305,7 +305,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
                 ->getArrayResult();
             $prefix = [];
             $keep   = null;
-            foreach ($lines as $line) {
+            foreach ($this->chainOrder($lines) as $line) {
                 if ($line['effectiveDate']->format('Y-m-d') >= $before->format('Y-m-d')) {
                     $keep = $line['id'];
                     break;
@@ -336,6 +336,48 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         }
 
         return $deleted;
+    }
+
+    /**
+     * Since 1.17.1 (audit HT-L1): a chain's lines in chain order, not in sort order. From each start (the first line, or the
+     * line marked `purged_before`), in sort order, the links are followed to the end; lines that no start reaches (a line
+     * deleted by hand before them) follow in sort order, as before. A line written on a clock behind sorts before the line
+     * it follows, so a prefix taken in sort order could delete it and keep its predecessor, and `verify` would then report
+     * the next line as not linked.
+     *
+     * @template T of array{id: string, hash: string, prevHash: ?string, purgedBefore: ?DateTimeImmutable}
+     *
+     * @param list<T> $lines in sort order (`created_at`, `id`)
+     *
+     * @return list<T>
+     */
+    private function chainOrder(array $lines): array
+    {
+        $followers = [];
+        foreach ($lines as $index => $line) {
+            $followers[$line['prevHash'] ?? ''][] = $index;
+        }
+        $ordered = [];
+        $placed  = [];
+        foreach ($lines as $index => $line) {
+            if ($line['purgedBefore'] === null && ($line['prevHash'] ?? BalanceLedgerLine::FIRST_LINE_PREV_HASH) !== BalanceLedgerLine::FIRST_LINE_PREV_HASH) {
+                continue;
+            }
+            $at = $index;
+            while ($at !== null && !isset($placed[$at])) {
+                $placed[$at] = true;
+                $ordered[]   = $lines[$at];
+                $next        = $followers[$lines[$at]['hash']] ?? [];
+                $at          = count($next) === 1 ? $next[0] : null;
+            }
+        }
+        foreach ($lines as $index => $line) {
+            if (!isset($placed[$index])) {
+                $ordered[] = $line;
+            }
+        }
+
+        return $ordered;
     }
 
     /**
