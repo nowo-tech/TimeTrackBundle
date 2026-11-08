@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Audit status: re-verification pending. No schema change, no contract change.
+
+### Fixed
+
+- HT-L1: the retention purge takes each ledger chain's prefix in chain order, following the links from each start, instead of in `created_at, id` order. A line written on a clock behind sorts before the line it follows; when only that line was effective before the cut-off, the purge deleted it and kept its predecessor, and `verify` then reported the next line as not linked. Lines that no start reaches (a line deleted by hand before them) are still taken in sort order, as before.
+- HT-L2: on a chain with several starts, `verify` now also follows the links from each start. A line deleted by hand behind the "the chain has N starts" alarm used to change nothing in the output; it now reads `the chain has N starts, and K line(s) are not linked to them`. A chain with several starts and no other break gives the same message as before.
+
 ## [1.17.0] - 2026-11-08
 
 Target **1.17.0**. Audit status: Audit ID (2026-11-08): Pass (good) / Info at `41e0ef2`. No schema change; nothing changes for hosts that do not call the new service.

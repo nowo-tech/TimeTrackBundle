@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Exception\LedgerRefusedException;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
@@ -27,7 +28,8 @@ use function random_bytes;
 use function substr;
 
 /**
- * Since 1.16.2: the ledger chain's head and its first line (audit HQ-L3, HQ-L4). Runs on every database of the functional suite.
+ * Since 1.16.2: the ledger chain's head and its first line (audit HQ-L3, HQ-L4); since 1.17.1 the purge's chain order
+ * and links behind a two-starts alarm (audit HT-L1, HT-L2). Runs on every database of the functional suite.
  */
 final class BalanceLedgerChainTest extends FunctionalTestCase
 {
@@ -176,6 +178,81 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         $this->approver = $this->managed($this->approver);
         self::assertNotNull($this->add()->getPrevHash());
         self::assertSame(3, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_balance_ledger'));
+    }
+
+    public function testAPurgeFollowsTheChainNotTheSort(): void
+    {
+        // HT-L1: the second line was written on a clock behind, so it sorts before the line it follows. Only it is effective
+        // before the cut-off, so it is not part of a chain-order prefix and stays.
+        $first  = $this->line('2026-10-01', new DateTimeImmutable('2026-11-07 10:00:10'), null);
+        $second = $this->line('2020-01-01', new DateTimeImmutable('2026-11-07 10:00:08'), $first);
+        $this->line('2026-10-02', new DateTimeImmutable('2026-11-07 10:00:20'), $second);
+        $this->assertIntact();
+
+        self::assertSame(0, $this->purge('2021-01-01'));
+
+        $this->assertIntact();
+        self::assertCount(3, $this->store()->findByOwner((string) $this->user->getId(), 'org-a'));
+    }
+
+    public function testAPurgeTakesAChainPrefixInChainOrderAndMarksTheLineKept(): void
+    {
+        $first  = $this->line('2020-02-01', new DateTimeImmutable('2026-11-07 10:00:10'), null);
+        $second = $this->line('2020-01-01', new DateTimeImmutable('2026-11-07 10:00:08'), $first);
+        $third  = $this->line('2026-10-02', new DateTimeImmutable('2026-11-07 10:00:20'), $second);
+
+        self::assertSame(2, $this->purge('2021-01-01'));
+
+        $this->assertIntact();
+        self::assertSame('2021-01-01', $this->store()->find($third->getId())?->getPurgedBefore());
+    }
+
+    public function testAPurgeTakesLinesNoStartReachesInSortOrderAsBefore(): void
+    {
+        $first  = $this->line('2020-01-01', new DateTimeImmutable('2026-11-07 10:00:01'), null);
+        $second = $this->line('2020-01-02', new DateTimeImmutable('2026-11-07 10:00:02'), $first);
+        $third  = $this->line('2020-01-03', new DateTimeImmutable('2026-11-07 10:00:03'), $second);
+        $fourth = $this->line('2026-10-02', new DateTimeImmutable('2026-11-07 10:00:04'), $third);
+        $this->entityManager()->getConnection()->executeStatement('DELETE FROM time_track_balance_ledger WHERE id = ?', [$second->getId()]);
+        $this->entityManager()->clear();
+
+        self::assertSame(2, $this->purge('2021-01-01'));
+
+        self::assertSame('2021-01-01', $this->store()->find($fourth->getId())?->getPurgedBefore());
+        self::assertCount(1, $this->store()->findByOwner((string) $this->user->getId(), 'org-a'));
+    }
+
+    public function testTwoStartsDoNotHideALineDeletedByHand(): void
+    {
+        // HT-L2: the two-starts alarm used to return before the links were walked.
+        $conn  = $this->entityManager()->getConnection();
+        $owner = (string) $this->user->getId();
+        $first = $this->line('2026-10-01', new DateTimeImmutable('2026-11-07 10:00:01'), null);
+        $conn->executeStatement('UPDATE time_track_balance_ledger SET prev_hash = NULL WHERE id = ?', [$first->getId()]);
+        $start = $this->line('2026-10-01', new DateTimeImmutable('2026-11-07 10:00:02'), null);
+        $conn->executeStatement('UPDATE time_track_balance_ledger SET prev_hash = NULL WHERE id = ?', [$start->getId()]);
+        $middle = $this->line('2026-10-02', new DateTimeImmutable('2026-11-07 10:00:03'), $start);
+        $this->line('2026-10-03', new DateTimeImmutable('2026-11-07 10:00:04'), $middle);
+        $this->entityManager()->clear();
+        self::assertSame('ledger ' . $owner . ' / org-a: the chain has 2 starts', $this->verifier()->verifyLedger($owner, 'org-a'));
+
+        $conn->executeStatement('DELETE FROM time_track_balance_ledger WHERE id = ?', [$middle->getId()]);
+
+        self::assertSame('ledger ' . $owner . ' / org-a: the chain has 2 starts, and 1 line(s) are not linked to them', $this->verifier()->verifyLedger($owner, 'org-a'));
+    }
+
+    private function line(string $effectiveDate, DateTimeImmutable $createdAt, ?BalanceLedgerLine $previous): BalanceLedgerLine
+    {
+        $line = new BalanceLedgerLine($this->managed($this->user), (string) $this->user->getId(), 'org-a', $effectiveDate, LedgerKind::Adjustment, 60, $createdAt, $previous?->getHash(), 'line');
+        $this->store()->append($line);
+        $this->store()->flush();
+
+        return $line;
+    }
+
+    private function purge(string $before): int
+    {
+        return (new DoctrineOrmTimesheetRepository($this->entityManager()))->purgeBefore($before)['ledger'];
     }
 
     private function assertChainGoesOn(): void

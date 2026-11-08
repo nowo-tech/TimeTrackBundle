@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Timesheet;
 
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
@@ -101,12 +102,12 @@ final readonly class AuditChainVerifier
                 $starts[] = $line;
             }
         }
-        if (count($starts) > 1) {
-            return sprintf('ledger %s / %s: the chain has %d starts', $ownerRef, $scopeKey, count($starts));
-        }
         $total = 0;
         foreach ($byPrev as $lines) {
             $total += count($lines);
+        }
+        if (count($starts) > 1) {
+            return $this->verifyStarts($ownerRef, $scopeKey, $starts, $byPrev, $total);
         }
         $visited = 0;
         $next    = ($starts[0] ?? null)?->getPrevHash() ?? '';
@@ -120,5 +121,26 @@ final readonly class AuditChainVerifier
         }
 
         return $visited === $total ? null : sprintf('ledger %s / %s: %d line(s) are not linked to the chain', $ownerRef, $scopeKey, $total - $visited);
+    }
+
+    /**
+     * Since 1.17.1 (audit HT-L2): a chain with several starts is still reported, and its links are checked too, from each
+     * start, so a line deleted by hand behind the alarm is not hidden by it.
+     *
+     * @param list<BalanceLedgerLine> $starts
+     * @param array<string, list<BalanceLedgerLine>> $byPrev
+     */
+    private function verifyStarts(string $ownerRef, string $scopeKey, array $starts, array $byPrev, int $total): string
+    {
+        $linked = [];
+        foreach ($starts as $line) {
+            while ($line instanceof BalanceLedgerLine && !isset($linked[$line->getId()])) {
+                $linked[$line->getId()] = true;
+                $line                   = $byPrev[$line->getHash()][0] ?? null;
+            }
+        }
+        $problem = sprintf('ledger %s / %s: the chain has %d starts', $ownerRef, $scopeKey, count($starts));
+
+        return count($linked) === $total ? $problem : $problem . sprintf(', and %d line(s) are not linked to them', $total - count($linked));
     }
 }
