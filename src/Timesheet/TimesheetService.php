@@ -21,6 +21,8 @@ use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Event\TimesheetTransitionEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\TimesheetException;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
@@ -54,6 +56,8 @@ use function mb_strlen;
  */
 final readonly class TimesheetService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     /** Shortest reject / reopen comment. */
     public const COMMENT_MIN_LENGTH = 10;
 
@@ -82,8 +86,10 @@ final readonly class TimesheetService
         private bool $ratifyOnApproval = true,
         private LoggerInterface $logger = new NullLogger(),
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -172,7 +178,7 @@ final readonly class TimesheetService
             throw new TimesheetException('not_found');
         }
 
-        return (new Timesheet($viewer, UserIdResolver::getId($viewer), $scopeKey, $period, $this->timezoneResolver->resolve($viewer, $scopeKey), $this->clock->now()))->markDraft();
+        return (new Timesheet($this->userReferences->reference($viewer), UserIdResolver::getId($viewer), $scopeKey, $period, $this->timezoneResolver->resolve($viewer, $scopeKey), $this->clock->now()))->markDraft();
     }
 
     /**
@@ -494,7 +500,7 @@ final readonly class TimesheetService
 
     private function create(UserInterface $owner, string $scopeKey, Period $period): Timesheet
     {
-        $timesheet = new Timesheet($owner, UserIdResolver::getId($owner), $scopeKey, $period, $this->timezoneResolver->resolve($owner, $scopeKey), $this->clock->now());
+        $timesheet = new Timesheet($this->userReferences->reference($owner), UserIdResolver::getId($owner), $scopeKey, $period, $this->timezoneResolver->resolve($owner, $scopeKey), $this->clock->now());
         try {
             $this->timesheets->save($timesheet);
         } catch (UniqueConstraintViolationException $e) {

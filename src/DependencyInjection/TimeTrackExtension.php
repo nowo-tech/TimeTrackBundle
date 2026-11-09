@@ -53,6 +53,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
+use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
@@ -60,6 +61,7 @@ use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Meeting\MeetingLinkDetector;
 use Nowo\TimeTrackBundle\Meeting\MeetingQueryParser;
@@ -94,6 +96,7 @@ use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
@@ -304,12 +307,43 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerClientApi($container, $config);
         $this->registerImports($container, $config);
         $this->registerTimesheets($container, $config, $emRef);
+        $this->registerUserReferences($container, (string) $config['user_class'], $emRef);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
                 ->setArgument('$layoutTemplate', $config['templates']['layout'])
                 ->setArgument('$cssFramework', $config['templates']['css_framework'])
                 ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
+        }
+    }
+
+    /**
+     * Since 1.18: the {@see UserReferenceResolverInterface} port (default {@see DoctrineUserReferenceResolver}), injected
+     * into every service that stores the security user in a `user` association. Hosts override the alias.
+     */
+    private function registerUserReferences(ContainerBuilder $container, string $userClass, Reference $emRef): void
+    {
+        $container->setDefinition(DoctrineUserReferenceResolver::class, (new Definition(DoctrineUserReferenceResolver::class))
+            ->setAutowired(false)
+            ->setArgument('$entityManager', $emRef)
+            ->setArgument('$userClass', $userClass));
+        $container->setAlias(UserReferenceResolverInterface::class, DoctrineUserReferenceResolver::class);
+
+        $reference = new Reference(UserReferenceResolverInterface::class);
+        foreach ([
+            TimerService::class,
+            ManualEntryService::class,
+            ImportedTimeEntryWriter::class,
+            TimesheetService::class,
+            BalanceLedger::class,
+            ClientAuthService::class,
+            DeviceAuthorizationService::class,
+            CalendarConnectionService::class,
+            CalendarRuleService::class,
+        ] as $serviceId) {
+            if ($container->hasDefinition($serviceId)) {
+                $container->getDefinition($serviceId)->setArgument('$userReferences', $reference);
+            }
         }
     }
 

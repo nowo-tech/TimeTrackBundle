@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Event;
 
+use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -72,5 +74,23 @@ final class TimeEntryAccessCheckEvent extends Event
     {
         // @igor-ignore - Request-scoped Event DTO; not a shared worker service.
         $this->granted = false;
+    }
+
+    /** Since 1.18: id of {@see self::getUser()} as a string (`getId()`), for listeners that keep only ids. */
+    public function getUserId(): string
+    {
+        return UserIdResolver::getId($this->user);
+    }
+
+    /** Since 1.18: id of the entry. */
+    public function getEntryId(): string
+    {
+        return $this->entry->getId();
+    }
+
+    /** Since 1.18: scalar snapshot of the entry ({@see TimeEntryView}), so the listener does not hold the entity. */
+    public function getEntryView(): TimeEntryView
+    {
+        return TimeEntryView::fromEntry($this->entry);
     }
 }

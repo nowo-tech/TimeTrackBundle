@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Event;
 
+use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
 use Symfony\Contracts\EventDispatcher\Event;
@@ -53,5 +54,23 @@ final class TimeEntryImportedEvent extends Event
     public function getPreviousTaskId(): ?string
     {
         return $this->previousTaskId;
+    }
+
+    /** Since 1.18: id of the entry owner (null for an ownerless entry). */
+    public function getUserId(): ?string
+    {
+        return $this->entry->getUserId();
+    }
+
+    /** Since 1.18: id of the entry. */
+    public function getEntryId(): string
+    {
+        return $this->entry->getId();
+    }
+
+    /** Since 1.18: scalar snapshot of the entry ({@see TimeEntryView}), so the listener does not hold the entity. */
+    public function getEntryView(): TimeEntryView
+    {
+        return TimeEntryView::fromEntry($this->entry);
     }
 }

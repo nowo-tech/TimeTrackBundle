@@ -9,6 +9,7 @@ use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use function is_string;
@@ -74,6 +75,14 @@ class ActiveTimer
     public function getUser(): object
     {
         return $this->user;
+    }
+
+    /**
+     * Since 1.18: id of the timer owner as a string, without loading the user.
+     */
+    public function getUserId(): ?string
+    {
+        return UserIdResolver::idOf($this->user);
     }
 
     /**

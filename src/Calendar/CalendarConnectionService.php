@@ -10,6 +10,8 @@ use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Event\CalendarConnectionChangedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
@@ -32,6 +34,8 @@ use function strlen;
  */
 final readonly class CalendarConnectionService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     /** `consent_version` characters. */
     public const CONSENT_VERSION_PATTERN = '/^[A-Za-z0-9._-]{1,16}$/D';
 
@@ -50,8 +54,10 @@ final readonly class CalendarConnectionService
         private ?CalendarCredentialProviderInterface $credentials = null,
         private ?EventDispatcherInterface $eventDispatcher = null,
         ?ClockInterface $clock = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -120,7 +126,7 @@ final readonly class CalendarConnectionService
         if ($connection instanceof CalendarConnection) {
             $connection->reconnect($mode, $credentialRef, $consentVersion, $now);
         } else {
-            $connection = new CalendarConnection($user, $scopeKey, $provider, $mode, $credentialRef, $consentVersion, $now);
+            $connection = new CalendarConnection($this->userReferences->reference($user), $scopeKey, $provider, $mode, $credentialRef, $consentVersion, $now);
         }
         $this->connections->saveConnection($connection);
         $this->changed($connection, $from, $connection->getStatus());

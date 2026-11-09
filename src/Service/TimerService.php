@@ -33,7 +33,9 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
@@ -82,6 +84,8 @@ use function usort;
  */
 final readonly class TimerService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     /** Max length of a note on a timer or an entry, in code points ({@see NoteSanitizer::MAX_LENGTH}). */
     public const NOTE_MAX_LENGTH = NoteSanitizer::MAX_LENGTH;
 
@@ -108,9 +112,11 @@ final readonly class TimerService
         ?LoggerInterface $logger = null,
         private ?PeriodLockGuard $periodLockGuard = null,
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock  = $clock ?? new NativeClock();
-        $this->logger = $logger ?? new NullLogger();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->logger         = $logger ?? new NullLogger();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -177,7 +183,7 @@ final readonly class TimerService
         $this->periodLockGuard?->assertWritable($user, $this->scopeKeyFor($user, $task->id, $task->boardId), $startedAt, WriteKind::TimerStart);
 
         $timer = new ActiveTimer(
-            $user,
+            $this->userReferences->reference($user),
             $task->id,
             $task->title,
             $task->boardId,
@@ -711,7 +717,7 @@ final readonly class TimerService
         $duration = max(0, $endedAt->getTimestamp() - $timer->getStartedAt()->getTimestamp());
 
         $entry = new TimeEntry(
-            $user,
+            $this->userReferences->reference($user),
             $timer->getTaskId(),
             $timer->getTaskTitleSnapshot(),
             $timer->getBoardIdSnapshot(),
@@ -828,7 +834,7 @@ final readonly class TimerService
     private function reassignIdle(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $from, DateTimeImmutable $to, TaskReference $target, IdleFollowUp $followUp, ClientType $clientType, ?string $note): ?array
     {
         $reassigned = new TimeEntry(
-            $user,
+            $this->userReferences->reference($user),
             $target->id,
             $target->title,
             $target->boardId,
@@ -868,7 +874,7 @@ final readonly class TimerService
      */
     private function continueTimer(UserInterface $user, string $taskId, string $taskTitle, ?string $boardId, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action, ?TaskReference $task = null): ActiveTimer
     {
-        $next = new ActiveTimer($user, $taskId, $taskTitle, $boardId, $clientType, $metadata, $startedAt);
+        $next = new ActiveTimer($this->userReferences->reference($user), $taskId, $taskTitle, $boardId, $clientType, $metadata, $startedAt);
         try {
             $this->activeTimerRepository->save($next);
         } catch (UniqueConstraintViolationException $e) {
