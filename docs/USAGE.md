@@ -12,6 +12,7 @@
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
+- [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
 - [Events](#events)
 
 ## Web UI
@@ -577,3 +578,74 @@ the event adds no copy of them, and listeners must not log or forward them.
 - `nowo_time_track.time_entry.list_query` — filter report user ids
 - `nowo_time_track.time_entry.access_check` — fine-grained ACL
 - `nowo_time_track.client_api` — `ClientApiEvent` audit trail of the client API (1.9)
+
+## Using it from a DDD / hexagonal application
+
+TimeTrackBundle is a **bounded context with its own model and persistence**: it owns Doctrine entities
+(`TimeEntry`, `ActiveTimer`, `Timesheet`, `TimesheetEvent`, `BalanceLedgerLine`, `ClientToken`, `DeviceAuthorization`,
+`CalendarConnection`, `CalendarSuggestion`, `CalendarRule`) and ships its own web UI and client API. Your domain does
+not extend anything from it (no traits, no mapped superclasses).
+
+### What stays in your domain
+
+Tasks, teams, tenants, approvers, working calendars and meetings stay in your application. The bundle reaches them
+only through ports, using string ids and DTOs:
+
+| Port | Config key | Notes |
+|---|---|---|
+| `Nowo\TimeTrackBundle\Integration\TaskProviderInterface` (+ `BatchTaskProviderInterface`) | `task_provider` | returns `Dto\TaskReference` |
+| `Integration\TeamContextProviderInterface` | `team_context_provider` | user ids as strings |
+| `Security\TimeTrackAccessCheckerInterface` | `security.access_checker` | |
+| `Timesheet\TimesheetScopeProviderInterface`, `TimesheetApproverProviderInterface` | `timesheets.scope_provider`, `timesheets.approver_provider` | tenant scope keys as strings |
+| `WorkingTime\WorkingCalendarProviderInterface`, `WorkedTimeSourceInterface`, `OvertimePolicyInterface` | working time | |
+| `Meeting\MeetingProviderInterface`, `Calendar\CalendarCredentialProviderInterface`, `Calendar\TaskKeyResolverInterface` | `meetings.provider`, `calendar.*` | |
+
+Implement them as infrastructure adapters that call your application services:
+
+```php
+final readonly class TaskProviderAdapter implements TaskProviderInterface
+{
+    public function __construct(private TaskQueries $tasks) {} // your application port
+
+    public function findForUser(string $taskId, UserInterface $user): ?TaskReference
+    {
+        $task = $this->tasks->trackableTask($taskId, (string) $user->getId());
+
+        return $task === null ? null : new TaskReference($task->id, $task->title, $task->boardId);
+    }
+
+    public function listTrackableForUser(UserInterface $user, TaskListQuery $query): array { /* … */ }
+
+    public function canUserTrack(UserInterface $user, string $taskId): bool { /* … */ }
+}
+```
+
+To drive the bundle, call `TimerService`, `ManualEntryService`, `TimesheetService`, `ImportedTimeEntryWriter`
+(with `ImportedTimeEntryData` / `ImportedTimeEntryPerson`) and `TaskTimeMover::moveTasks()` (task ids only) from your
+application layer.
+
+### Listening to it
+
+Subscribe to the `TimeTrackEvents` constants. The timesheet, ledger, period-lock, move/remove and calendar events
+carry ids, refs and enums only, so they map 1:1 to your own domain events. `TimerStopEvent`,
+`TimeEntryCreatedEvent`, `TimeEntryImportedEvent` and `TimeEntryAccessCheckEvent` carry the `TimeEntry` entity:
+read scalar values (`getId()`, `getTaskId()`, `getDurationSeconds()`, …) in your listener and never let the entity
+cross into your domain. Access is vetoed with the deny-only events (`*_ACCESS_CHECK`, `deny()`).
+
+### The user
+
+- `user_class` (required) must be a Doctrine entity in the bundle's entity manager. The bundle rewrites its `user`
+  associations to that class at `loadClassMetadata`; you do **not** configure `resolve_target_entities`.
+- Bundle tables have foreign keys to your users table (`SET NULL` for entries and timesheets, `CASCADE` for timers,
+  tokens and calendar rows).
+- The `UserInterface` you pass to the services must be that managed entity and expose `getId()`.
+- Removing a user through the entity manager triggers `FormerPersonSnapshotListener` (stops the timer, snapshots or
+  anonymises entries). If users are deleted by bulk DQL, SQL or another flow, call
+  `FormerPersonTimeEntries::release($user)` before the delete.
+
+### Known limitations
+
+- A security user that is not the `user_class` entity (wrapper or DTO) is not supported yet.
+- Some events and `TimeEntry::getUser()` expose the bundle entity / host user object instead of ids.
+- Users must live in the same Doctrine entity manager as the bundle tables.
+- Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.
