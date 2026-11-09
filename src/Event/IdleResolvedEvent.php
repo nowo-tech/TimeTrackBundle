@@ -105,7 +105,7 @@ final class IdleResolvedEvent extends Event
         return $this->note;
     }
 
-    /** Since 1.18: id of {@see self::getUser()} as a string (`getId()`), for listeners that keep only ids. */
+    /** Since 1.18: id of {@see self::getUser()}, the acting user, as a string (`getId()`). */
     public function getUserId(): string
     {
         return UserIdResolver::getId($this->user);

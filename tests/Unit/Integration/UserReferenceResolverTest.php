@@ -66,6 +66,9 @@ final class UserReferenceResolverTest extends TestCase
     {
         yield 'null' => [null];
         yield 'empty string' => [''];
+        yield 'zero' => [0];
+        yield 'zero string' => ['0'];
+        yield 'negative' => [-3];
     }
 
     #[DataProvider('unusableIds')]

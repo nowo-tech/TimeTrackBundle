@@ -638,6 +638,10 @@ security user or the `TimeEntry` entity also expose scalar accessors, so a liste
 | `IdleResolvedEvent`, `TaskEffortAccessCheckEvent` | `getUserId()` |
 | `TimeEntryListQueryEvent`, `TimesheetAccessCheckEvent` | `getViewerId()` |
 
+`getUserId()` is the **acting** user on the timer, idle and access-check events, and the entry **owner** on
+`TimeEntryCreatedEvent` / `TimeEntryImportedEvent` (`getEntryView()->userId` is always the owner): a listener that
+decides "the owner may" reads the owner from the entry view, not the actor.
+
 `getEntryView()` returns `Dto\TimeEntryView`, a read-only snapshot (id, owner id, task, board, scope, start, end,
 duration, source, external source / id). The entity getters stay for compatibility. Access is vetoed with the
 deny-only events (`*_ACCESS_CHECK`, `deny()`).
@@ -670,6 +674,19 @@ services:
     Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface: '@App\Infrastructure\TimeTrack\UserReferences'
 ```
 
+- Requirements for that wrapper (the resolver cannot check them):
+  - `getId()` returns the `user_class` id **of the same person**, with the same value and the same string form as the
+    entity's `getId()` (ownership is compared as strings: a base58 form against an RFC 4122 one would split one person
+    into two owners).
+  - Only users of that id space reach the TimeTrack routes and services. A user from another provider (API key,
+    OAuth client, an admin entity with its own ids) whose id happens to match would get entries, tokens and device
+    approvals bound to `user_class`#id. Restrict those firewalls, or alias the port to a resolver that refuses them.
+  - `0`, negative ids, `null` and `''` are refused (`LogicException`). An id with no user row fails at flush wherever
+    foreign keys are enforced (MySQL, MariaDB, PostgreSQL; SQLite only with `PRAGMA foreign_keys = ON`).
+- Keep the `user_class` **entity** implementing `UserInterface` even when your firewall uses a separate wrapper: the
+  former-person listener only reacts to the removal of a `UserInterface` entity, so without it deleting a user stops no
+  timer and snapshots or anonymises nothing (entries end up ownerless with no former-person reference). It is not
+  enforced, so that routing-only or read-only setups keep booting.
 - `TimeEntry::getUserId()`, `ActiveTimer::getUserId()` and `Timesheet::getUserId()` (since 1.18) give the owner id
   without loading the user; `getUser()` still returns your user entity (or its proxy).
 - Removing a user through the entity manager triggers `FormerPersonSnapshotListener` (stops the timer, snapshots or

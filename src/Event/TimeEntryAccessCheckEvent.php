@@ -76,7 +76,7 @@ final class TimeEntryAccessCheckEvent extends Event
         $this->granted = false;
     }
 
-    /** Since 1.18: id of {@see self::getUser()} as a string (`getId()`), for listeners that keep only ids. */
+    /** Since 1.18: id of {@see self::getUser()}, the user asking for access (the actor, not the entry owner: see getEntryView()->userId), as a string (`getId()`). */
     public function getUserId(): string
     {
         return UserIdResolver::getId($this->user);

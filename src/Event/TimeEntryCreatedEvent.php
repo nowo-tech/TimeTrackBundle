@@ -35,7 +35,7 @@ final class TimeEntryCreatedEvent extends Event
         return $this->entry;
     }
 
-    /** Since 1.18: id of the entry owner (null for an ownerless entry). */
+    /** Since 1.18: id of the entry owner, not of the acting user (null for an ownerless entry). */
     public function getUserId(): ?string
     {
         return $this->entry->getUserId();

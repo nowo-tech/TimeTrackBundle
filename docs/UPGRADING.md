@@ -75,6 +75,8 @@ storing it; with a security user that is the `user_class` entity nothing changes
 - Code that builds the services by hand keeps working (they default to `PassThroughUserReferenceResolver`); pass
   `userReferences:` to get the Doctrine behaviour.
 - Listeners can switch from `getUser()` / `getEntry()` to `getUserId()`, `getEntryId()` and `getEntryView()`.
+- With a separate security wrapper, keep the `user_class` entity implementing `UserInterface` (the former-person
+  listener depends on it) and make the wrapper's `getId()` return the entity id in the same string form.
 
 ## To 1.17.1
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
+use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
@@ -17,10 +19,21 @@ use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 
 /**
  * Since 1.18 (DDD adapter audit G1): a firewall user that is not the `user_class` entity drives the services; the
- * bundle stores a Doctrine reference built from its `getId()` (SQLite, real foreign keys).
+ * bundle stores a Doctrine reference built from its `getId()`. Foreign keys are enforced (SQLite pragma here, native
+ * on MySQL / PostgreSQL), so an id with no user row fails instead of storing a dangling owner (JV-T3).
  */
 final class DddSecurityUserTest extends FunctionalTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $connection = $this->entityManager()->getConnection();
+        if ($connection->getDatabasePlatform() instanceof SQLitePlatform) {
+            $connection->executeStatement('PRAGMA foreign_keys = ON');
+        }
+    }
+
     public function testTheDefaultPortIsTheDoctrineResolver(): void
     {
         self::assertInstanceOf(DoctrineUserReferenceResolver::class, self::getContainer()->get(UserReferenceResolverInterface::class));
@@ -72,5 +85,18 @@ final class DddSecurityUserTest extends FunctionalTestCase
         $owner = $token->getUser();
         self::assertInstanceOf(AppUser::class, $owner);
         self::assertSame($id, $owner->getId());
+    }
+
+    public function testASecurityUserWhoseIdHasNoUserRowIsNotStored(): void
+    {
+        $timers = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $timers);
+
+        try {
+            $timers->start(new SecurityUser(999999, 'ghost@example.com'), 'task-1', ClientType::Web);
+            self::fail('A timer for a user id with no row must not be stored.');
+        } catch (ForeignKeyConstraintViolationException) {
+            $this->addToAssertionCount(1);
+        }
     }
 }

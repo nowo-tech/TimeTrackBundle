@@ -72,6 +72,13 @@ contract change.
 - **`Dto\TimeEntryView`**: read-only scalar snapshot of an entry (`TimeEntryView::fromEntry()`).
 - `getUserId(): ?string` on `TimeEntry`, `ActiveTimer`, `Timesheet`; `UserIdResolver::idOf(?object): ?string`.
 
+### Changed
+
+- `DoctrineUserReferenceResolver` refuses `0`, `'0'` and negative ids (audit JV-T3). USAGE states the wrapper
+  requirements (same id space and string form, JV-T1 / JV-T4), that the `user_class` entity must keep implementing
+  `UserInterface` for the former-person listener (JV-T2, documented rather than enforced, so existing setups keep
+  booting) and which user each event's `getUserId()` means (JV-T5).
+
 ### Documentation
 
 - USAGE: new section "Using it from a DDD / hexagonal application" (where the bundle sits in a hexagonal host, the ports, events and DTOs to build an anti-corruption layer on, the user reference port and the known limitations).
