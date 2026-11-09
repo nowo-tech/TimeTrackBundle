@@ -52,6 +52,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.18.0**: a hexagonal host can drive the bundle with a security user that is not the `user_class` entity, and
+its listeners can keep ids only (DDD adapter audit 2026-11-09, gaps G1, G2, G3). Additive; no schema change, no
+contract change.
+
+### Added
+
+- **`Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface`** (`reference(UserInterface): object`), aliased to
+  **`Doctrine\DoctrineUserReferenceResolver`**: a `user_class` instance is stored as it is (as before); any other
+  security user becomes `getReference($userClass, $user->getId())` in the bundle's entity manager instead of failing at
+  flush. It is injected (optional last argument `$userReferences`) into `TimerService`, `ManualEntryService`,
+  `ImportedTimeEntryWriter`, `TimesheetService`, `BalanceLedger`, `ClientAuthService`, `DeviceAuthorizationService`,
+  `CalendarConnectionService` and `CalendarRuleService`; built by hand without it they use
+  `PassThroughUserReferenceResolver` (the previous behaviour).
+- Scalar accessors on the events: `getUserId()` on `TimerStartEvent`, `TimerStopEvent`, `TimeEntryAccessCheckEvent`,
+  `IdleResolvedEvent`, `TaskEffortAccessCheckEvent`, `TimeEntryCreatedEvent`, `TimeEntryImportedEvent`;
+  `getViewerId()` on `TimeEntryListQueryEvent`, `TimesheetAccessCheckEvent`; `getTaskId()` / `getBoardId()` on
+  `TimerStartEvent`; `getEntryId()` / `getEntryView()` on the four events that carry a `TimeEntry`.
+- **`Dto\TimeEntryView`**: read-only scalar snapshot of an entry (`TimeEntryView::fromEntry()`).
+- `getUserId(): ?string` on `TimeEntry`, `ActiveTimer`, `Timesheet`; `UserIdResolver::idOf(?object): ?string`.
+
+### Changed
+
+- `DoctrineUserReferenceResolver` refuses `0`, `'0'` and negative ids (audit JV-T3). USAGE states the wrapper
+  requirements (same id space and string form, JV-T1 / JV-T4), that the `user_class` entity must keep implementing
+  `UserInterface` for the former-person listener (JV-T2, documented rather than enforced, so existing setups keep
+  booting) and which user each event's `getUserId()` means (JV-T5).
+
+### Documentation
+
+- USAGE: new section "Using it from a DDD / hexagonal application" (where the bundle sits in a hexagonal host, the ports, events and DTOs to build an anti-corruption layer on, the user reference port and the known limitations).
+
 ## [1.17.1] - 2026-11-08
 
 The ledger purge follows the chain's links (HT-L1) and `verify` reports lines not linked behind a two-starts alarm (HT-L2).

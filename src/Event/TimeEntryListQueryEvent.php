@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Event;
 
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -125,5 +126,11 @@ final class TimeEntryListQueryEvent extends Event
     public function getOwnerlessScopeKeys(): ?array
     {
         return $this->ownerlessScopeKeys;
+    }
+
+    /** Since 1.18: id of {@see self::getViewer()} as a string (`getId()`), for listeners that keep only ids. */
+    public function getViewerId(): string
+    {
+        return UserIdResolver::getId($this->viewer);
     }
 }

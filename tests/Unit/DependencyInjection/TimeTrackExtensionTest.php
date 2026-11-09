@@ -14,13 +14,21 @@ use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
+use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
+use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
+use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
@@ -66,6 +74,25 @@ final class TimeTrackExtensionTest extends TestCase
             'tabler',
             $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
         );
+    }
+
+    public function testLoadWiresTheUserReferencePortIntoTheServicesThatStoreTheUser(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
+
+        self::assertSame(DoctrineUserReferenceResolver::class, (string) $container->getAlias(UserReferenceResolverInterface::class));
+        $resolver = $container->getDefinition(DoctrineUserReferenceResolver::class);
+        self::assertSame(User::class, $resolver->getArgument('$userClass'));
+        self::assertSame('doctrine.orm.default_entity_manager', (string) $resolver->getArgument('$entityManager'));
+        foreach ([TimerService::class, ManualEntryService::class, ImportedTimeEntryWriter::class, TimesheetService::class, ClientAuthService::class, DeviceAuthorizationService::class] as $serviceId) {
+            $argument = $container->getDefinition($serviceId)->getArgument('$userReferences');
+            self::assertInstanceOf(Reference::class, $argument, $serviceId);
+            self::assertSame(UserReferenceResolverInterface::class, (string) $argument);
+        }
     }
 
     public function testLoadWiresClientRateLimitAndCorsOptions(): void

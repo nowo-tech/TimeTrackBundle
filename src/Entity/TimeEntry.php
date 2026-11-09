@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use function hash;
@@ -324,6 +325,14 @@ class TimeEntry
     public function getUser(): ?object
     {
         return $this->user;
+    }
+
+    /**
+     * Since 1.18: id of the entry owner as a string (null for an ownerless entry), without loading the user.
+     */
+    public function getUserId(): ?string
+    {
+        return UserIdResolver::idOf($this->user);
     }
 
     /**

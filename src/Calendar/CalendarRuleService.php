@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Calendar;
 
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarRuleRepositoryInterface;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -26,6 +28,8 @@ use function trim;
  */
 final readonly class CalendarRuleService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     private ClockInterface $clock;
 
     /**
@@ -37,8 +41,10 @@ final readonly class CalendarRuleService
         private TaskAccessCheckerInterface $taskAccess,
         private CalendarSettings $settings,
         ?ClockInterface $clock = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -65,7 +71,7 @@ final readonly class CalendarRuleService
         if (count($this->rules->findRulesByUser(UserIdResolver::getId($user), $scopeKey)) >= $this->settings->maxRulesPerUser) {
             throw new CalendarException('too_many_rules');
         }
-        $rule = new CalendarRule($user, $scopeKey, $pattern, $taskId, $groupMatches, $this->clock->now());
+        $rule = new CalendarRule($this->userReferences->reference($user), $scopeKey, $pattern, $taskId, $groupMatches, $this->clock->now());
         $this->rules->saveRule($rule);
 
         return $rule;

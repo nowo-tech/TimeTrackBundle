@@ -17,6 +17,8 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryOwnerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
@@ -66,6 +68,8 @@ use function strtolower;
  */
 final readonly class ImportedTimeEntryWriter
 {
+    private UserReferenceResolverInterface $userReferences;
+
     public const SOURCE_PATTERN = '/^[a-z0-9_]{1,24}:[A-Za-z0-9._-]{1,39}$/D';
 
     public const ID_PATTERN = '/^[A-Za-z0-9._:#-]{1,128}$/D';
@@ -111,11 +115,13 @@ final readonly class ImportedTimeEntryWriter
         private ?ClockInterface $clock = null,
         private ?PeriodLockGuard $periodLockGuard = null,
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
         if (!$repository instanceof ImportedTimeEntryRepositoryInterface) {
             throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryRepositoryInterface.');
         }
-        $this->repository = $repository;
+        $this->repository     = $repository;
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -228,7 +234,7 @@ final readonly class ImportedTimeEntryWriter
         $counts  = ['created' => 0, 'updated' => 0, 'unchanged' => 0, 'locked' => 0, 'mismatched' => 0];
         foreach ($plan as [$owner, $user, $scopeKey, $data, $existing, $transition]) {
             if (!$existing instanceof TimeEntry) {
-                $entry = $owner instanceof ImportedTimeEntryPerson ? TimeEntry::importedForPerson($owner, $data) : TimeEntry::imported($user, $data)->assignScopeKey($scopeKey);
+                $entry = $owner instanceof ImportedTimeEntryPerson ? TimeEntry::importedForPerson($owner, $data) : TimeEntry::imported($user instanceof UserInterface ? $this->userReferences->reference($user) : $user, $data)->assignScopeKey($scopeKey);
                 if ($user instanceof UserInterface && $this->isLocked($user, $scopeKey, $data->startedAt)) {
                     $results[] = new ImportedTimeEntryResult($entry, ImportedTimeEntryOutcome::Locked);
                     ++$counts['locked'];
@@ -264,7 +270,7 @@ final readonly class ImportedTimeEntryWriter
             if ($owner instanceof ImportedTimeEntryPerson) {
                 $existing->applyPersonName($owner->name);
             } elseif ($claimed && $user instanceof UserInterface) {
-                $existing->claimFor($user);
+                $existing->claimFor($this->userReferences->reference($user));
             }
             if ($scopeKey !== null || ($user instanceof UserInterface && $this->scopeProvider instanceof TimesheetScopeProviderInterface)) {
                 $existing->assignScopeKey($scopeKey);

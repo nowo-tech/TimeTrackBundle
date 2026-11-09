@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Event;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -58,5 +59,23 @@ final class TimerStartEvent extends Event
     public function getStartTime(): ?ClampedTime
     {
         return $this->startTime;
+    }
+
+    /** Since 1.18: id of {@see self::getUser()}, the timer owner (acting user), as a string (`getId()`). */
+    public function getUserId(): string
+    {
+        return UserIdResolver::getId($this->user);
+    }
+
+    /** Since 1.18: id of the started task. */
+    public function getTaskId(): string
+    {
+        return $this->task->id;
+    }
+
+    /** Since 1.18: board id of the started task (null when the host gave none). */
+    public function getBoardId(): ?string
+    {
+        return $this->task->boardId;
     }
 }

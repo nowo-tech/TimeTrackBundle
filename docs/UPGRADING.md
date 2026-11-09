@@ -61,6 +61,23 @@
 
 ## Unreleased
 
+Target **1.18.0**, from **1.17.x**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+No action needed, no migration. The services now pass the user through `UserReferenceResolverInterface` before
+storing it; with a security user that is the `user_class` entity nothing changes.
+
+- A firewall user that is not the entity (wrapper / DTO) now works when its `getId()` returns the entity id; alias
+  `Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface` to your own service for another mapping.
+- Code that builds the services by hand keeps working (they default to `PassThroughUserReferenceResolver`); pass
+  `userReferences:` to get the Doctrine behaviour.
+- Listeners can switch from `getUser()` / `getEntry()` to `getUserId()`, `getEntryId()` and `getEntryView()`.
+- With a separate security wrapper, keep the `user_class` entity implementing `UserInterface` (the former-person
+  listener depends on it) and make the wrapper's `getId()` return the entity id in the same string form.
+
 ## To 1.17.1
 
 From **1.17.0**:

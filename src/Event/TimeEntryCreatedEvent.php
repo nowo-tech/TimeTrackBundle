@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Event;
 
+use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -32,5 +33,23 @@ final class TimeEntryCreatedEvent extends Event
     public function getEntry(): TimeEntry
     {
         return $this->entry;
+    }
+
+    /** Since 1.18: id of the entry owner, not of the acting user (null for an ownerless entry). */
+    public function getUserId(): ?string
+    {
+        return $this->entry->getUserId();
+    }
+
+    /** Since 1.18: id of the entry. */
+    public function getEntryId(): string
+    {
+        return $this->entry->getId();
+    }
+
+    /** Since 1.18: scalar snapshot of the entry ({@see TimeEntryView}), so the listener does not hold the entity. */
+    public function getEntryView(): TimeEntryView
+    {
+        return TimeEntryView::fromEntry($this->entry);
     }
 }

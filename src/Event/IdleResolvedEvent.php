@@ -9,6 +9,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -102,5 +103,11 @@ final class IdleResolvedEvent extends Event
     public function getNote(): ?string
     {
         return $this->note;
+    }
+
+    /** Since 1.18: id of {@see self::getUser()}, the acting user, as a string (`getId()`). */
+    public function getUserId(): string
+    {
+        return UserIdResolver::getId($this->user);
     }
 }

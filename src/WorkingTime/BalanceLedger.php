@@ -14,6 +14,8 @@ use Nowo\TimeTrackBundle\Event\BalanceLedgerLineAddedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\LedgerRefusedException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -43,6 +45,8 @@ use function mb_substr;
  */
 final readonly class BalanceLedger
 {
+    private UserReferenceResolverInterface $userReferences;
+
     /** Longest reason, in code points. */
     public const REASON_MAX_LENGTH = 500;
 
@@ -61,8 +65,10 @@ final readonly class BalanceLedger
         private ?EventDispatcherInterface $eventDispatcher = null,
         ?ClockInterface $clock = null,
         private LoggerInterface $logger = new NullLogger(),
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -193,7 +199,7 @@ final readonly class BalanceLedger
     private function append(?UserInterface $owner, string $ownerId, string $scopeKey, LedgerKind $kind, int $seconds, string $effectiveDate, ?string $reason, ?Timesheet $timesheet, ?string $reversesId, string $actorRef, ?BalanceLedgerLine $after = null): BalanceLedgerLine
     {
         $previous = $after ?? $this->lines->findLast($ownerId, $scopeKey);
-        $line     = new BalanceLedgerLine($owner, $ownerId, $scopeKey, $effectiveDate, $kind, $seconds, $this->clock->now(), $previous?->getHash(), $reason, $timesheet, $reversesId, $actorRef);
+        $line     = new BalanceLedgerLine($owner instanceof UserInterface ? $this->userReferences->reference($owner) : null, $ownerId, $scopeKey, $effectiveDate, $kind, $seconds, $this->clock->now(), $previous?->getHash(), $reason, $timesheet, $reversesId, $actorRef);
         // @igor-ignore - I/O delegate (repository call); no worker state.
         $this->lines->append($line);
 

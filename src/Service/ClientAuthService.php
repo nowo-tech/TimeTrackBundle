@@ -13,6 +13,8 @@ use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -37,6 +39,8 @@ use const DATE_ATOM;
  */
 final readonly class ClientAuthService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     private const LAST_USED_TOUCH_INTERVAL_SECONDS = 300;
 
     private ClockInterface $clock;
@@ -58,9 +62,11 @@ final readonly class ClientAuthService
         private ?ManagerRegistry $managerRegistry = null,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock  = $clock ?? new NativeClock();
-        $this->logger = $logger ?? new NullLogger();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->logger         = $logger ?? new NullLogger();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -182,7 +188,7 @@ final readonly class ClientAuthService
         $this->tokenRepository->save(new ClientToken(
             self::hashToken($plainToken),
             $expiresAt,
-            $user,
+            $this->userReferences->reference($user),
             $clientType,
             $now,
             $credentialId,

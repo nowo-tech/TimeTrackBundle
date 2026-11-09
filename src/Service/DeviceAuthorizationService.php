@@ -18,6 +18,8 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
 use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -53,6 +55,8 @@ use function trim;
  */
 final readonly class DeviceAuthorizationService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     /** Base-20 alphabet without vowels (no words, no 0/O 1/I confusion). */
     public const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 
@@ -86,8 +90,10 @@ final readonly class DeviceAuthorizationService
         ?ClockInterface $clock = null,
         private int $maxPendingPerPrefix = 20,
         private int $maxPending = 10000,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -161,7 +167,7 @@ final readonly class DeviceAuthorizationService
     public function approve(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): string
     {
         $credentialId = $this->credentialIssuer->issueForDevice($user, $authorization->getClientType(), $authorization->getClientName(), $authorization->getScopes());
-        $authorization->approve($user, $credentialId);
+        $authorization->approve($this->userReferences->reference($user), $credentialId);
         $this->repository->save($authorization);
         $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $authorization->getClientType(), $clientIp);
 
@@ -173,7 +179,7 @@ final readonly class DeviceAuthorizationService
      */
     public function deny(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): void
     {
-        $authorization->deny($user);
+        $authorization->deny($this->userReferences->reference($user));
         $this->repository->save($authorization);
         $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $authorization->getClientType(), $clientIp);
     }

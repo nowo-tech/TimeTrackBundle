@@ -14,6 +14,8 @@ use Nowo\TimeTrackBundle\Event\TimeEntryCreatedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\OverlappingTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -43,6 +45,8 @@ use function in_array;
  */
 final readonly class ManualEntryService
 {
+    private UserReferenceResolverInterface $userReferences;
+
     /** Longest entry, in seconds. */
     public const MAX_SECONDS = 86_400;
 
@@ -69,9 +73,11 @@ final readonly class ManualEntryService
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        $this->clock  = $clock ?? new NativeClock();
-        $this->logger = $logger ?? new NullLogger();
+        $this->clock          = $clock ?? new NativeClock();
+        $this->logger         = $logger ?? new NullLogger();
+        $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
     }
 
     /**
@@ -139,7 +145,7 @@ final readonly class ManualEntryService
             if ($this->overlaps($user, $start, $end)) {
                 throw new ManualEntryException(ManualEntryException::OVERLAP);
             }
-            $entry = new TimeEntry($user, $task->id, $task->title, $task->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
+            $entry = new TimeEntry($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
             $entry->assignScopeKey($scopeKey);
             $this->entries->save($entry);
             if ($finish !== null) {

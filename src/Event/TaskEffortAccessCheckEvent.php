@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Event;
 
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -65,5 +66,11 @@ final class TaskEffortAccessCheckEvent extends Event
     {
         // @igor-ignore - Request-scoped Event DTO; not a shared worker service.
         $this->granted = false;
+    }
+
+    /** Since 1.18: id of {@see self::getUser()}, the user asking for access (the actor), as a string (`getId()`). */
+    public function getUserId(): string
+    {
+        return UserIdResolver::getId($this->user);
     }
 }

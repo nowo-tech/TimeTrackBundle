@@ -133,6 +133,12 @@ class Timesheet
         return $this->user;
     }
 
+    /** Since 1.18: id of the live owner as a string (null after account erasure; {@see self::getOwnerRef()} stays). */
+    public function getUserId(): ?string
+    {
+        return UserIdResolver::idOf($this->user);
+    }
+
     /** Opaque owner id, kept after account erasure until the retention end. */
     public function getOwnerRef(): string
     {
