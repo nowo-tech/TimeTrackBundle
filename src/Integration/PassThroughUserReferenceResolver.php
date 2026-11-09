@@ -12,6 +12,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 final class PassThroughUserReferenceResolver implements UserReferenceResolverInterface
 {
+    /**
+     * The security user itself.
+     */
     public function reference(UserInterface $user): UserInterface
     {
         return $user;

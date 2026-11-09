@@ -33,6 +33,9 @@ final readonly class DoctrineUserReferenceResolver implements UserReferenceResol
     ) {
     }
 
+    /**
+     * The user itself when it is a `user_class` instance, else a reference built from its `getId()`.
+     */
     public function reference(UserInterface $user): object
     {
         if ($user instanceof $this->userClass) {
