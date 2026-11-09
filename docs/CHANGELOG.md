@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.18.0] - 2026-11-09](#1180---2026-11-09)
 - [[1.17.1] - 2026-11-08](#1171---2026-11-08)
 - [[1.17.0] - 2026-11-08](#1170---2026-11-08)
 - [[1.16.2] - 2026-11-07](#1162---2026-11-07)
@@ -51,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.18.0] - 2026-11-09
 
 Target **1.18.0**: a hexagonal host can drive the bundle with a security user that is not the `user_class` entity, and
 its listeners can keep ids only (DDD adapter audit 2026-11-09, gaps G1, G2, G3). Additive; no schema change, no
@@ -1165,7 +1168,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.1...v1.18.0
 [1.17.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.2...v1.17.0
 [1.16.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.16.1...v1.16.2
