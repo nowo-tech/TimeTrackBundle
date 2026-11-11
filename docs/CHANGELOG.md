@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.20.0] - 2026-11-11](#1200---2026-11-11)
 - [[1.19.1] - 2026-11-11](#1191---2026-11-11)
 - [[1.19.0] - 2026-11-11](#1190---2026-11-11)
 - [[1.18.0] - 2026-11-09](#1180---2026-11-09)
@@ -54,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.20.0] - 2026-11-11
 
 Target **1.20.0** (minor; Beacon request 2026-11-11): the calendar OAuth apps can be read at runtime from the host, for
 example encrypted in its database, instead of `.env`. No schema change, no client contract change; without the new
@@ -1347,7 +1350,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.19.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.20.0...HEAD
+[1.20.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.19.1...v1.20.0
 [1.19.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.17.1...v1.18.0
