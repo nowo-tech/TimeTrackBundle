@@ -8,8 +8,8 @@ use DateInterval;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use JsonException;
+use Psr\Clock\ClockInterface;
 use SensitiveParameter;
-use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -57,7 +57,8 @@ final readonly class CalendarTokenEndpoint
     private ClockInterface $clock;
 
     /**
-     * Receives the HTTP client (framework `http_client`; null without symfony/http-client) and the clock.
+     * Receives the HTTP client (framework `http_client`; null without symfony/http-client) and the clock. Since 1.19.1
+     * any PSR-20 clock is accepted (a host may alias `Psr\Clock\ClockInterface` to its own implementation).
      */
     public function __construct(
         private ?HttpClientInterface $httpClient,

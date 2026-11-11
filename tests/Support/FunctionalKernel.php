@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\PsrOnlyClock;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
@@ -19,23 +20,34 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
+use Psr\Clock\ClockInterface;
+use ReflectionClass;
+use ReflectionNamedType;
+use ReflectionType;
+use ReflectionUnionType;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Bundle\TwigBundle\TwigBundle;
 use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Twig\Extra\TwigExtraBundle\TwigExtraBundle;
 
 use function array_replace_recursive;
+use function class_exists;
 use function dirname;
 use function getenv;
 use function is_string;
 use function md5;
 use function serialize;
+use function sort;
+use function str_ends_with;
+use function str_starts_with;
 use function sys_get_temp_dir;
 
 use const PHP_VERSION_ID;
@@ -44,15 +56,19 @@ use const PHP_VERSION_ID;
  * Host application of the functional tests (REQ-TEST-003): Doctrine on in-memory SQLite, SecurityBundle with an entity
  * user provider, the bundle routes imported through the route loader, the client API enabled, FormKit and UiKit.
  * `$timeTrackConfig` is merged into the `nowo_time_track` configuration (one cache directory per variant).
+ *
+ * Since 1.19.1, `$psrOnlyClock`: `Psr\Clock\ClockInterface` points to {@see PsrOnlyClock} (a host's own PSR-20 clock,
+ * not a Symfony clock), and every bundle service whose constructor takes a clock is made public and listed in the
+ * `time_track_test.clock_consumers` parameter so a test can build each one.
  */
-final class FunctionalKernel extends Kernel
+final class FunctionalKernel extends Kernel implements CompilerPassInterface
 {
     use MicroKernelTrait;
 
     /**
      * @param array<string, mixed> $timeTrackConfig
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true)
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false)
     {
         parent::__construct('test', $debug);
     }
@@ -86,7 +102,7 @@ final class FunctionalKernel extends Kernel
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -139,6 +155,11 @@ final class FunctionalKernel extends Kernel
         $container->services()->set(MutableProfileProvider::class)->public();
         $container->services()->set(StubMeetingProvider::class)->public();
         $container->services()->set(RacingCachePool::class)->public();
+        if ($this->psrOnlyClock) {
+            // Since 1.19.1: the host's own PSR clock wins over the framework's `clock` alias (as in Beacon).
+            $container->services()->set(PsrOnlyClock::class)->public();
+            $container->services()->alias(ClockInterface::class, PsrOnlyClock::class)->public();
+        }
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);
@@ -178,6 +199,50 @@ final class FunctionalKernel extends Kernel
             ],
             'client_api' => ['rate_limit' => ['cache_pool' => 'cache.time_track_test']],
         ], $this->timeTrackConfig));
+    }
+
+    /**
+     * Since 1.19.1 (`$psrOnlyClock` only): makes every bundle service whose constructor takes a clock public, so it is
+     * neither inlined nor removed and a test can build it, and lists their ids in `time_track_test.clock_consumers`.
+     */
+    public function process(ContainerBuilder $container): void
+    {
+        if (!$this->psrOnlyClock) {
+            return;
+        }
+        $consumers = [];
+        foreach ($container->getDefinitions() as $id => $definition) {
+            $class = $definition->getClass() ?? $id;
+            if ($definition->isAbstract() || $definition->isSynthetic() || !str_starts_with($class, 'Nowo\\TimeTrackBundle\\') || !class_exists($class)) {
+                continue;
+            }
+            $constructor = (new ReflectionClass($class))->getConstructor();
+            foreach ($constructor?->getParameters() ?? [] as $parameter) {
+                if ($this->namesAClock($parameter->getType())) {
+                    $definition->setPublic(true);
+                    $consumers[] = $id;
+
+                    break;
+                }
+            }
+        }
+        sort($consumers);
+        $container->setParameter('time_track_test.clock_consumers', $consumers);
+    }
+
+    private function namesAClock(?ReflectionType $type): bool
+    {
+        if ($type instanceof ReflectionUnionType) {
+            foreach ($type->getTypes() as $member) {
+                if ($this->namesAClock($member)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return $type instanceof ReflectionNamedType && str_ends_with($type->getName(), '\\ClockInterface');
     }
 
     /**
