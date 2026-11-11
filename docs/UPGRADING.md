@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.19.1](#to-1191)
 - [To 1.19.0](#to-1190)
   - [Behaviour change: wrapper security users need `accepted_user_classes` (JV-T3)](#behaviour-change-wrapper-security-users-need-accepted_user_classes-jv-t3)
   - [Calendar readers for your meeting sync (Beacon spec 210)](#calendar-readers-for-your-meeting-sync-beacon-spec-210)
@@ -65,6 +66,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.19.1
+
+From **1.19.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Target **1.19.1** (patch). Nothing to change: if your `Psr\Clock\ClockInterface` points to a clock that is not a
 `Symfony\Component\Clock\ClockInterface`, the calendar readers and OAuth helpers now build (1.19.0 failed with a
