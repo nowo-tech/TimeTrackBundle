@@ -102,7 +102,7 @@ final class ClientApiTest extends FunctionalTestCase
             'timesheet'    => null,
             // Since 1.14 (contract §22.8).
             'meetings' => null,
-            'links'    => ['calendars' => null],
+            'links'    => ['calendars' => null, 'workingTime' => null],
         ], $me);
 
         $tasks = $this->api('GET', '/api/time-track/tasks?search=unit&limit=5', null, $token);

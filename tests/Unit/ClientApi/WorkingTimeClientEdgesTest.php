@@ -43,8 +43,12 @@ use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
+
+use function array_shift;
 
 /**
  * Since 1.13: defensive branches of the working-time client pieces.
@@ -193,5 +197,23 @@ final class WorkingTimeClientEdgesTest extends TestCase
         $plain = new ClientWorkingTimeContext($service, $balance, $access, $guard, null, null, $translator);
         self::assertSame('Tarea no visible', $plain->hiddenTaskTitle($withGetLocale));
         self::assertSame(TimeEntry::HIDDEN_TASK_TITLE, $plain->hiddenTaskTitle($user), 'no locale: the English fallback');
+
+        // Since 1.19 (spec 198): GET me links.workingTime — an absolute https URL of the host route, or null.
+        self::assertNull($plain->workingTimeLink(), 'no route configured');
+        $answers = ['https://host.example/working-time', 'http://host.example/working-time', new RouteNotFoundException('unknown')];
+        $router  = $this->createStub(UrlGeneratorInterface::class);
+        $router->method('generate')->willReturnCallback(static function () use (&$answers): string {
+            $answer = array_shift($answers);
+            if ($answer instanceof RouteNotFoundException) {
+                throw $answer;
+            }
+
+            return (string) $answer;
+        });
+        $linked = new ClientWorkingTimeContext($service, $balance, $access, $guard, null, null, null, null, $router, 'app_working_time');
+        self::assertSame('https://host.example/working-time', $linked->workingTimeLink());
+        self::assertNull($linked->workingTimeLink(), 'http is never sent');
+        self::assertNull($linked->workingTimeLink(), 'an unknown route is no link');
+        self::assertNull((new ClientWorkingTimeContext($service, $balance, $access, $guard, null, null, null, null, null, 'app_working_time'))->workingTimeLink(), 'no router');
     }
 }

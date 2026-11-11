@@ -119,6 +119,16 @@ final class FormerPersonSnapshotListener implements ResetInterface
         $this->pending = [];
     }
 
+    /**
+     * Since 1.19 (REQ-RUNTIME-002): the same at every request / message / command boundary (`kernel.terminate`,
+     * Messenger worker events, `console.terminate`), so a failed flush leaves nothing behind in a worker kept alive
+     * without the services resetter (`FRANKENPHP_RESET_KERNEL=false`).
+     */
+    public function onBoundary(): void
+    {
+        $this->reset();
+    }
+
     private function prepare(EntityManagerInterface $entityManager, UnitOfWork $unitOfWork, UserInterface $user, int $key): void
     {
         $anonymise = $this->entries->anonymisesOnUserDelete();

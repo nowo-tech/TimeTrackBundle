@@ -12,9 +12,11 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
+use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
@@ -22,24 +24,31 @@ use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\SecurityUser;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
 use stdClass;
 use Symfony\Bundle\SecurityBundle\DependencyInjection\SecurityExtension;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Security\Core\User\UserInterface;
+
+use function array_column;
 
 final class TimeTrackExtensionTest extends TestCase
 {
@@ -88,6 +97,7 @@ final class TimeTrackExtensionTest extends TestCase
         $resolver = $container->getDefinition(DoctrineUserReferenceResolver::class);
         self::assertSame(User::class, $resolver->getArgument('$userClass'));
         self::assertSame('doctrine.orm.default_entity_manager', (string) $resolver->getArgument('$entityManager'));
+        self::assertSame([], $resolver->getArgument('$acceptedUserClasses'), 'JV-T3: only user_class by default');
         foreach ([TimerService::class, ManualEntryService::class, ImportedTimeEntryWriter::class, TimesheetService::class, ClientAuthService::class, DeviceAuthorizationService::class] as $serviceId) {
             $argument = $container->getDefinition($serviceId)->getArgument('$userReferences');
             self::assertInstanceOf(Reference::class, $argument, $serviceId);
@@ -501,6 +511,66 @@ final class TimeTrackExtensionTest extends TestCase
             (string) $container->getAlias(TimeTrackAccessCheckerInterface::class),
         );
         self::assertFalse($container->hasDefinition('nowo_time_track.access_checker.default'));
+    }
+
+    public function testAcceptedUserClassesAndTheWorkingTimeLinkRoute(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([[
+            'user_class'            => User::class,
+            'accepted_user_classes' => [stdClass::class, SecurityUser::class],
+            'client_api'            => ['links_working_time_route' => 'app_working_time'],
+        ]], $container);
+
+        self::assertSame([stdClass::class, SecurityUser::class], $container->getDefinition(DoctrineUserReferenceResolver::class)->getArgument('$acceptedUserClasses'));
+        $context = $container->getDefinition(ClientWorkingTimeContext::class);
+        self::assertSame('app_working_time', $context->getArgument('$workingTimeRoute'));
+        self::assertSame('router', (string) $context->getArgument('$urlGenerator'));
+    }
+
+    public function testTheFormerPersonListenerCanBeLeftOffTheHostEntityManager(): void
+    {
+        $load = static function (array $config): ContainerBuilder {
+            $container = new ContainerBuilder();
+            $container->setParameter('kernel.environment', 'test');
+            $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+            (new TimeTrackExtension())->load([['user_class' => User::class] + $config], $container);
+
+            return $container;
+        };
+
+        $on = $load([])->getDefinition(FormerPersonSnapshotListener::class);
+        self::assertCount(3, $on->getTag('doctrine.event_listener'));
+        self::assertSame(['kernel.terminate', 'console.terminate', 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'Symfony\\Component\\Messenger\\Event\\WorkerMessageFailedEvent'], array_column($on->getTag('kernel.event_listener'), 'event'), 'REQ-RUNTIME-002: cleared at every boundary');
+        $off = $load(['retention' => ['former_person_listener' => false]]);
+        self::assertFalse($off->hasDefinition(FormerPersonSnapshotListener::class));
+        self::assertTrue($off->hasDefinition(FormerPersonTimeEntries::class), 'the explicit erasure port stays');
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function refusedAcceptedUserClasses(): iterable
+    {
+        yield 'missing class' => ['App\\Security\\Missing'];
+        yield 'UserInterface (LZ-I3: accept-all again)' => [UserInterface::class];
+        yield 'any other interface' => [TimeTrackAccessCheckerInterface::class];
+    }
+
+    #[DataProvider('refusedAcceptedUserClasses')]
+    public function testAcceptedUserClassesMustBeExistingConcreteClasses(string $class): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('accepted_user_classes');
+
+        (new TimeTrackExtension())->load([['user_class' => User::class, 'accepted_user_classes' => [$class]]], $container);
     }
 
     private function containerWithUiKit(): ContainerBuilder

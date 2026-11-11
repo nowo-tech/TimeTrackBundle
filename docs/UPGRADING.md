@@ -62,6 +62,63 @@
 
 ## Unreleased
 
+Target **1.19.0**, from **1.18.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+No migration, no schema change. Clients see one new key (`GET me` `links.workingTime`, null unless you configure it).
+
+### Behaviour change: wrapper security users need `accepted_user_classes` (JV-T3)
+
+Only if your firewall user is **not** your `user_class` entity (the 1.18 wrapper / DTO path). Since 1.19 the default
+`DoctrineUserReferenceResolver` converts such a user only when its class is listed, and only when a `user_class` row
+has its id; otherwise the call fails with `AccessDeniedException` (403) before anything is written. Before, any
+`UserInterface` with a usable `getId()` was turned into an unchecked reference: a user of another provider whose id
+matched got entries and tokens of `user_class`#id, and an unknown id was stored wherever the database did not enforce
+the foreign keys.
+
+```yaml
+nowo_time_track:
+  user_class: App\Entity\User
+  accepted_user_classes:
+    - App\Security\SecurityUser      # your wrapper class (interfaces are refused)
+```
+
+Hosts whose firewall user **is** the `user_class` entity (the standard path, Beacon) change nothing. Hosts that alias
+`UserReferenceResolverInterface` to their own resolver change nothing either. The resolver now loads the user with
+`find()` (one primary-key read per write, usually from the identity map) instead of `getReference()`.
+
+### Calendar readers for your meeting sync (Beacon spec 210)
+
+Optional. If you keep your own Google / Graph readers for meetings, you can replace them with the bundle's (see
+[MEETINGS.md](MEETINGS.md#reading-the-calendars-in-your-sync)):
+
+```yaml
+nowo_time_track:
+  calendar:
+    microsoft_scope: Calendars.Read        # default Calendars.ReadBasic: no body, task keys from titles only
+    oauth:                                 # optional OAuth helpers; empty = not configured
+      google:    { client_id: '%env(CALENDAR_GOOGLE_CLIENT_ID)%', client_secret: '%env(CALENDAR_GOOGLE_CLIENT_SECRET)%' }
+      microsoft: { client_id: '%env(CALENDAR_MICROSOFT_CLIENT_ID)%', client_secret: '%env(CALENDAR_MICROSOFT_CLIENT_SECRET)%', tenant: common }
+```
+
+The readers are registered even with `calendar.enabled: false`; the suggestions sync still reads nothing then. If you
+change `microsoft_scope` to `Calendars.Read`, existing grants lack the scope: bump your consent version so users
+reconnect. Google's `calendar.calendarlist.readonly` (calendar list) is new for grants made with only
+`calendar.events.readonly`.
+
+### Other additions
+
+- `client_api.links_working_time_route` (null): your working-time page route for `GET me` `links.workingTime`
+  (spec 198; sent only while `features.workday` is true and only as an https URL).
+- `retention.former_person_listener` (true): set false to keep `FormerPersonSnapshotListener` off your entity manager
+  when you delete users through your own flow (then call `FormerPersonTimeEntries::release()` or `anonymiseUser()`
+  before the delete).
+- Worker mode with `FRANKENPHP_RESET_KERNEL=false`: nothing to do; the bundle clears its only per-flush state itself at
+  each request, message and command boundary.
+
 ## To 1.18.0
 
 From **1.17.1**:

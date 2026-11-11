@@ -47,7 +47,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         return [
             'timesheets'   => ['enabled' => true, 'scope_provider' => FixedScopeProvider::class, 'approver_provider' => StubTimesheetApproverProvider::class],
             'working_time' => ['enabled' => true, 'calendar_provider' => FixedWorkingCalendar::class],
-            'client_api'   => ['workday_provider' => StubWorkdayProvider::class, 'backdate' => ['max_seconds' => 86400]],
+            'client_api'   => ['workday_provider' => StubWorkdayProvider::class, 'backdate' => ['max_seconds' => 86400], 'links_working_time_route' => 'nowo_time_track_index'],
         ];
     }
 
@@ -217,6 +217,13 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertTrue($me['features']['balance'] ?? false);
         self::assertTrue($me['features']['workday'] ?? false);
         self::assertTrue($me['features']['task_effort'] ?? false);
+        self::assertSame(['calendars' => null, 'workingTime' => null], $me['links'] ?? [], 'the test host is http: no link');
+        // Since 1.19 (spec 198): over https the host's working-time page is linked while the workday API is on.
+        $secure = $this->api('GET', '/api/time-track/me', null, $token, ['HTTPS' => 'on']);
+        self::assertIsArray($secure);
+        $link = $secure['links']['workingTime'] ?? null;
+        self::assertIsString($link);
+        self::assertStringStartsWith('https://localhost/', $link);
         self::assertSame('org-a', $me['timesheet']['scopeKey'] ?? null);
         self::assertSame('open', $me['timesheet']['status'] ?? null);
         $tasks = $this->api('GET', '/api/time-track/tasks', null, $token);

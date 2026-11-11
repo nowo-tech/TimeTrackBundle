@@ -17,20 +17,33 @@ change based on feedback and maintainer capacity.
 
 ## Current state (v1.x)
 
-Current release **v1.7.0** — see [CHANGELOG.md](CHANGELOG.md).
+Current release **v1.18.0** (2026-11-09) — see [CHANGELOG.md](CHANGELOG.md).
 
 - Timer, time entries and timesheets for the host's tasks (task provider; [TaskBoard integration](TASK-BOARD-INTEGRATION.md)).
-- Prototype clients: a minimal Chrome / Firefox extension under `extension/` ([BROWSER-EXTENSION.md](BROWSER-EXTENSION.md))
-  and a Tauri tray agent under `desktop/` ([DESKTOP-AGENT.md](DESKTOP-AGENT.md)), both against `/api/time-track/…`.
+- Client API for the browser extension and the desktop app ([CLIENT-API.md](CLIENT-API.md)); the clients live in their
+  own repositories (TimeTrack Extension, TimeTrack Desktop). The prototypes under `extension/` and `desktop/` are kept
+  for reference ([BROWSER-EXTENSION.md](BROWSER-EXTENSION.md), [DESKTOP-AGENT.md](DESKTOP-AGENT.md)).
+- **1.13**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with approval and a
+  hard period lock, audit chains, workday client API (R-GDPR §8).
+- **1.14**: calendar suggestions (Google / Microsoft 365, read-only, primary calendar, opt-in, server mode), `POST
+  entries`, and the meetings API for TimeTrack Desktop reminders (spec 210; the host stores the meetings).
+- **1.15 – 1.18**: entries with no user and former people, imported time moves, task time that follows a board move,
+  the user reference port and scalar event accessors for hexagonal hosts.
 
 ---
 
-- **1.13**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with approval and a
-  hard period lock, audit chains, workday client API (R-GDPR §8).
-- **1.14 (unreleased)**: calendar suggestions (Google / Microsoft 365, read-only, primary calendar, opt-in, server mode;
-  the desktop local mode is a later client release using `resolve-keys` and `POST entries`), `POST entries`, and the
-  meetings API for TimeTrack Desktop reminders (spec 210; the host stores the meetings). Next: **1.15** budget versus
-  actual with TaskBoard.
+TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
+
+- **1.19** (spec 198 side): calendar readers and OAuth helpers for a host meeting sync, `accepted_user_classes`,
+  `GET me` `links.workingTime`, REQ-RUNTIME-002, and part of REQ-ARCH-001 (XML host test, wrapper users, listener
+  switch).
+- **1.20** (spec 204): `leave` on the workday, the `daysOff` leave kind and `links.leave`; budget versus actual with
+  TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user id value object next to the
+  `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager so no service flushes the
+  host's (rule 6).
+- **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.20 are removed.
+- **1.21** (spec 199): the monitoring API, with a full audit. Off unless your organisation enables it with a recorded
+  DPIA; you see it first.
 
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 
@@ -54,14 +67,15 @@ symfony-beacon host (Beacon `docs/ROADMAP.md`, *TimeTrack: browser extension + d
 - Windows / macOS / Linux tray timer and global shortcut.
 - Offline queue with sync when the connection returns.
 - Local idle detection that **only asks** the user what to do with idle time (never edits entries on its own).
-- Signed installers and auto-update.
+- Auto-update with signed update packages (updater signatures; the installers are not OS code-signed).
 
 ### Compliance by design
 
-The clients record **working time** (art. 34.9 Estatuto de los Trabajadores), they do **not monitor** workers
-(LOPDGDD arts. 87–91):
+The clients record **working time** (art. 34.9 Estatuto de los Trabajadores). Monitoring (LOPDGDD arts. 87–91, spec
+199) is **off unless your organisation enables it with a recorded DPIA; you see it first**:
 
-- No screenshots, no keystrokes, no application or URL logging.
+- No screenshots, no keystrokes, no application or URL logging unless the organisation enables monitoring with a
+  recorded DPIA, and then only what its policy lists; the worker sees the policy and what is captured first.
 - Every optional feature is opt-in, with dated consent.
 - Worker information text and a DPIA template shipped with the documentation.
 - Right to disconnect (LOPDGDD art. 88): no auto-start, no notifications outside the configured working hours.
@@ -78,4 +92,5 @@ The clients record **working time** (art. 34.9 Estatuto de los Trabajadores), th
 
 ## Non-goals
 
-- Productivity scoring, activity tracking or any form of employee surveillance.
+- Productivity scoring and covert monitoring. Activity monitoring is off unless your organisation enables it with a
+  recorded DPIA; you see it first.

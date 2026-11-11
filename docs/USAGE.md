@@ -12,7 +12,9 @@
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
+- [Standard Symfony host](#standard-symfony-host)
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
+- [Worker mode (FrankenPHP, kernel reset false)](#worker-mode-frankenphp-kernel-reset-false)
 - [Events](#events)
 
 ## Web UI
@@ -579,6 +581,14 @@ the event adds no copy of them, and listeners must not log or forward them.
 - `nowo_time_track.time_entry.access_check` — fine-grained ACL
 - `nowo_time_track.client_api` — `ClientApiEvent` audit trail of the client API (1.9)
 
+## Standard Symfony host
+
+The zero-config path (REQ-ARCH-001): `user_class` is your attribute-mapped `App\Entity\User`, the same object your
+firewall returns. Inject `TimerService`, `TimesheetService`, `ManualEntryService` and friends into your controllers,
+listen to `TimeTrackEvents`, override the Twig templates. The bundle maps its own entities (attribute mapping prepended
+for its namespace) with foreign keys to your users table; you configure no `resolve_target_entities`, no extra mapping
+and no `accepted_user_classes`. Everything below is opt-in.
+
 ## Using it from a DDD / hexagonal application
 
 TimeTrackBundle is a **bounded context with its own model and persistence**: it owns Doctrine entities
@@ -661,12 +671,25 @@ public function onTimerStop(TimerStopEvent $event): void
   associations to that class at `loadClassMetadata`; you do **not** configure `resolve_target_entities`.
 - Bundle tables have foreign keys to your users table (`SET NULL` for entries and timesheets, `CASCADE` for timers,
   tokens and calendar rows).
+- `user_class` may be a plain PHP class mapped in **XML** by your application (no Doctrine attribute, no bundle base
+  class or trait); `tests/Fixtures/DddHost/HostUser.php` with `doctrine/HostUser.orm.xml` is the tested example.
+- With the kernel kept alive and not reset (FrankenPHP worker mode), clear that entity manager at the end of each
+  request: the resolver's `find()` answers from the identity map first (audit LZ-I4).
 - Since 1.18 the `UserInterface` you pass to the services does **not** have to be that entity: it only needs a
   `getId()` returning the entity id. Before storing it, every service asks the
   `Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface` port; the default
-  `Doctrine\DoctrineUserReferenceResolver` keeps a `user_class` instance as it is and turns any other security user
-  (a wrapper or DTO) into `EntityManager::getReference($userClass, $user->getId())`. To resolve it differently, alias
-  the interface to your own service:
+  `Doctrine\DoctrineUserReferenceResolver` keeps a `user_class` instance as it is and turns a security user of a class
+  listed in **`accepted_user_classes`** (since 1.19; concrete wrapper or DTO classes, never an interface) into the
+  `user_class` entity with that id. Any other class, and an id with no `user_class` row, is refused with
+  `AccessDeniedException` before anything is written (audit JV-T3):
+
+```yaml
+nowo_time_track:
+  user_class: App\Infrastructure\Doctrine\User     # mapped in XML by your application
+  accepted_user_classes: [App\Infrastructure\Security\SecurityUser]
+```
+
+- To resolve it differently, alias the interface to your own service:
 
 ```yaml
 # config/services.yaml
@@ -678,11 +701,11 @@ services:
   - `getId()` returns the `user_class` id **of the same person**, with the same value and the same string form as the
     entity's `getId()` (ownership is compared as strings: a base58 form against an RFC 4122 one would split one person
     into two owners).
-  - Only users of that id space reach the TimeTrack routes and services. A user from another provider (API key,
-    OAuth client, an admin entity with its own ids) whose id happens to match would get entries, tokens and device
-    approvals bound to `user_class`#id. Restrict those firewalls, or alias the port to a resolver that refuses them.
-  - `0`, negative ids, `null` and `''` are refused (`LogicException`). An id with no user row fails at flush wherever
-    foreign keys are enforced (MySQL, MariaDB, PostgreSQL; SQLite only with `PRAGMA foreign_keys = ON`).
+  - List only classes of that id space in `accepted_user_classes`. A user from another provider (API key, OAuth client,
+    an admin entity with its own ids) is refused unless you list its class; if you did, a matching id would get
+    entries, tokens and device approvals bound to `user_class`#id.
+  - `0`, negative ids, `null` and `''` are refused (`LogicException`); an id with no `user_class` row is refused
+    (`AccessDeniedException`), also where the database does not enforce the foreign keys.
 - Keep the `user_class` **entity** implementing `UserInterface` even when your firewall uses a separate wrapper: the
   former-person listener only reacts to the removal of a `UserInterface` entity, so without it deleting a user stops no
   timer and snapshots or anonymises nothing (entries end up ownerless with no former-person reference). It is not
@@ -691,12 +714,36 @@ services:
   without loading the user; `getUser()` still returns your user entity (or its proxy).
 - Removing a user through the entity manager triggers `FormerPersonSnapshotListener` (stops the timer, snapshots or
   anonymises entries). If users are deleted by bulk DQL, SQL or another flow, call
-  `FormerPersonTimeEntries::release($user)` before the delete.
+  `FormerPersonTimeEntries::release($user)` before the delete. Since 1.19 `retention.former_person_listener: false`
+  keeps the listener off your entity manager entirely; your "user deleted" handler then calls `release()` or
+  `anonymiseUser()` itself.
+
+### Units of work and events
+
+- The bundle's services write through `database.entity_manager` (default: your `default` entity manager), one flush
+  per call. Call them from an application handler **outside** your own unit of work (or after your own flush): a
+  service call flushes whatever else is pending in that entity manager.
+- `TimeTrackEvents` fire after the bundle's own flush or transaction. When you wrap a call in an outer transaction of
+  your own, "after the bundle's flush" is not "after your commit": dispatch your domain events after your commit.
 
 ### Known limitations
 
+REQ-ARCH-001 is **partially met** in 1.19. Open (pre-existing), planned for 1.20 (additive) and 2.0 (removal):
+
+- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.20 adds a
+  documented and tested bundle-owned entity manager, so no service flushes yours.
+- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.20 adds ports with a user id value object next to them;
+  the `UserInterface` ports are deprecated then and removed in 2.0.
 - Users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign keys).
 - Ports that hand a user back to you (`TeamContextProviderInterface::isManagerOf()`, the timesheet scope / approver
   providers) may receive the stored user entity instead of your security user; read its id.
-- `FormerPersonSnapshotListener` is always registered on the host entity manager.
 - Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.
+
+## Worker mode (FrankenPHP, kernel reset false)
+
+The bundle runs under FrankenPHP worker mode with the kernel kept alive and **not reset** between requests
+(`FRANKENPHP_RESET_KERNEL=false`): no service keeps request, user or tenant data, the only per-flush state
+(`FormerPersonSnapshotListener`) is cleared by the bundle at `kernel.terminate`, `console.terminate` and the Messenger
+worker events, users are reloaded before role checks and a closed entity manager is reset after a failed flush.
+`WorkerModeNoResetTest` proves it with one kernel, two people and more than 3,000 requests. Clearing your entity manager's identity
+map between requests stays your choice (memory). Details: [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md).

@@ -27,8 +27,9 @@
 | Hours balance, overtime, ledger, `GET balance` | `working_time.enabled` | off |
 | Timesheets (submit / approve / lock), `GET timesheets` | `timesheets.enabled` | off |
 | Workday client API (R-GDPR §8) | `client_api.workday_provider` | none |
+| `GET me` `links.workingTime` (your working-time page, spec 198) | `client_api.links_working_time_route` (1.19) | none |
 | Calendar suggestions, `POST entries` | 1.14 | — |
-| Budget versus actual | 1.15 | — |
+| Budget versus actual | planned (1.20 or its own minor, with TaskBoard) | — |
 
 The new tables are always mapped (one migration for everybody, see [UPGRADING](UPGRADING.md#to-1130)); they stay empty
 until a feature is enabled.

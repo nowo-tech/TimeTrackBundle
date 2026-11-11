@@ -329,7 +329,11 @@ final readonly class TimeTrackClientApiController
         $body['timesheet'] = $this->workingTime?->timesheetSummary($user);
         // Since 1.14: meeting sync state (null when off) and the host's Calendars page for the Connect button.
         $body['meetings'] = $meetings;
-        $body['links']    = ['calendars' => $this->meetings?->calendarsLink()];
+        $body['links']    = [
+            'calendars' => $this->meetings?->calendarsLink(),
+            // Since 1.19 (spec 198): the host's working-time page, only while the workday API is on for the user.
+            'workingTime' => $features['workday'] ? $this->workingTime?->workingTimeLink() : null,
+        ];
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }

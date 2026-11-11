@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Stringable;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 final class UserReferenceResolverTest extends TestCase
@@ -29,7 +30,7 @@ final class UserReferenceResolverTest extends TestCase
     {
         $user = new AppUser('person@example.com', 'secret');
         $em   = $this->createMock(EntityManagerInterface::class);
-        $em->expects(self::never())->method('getReference');
+        $em->expects(self::never())->method('find');
 
         self::assertSame($user, (new DoctrineUserReferenceResolver($em, AppUser::class))->reference($user));
     }
@@ -50,13 +51,33 @@ final class UserReferenceResolverTest extends TestCase
     }
 
     #[DataProvider('ids')]
-    public function testAnotherSecurityUserBecomesAReferenceFromItsId(int|string|object $id): void
+    public function testAnAcceptedSecurityUserBecomesTheEntityWithItsId(int|string|object $id): void
     {
-        $reference = new AppUser('person@example.com', 'secret');
-        $em        = $this->createMock(EntityManagerInterface::class);
-        $em->expects(self::once())->method('getReference')->with(AppUser::class, $id)->willReturn($reference);
+        $entity = new AppUser('person@example.com', 'secret');
+        $em     = $this->createMock(EntityManagerInterface::class);
+        $em->expects(self::once())->method('find')->with(AppUser::class, $id)->willReturn($entity);
 
-        self::assertSame($reference, (new DoctrineUserReferenceResolver($em, AppUser::class))->reference(new SecurityUser($id)));
+        self::assertSame($entity, (new DoctrineUserReferenceResolver($em, AppUser::class, [SecurityUser::class]))->reference(new SecurityUser($id)));
+    }
+
+    public function testASecurityUserClassThatIsNotAcceptedIsRefused(): void
+    {
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->expects(self::never())->method('find');
+
+        $this->expectException(AccessDeniedException::class);
+        $this->expectExceptionMessage('accepted_user_classes');
+
+        (new DoctrineUserReferenceResolver($em, AppUser::class, [TestUser::class]))->reference(new SecurityUser(42));
+    }
+
+    public function testAnAcceptedInterfaceCoversItsImplementations(): void
+    {
+        $entity = new AppUser('person@example.com', 'secret');
+        $em     = $this->createStub(EntityManagerInterface::class);
+        $em->method('find')->willReturn($entity);
+
+        self::assertSame($entity, (new DoctrineUserReferenceResolver($em, AppUser::class, [UserInterface::class]))->reference(new SecurityUser(42)));
     }
 
     /**
@@ -75,12 +96,12 @@ final class UserReferenceResolverTest extends TestCase
     public function testASecurityUserWithoutAUsableIdIsRefused(int|string|null $id): void
     {
         $em = $this->createMock(EntityManagerInterface::class);
-        $em->expects(self::never())->method('getReference');
+        $em->expects(self::never())->method('find');
 
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage('has no usable getId()');
 
-        (new DoctrineUserReferenceResolver($em, AppUser::class))->reference(new SecurityUser($id));
+        (new DoctrineUserReferenceResolver($em, AppUser::class, [SecurityUser::class]))->reference(new SecurityUser($id));
     }
 
     public function testASecurityUserWithoutGetIdIsRefused(): void
@@ -89,7 +110,7 @@ final class UserReferenceResolverTest extends TestCase
 
         $this->expectException(LogicException::class);
 
-        (new DoctrineUserReferenceResolver($em, AppUser::class))->reference(new class implements UserInterface {
+        (new DoctrineUserReferenceResolver($em, AppUser::class, [UserInterface::class]))->reference(new class implements UserInterface {
             public function getRoles(): array
             {
                 return [];
@@ -106,14 +127,14 @@ final class UserReferenceResolverTest extends TestCase
         });
     }
 
-    public function testAMissingReferenceIsRefused(): void
+    public function testAnUnknownIdIsRefusedBeforeAnythingIsWritten(): void
     {
-        $em = $this->createMock(EntityManagerInterface::class);
-        $em->method('getReference')->willReturn(null);
+        $em = $this->createStub(EntityManagerInterface::class);
+        $em->method('find')->willReturn(null);
 
-        $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('No Doctrine reference could be built');
+        $this->expectException(AccessDeniedException::class);
+        $this->expectExceptionMessage('No "' . AppUser::class . '" row has the id');
 
-        (new DoctrineUserReferenceResolver($em, AppUser::class))->reference(new SecurityUser(7));
+        (new DoctrineUserReferenceResolver($em, AppUser::class, [SecurityUser::class]))->reference(new SecurityUser(7));
     }
 }
