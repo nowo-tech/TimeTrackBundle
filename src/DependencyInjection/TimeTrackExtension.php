@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClientInterface;
+use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
 use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
 use Nowo\TimeTrackBundle\Calendar\CalendarReaderInterface;
 use Nowo\TimeTrackBundle\Calendar\CalendarRefHasher;
@@ -656,13 +657,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     /**
      * Since 1.19 (Beacon request 2026-11-09): the calendar readers ({@see CalendarReaderInterface}) and the OAuth helpers
      * ({@see CalendarOAuthClientInterface}), registered whether or not calendar suggestions are on, so a host meeting
-     * sync can inject them. They need symfony/http-client (a `suggest`); without it they fail with `no_http_client`.
+     * sync can inject them. Since 1.20 also {@see CalendarOAuthClients} (provider discovery) and the runtime app provider
+     * (`calendar.oauth.app_provider`). They need symfony/http-client (a `suggest`); without it they fail with `no_http_client`.
      *
      * @param array<string, mixed> $calendar Processed `calendar` configuration
      */
     private function registerCalendarReaders(ContainerBuilder $container, array $calendar, Reference $clockRef): void
     {
-        /** @var array{max_pages: int, microsoft_scope: string, oauth: array{google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
+        /** @var array{max_pages: int, microsoft_scope: string, oauth: array{app_provider: string|null, google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
         $httpRef = new Reference('http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE);
         $container->setDefinition(CalendarHttpClient::class, (new Definition(CalendarHttpClient::class))
             ->setArguments(['$httpClient' => $httpRef, '$clock' => $clockRef]));
@@ -672,21 +674,32 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArguments(['$http' => new Reference(CalendarHttpClient::class), '$maxPages' => $calendar['max_pages'], '$scope' => $calendar['microsoft_scope']]));
         $container->setDefinition(CalendarTokenEndpoint::class, (new Definition(CalendarTokenEndpoint::class))
             ->setArguments(['$httpClient' => $httpRef, '$clock' => $clockRef]));
-        $google = $calendar['oauth']['google'];
+        // Since 1.20: with an app provider the apps are read at runtime on every call; the static secrets are then not
+        // compiled into the container at all.
+        $appProvider = $calendar['oauth']['app_provider'];
+        $appRef      = is_string($appProvider) ? new Reference($appProvider) : null;
+        $google      = $calendar['oauth']['google'];
         $container->setDefinition(GoogleCalendarOAuthClient::class, (new Definition(GoogleCalendarOAuthClient::class))
             ->setArguments([
                 '$endpoint'     => new Reference(CalendarTokenEndpoint::class),
-                '$clientId'     => $google['client_id'],
-                '$clientSecret' => $google['client_secret'],
+                '$clientId'     => $appRef instanceof Reference ? '' : $google['client_id'],
+                '$clientSecret' => $appRef instanceof Reference ? '' : $google['client_secret'],
+                '$appProvider'  => $appRef,
             ]));
         $microsoft = $calendar['oauth']['microsoft'];
         $container->setDefinition(MicrosoftCalendarOAuthClient::class, (new Definition(MicrosoftCalendarOAuthClient::class))
             ->setArguments([
                 '$endpoint'     => new Reference(CalendarTokenEndpoint::class),
-                '$clientId'     => $microsoft['client_id'],
-                '$clientSecret' => $microsoft['client_secret'],
+                '$clientId'     => $appRef instanceof Reference ? '' : $microsoft['client_id'],
+                '$clientSecret' => $appRef instanceof Reference ? '' : $microsoft['client_secret'],
                 '$tenant'       => $microsoft['tenant'],
                 '$scope'        => $calendar['microsoft_scope'],
+                '$appProvider'  => $appRef,
+            ]));
+        $container->setDefinition(CalendarOAuthClients::class, (new Definition(CalendarOAuthClients::class))
+            ->setArguments([
+                '$google'    => new Reference(GoogleCalendarOAuthClient::class),
+                '$microsoft' => new Reference(MicrosoftCalendarOAuthClient::class),
             ]));
     }
 

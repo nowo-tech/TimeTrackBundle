@@ -7,13 +7,12 @@ namespace Nowo\TimeTrackBundle\Calendar;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use SensitiveParameter;
 
-use function trim;
-
 /**
  * Since 1.19 (Beacon spec 210 FR-002): Google OAuth 2.0 for the calendar readers — authorization code with PKCE,
  * offline access, the read-only scopes {@see self::SCOPES} (`calendar.events.readonly` for events and meetings,
  * `calendar.calendarlist.readonly` for {@see CalendarReaderInterface::calendars()}). Client id and secret come from
- * `calendar.oauth.google` (empty = not configured).
+ * `calendar.oauth.google` (empty = not configured) or, since 1.20, from the host's
+ * {@see CalendarOAuthAppProviderInterface} (`calendar.oauth.app_provider`), asked on every call and never kept.
  */
 final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInterface
 {
@@ -26,17 +25,22 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
     /** Read-only scopes asked for. */
     public const SCOPES = 'https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/calendar.calendarlist.readonly';
 
+    private CalendarOAuthAppSource $app;
+
     /**
      * @param CalendarTokenEndpoint $endpoint The token HTTP calls
-     * @param string $clientId OAuth client id (`calendar.oauth.google.client_id`)
-     * @param string $clientSecret OAuth client secret (`calendar.oauth.google.client_secret`)
+     * @param string $clientId OAuth client id (`calendar.oauth.google.client_id`; unused with an app provider)
+     * @param string $clientSecret OAuth client secret (`calendar.oauth.google.client_secret`; unused with an app provider)
+     * @param CalendarOAuthAppProviderInterface|null $appProvider Since 1.20: runtime app source (`calendar.oauth.app_provider`)
      */
     public function __construct(
         private CalendarTokenEndpoint $endpoint,
-        private string $clientId = '',
+        string $clientId = '',
         #[SensitiveParameter]
-        private string $clientSecret = '',
+        string $clientSecret = '',
+        ?CalendarOAuthAppProviderInterface $appProvider = null,
     ) {
+        $this->app = new CalendarOAuthAppSource(CalendarProvider::Google, $clientId, $clientSecret, null, $appProvider);
     }
 
     /**
@@ -48,11 +52,11 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
     }
 
     /**
-     * Client id and secret are set.
+     * Client id and secret are set (since 1.20 read from the app provider when there is one).
      */
     public function isConfigured(): bool
     {
-        return trim($this->clientId) !== '' && trim($this->clientSecret) !== '';
+        return $this->app->isConfigured();
     }
 
     /**
@@ -69,7 +73,7 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
     public function authorizationUrl(string $redirectUri, string $state, string $codeChallenge): string
     {
         return $this->endpoint->authorizationUrl(self::AUTHORIZATION_URL, $redirectUri, $state, $codeChallenge, [
-            'client_id'              => $this->clientId,
+            'client_id'              => $this->app->forCall()->clientId,
             'scope'                  => self::SCOPES,
             'access_type'            => 'offline',
             'prompt'                 => 'consent',
@@ -82,13 +86,15 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
      */
     public function exchangeCode(#[SensitiveParameter] string $code, #[SensitiveParameter] string $codeVerifier, string $redirectUri): CalendarTokens
     {
+        $app = $this->app->forCall();
+
         return $this->endpoint->tokens(self::TOKEN_URL, [
             'grant_type'    => 'authorization_code',
             'code'          => $code,
             'code_verifier' => $codeVerifier,
             'redirect_uri'  => $redirectUri,
-            'client_id'     => $this->clientId,
-            'client_secret' => $this->clientSecret,
+            'client_id'     => $app->clientId,
+            'client_secret' => $app->revealClientSecret(),
         ]);
     }
 
@@ -97,11 +103,13 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
      */
     public function refresh(#[SensitiveParameter] string $refreshToken): CalendarTokens
     {
+        $app = $this->app->forCall();
+
         return $this->endpoint->tokens(self::TOKEN_URL, [
             'grant_type'    => 'refresh_token',
             'refresh_token' => $refreshToken,
-            'client_id'     => $this->clientId,
-            'client_secret' => $this->clientSecret,
+            'client_id'     => $app->clientId,
+            'client_secret' => $app->revealClientSecret(),
         ]);
     }
 
@@ -114,10 +122,10 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
     }
 
     /**
-     * `POST /revoke` (best effort).
+     * `POST /revoke` (best effort). Since 1.20: false without a configured app (fail closed), nothing is sent.
      */
     public function revoke(#[SensitiveParameter] string $token): bool
     {
-        return $token !== '' && $this->endpoint->revoke(self::REVOKE_URL, ['token' => $token]);
+        return $token !== '' && $this->app->tryForCall() instanceof CalendarOAuthApp && $this->endpoint->revoke(self::REVOKE_URL, ['token' => $token]);
     }
 }

@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+  - [To 1.20.0](#to-1200)
 - [To 1.19.1](#to-1191)
 - [To 1.19.0](#to-1190)
   - [Behaviour change: wrapper security users need `accepted_user_classes` (JV-T3)](#behaviour-change-wrapper-security-users-need-accepted_user_classes-jv-t3)
@@ -66,6 +67,32 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+### To 1.20.0
+
+From **1.19.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Target **1.20.0** (minor). No migration, no schema change, no client contract change. **Nothing to change** if you keep
+the OAuth apps in `calendar.oauth.google` / `.microsoft`: without `calendar.oauth.app_provider` the helpers behave
+exactly as in 1.19.1.
+
+To keep the apps in your database instead (encrypted, edited in an admin page, write-only):
+
+1. Implement `Calendar\CalendarOAuthAppProviderInterface` (example with InstanceSettings:
+   [USAGE.md](USAGE.md#calendar-oauth-apps-at-runtime-120)) and set `calendar.oauth.app_provider` to its service id.
+2. Copy the client ids and secrets from `.env` into the admin page, deploy, check the Integrations page, then remove the
+   `.env` values (with a provider they are ignored and no longer compiled into the container).
+3. Handle the new `CalendarSyncException::NOT_CONFIGURED` (`not_configured`) where you call `authorizationUrl()`,
+   `exchangeCode()` or `refresh()`: the app was removed. Show it on the connection, skip it in your refresh job and keep
+   the stored tokens. `revoke()` returns false in that case.
+4. Optional: use `Calendar\CalendarOAuthClients` (`configuredProviders()`, `isConfigured()`) for provider discovery.
+
+Code that builds `GoogleCalendarOAuthClient` / `MicrosoftCalendarOAuthClient` by hand keeps working; both take an
+optional last argument `$appProvider`.
 
 ## To 1.19.1
 
