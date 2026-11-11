@@ -126,10 +126,11 @@ if (!$batch->complete) {
 - **Escape before display** (audit LZ-I8): title, description and location are raw provider text (a Google
   description may hold HTML), and join links are raw candidates. The bundle never renders them.
 - Errors are `CalendarSyncException` codes (`token_expired`, `rate_limited`, `forbidden`, `provider_error`,
-  `invalid_response`, `too_large`, `no_http_client`), never provider messages. A bad calendar id (empty, > 512 bytes,
+  `invalid_response`, `too_large`, `no_http_client`; since 1.20 `not_configured` from the OAuth helpers), never
+  provider messages. A bad calendar id (empty, > 512 bytes,
   control characters) throws `InvalidArgumentException`.
 - `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` keep ids and personal data behind methods:
-  `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, Symfony VarDumper (`dump()`, the profiler),
+  `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, Symfony VarDumper (`dump()`, the dump panel),
   Symfony Serializer and Monolog see `[redacted]`, and serialization
   throws (audit LZ-L1). Build your read model from them inside the sync and keep only your minimal fields.
 
@@ -148,7 +149,9 @@ Changing it does not widen existing grants: bump your consent version so users r
 ### OAuth helpers
 
 Optional: `GoogleCalendarOAuthClient` and `MicrosoftCalendarOAuthClient` (`CalendarOAuthClientInterface`), configured
-under `calendar.oauth` (empty client id or secret = `isConfigured()` false: hide the provider).
+under `calendar.oauth` (empty client id or secret = `isConfigured()` false: hide the provider). Since 1.20 the apps can
+come from your database at runtime (`calendar.oauth.app_provider`, read on every call; without an app the token calls
+fail with `not_configured`, Google `revoke()` still works): see [USAGE.md](USAGE.md#calendar-oauth-apps-at-runtime-120).
 
 ```php
 $pkce  = CalendarPkce::create();

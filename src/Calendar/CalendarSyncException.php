@@ -22,6 +22,9 @@ final class CalendarSyncException extends RuntimeException
     public const NO_SOURCE        = 'no_source';
     public const NO_HTTP_CLIENT   = 'no_http_client';
 
+    /** Since 1.20: the provider has no OAuth app (`calendar.oauth.app_provider` answered null or an incomplete app). */
+    public const NOT_CONFIGURED = 'not_configured';
+
     /**
      * @param string $errorCode One of the class constants
      */

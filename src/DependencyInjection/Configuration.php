@@ -18,6 +18,7 @@ use function is_array;
 use function is_string;
 use function preg_match;
 use function str_contains;
+use function trim;
 
 /**
  * Configuration tree for TimeTrackBundle.
@@ -941,10 +942,23 @@ final class Configuration implements ConfigurationInterface
                     ->values(['Calendars.ReadBasic', 'Calendars.Read'])
                     ->defaultValue('Calendars.ReadBasic')
                 ->end()
+                ->scalarNode('http_client')
+                    ->info('Since 1.20 (audit ML-L1): service id of the HTTP client of the calendar readers and OAuth token calls (default: the framework http_client). Point it at an untraced client where the profiler is on.')
+                    ->defaultValue('http_client')
+                    ->cannotBeEmpty()
+                ->end()
                 ->arrayNode('oauth')
                     ->info('Since 1.19: OAuth apps of the optional OAuth helpers (empty = not configured). Use %env()% for the secrets.')
                     ->addDefaultsIfNotSet()
                     ->children()
+                        ->scalarNode('app_provider')
+                            ->info('Since 1.20: service id implementing CalendarOAuthAppProviderInterface (apps read at runtime on every call, e.g. encrypted in the database); null = the static google / microsoft values below.')
+                            ->defaultNull()
+                            ->validate()
+                                ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || trim($v) === ''))
+                                ->thenInvalid('calendar.oauth.app_provider must be a service id.')
+                            ->end()
+                        ->end()
                         ->arrayNode('google')
                             ->addDefaultsIfNotSet()
                             ->children()

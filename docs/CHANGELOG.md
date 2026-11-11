@@ -55,6 +55,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.20.0** (minor; Beacon request 2026-11-11): the calendar OAuth apps can be read at runtime from the host, for
+example encrypted in its database, instead of `.env`. No schema change, no client contract change; without the new
+option the behaviour is that of 1.19.1.
+
+### Added
+
+- **`calendar.oauth.app_provider`** (service id) and the port `Calendar\CalendarOAuthAppProviderInterface::app(string
+  $provider): ?CalendarOAuthApp` (no framework type, REQ-ARCH-001). `GoogleCalendarOAuthClient` and
+  `MicrosoftCalendarOAuthClient` ask it on **every** use — consent URL, code exchange, refresh, revoke and
+  `isConfigured()` — once per call, and keep nothing (REQ-RUNTIME-002: a rotated secret applies to the next call in a
+  worker with kernel reset false or a Messenger worker). With a provider the static client ids and secrets are ignored
+  and not compiled into the container; `calendar.oauth.microsoft.tenant` is the default of an app without a tenant.
+- **`Calendar\CalendarOAuthApp`**: final readonly value object (`clientId`, client secret, optional `tenant`). The secret
+  is read only through `revealClientSecret()`; `__toString()`, `__debugInfo()` (var_dump, VarDumper and the profiler's
+  dump panel), `json_encode()`, `__serialize()`, `var_export()`, an `(array)` cast, Serializer and Monolog see
+  `[redacted]`, and unserializing throws. Deliberate reflection on the internal wrapper still reads it (audit ML-I1).
+- **`Calendar\CalendarOAuthClients`**: provider discovery for a host Integrations page, its connect buttons and its
+  refresh job (`configuredProviders()`, `isConfigured(CalendarProvider)`, `client(CalendarProvider)`), asked live on
+  each call.
+- **`CalendarSyncException::NOT_CONFIGURED`** (`not_configured`): with an app provider, a null app, an empty client id or
+  secret, or an exception from the provider (its message dropped) hides the provider (`isConfigured()` false) and fails
+  its calls closed: `authorizationUrl()`, `exchangeCode()` and `refresh()` throw `not_configured` without a request.
+  Google `revoke()` needs no client credentials and still revokes (audit ML-L2). Stored tokens are never touched by
+  the bundle. A provider exception logs a warning on the `time_track` channel with the provider name and the exception
+  class only (optional PSR-3 logger, audit ML-I3).
+- **`calendar.http_client`** (service id, default the framework `http_client`): the HTTP client of the calendar readers
+  and the OAuth token calls, so a host can use a client the profiler does not trace (audit ML-L1).
+
+### Security
+
+- Audit ML (Pass, no GHSA). ML-L1 (since 1.19.0): in debug, the profiler's HTTP Client panel records token request
+  bodies in plain text (`client_secret`, `code`, `code_verifier`, `refresh_token`); the redaction claims now name
+  VarDumper and the dump panel only, SECURITY.md says never to enable the profiler where real secrets are used, and
+  `calendar.http_client` lets a host bypass the traced client. ML-I2: Microsoft tenants `.` and `..` are refused
+  (`common`); the pattern is `MicrosoftCalendarOAuthClient::TENANT_PATTERN`.
+
+### Unchanged
+
+- Token encryption stays the host's; PKCE `S256`, the state checks, the redirect URI rules, the PSR-20 clock and the
+  `Retry-After` cap of 1.19.1 are untouched. Without `app_provider` the static configuration applies exactly as before
+  (an empty static app still builds a URL, as in 1.19.1).
+
+### Tests
+
+- `CalendarOAuthAppProviderTest`: rotation between two calls (the new app on the very next call, one lookup per call),
+  Microsoft tenant per app with fallback, a null / incomplete app hides the provider and rejects every call without a
+  request, a failing store fails closed without its message, the secret never reaches a token error, the static
+  fallback unchanged.
+- `CalendarOAuthAppTest`: the secret stays out of `__toString()`, `serialize()`, `var_export()`, `var_dump()`,
+  `print_r()`, VarDumper, `json_encode()`, casts, Serializer and Monolog.
+- `CalendarOAuthAppWorkerTest`: one kernel kept alive (debug off, services resetter never run), 150 rounds alternating
+  apps one, apps two and no app with a request through `http_kernel` in between, for Google and Microsoft (tenant
+  alternating, token URL asserted each round); every call uses the app stored at that moment, Google still revokes
+  without an app, and no secret reaches the test logger.
+- Audit ML: Google revoke without an app (and with a failing store), `.` / `..` tenants, the provider-failure warning
+  without the secret or the message, the `calendar.http_client` wiring.
+- `CalendarExtensionTest`: the provider wiring, no static secret compiled in with a provider, a blank service id
+  refused.
+
+### Docs
+
+- CONFIGURATION, USAGE (an InstanceSettings-backed provider), MEETINGS, UPGRADING, FRANKENPHP-WORKER-AUDIT.
+- ROADMAP: the planned "Block 2" (leave, the REQ-ARCH-001 additive ports and bundle-owned entity manager) moves from
+  1.20 to **1.21**, the monitoring API to 1.22; the deprecations announced for 1.20 now land in 1.21.
+
 ## [1.19.1] - 2026-11-11
 
 Target **1.19.1** (patch; Beacon report 2026-11-11 after adopting 1.19.0).

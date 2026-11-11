@@ -8,6 +8,7 @@ use App\Entity\User;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
+use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
 use Nowo\TimeTrackBundle\Calendar\CalendarTokenEndpoint;
@@ -29,6 +30,7 @@ use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Reference;
 
 use function array_map;
@@ -98,6 +100,59 @@ final class CalendarExtensionTest extends TestCase
         self::assertIsArray($parameter);
         self::assertArrayNotHasKey('oauth', $parameter, 'the OAuth secrets stay out of the parameter bag');
         self::assertSame('Calendars.Read', $parameter['microsoft_scope']);
+    }
+
+    public function testAnAppProviderReplacesTheStaticApps(): void
+    {
+        $off = $this->load([]);
+        self::assertNull($off->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$appProvider'));
+        self::assertNull($off->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$appProvider'));
+        self::assertSame([GoogleCalendarOAuthClient::class, MicrosoftCalendarOAuthClient::class], [
+            (string) $off->getDefinition(CalendarOAuthClients::class)->getArgument('$google'),
+            (string) $off->getDefinition(CalendarOAuthClients::class)->getArgument('$microsoft'),
+        ]);
+
+        $on = $this->load(['calendar' => ['oauth' => [
+            'app_provider' => 'app.calendar_oauth_apps',
+            'google'       => ['client_id' => 'g-id', 'client_secret' => '%env(GOOGLE_CALENDAR_SECRET)%'],
+            'microsoft'    => ['client_id' => 'm-id', 'client_secret' => '%env(MS_CALENDAR_SECRET)%', 'tenant' => 'organizations'],
+        ]]]);
+        foreach ([GoogleCalendarOAuthClient::class, MicrosoftCalendarOAuthClient::class] as $client) {
+            $definition = $on->getDefinition($client);
+            self::assertSame('app.calendar_oauth_apps', (string) $definition->getArgument('$appProvider'));
+            self::assertSame(['', ''], [$definition->getArgument('$clientId'), $definition->getArgument('$clientSecret')], 'no static secret is compiled in');
+        }
+        self::assertSame('organizations', $on->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$tenant'), 'the default tenant of an app without one');
+
+        self::assertNull($this->load(['calendar' => ['oauth' => ['app_provider' => null]]])->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$appProvider'));
+    }
+
+    public function testTheCalendarHttpClientCanBeReplaced(): void
+    {
+        // Audit ML-L1: a host can send the token calls through a client the profiler does not trace.
+        $default = $this->load([]);
+        foreach ([CalendarTokenEndpoint::class, CalendarHttpClient::class] as $service) {
+            $reference = $default->getDefinition($service)->getArgument('$httpClient');
+            self::assertInstanceOf(Reference::class, $reference);
+            self::assertSame(['http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE], [(string) $reference, $reference->getInvalidBehavior()]);
+        }
+        self::assertSame('logger', (string) $default->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$logger'));
+
+        $custom = $this->load(['calendar' => ['http_client' => 'app.untraced_http_client']]);
+        foreach ([CalendarTokenEndpoint::class, CalendarHttpClient::class] as $service) {
+            $reference = $custom->getDefinition($service)->getArgument('$httpClient');
+            self::assertInstanceOf(Reference::class, $reference);
+            self::assertSame(['app.untraced_http_client', ContainerInterface::EXCEPTION_ON_INVALID_REFERENCE], [(string) $reference, $reference->getInvalidBehavior()]);
+        }
+        self::assertSame('logger', (string) $custom->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$logger'));
+    }
+
+    public function testABlankAppProviderIsRefused(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('calendar.oauth.app_provider must be a service id.');
+
+        $this->load(['calendar' => ['oauth' => ['app_provider' => ' ']]]);
     }
 
     public function testAnUnknownMicrosoftScopeIsRefused(): void

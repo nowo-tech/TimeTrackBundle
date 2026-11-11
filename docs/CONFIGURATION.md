@@ -351,7 +351,9 @@ nowo_time_track:
     max_rules_per_user: 20          # per scope (0-100)
     max_pages: 10                   # provider pages per sync (1-50)
     microsoft_scope: Calendars.ReadBasic   # since 1.19: or Calendars.Read (the meeting reader also reads the body)
+    http_client: http_client        # since 1.20: HTTP client service of the readers and token calls
     oauth:                          # since 1.19: optional OAuth helpers; empty = not configured
+      app_provider: ~               # since 1.20: CalendarOAuthAppProviderInterface service id (apps read at runtime)
       google:    { client_id: '', client_secret: '' }
       microsoft: { client_id: '', client_secret: '', tenant: common }
 ```
@@ -360,6 +362,22 @@ nowo_time_track:
   `CalendarReaderInterface`) and the OAuth helpers (`GoogleCalendarOAuthClient`, `MicrosoftCalendarOAuthClient`) are
   registered whatever `enabled` says, for a host meeting sync ([MEETINGS.md](MEETINGS.md#reading-the-calendars-in-your-sync)).
   Pass the OAuth secrets as `%env()%`; they are not copied into the `nowo_time_track.calendar` parameter.
+- Since 1.20 `oauth.app_provider` names a service implementing `Calendar\CalendarOAuthAppProviderInterface`: the OAuth
+  apps (client id, secret, Microsoft tenant) are then read from it **on every call** (consent URL, code exchange,
+  refresh, revoke, `isConfigured()`), for example from a store encrypted in your database and edited in an admin page
+  ([USAGE.md](USAGE.md#calendar-oauth-apps-at-runtime-120)). With it, the static `google` / `microsoft` client id and
+  secret are ignored and not compiled into the container; `microsoft.tenant` stays the default for an app returned
+  without a tenant. A null answer, an empty client id or secret, or an exception from the provider means "not
+  configured": the provider is hidden and its token calls fail with `not_configured` (Google `revoke()` still works:
+  it needs no client credentials). A provider exception is logged as a warning with the provider name and exception
+  class only. Unset (default), the static
+  values apply exactly as in 1.19. A blank service id is refused at compile time.
+- Since 1.20 `http_client` (default: the framework `http_client`, optional) names the HTTP client of the calendar
+  readers and the OAuth token calls. In debug the profiler's HTTP Client panel records token request bodies in plain
+  text (`client_secret`, `code`, `code_verifier`, `refresh_token`; audit ML-L1): where the profiler is on and real
+  secrets are used, point this at a client the profiler does not trace. A custom id must exist.
+- Since 1.20 `Calendar\CalendarOAuthClients` (`isConfigured(CalendarProvider)`, `configuredProviders()`,
+  `client(CalendarProvider)`) answers provider discovery for your Integrations page, connect buttons and refresh job.
 
 - Refused at compile time: `enabled` without `task_key_resolver`, `server` in `modes` without `credential_provider`,
   unknown providers or modes, values outside the ranges above.

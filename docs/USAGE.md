@@ -12,6 +12,7 @@
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
+- [Calendar OAuth apps at runtime (1.20)](#calendar-oauth-apps-at-runtime-120)
 - [Standard Symfony host](#standard-symfony-host)
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
 - [Worker mode (FrankenPHP, kernel reset false)](#worker-mode-frankenphp-kernel-reset-false)
@@ -581,6 +582,115 @@ the event adds no copy of them, and listeners must not log or forward them.
 - `nowo_time_track.time_entry.access_check` — fine-grained ACL
 - `nowo_time_track.client_api` — `ClientApiEvent` audit trail of the client API (1.9)
 
+## Calendar OAuth apps at runtime (1.20)
+
+By default the OAuth apps of the optional helpers come from `calendar.oauth.google` / `.microsoft` (usually
+`%env()%`), fixed when the container compiles. Since 1.20 you can keep them in your database instead — encrypted,
+edited by an administrator, write-only — with a service implementing `Calendar\CalendarOAuthAppProviderInterface`:
+
+```yaml
+nowo_time_track:
+  calendar:
+    oauth:
+      app_provider: App\TimeTrack\Calendar\InstanceSettingsCalendarOAuthApps
+      microsoft: { tenant: organizations }   # default tenant of an app stored without one
+```
+
+Example with InstanceSettingsBundle (secrets in an `#[Encrypted]` column through DoctrineEncryptBundle; the admin form
+never shows a stored secret, a blank field keeps it):
+
+```php
+use Nowo\InstanceSettingsBundle\Attribute\AsSettingsSection;
+use Nowo\InstanceSettingsBundle\Section\AbstractSettingsSection;
+use Nowo\InstanceSettingsBundle\Section\SettingField;
+use Symfony\Component\Validator\Constraints\Regex;
+
+#[AsSettingsSection(priority: 20)]
+final class CalendarOAuthSettingsSection extends AbstractSettingsSection
+{
+    public const NAME = 'calendar_oauth';
+
+    public function getName(): string
+    {
+        return self::NAME;
+    }
+
+    public function getLabel(): string
+    {
+        return 'Calendar OAuth apps';
+    }
+
+    public function getFields(): iterable
+    {
+        yield SettingField::string('google_client_id', null, 'Google client id');
+        yield SettingField::secret('google_client_secret', 'Google client secret');
+        yield SettingField::string('microsoft_client_id', null, 'Microsoft client id');
+        yield SettingField::secret('microsoft_client_secret', 'Microsoft client secret');
+        yield SettingField::string('microsoft_tenant', null, 'Microsoft tenant', 'common, organizations, consumers or a tenant id', false, [
+            new Regex('/^(?!\.{1,2}$)[A-Za-z0-9.-]{1,64}$/D'), // MicrosoftCalendarOAuthClient::TENANT_PATTERN
+        ]);
+    }
+}
+```
+
+```php
+use Nowo\InstanceSettingsBundle\Settings\InstanceSettingsInterface;
+use Nowo\TimeTrackBundle\Calendar\CalendarOAuthApp;
+use Nowo\TimeTrackBundle\Calendar\CalendarOAuthAppProviderInterface;
+
+final readonly class InstanceSettingsCalendarOAuthApps implements CalendarOAuthAppProviderInterface
+{
+    public function __construct(private InstanceSettingsInterface $settings)
+    {
+    }
+
+    public function app(string $provider): ?CalendarOAuthApp
+    {
+        if ($provider !== 'google' && $provider !== 'microsoft') {
+            return null;
+        }
+        $prefix = CalendarOAuthSettingsSection::NAME . '.' . $provider;
+        $id     = $this->settings->getString($prefix . '_client_id');
+        $secret = $this->settings->getSecret($prefix . '_client_secret');
+        if ($id === null || $id === '' || $secret === null || $secret === '') {
+            return null; // hidden on the Integrations page; its calls fail with not_configured
+        }
+        $tenant = $provider === 'microsoft' ? $this->settings->getString($prefix . '_tenant') : null;
+
+        return new CalendarOAuthApp($id, $secret, $tenant === '' ? null : $tenant);
+    }
+}
+```
+
+- **Read on every use, never kept** (REQ-RUNTIME-002): the helpers ask the provider once per call — consent URL, code
+  exchange, each refresh, `isConfigured()` — and keep nothing, so a rotated secret applies to the next call in
+  FrankenPHP worker mode with kernel reset false and in long-running Messenger workers. Do not memoise the app in your
+  provider either; InstanceSettings' own memo lasts one request or one message.
+- **Discovery:** `Calendar\CalendarOAuthClients::configuredProviders()` / `isConfigured(CalendarProvider)` (or each
+  helper's `isConfigured()`) for the Integrations page, the connect buttons and the refresh job. A provider whose app
+  was removed disappears on the next call.
+- **Removed app, existing connections:** `authorizationUrl()`, `exchangeCode()` and `refresh()` throw
+  `CalendarSyncException('not_configured')` without a request. Treat `not_configured` as "integration switched off":
+  show it on the connection, skip the connection in the refresh job (no retry loop; in a Messenger handler throw
+  `UnrecoverableMessageHandlingException`) and **keep the stored tokens** — the bundle deletes nothing, and the
+  connection works again once an administrator restores the app. Only `token_expired` means the user must reconnect.
+- **Disconnecting or erasing with the app removed:** `revoke()` needs no app. Google revokes by the token alone, so the
+  grant still ends at Google (audit ML-L2); Microsoft Graph never revokes (tell the user to remove the app at
+  https://myapps.microsoft.com). Delete your stored tokens whatever it answers.
+- **The secret:** `CalendarOAuthApp::revealClientSecret()` is the only way to read it. `__toString()`, debug output
+  (`var_dump()`, `print_r()`, VarDumper and the profiler's dump panel), `json_encode()`, `serialize()`,
+  `var_export()`, an `(array)` cast, Serializer and Monolog see `[redacted]`; unserializing throws. This prevents
+  accidental output, not deliberate access: reflection on the internal wrapper, or a cast of that wrapper itself, still
+  reads it (audit ML-I1).
+- **The profiler's HTTP Client panel is not redacted** (audit ML-L1): in debug, `TraceableHttpClient` records every
+  token request body in plain text — `client_secret`, `code`, `code_verifier`, `refresh_token`. Never enable the
+  profiler where real secrets are used, or point `calendar.http_client` at a client the profiler does not trace (for
+  example a plain `HttpClient::create()` service); it carries the readers' Bearer calls too.
+- **A failing store:** an exception thrown by your provider is treated as "not configured"; its message is dropped and
+  the `time_track` logger gets a warning with the provider name and the exception class only (audit ML-I3), so a
+  broken key does not look like "switched off" in your logs.
+- Without `app_provider` nothing changes: the static values apply exactly as in 1.19.
+
 ## Standard Symfony host
 
 The zero-config path (REQ-ARCH-001): `user_class` is your attribute-mapped `App\Entity\User`, the same object your
@@ -728,11 +838,11 @@ services:
 
 ### Known limitations
 
-REQ-ARCH-001 is **partially met** in 1.19. Open (pre-existing), planned for 1.20 (additive) and 2.0 (removal):
+REQ-ARCH-001 is **partially met** in 1.19 and 1.20. Open (pre-existing), planned for 1.21 (additive) and 2.0 (removal):
 
-- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.20 adds a
+- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.21 adds a
   documented and tested bundle-owned entity manager, so no service flushes yours.
-- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.20 adds ports with a user id value object next to them;
+- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.21 adds ports with a user id value object next to them;
   the `UserInterface` ports are deprecated then and removed in 2.0.
 - Users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign keys).
 - Ports that hand a user back to you (`TeamContextProviderInterface::isManagerOf()`, the timesheet scope / approver

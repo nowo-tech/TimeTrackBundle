@@ -16,6 +16,11 @@ use SensitiveParameter;
  *
  * Token calls are `POST`s to constant URLs (10 s, no redirects, 64 KB at most). Errors are
  * {@see CalendarSyncException} codes (`token_expired` for `invalid_grant`), never provider messages or tokens.
+ *
+ * Since 1.20 the OAuth app may come from a host {@see CalendarOAuthAppProviderInterface} (`calendar.oauth.app_provider`),
+ * read on every call: without an app there, {@see self::isConfigured()} is false, the consent URL, code exchange and
+ * refresh throw `not_configured`. {@see self::revoke()} never needs the app (Google revokes by the token alone, audit
+ * ML-L2; Microsoft never revokes).
  */
 interface CalendarOAuthClientInterface
 {
@@ -43,20 +48,22 @@ interface CalendarOAuthClientInterface
      * @param string $codeChallenge {@see CalendarPkce::$challenge}
      *
      * @throws InvalidArgumentException On a bad redirect URI, a short or malformed state, or a bad challenge
+     * @throws CalendarSyncException `not_configured` (since 1.20) when the app provider has no app
      */
     public function authorizationUrl(string $redirectUri, string $state, string $codeChallenge): string;
 
     /**
      * Exchanges the authorization code (with the PKCE verifier).
      *
-     * @throws CalendarSyncException
+     * @throws CalendarSyncException `not_configured` (since 1.20) when the app provider has no app
      */
     public function exchangeCode(#[SensitiveParameter] string $code, #[SensitiveParameter] string $codeVerifier, string $redirectUri): CalendarTokens;
 
     /**
      * A new access token from a refresh token.
      *
-     * @throws CalendarSyncException `token_expired` when the grant is gone (the user must connect again)
+     * @throws CalendarSyncException `token_expired` when the grant is gone (the user must connect again);
+     *                               `not_configured` (since 1.20) when the app provider has no app: keep the tokens
      */
     public function refresh(#[SensitiveParameter] string $refreshToken): CalendarTokens;
 

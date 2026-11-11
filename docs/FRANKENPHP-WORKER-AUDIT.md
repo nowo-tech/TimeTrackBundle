@@ -3,13 +3,14 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/time-track-bundle` (`symfony-bundle`) |
-| Current audit | **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
+| Current audit | **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
 | First audit | `v1.3.3` / `d90eed2`, 2026-09-23 (findings W-01 … W-03 below) |
 | Method | Manual review of every service, listener, command and controller under `src/` (grep for `static`, mutable properties, `ResetInterface`, `exit` / `die`), Igor (`composer igor`), PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic` + `ruleset-worker`, and the many-request worker test |
 | **Verdict** | ✅ **Works with `FRANKENPHP_RESET_KERNEL=false`** — no service keeps request, user or tenant data; the one per-flush state is cleared by the bundle at every request, message and command boundary; the worker test passes with one kernel and two people in turn |
 
 ## Table of contents
 
+- [Re-audit 1.20 (runtime calendar OAuth apps)](#re-audit-120-runtime-calendar-oauth-apps)
 - [Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)](#re-audit-119-req-runtime-002-kernel-reset-false)
 - [Execution model assumed](#execution-model-assumed)
 - [Summary](#summary)
@@ -20,6 +21,30 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.20 (runtime calendar OAuth apps)
+
+Scope: `calendar.oauth.app_provider` (Beacon request 2026-11-11) — `CalendarOAuthAppProviderInterface`,
+`CalendarOAuthApp`, `CalendarOAuthAppSource` (internal), `CalendarOAuthClients` and the changed Google / Microsoft OAuth
+helpers.
+
+| Service | State | Verdict |
+|---------|-------|---------|
+| `GoogleCalendarOAuthClient`, `MicrosoftCalendarOAuthClient` | `final readonly`: the token endpoint, the scope, the static app of 1.19 (a redacting `CalendarOAuthApp`) and a reference to the host app provider | No per-request state: with a provider, every call (consent URL, code exchange, refresh, revoke, `isConfigured()`) asks it once and keeps the answer in a local variable only |
+| `CalendarOAuthAppSource` (internal, one per helper) | `final readonly`: provider enum, static app, host provider reference | Never stores what the provider returned |
+| `CalendarOAuthClients` | `final readonly`: the two helpers | Asks them live on each call |
+
+- **Never memoised** across requests or messages: a rotated or removed app applies to the next call. The host
+  provider should not memoise either; InstanceSettings' memo lasts one request or one Messenger message.
+- **Fail closed:** a null app, an empty client id or secret, or an exception from the provider means "not configured"
+  for that call only; nothing is cached, so the provider comes back as soon as the app is restored.
+- **No secret in memory between calls** beyond the static configuration of 1.19 (which is not compiled in when a
+  provider is set): `CalendarOAuthApp` instances live for one call.
+- Test: `tests/Functional/CalendarOAuthAppWorkerTest.php` — one kernel (debug off), services resetter never run, 150
+  rounds alternating apps one, apps two and no app (Google and Microsoft, the Microsoft tenant alternating), a request
+  through `http_kernel` between rounds; every consent URL, token URL and token request carries the app stored at that
+  moment, a removed app hides the provider and sends no token call (Google still revokes by the token alone), and no
+  secret reaches the test logger. Igor and PHPStan (`ruleset-worker`) clean.
 
 ## Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)
 
@@ -57,7 +82,7 @@ answers from the identity map first.
 (for example `EntityManager::clear()` on `kernel.terminate`), or keep the services resetter. Otherwise a user loaded in
 an earlier request and deleted out of band since then still counts as known to the resolver until the manager is
 cleared; databases that enforce the foreign keys still refuse the write at flush. Memory is not the issue: the worker
-test below shows the hot path keeps no growth with the same people. The bundle-owned entity manager planned for 1.20
+test below shows the hot path keeps no growth with the same people. The bundle-owned entity manager planned for 1.21
 (REQ-ARCH-001 rule 6) lets the bundle clear its own manager itself.
 
 ### Locks, handles, HTTP
