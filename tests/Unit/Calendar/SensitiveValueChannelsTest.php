@@ -25,6 +25,9 @@ use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\JsonSerializableNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\VarDumper\Cloner\VarCloner;
+use Symfony\Component\VarDumper\Dumper\CliDumper;
+use Symfony\Component\VarDumper\Dumper\HtmlDumper;
 
 use function get_object_vars;
 use function json_encode;
@@ -37,8 +40,9 @@ use const JSON_THROW_ON_ERROR;
 
 /**
  * Since 1.19 (audit LZ-L1): tokens, the PKCE verifier and meeting personal data never come out of a generic channel —
- * `json_encode()`, `(array)` casts, `get_object_vars()`, `var_export()`, `print_r()`, Symfony Serializer (with and
- * without the JsonSerializable normaliser) and Monolog's normaliser / JSON / line formatters. Every value here is a fake
+ * `json_encode()`, `(array)` casts, `get_object_vars()`, `var_export()`, `print_r()`, Symfony VarDumper (CLI and
+ * HTML dumpers), Symfony Serializer (with and without the JsonSerializable normaliser) and Monolog's normaliser /
+ * JSON / line formatters. Every value here is a fake
  * marker built at run time.
  */
 final class SensitiveValueChannelsTest extends TestCase
@@ -100,6 +104,11 @@ final class SensitiveValueChannelsTest extends TestCase
             'monolog json'       => (new JsonFormatter())->format($record),
             'monolog line'       => (new LineFormatter())->format($record),
         ];
+        // Audit LZ-D1: VarDumper (dump(), dd(), the profiler) merges the real properties with __debugInfo().
+        $cloner                         = new VarCloner();
+        $channels['var-dumper cli']     = (string) (new CliDumper())->dump($cloner->cloneVar($holder), true);
+        $channels['var-dumper html']    = (string) (new HtmlDumper())->dump($cloner->cloneVar($holder), true);
+        $channels['var-dumper (array)'] = $holder instanceof SensitiveValue ? '' : (string) (new CliDumper())->dump($cloner->cloneVar((array) $holder), true);
         foreach ($serializers as $name => $serializer) {
             $channels[$name] = $serializer->serialize($holder, 'json');
         }
@@ -120,7 +129,7 @@ final class SensitiveValueChannelsTest extends TestCase
 
         self::assertSame(['a' => 1], $value->reveal());
         self::assertSame(SensitiveValue::REDACTED, $value->jsonSerialize());
-        self::assertSame(['value' => SensitiveValue::REDACTED], $value->__debugInfo());
+        self::assertSame(["\0" . SensitiveValue::class . "\0value" => SensitiveValue::REDACTED], $value->__debugInfo());
         self::assertSame(['meetings' => 0, 'complete' => false], (new CalendarMeetingBatch([], false))->jsonSerialize());
         self::assertSame(['accessToken' => SensitiveValue::REDACTED], (new CalendarCredential('x'))->jsonSerialize());
     }

@@ -129,7 +129,8 @@ if (!$batch->complete) {
   `invalid_response`, `too_large`, `no_http_client`), never provider messages. A bad calendar id (empty, > 512 bytes,
   control characters) throws `InvalidArgumentException`.
 - `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` keep ids and personal data behind methods:
-  `json_encode()`, casts, `var_export()`, dumps, Symfony Serializer and Monolog see `[redacted]`, and serialization
+  `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, Symfony VarDumper (`dump()`, the profiler),
+  Symfony Serializer and Monolog see `[redacted]`, and serialization
   throws (audit LZ-L1). Build your read model from them inside the sync and keep only your minimal fields.
 
 ### Scopes
@@ -173,7 +174,8 @@ $oauth->revoke($token);                                         // best effort, 
 - `authorizationUrl()` refuses a state shorter than 32 unreserved characters (use `CalendarOAuthState::create()`) and a
   redirect URI with a fragment.
 - `CalendarTokens` and `CalendarPkce` keep the secrets behind `accessToken()` / `refreshToken()` / `verifier()`:
-  `json_encode()`, casts, `var_export()`, dumps, Serializer and log formatters see `[redacted]`, and serialization
+  `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, VarDumper, Serializer and log formatters see
+  `[redacted]`, and serialization
   throws. Store the strings, not the objects.
 
 With the readers and the helpers, a host keeps only its token store (`CalendarCredentialProviderInterface`), its

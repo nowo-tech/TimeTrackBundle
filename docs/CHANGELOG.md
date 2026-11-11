@@ -105,6 +105,10 @@ bundle-owned entity manager. The old `UserInterface` ports become deprecated the
   `title()`, `description()`, `location()`, `organizerEmail()`, `attendees()`, `joinCandidates()`, `eventId()`,
   `seriesId()`, `originalStart()`). `json_encode()`, `(array)` casts, `var_export()`, `print_r()`, Symfony Serializer
   and Monolog formatters see `[redacted]` (every class is `JsonSerializable`); a test covers each channel.
+- **LZ-D1:** Symfony VarDumper (`dump()`, `dd()`, the profiler) merges the real properties with `__debugInfo()`, so
+  it printed the closure that holds the secret, and since 1.14 the `CalendarCredential` token. `SensitiveValue` now
+  keys its debug info like its private property, so the dumper shows `[redacted]` in its place; the channels test
+  covers the CLI and HTML dumpers.
 - **LZ-I1:** `CalendarOAuthState::create()` / `matches()` (random state, constant-time compare);
   `authorizationUrl()` refuses a state shorter than 32 unreserved characters.
 - **LZ-I2:** calendar ids made only of dots are refused; MEETINGS says to pass only ids `calendars()` returned.

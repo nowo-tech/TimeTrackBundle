@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
+use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
+use Psr\Cache\CacheItemPoolInterface;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\DomCrawler\Crawler;
 
 use function bin2hex;
@@ -48,6 +51,12 @@ final class SecurityAuditClTest extends FunctionalTestCase
     /** CL-02: the device per-IP limit (30/min) counts a whole IPv6 /64, whatever address of it is used. */
     public function testIpv6RotationWithinOne64IsLimited(): void
     {
+        // The per-IP window is fixed and aligned to the epoch: a frozen clock keeps the 31 requests inside one window
+        // (with the real clock the test failed when they crossed a window boundary).
+        $cache = self::getContainer()->get('cache.time_track_test');
+        self::assertInstanceOf(CacheItemPoolInterface::class, $cache);
+        self::getContainer()->set(ClientApiRateLimiter::class, new ClientApiRateLimiter($cache, new MockClock('2026-11-11 10:00:05 UTC')));
+
         for ($i = 1; $i <= 30; ++$i) {
             $this->api('POST', '/api/time-track/device/token', ['deviceCode' => 'unknown'], null, ['REMOTE_ADDR' => '2001:db8:1:2::' . dechex($i)]);
             self::assertResponseStatusCodeSame(400, 'request ' . $i);
