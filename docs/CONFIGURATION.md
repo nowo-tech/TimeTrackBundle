@@ -26,6 +26,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | Option | Description |
 |--------|-------------|
 | `user_class` | FQCN of User entity (`UserInterface` + `getId()`) |
+| `accepted_user_classes` | Since 1.19 (JV-T3), default `[]`. Other security user classes or interfaces (wrappers / DTOs of a hexagonal host) whose `getId()` is a `user_class` id. Only these are converted to the `user_class` entity, and only when a row has the id; any other security user that is not a `user_class` instance is refused (`AccessDeniedException`). Unknown class names are refused at compile time |
 
 ## Integration
 
@@ -270,6 +271,7 @@ nowo_time_track:
   retention:
     include_imported: false      # imported entries stay out of retention purges
     anonymise_on_user_delete: false   # since 1.15: true = a user removed through the entity manager leaves the hours, not the person
+    former_person_listener: true      # since 1.19: false = no listener on your entity manager; call FormerPersonTimeEntries yourself
 ```
 
 - Imported entries are written by `Import\ImportedTimeEntryWriter` (host code). Their description is kept **in full**
@@ -316,6 +318,7 @@ nowo_time_track:
     retention_years: 4              # 4-10
   client_api:
     workday_provider: ~             # Workday\WorkdayProviderInterface (R-GDPR §8); null = no workday API
+    links_working_time_route: ~     # since 1.19 (spec 198): host route of the working-time page, GET me links.workingTime
 ```
 
 - Refused at compile time: `timesheets.enabled` without `approver_provider`, `scope_mode: provider` without
@@ -347,7 +350,16 @@ nowo_time_track:
     max_event_seconds: 28800        # longer events are ignored
     max_rules_per_user: 20          # per scope (0-100)
     max_pages: 10                   # provider pages per sync (1-50)
+    microsoft_scope: Calendars.ReadBasic   # since 1.19: or Calendars.Read (the meeting reader also reads the body)
+    oauth:                          # since 1.19: optional OAuth helpers; empty = not configured
+      google:    { client_id: '', client_secret: '' }
+      microsoft: { client_id: '', client_secret: '', tenant: common }
 ```
+
+- Since 1.19 the readers (`GoogleCalendarEventSource`, `MicrosoftCalendarEventSource`, both
+  `CalendarReaderInterface`) and the OAuth helpers (`GoogleCalendarOAuthClient`, `MicrosoftCalendarOAuthClient`) are
+  registered whatever `enabled` says, for a host meeting sync ([MEETINGS.md](MEETINGS.md#reading-the-calendars-in-your-sync)).
+  Pass the OAuth secrets as `%env()%`; they are not copied into the `nowo_time_track.calendar` parameter.
 
 - Refused at compile time: `enabled` without `task_key_resolver`, `server` in `modes` without `credential_provider`,
   unknown providers or modes, values outside the ranges above.

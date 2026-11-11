@@ -8,7 +8,9 @@ Symfony bundle for **personal and team time tracking**: one active timer per use
 
 ![FrankenPHP Friendly Worker Mode](docs/images/frankenphp-friendly.png)
 
-This bundle is **FrankenPHP worker mode friendly**.
+This bundle is **FrankenPHP worker mode friendly**, also with the kernel kept alive and not reset between requests
+(`FRANKENPHP_RESET_KERNEL=false`): see [FRANKENPHP-WORKER-AUDIT.md](docs/FRANKENPHP-WORKER-AUDIT.md). It works out of the box in a
+standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.md](docs/USAGE.md#using-it-from-a-ddd--hexagonal-application)).
 
 ## Features
 

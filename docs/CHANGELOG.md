@@ -53,6 +53,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.19.0** (TimeTrack closure, Block 1 / Beacon spec 198 and spec 210): the calendar meeting reader Beacon asked
+for (BUNDLES request 2026-11-09), `accepted_user_classes` for the user reference port (audit JV-T3), `GET me
+links.workingTime`, and the REQ-ARCH-001 / REQ-RUNTIME-002 checks. No schema change, no client contract break.
+
+### Added
+
+- **Calendar readers for a host meeting sync** (Beacon spec 210). `Calendar\CalendarReaderInterface`, implemented by
+  `GoogleCalendarEventSource` and `MicrosoftCalendarEventSource` next to the unchanged suggestions reader:
+  - `calendars()`: the user's calendars as `CalendarDescriptor {id, name, primary}` (Google `users/me/calendarList`,
+    readable ones; Graph `me/calendars`);
+  - `events(..., $calendarId = 'primary')`: the suggestion fields of any calendar;
+  - `meetings(..., $calendarId = 'primary')`: a `CalendarMeetingBatch` of `CalendarMeetingView` (original start for a
+    stable occurrence id, IANA time zone, private / confidential flag, organizer e-mail and self flag, attendees
+    `CalendarAttendee {email, self, declined, resource}`, join candidates from Google `hangoutLink` / video entry points
+    and Graph `onlineMeeting.joinUrl`, description and location), `complete: false` when the page cap stopped the read.
+    Non-meeting entries are skipped (Google event types other than `default`, Graph series masters). Every view lives
+    in memory only: debug output is redacted and serialization throws.
+  - Same HTTP rules as 1.14: `GET` only under a constant API base, Bearer, 10 s, no redirects, 2 MB per page, bounded
+    pages (`calendar.max_pages`), error codes only.
+- **OAuth helpers** (optional): `CalendarOAuthClientInterface` with `GoogleCalendarOAuthClient` and
+  `MicrosoftCalendarOAuthClient` (authorization URL with PKCE `S256`, code exchange, refresh, revoke), `CalendarPkce`
+  and `CalendarTokens` (redacted, not serializable). Microsoft Graph has no per-grant revoke: `supportsRevoke()` is
+  false and `revoke()` returns false. Config `calendar.oauth.{google,microsoft}` (client id, secret, Microsoft tenant;
+  empty = not configured); the secrets stay out of the `nowo_time_track.calendar` parameter.
+- `calendar.microsoft_scope`: `Calendars.ReadBasic` (default, no body: task keys from titles only) or `Calendars.Read`
+  (the meeting reader also asks for the body as text, for task keys in the description). Used by the reader and the
+  OAuth helper.
+- `GET me` **`links.workingTime`** (spec 198): the absolute https URL of the host's working-time page
+  (`client_api.links_working_time_route`), only while `features.workday` is true; null otherwise.
+- `accepted_user_classes` (audit JV-T3): the security user classes (wrappers / DTOs of a hexagonal host) that
+  `DoctrineUserReferenceResolver` converts to the `user_class` entity. Default: none.
+- `retention.former_person_listener` (default true): false leaves `FormerPersonSnapshotListener` off the host entity
+  manager, for DDD hosts that delete users through their own flow and call `FormerPersonTimeEntries` themselves.
+
+### Changed
+
+- **JV-T3:** `DoctrineUserReferenceResolver` converts a security user that is not a `user_class` instance only when its
+  class is in `accepted_user_classes`, and only when a `user_class` row has its id (it now loads the entity with
+  `find()` instead of building an unchecked reference). Both refusals throw `AccessDeniedException` before anything is
+  written, also on databases without enforced foreign keys. See UPGRADING if your firewall user is a wrapper.
+- The calendar readers and OAuth helpers are registered whether or not calendar suggestions are on (the suggestion
+  sync still gets no source while `calendar.enabled` is false).
+- REQ-RUNTIME-002: `FormerPersonSnapshotListener` clears its per-flush state itself at `kernel.terminate`,
+  `console.terminate` and the Messenger worker events, not only on `kernel.reset`.
+
+### Documentation
+
+- MEETINGS: "Reading the calendars in your sync" (readers, OAuth helpers, Graph `Calendars.ReadBasic` versus
+  `Calendars.Read`, what Beacon can delete). CLIENT-API: `links.workingTime`; the workday API checked against spec 198.
+- ROADMAP: current state refreshed (1.18, the 1.19 – 1.21 plan); the monitoring text follows the owner decision of
+  2026-11-11 (off unless the organisation enables it with a recorded DPIA; the worker sees it first).
+- USAGE: "Standard Symfony host" and "DDD / hexagonal host" sections (REQ-ARCH-001); `docs/FRANKENPHP-WORKER-AUDIT.md`
+  re-audited for kernel reset false (REQ-RUNTIME-002) with the new worker test.
+
+### Tests
+
+- `WorkerModeNoResetTest`: one kernel, no services resetter, two people in turn (1,300 requests): no cross-user data,
+  and 2,000 hot-path requests grow the memory by less than 64 KB.
+- `DddXmlHostTest`: a plain PHP `user_class` mapped in XML plus a wrapper security user drive the services and the
+  client API.
+
 ## [1.18.0] - 2026-11-09
 
 Target **1.18.0**: a hexagonal host can drive the bundle with a security user that is not the `user_class` entity, and

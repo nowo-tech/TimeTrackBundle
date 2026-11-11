@@ -1,4 +1,4 @@
-# Client API reference (1.14, contract v0.3.1 + timetrack-next v1.1)
+# Client API reference (1.19, contract v0.3.1 + timetrack-next v1.1)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in 1.19 (links.workingTime)](#changes-in-119-linksworkingtime)
 - [Changes in 1.14 (calendar suggestions, manual entries)](#changes-in-114-calendar-suggestions-manual-entries)
   - [GET me/meetings (1.14)](#get-memeetings-114)
 - [Changes in 1.13 (working time, timesheets, task effort)](#changes-in-113-working-time-timesheets-task-effort)
@@ -38,6 +39,22 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in 1.19 (links.workingTime)
+
+Additive (spec 198). `GET me` `links` gains **`workingTime`**: the absolute https URL of the host's working-time page
+(`client_api.links_working_time_route`), sent only while `features.workday` is true, else null. Clients open it in the
+browser for what stays on the web: corrections (for the `flags` of the workday), exports and the month view.
+
+```json
+"links": {"calendars": null, "workingTime": "https://beacon.example/working-time"}
+```
+
+The workday API itself is unchanged since 1.13 and matches spec 198 FR-008, FR-011 and FR-013: `allowedActions` drives
+the buttons (route segments `clock-in`, `break-start`, `break-end`, `clock-out`), `reminder` is already filtered to the
+working hours by the host, `flags` are shown with the `workingTime` link, `Idempotency-Key` is required on every action
+(24 h replay, 422 `idempotency_mismatch`) and an offline `occurredAt` is accepted up to 72 h old (2 min of clock skew
+into the future). The bundle passes the client type (`desktop` / `extension`) to the provider, which stores the source.
 
 ## Changes in 1.14 (calendar suggestions, manual entries)
 

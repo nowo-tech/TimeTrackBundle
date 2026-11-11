@@ -9,6 +9,9 @@ upcoming meetings, from **your** meeting read model. Contract: `timetrack-next` 
 - [Enable it](#enable-it)
 - [Implement the provider](#implement-the-provider)
 - [What the bundle enforces on the way out](#what-the-bundle-enforces-on-the-way-out)
+- [Reading the calendars in your sync](#reading-the-calendars-in-your-sync)
+  - [Scopes](#scopes)
+  - [OAuth helpers](#oauth-helpers)
 - [Your privacy duties](#your-privacy-duties)
 - [Clients](#clients)
 
@@ -82,13 +85,92 @@ their message never leaves the bundle and only the exception class is logged.
   `Vary: Authorization`, `X-Content-Type-Options: nosniff`; no `ETag` / `Last-Modified`.
 - Logs: route action, status, count, dropped and duration only.
 
+## Reading the calendars in your sync
+
+Since 1.19 (Beacon request 2026-11-09) your sync does not need its own Google / Graph readers. Inject
+`Nowo\TimeTrackBundle\Calendar\GoogleCalendarEventSource` and `MicrosoftCalendarEventSource` (both
+`CalendarReaderInterface`, registered even with `calendar.enabled: false`) and give them a `CalendarCredential` built
+from your stored access token:
+
+```php
+$credential = new CalendarCredential($accessToken);            // never stored, logged or serialized by the bundle
+
+foreach ($reader->calendars($credential) as $calendar) {       // CalendarDescriptor {id, name, primary}
+    // mirror your calendars switch; the primary one on by default
+}
+
+$batch = $reader->meetings($credential, $from, $to, $calendar->id);   // CalendarMeetingBatch
+foreach ($batch->meetings as $meeting) {                       // CalendarMeetingView, in memory only
+    // $meeting->eventId, ->seriesId, ->originalStart (stable occurrence id), ->start / ->end, ->timeZone (IANA or null),
+    // ->allDay, ->cancelled, ->declined, ->free, ->private, ->organizerEmail, ->organizerSelf,
+    // ->attendees (CalendarAttendee {email, self, declined, resource}: match and drop),
+    // ->joinCandidates (raw links: MeetingLinkDetector re-validates on the way out),
+    // ->title, ->description, ->location (read once for task keys and links, never keep)
+}
+if (!$batch->complete) {
+    // the page cap (calendar.max_pages) stopped the read: keep the stored meetings you did not see
+}
+```
+
+- Non-meeting entries are skipped: Google event types other than `default` (focus time, out of office, working
+  location, birthdays, Gmail reservations) and Graph series masters. Declined and cancelled occurrences come back
+  flagged, so you can remove them from your model.
+- Graph gives no per-attendee `self` flag (always false) and often a Windows zone name in `originalStartTimeZone`:
+  `timeZone` is then null. Times are UTC instants.
+- `events($credential, $from, $to, $calendarId)` gives the narrower suggestion fields of any calendar.
+- Errors are `CalendarSyncException` codes (`token_expired`, `rate_limited`, `forbidden`, `provider_error`,
+  `invalid_response`, `too_large`, `no_http_client`), never provider messages. A bad calendar id (empty, > 512 bytes,
+  control characters) throws `InvalidArgumentException`.
+- `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` redact their debug output and refuse
+  serialization: build your read model from them inside the sync and keep only your minimal fields.
+
+### Scopes
+
+| Provider | Scopes | What it gives |
+| --- | --- | --- |
+| Google | `calendar.events.readonly` | events and meetings of any calendar the user can read |
+| Google | `calendar.calendarlist.readonly` | `calendars()` (new for grants made only for suggestions) |
+| Microsoft | `offline_access` + `Calendars.ReadBasic` (default `calendar.microsoft_scope`) | everything but the body: task keys from **titles only**; the meeting `description` is empty |
+| Microsoft | `offline_access` + `Calendars.Read` (`calendar.microsoft_scope: Calendars.Read`) | also the body as text, for task keys in the description (Beacon spec 210 links a meeting to a task by the key in its description) |
+
+`calendar.microsoft_scope` drives both the reader (`body` is selected only with `Calendars.Read`) and the OAuth helper.
+Changing it does not widen existing grants: bump your consent version so users reconnect.
+
+### OAuth helpers
+
+Optional: `GoogleCalendarOAuthClient` and `MicrosoftCalendarOAuthClient` (`CalendarOAuthClientInterface`), configured
+under `calendar.oauth` (empty client id or secret = `isConfigured()` false: hide the provider).
+
+```php
+$pkce = CalendarPkce::create();                                  // keep $pkce->verifier and $state in the session
+$url  = $oauth->authorizationUrl($redirectUri, $state, $pkce->challenge);   // https redirect URI (http only on loopback)
+
+// callback, after checking $state:
+$tokens = $oauth->exchangeCode($code, $verifier, $redirectUri); // CalendarTokens {accessToken, refreshToken, expiresAt}
+// store the tokens encrypted; later:
+$tokens = $oauth->refresh($refreshToken);                       // token_expired when the grant is gone: reconnect
+$oauth->revoke($token);                                         // best effort, never throws
+```
+
+- Token calls are `POST`s to constant URLs (10 s, no redirects, 64 KB at most); `invalid_grant` becomes
+  `token_expired`, any other refusal `provider_error`. `expiresAt` is one minute early.
+- Google sends no new refresh token on refresh (keep the stored one); Microsoft rotates it (store the new one).
+- **Microsoft Graph has no per-grant revoke** (`revokeSignInSessions` would sign the user out everywhere):
+  `supportsRevoke()` is false and `revoke()` returns false. Delete your tokens and tell the user to remove the app at
+  https://myapps.microsoft.com.
+- `CalendarTokens` and `CalendarPkce` redact their debug output and refuse serialization: store the strings, not the
+  objects.
+
+With the readers and the helpers, a host keeps only its token store (`CalendarCredentialProviderInterface`), its
+meeting normalizer (attendee matching, minimal fields) and a test stub; its copied parsing can go.
+
 ## Your privacy duties
 
 Keep only the minimal fields (spec 210), honour private events, match internal attendees by verified e-mail and expose
 only people the caller may already see (Q-B18), purge 7 days after the end, include the meetings in *Download my data*
 and delete them on erasure and on disconnect. One OAuth grant serves calendar suggestions and meetings (Microsoft
-`Calendars.ReadBasic` + `offline_access`, Google `calendar.events.readonly`); bump the consent version when the notice
-lists both purposes.
+`Calendars.ReadBasic` or `Calendars.Read`, plus `offline_access`; Google `calendar.events.readonly` and, for the
+calendars switch, `calendar.calendarlist.readonly`); bump the consent version when the notice lists both purposes.
 
 ## Clients
 

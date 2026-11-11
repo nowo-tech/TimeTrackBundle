@@ -3,14 +3,14 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/time-track-bundle` (`symfony-bundle`) |
-| Audited revision | `v1.3.3` / `d90eed2` |
-| Audit date | 2026-09-23 |
-| Method | Manual review of every file under `src/` (services, controllers, client API helpers, repositories, Doctrine listener, route loader, Twig extension, command, DI extension, compiler pass, `Resources/config/services.yaml`); entities, DTOs, events and value objects skimmed |
-| Remediation (2026-09-23) | W-01 resolved (user refreshed before role checks, closed EntityManager reset after failed flushes via `Doctrine\ManagedEntityRefresher` / `Doctrine\RecoveringFlusher`); W-02 accepted (host-chosen pool, documented); W-03 resolved (route loader guard removed); regression tests simulate consecutive requests without `reset()` |
-| **Verdict** | ✅ **Viable under scenario B** — no bundle service keeps per-request state, role decisions reload the user from the database, and a failed flush no longer leaves the worker on a closed EntityManager. Clearing the identity map between requests (memory, freshness of rendered data) remains the application's responsibility |
+| Current audit | **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
+| First audit | `v1.3.3` / `d90eed2`, 2026-09-23 (findings W-01 … W-03 below) |
+| Method | Manual review of every service, listener, command and controller under `src/` (grep for `static`, mutable properties, `ResetInterface`, `exit` / `die`), Igor (`composer igor`), PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic` + `ruleset-worker`, and the many-request worker test |
+| **Verdict** | ✅ **Works with `FRANKENPHP_RESET_KERNEL=false`** — no service keeps request, user or tenant data; the one per-flush state is cleared by the bundle at every request, message and command boundary; the worker test passes with one kernel and two people in turn |
 
 ## Table of contents
 
+- [Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)](#re-audit-119-req-runtime-002-kernel-reset-false)
 - [Execution model assumed](#execution-model-assumed)
 - [Summary](#summary)
 - [Services reviewed](#services-reviewed)
@@ -20,6 +20,65 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)
+
+Scope: everything added since 1.3.3 (client API 1.9 – 1.14, working time and timesheets, imports, former people, task
+moves, calendar suggestions and readers, OAuth helpers, the meetings API, the user reference port).
+
+### Stateful services and how each is cleared
+
+| Service | State | Cleared by |
+|---------|-------|------------|
+| `Doctrine\FormerPersonSnapshotListener` | `$pending`: what one flush of one entity manager settles after its commit (entries loaded for a user being deleted) | Its next `onFlush` of the same entity manager; since 1.19 also `onBoundary()` on `kernel.terminate`, `console.terminate`, Messenger `WorkerMessageHandledEvent` / `WorkerMessageFailedEvent` (registered by the bundle, priority -1024); `kernel.reset` kept as a second line. Tests: `FormerPeopleTest::testTheRequestBoundaryForgetsAFailedFlushWithoutTheServicesResetter`, `::testResetForgetsAFailedFlush`, `TimeTrackExtensionTest::testTheFormerPersonListenerCanBeLeftOffTheHostEntityManager` |
+| Every other service, controller, repository, reader and OAuth helper | none: `final readonly` or constructor configuration only (`Bridge\StubTaskProvider` keeps a fixed demo array) | — |
+
+`grep -rnE "static \$|private static|protected static|public static \$" src/` hits only pure `private static`
+helper methods (no static properties, no `static` locals). `grep -rnE "\b(exit|die)\s*\(" src/` returns nothing.
+
+### Request data
+
+- The client API resolves the Bearer token, the user (reloaded before role checks) and the scopes per request; nothing
+  is kept in a property. `GET me` links, features and limits are computed per call.
+- The calendar readers (`CalendarReaderInterface`, 1.19) take the credential as an argument, return in-memory views that
+  refuse serialization, and keep no page token, credential or event between calls. The OAuth helpers keep no token,
+  state or verifier (the host stores them).
+- Idempotency replays and rate-limit counters live in the configured PSR-6 pool (shared between workers), keyed by user
+  and token, never in PHP memory (W-02 below).
+
+### Entity manager
+
+The bundle writes through `database.entity_manager` (by default the host's). `RecoveringFlusher` resets a closed manager
+after a failed flush, `ManagedEntityRefresher` reloads users before role checks, and the token owner is refreshed once
+per client API request. Since 1.19 `DoctrineUserReferenceResolver` loads a wrapper user's entity with `find()`
+(identity map first). Clearing the host's identity map between requests stays the host's choice (memory only: the
+worker test below shows the hot path keeps no growth with the same people).
+
+### Locks, handles, HTTP
+
+No file handles or locks are held. HTTP calls (calendar readers, OAuth token endpoint) are per call, with timeouts and
+no redirects; responses are read in full or cancelled.
+
+### Worker test
+
+`tests/Functional/WorkerModeNoResetTest.php`, run by `make test` and CI:
+
+- one kernel (debug off, like production), requests sent straight through the container's `http_kernel`, so the
+  services resetter never runs (the test browser would run it before each request);
+- `testNothingLeaksFromOnePersonToTheNextWithoutTheServicesResetter`: two people in turn, 250 rounds of `GET me` and
+  `GET timer` each (1,000 requests), then 50 rounds of start / read / stop each (300 requests); every answer holds only
+  the caller's id, identifier and timer note;
+- `testTheHotReadPathKeepsAFlatMemoryWithoutTheServicesResetter`: 100 warm-up steps, then 1,000 steps (`GET me` +
+  `GET timer`, people alternating, 2,000 requests); memory growth must stay under **64 KB** (measured: flat).
+
+In debug mode the framework's own collectors (Doctrine query log, traced event dispatcher) keep every request until
+`kernel.reset`; that is why the memory check runs with debug off.
+
+### Static checks
+
+- `composer igor` (REQ-CS-008): runs in CI (`igor` job) and in `make release-check`.
+- PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic.neon` + `ruleset-worker.neon` (`phpstan.neon.dist`):
+  no errors.
 
 ## Execution model assumed
 
