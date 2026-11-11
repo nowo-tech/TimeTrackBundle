@@ -66,6 +66,10 @@
 
 ## Unreleased
 
+Target **1.19.1** (patch). Nothing to change: if your `Psr\Clock\ClockInterface` points to a clock that is not a
+`Symfony\Component\Clock\ClockInterface`, the calendar readers and OAuth helpers now build (1.19.0 failed with a
+`TypeError`). Code that builds `CalendarTokenEndpoint` or `CalendarHttpClient` by hand may pass any PSR-20 clock.
+
 ## To 1.19.0
 
 From **1.18.0**:

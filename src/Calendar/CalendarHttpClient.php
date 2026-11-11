@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Calendar;
 
 use JsonException;
-use Symfony\Component\Clock\ClockInterface;
+use Psr\Clock\ClockInterface;
+use Symfony\Component\Clock\ClockInterface as SymfonyClockInterface;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -15,6 +16,7 @@ use function is_array;
 use function json_decode;
 use function str_starts_with;
 use function strlen;
+use function usleep;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -39,7 +41,8 @@ final readonly class CalendarHttpClient
 
     /**
      * Receives the HTTP client (framework `http_client`; null without symfony/http-client) and the clock used for the
-     * inline wait.
+     * inline wait. Since 1.19.1 any PSR-20 clock is accepted (a host may alias `Psr\Clock\ClockInterface` to its own
+     * implementation); a clock without `sleep()` waits with `usleep()`.
      */
     public function __construct(
         private ?HttpClientInterface $httpClient,
@@ -75,7 +78,7 @@ final readonly class CalendarHttpClient
             if ($attempt > 0 || $retryAfter === null || $retryAfter > self::MAX_INLINE_WAIT_SECONDS) {
                 throw new CalendarSyncException(CalendarSyncException::RATE_LIMITED);
             }
-            $this->clock->sleep($retryAfter);
+            $this->sleep($retryAfter);
         }
 
         if ($status === 401) {
@@ -97,6 +100,20 @@ final readonly class CalendarHttpClient
         }
 
         return $decoded;
+    }
+
+    /**
+     * Since 1.19.1: the inline `Retry-After` wait through the clock when it can sleep (a Symfony clock, so a mock clock
+     * in tests never waits), else through `usleep()` (a plain PSR-20 clock has no `sleep()`).
+     */
+    private function sleep(int $seconds): void
+    {
+        if ($this->clock instanceof SymfonyClockInterface) {
+            $this->clock->sleep($seconds);
+
+            return;
+        }
+        usleep($seconds * 1_000_000);
     }
 
     /**

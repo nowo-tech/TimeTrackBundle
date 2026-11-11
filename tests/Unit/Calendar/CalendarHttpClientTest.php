@@ -8,6 +8,7 @@ use LogicException;
 use Nowo\TimeTrackBundle\Calendar\CalendarCredential;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncException;
+use Nowo\TimeTrackBundle\Tests\Stub\PsrOnlyClock;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
@@ -54,6 +55,20 @@ final class CalendarHttpClientTest extends TestCase
 
         self::assertSame(['ok' => true], (new CalendarHttpClient($http, $clock))->getJson(self::BASE, self::BASE, new CalendarCredential('t')));
         self::assertSame('2026-11-05 10:00:02', $clock->now()->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * Since 1.19.1: a plain PSR-20 clock (no `sleep()`) is accepted; the short wait falls back to `usleep()`.
+     */
+    public function testAPlainPsrClockWaitsWithoutSleepingThroughTheClock(): void
+    {
+        $http = new MockHttpClient([
+            new MockResponse('', ['http_code' => 429, 'response_headers' => ['Retry-After' => '0']]),
+            new MockResponse('{"ok":true}'),
+        ]);
+
+        self::assertSame(['ok' => true], (new CalendarHttpClient($http, new PsrOnlyClock()))->getJson(self::BASE, self::BASE, new CalendarCredential('t')));
+        self::assertSame(2, $http->getRequestsCount());
     }
 
     /**

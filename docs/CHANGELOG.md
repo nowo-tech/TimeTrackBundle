@@ -54,6 +54,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.19.1** (patch; Beacon report 2026-11-11 after adopting 1.19.0).
+
+### Fixed
+
+- **The container builds the calendar HTTP services with any PSR-20 clock.** `CalendarTokenEndpoint` and
+  `CalendarHttpClient` type-hinted `Symfony\Component\Clock\ClockInterface` while the bundle wires them with
+  `Psr\Clock\ClockInterface`; a host whose PSR clock alias points to its own implementation (Beacon: Cookie Consent's
+  `SystemClock`) got a `TypeError` building them. Both now accept `Psr\Clock\ClockInterface` (BC: Symfony's clock
+  extends it). The 429 `Retry-After` wait still goes through the clock when it is a Symfony clock (a `MockClock` never
+  waits) and falls back to `usleep()` otherwise. Every other clock consumer already type-hinted the PSR interface, and
+  all of them are wired explicitly (no autowiring of the clock argument).
+
+### Tests
+
+- `PsrOnlyClockContainerTest`: a debug kernel with every feature on, `Psr\Clock\ClockInterface` aliased to a
+  non-Symfony PSR clock, builds every bundle service whose constructor takes a clock and checks each holds the host
+  clock (fails on 1.19.0 with the reported `TypeError`). `CalendarHttpClientTest` covers the plain-PSR-clock wait.
+
 ## [1.19.0] - 2026-11-11
 
 Target **1.19.0** (TimeTrack closure, Block 1 / Beacon spec 198 and spec 210): the calendar meeting reader Beacon asked
