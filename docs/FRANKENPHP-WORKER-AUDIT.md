@@ -50,9 +50,15 @@ helper methods (no static properties, no `static` locals). `grep -rnE "\b(exit|d
 
 The bundle writes through `database.entity_manager` (by default the host's). `RecoveringFlusher` resets a closed manager
 after a failed flush, `ManagedEntityRefresher` reloads users before role checks, and the token owner is refreshed once
-per client API request. Since 1.19 `DoctrineUserReferenceResolver` loads a wrapper user's entity with `find()`
-(identity map first). Clearing the host's identity map between requests stays the host's choice (memory only: the
-worker test below shows the hot path keeps no growth with the same people).
+per client API request. Since 1.19 `DoctrineUserReferenceResolver` loads a wrapper user's entity with `find()`, which
+answers from the identity map first.
+
+**Host duty with kernel reset false (audit LZ-I4):** clear the entity manager the bundle uses at the end of each request
+(for example `EntityManager::clear()` on `kernel.terminate`), or keep the services resetter. Otherwise a user loaded in
+an earlier request and deleted out of band since then still counts as known to the resolver until the manager is
+cleared; databases that enforce the foreign keys still refuse the write at flush. Memory is not the issue: the worker
+test below shows the hot path keeps no growth with the same people. The bundle-owned entity manager planned for 1.20
+(REQ-ARCH-001 rule 6) lets the bundle clear its own manager itself.
 
 ### Locks, handles, HTTP
 

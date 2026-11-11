@@ -96,16 +96,18 @@ from your stored access token:
 $credential = new CalendarCredential($accessToken);            // never stored, logged or serialized by the bundle
 
 foreach ($reader->calendars($credential) as $calendar) {       // CalendarDescriptor {id, name, primary}
-    // mirror your calendars switch; the primary one on by default
+    // mirror your calendars switch; the primary one on by default. Store these ids per connection and read only them.
 }
 
 $batch = $reader->meetings($credential, $from, $to, $calendar->id);   // CalendarMeetingBatch
 foreach ($batch->meetings as $meeting) {                       // CalendarMeetingView, in memory only
-    // $meeting->eventId, ->seriesId, ->originalStart (stable occurrence id), ->start / ->end, ->timeZone (IANA or null),
-    // ->allDay, ->cancelled, ->declined, ->free, ->private, ->organizerEmail, ->organizerSelf,
-    // ->attendees (CalendarAttendee {email, self, declined, resource}: match and drop),
-    // ->joinCandidates (raw links: MeetingLinkDetector re-validates on the way out),
-    // ->title, ->description, ->location (read once for task keys and links, never keep)
+    // properties: ->start / ->end, ->timeZone (IANA or null), ->allDay, ->cancelled, ->declined, ->free, ->private,
+    //   ->organizerSelf
+    // methods (ids and personal data, never printed by json_encode / logs / dumps):
+    //   ->eventId(), ->seriesId(), ->originalStart() (stable occurrence id), ->organizerEmail(),
+    //   ->attendees() (CalendarAttendee: ->email(), ->self, ->declined, ->resource — match and drop),
+    //   ->joinCandidates() (raw links: validate them, as MeetingLinkDetector does on the way out),
+    //   ->title(), ->description(), ->location() (raw provider text; read once for task keys and links, never keep)
 }
 if (!$batch->complete) {
     // the page cap (calendar.max_pages) stopped the read: keep the stored meetings you did not see
@@ -118,11 +120,17 @@ if (!$batch->complete) {
 - Graph gives no per-attendee `self` flag (always false) and often a Windows zone name in `originalStartTimeZone`:
   `timeZone` is then null. Times are UTC instants.
 - `events($credential, $from, $to, $calendarId)` gives the narrower suggestion fields of any calendar.
+- **Pass only calendar ids that `calendars()` returned for the same connection** (audit LZ-I2). A Google token can
+  read any calendar the user can see (shared, public, another person's address), so an id taken from a request could
+  read more than the user switched on. Ids made only of dots are refused.
+- **Escape before display** (audit LZ-I8): title, description and location are raw provider text (a Google
+  description may hold HTML), and join links are raw candidates. The bundle never renders them.
 - Errors are `CalendarSyncException` codes (`token_expired`, `rate_limited`, `forbidden`, `provider_error`,
   `invalid_response`, `too_large`, `no_http_client`), never provider messages. A bad calendar id (empty, > 512 bytes,
   control characters) throws `InvalidArgumentException`.
-- `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` redact their debug output and refuse
-  serialization: build your read model from them inside the sync and keep only your minimal fields.
+- `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` keep ids and personal data behind methods:
+  `json_encode()`, casts, `var_export()`, dumps, Symfony Serializer and Monolog see `[redacted]`, and serialization
+  throws (audit LZ-L1). Build your read model from them inside the sync and keep only your minimal fields.
 
 ### Scopes
 
@@ -142,11 +150,15 @@ Optional: `GoogleCalendarOAuthClient` and `MicrosoftCalendarOAuthClient` (`Calen
 under `calendar.oauth` (empty client id or secret = `isConfigured()` false: hide the provider).
 
 ```php
-$pkce = CalendarPkce::create();                                  // keep $pkce->verifier and $state in the session
-$url  = $oauth->authorizationUrl($redirectUri, $state, $pkce->challenge);   // https redirect URI (http only on loopback)
+$pkce  = CalendarPkce::create();
+$state = CalendarOAuthState::create();                           // keep $pkce->verifier() and $state in the session, bound to the user
+$url   = $oauth->authorizationUrl($redirectUri, $state, $pkce->challenge);  // https redirect URI, no fragment (http only on loopback)
 
-// callback, after checking $state:
-$tokens = $oauth->exchangeCode($code, $verifier, $redirectUri); // CalendarTokens {accessToken, refreshToken, expiresAt}
+// callback: one use only, then drop both from the session
+if (!CalendarOAuthState::matches($session->get('calendar_state'), $request->query->get('state'))) {
+    throw new AccessDeniedHttpException();
+}
+$tokens = $oauth->exchangeCode($code, $verifier, $redirectUri); // CalendarTokens: ->accessToken(), ->refreshToken(), ->expiresAt
 // store the tokens encrypted; later:
 $tokens = $oauth->refresh($refreshToken);                       // token_expired when the grant is gone: reconnect
 $oauth->revoke($token);                                         // best effort, never throws
@@ -158,8 +170,11 @@ $oauth->revoke($token);                                         // best effort, 
 - **Microsoft Graph has no per-grant revoke** (`revokeSignInSessions` would sign the user out everywhere):
   `supportsRevoke()` is false and `revoke()` returns false. Delete your tokens and tell the user to remove the app at
   https://myapps.microsoft.com.
-- `CalendarTokens` and `CalendarPkce` redact their debug output and refuse serialization: store the strings, not the
-  objects.
+- `authorizationUrl()` refuses a state shorter than 32 unreserved characters (use `CalendarOAuthState::create()`) and a
+  redirect URI with a fragment.
+- `CalendarTokens` and `CalendarPkce` keep the secrets behind `accessToken()` / `refreshToken()` / `verifier()`:
+  `json_encode()`, casts, `var_export()`, dumps, Serializer and log formatters see `[redacted]`, and serialization
+  throws. Store the strings, not the objects.
 
 With the readers and the helpers, a host keeps only its token store (`CalendarCredentialProviderInterface`), its
 meeting normalizer (attendee matching, minimal fields) and a test stub; its copied parsing can go.

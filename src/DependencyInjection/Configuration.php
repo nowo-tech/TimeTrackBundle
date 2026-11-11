@@ -14,7 +14,6 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 use function array_key_exists;
 use function class_exists;
 use function in_array;
-use function interface_exists;
 use function is_array;
 use function is_string;
 use function preg_match;
@@ -75,11 +74,11 @@ final class Configuration implements ConfigurationInterface
                     ->example('App\\Entity\\User')
                 ->end()
                 ->arrayNode('accepted_user_classes')
-                    ->info('Since 1.19 (JV-T3): other security user classes (wrappers / DTOs of a hexagonal host) whose getId() is a user_class id. Default: none, only user_class instances are stored.')
+                    ->info('Since 1.19 (JV-T3): other security user classes (wrappers / DTOs of a hexagonal host; classes only, no interfaces) whose getId() is a user_class id. Default: none, only user_class instances are stored.')
                     ->scalarPrototype()
                         ->validate()
-                            ->ifTrue(static fn (mixed $v): bool => !is_string($v) || (!class_exists($v) && !interface_exists($v)))
-                            ->thenInvalid('accepted_user_classes takes existing class or interface names, got %s.')
+                            ->ifTrue(static fn (mixed $v): bool => !is_string($v) || !class_exists($v))
+                            ->thenInvalid('accepted_user_classes takes existing concrete security user class names (no interface such as UserInterface: it would accept every user again), got %s.')
                         ->end()
                     ->end()
                     ->defaultValue([])

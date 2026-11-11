@@ -673,11 +673,13 @@ public function onTimerStop(TimerStopEvent $event): void
   tokens and calendar rows).
 - `user_class` may be a plain PHP class mapped in **XML** by your application (no Doctrine attribute, no bundle base
   class or trait); `tests/Fixtures/DddHost/HostUser.php` with `doctrine/HostUser.orm.xml` is the tested example.
+- With the kernel kept alive and not reset (FrankenPHP worker mode), clear that entity manager at the end of each
+  request: the resolver's `find()` answers from the identity map first (audit LZ-I4).
 - Since 1.18 the `UserInterface` you pass to the services does **not** have to be that entity: it only needs a
   `getId()` returning the entity id. Before storing it, every service asks the
   `Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface` port; the default
   `Doctrine\DoctrineUserReferenceResolver` keeps a `user_class` instance as it is and turns a security user of a class
-  listed in **`accepted_user_classes`** (since 1.19; a wrapper or DTO, or an interface they implement) into the
+  listed in **`accepted_user_classes`** (since 1.19; concrete wrapper or DTO classes, never an interface) into the
   `user_class` entity with that id. Any other class, and an id with no `user_class` row, is refused with
   `AccessDeniedException` before anything is written (audit JV-T3):
 
@@ -726,11 +728,15 @@ services:
 
 ### Known limitations
 
+REQ-ARCH-001 is **partially met** in 1.19. Open (pre-existing), planned for 1.20 (additive) and 2.0 (removal):
+
+- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.20 adds a
+  documented and tested bundle-owned entity manager, so no service flushes yours.
+- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.20 adds ports with a user id value object next to them;
+  the `UserInterface` ports are deprecated then and removed in 2.0.
 - Users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign keys).
-  A user id mode (no foreign key, the bundle tables in their own entity manager) is planned for when a host asks.
 - Ports that hand a user back to you (`TeamContextProviderInterface::isManagerOf()`, the timesheet scope / approver
-  providers) may receive the stored user entity instead of your security user; read its id. Host ports take the
-  Symfony `UserInterface` (an adapter-side type: implement them in your infrastructure layer).
+  providers) may receive the stored user entity instead of your security user; read its id.
 - Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.
 
 ## Worker mode (FrankenPHP, kernel reset false)

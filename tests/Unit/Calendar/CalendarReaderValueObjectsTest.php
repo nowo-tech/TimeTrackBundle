@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Calendar\CalendarMeetingBatch;
 use Nowo\TimeTrackBundle\Calendar\CalendarMeetingView;
 use Nowo\TimeTrackBundle\Calendar\CalendarPkce;
 use Nowo\TimeTrackBundle\Calendar\CalendarTokens;
+use Nowo\TimeTrackBundle\Calendar\SensitiveValue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -56,7 +57,7 @@ final class CalendarReaderValueObjectsTest extends TestCase
         $meeting = new CalendarMeetingView('evt', null, null, 'Secret title', 'Body', 'Room', $start, $start->modify('+1 hour'));
 
         self::assertSame(['eventId' => '[redacted]', 'title' => '[redacted]', 'description' => '[redacted]', 'start' => $start, 'end' => $meeting->end], $meeting->__debugInfo());
-        self::assertSame([[], [], false, null], [$meeting->attendees, $meeting->joinCandidates, $meeting->private, $meeting->timeZone]);
+        self::assertSame([[], [], false, null], [$meeting->attendees(), $meeting->joinCandidates(), $meeting->private, $meeting->timeZone]);
         $this->assertNotSerializable($meeting);
         $batch = new CalendarMeetingBatch([$meeting]);
         self::assertTrue($batch->complete);
@@ -68,6 +69,7 @@ final class CalendarReaderValueObjectsTest extends TestCase
         $tokens = new CalendarTokens('access-REDACTED-TEST', 'refresh-REDACTED-TEST', null);
 
         self::assertSame('access-REDACTED-TEST', $tokens->credential()->reveal());
+        self::assertSame(['access-REDACTED-TEST', 'refresh-REDACTED-TEST'], [$tokens->accessToken(), $tokens->refreshToken()]);
         self::assertSame(['accessToken' => '[redacted]', 'refreshToken' => '[redacted]', 'expiresAt' => null], $tokens->__debugInfo());
         $this->assertNotSerializable($tokens);
     }
@@ -75,14 +77,15 @@ final class CalendarReaderValueObjectsTest extends TestCase
     public function testPkcePairs(): void
     {
         $pair = CalendarPkce::create();
-        self::assertSame(86, strlen($pair->verifier));
-        self::assertSame(rtrim(strtr(base64_encode(hash('sha256', $pair->verifier, true)), '+/', '-_'), '='), $pair->challenge);
-        self::assertSame($pair->challenge, CalendarPkce::fromVerifier($pair->verifier)->challenge);
-        self::assertNotSame($pair->verifier, CalendarPkce::create()->verifier);
+        self::assertSame(86, strlen($pair->verifier()));
+        self::assertSame(rtrim(strtr(base64_encode(hash('sha256', $pair->verifier(), true)), '+/', '-_'), '='), $pair->challenge);
+        self::assertSame($pair->challenge, CalendarPkce::fromVerifier($pair->verifier())->challenge);
+        self::assertNotSame($pair->verifier(), CalendarPkce::create()->verifier());
         self::assertSame(['verifier' => '[redacted]', 'challenge' => $pair->challenge], $pair->__debugInfo());
         // RFC 7636 appendix B.
         self::assertSame('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', CalendarPkce::fromVerifier('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')->challenge);
         $this->assertNotSerializable($pair);
+        $this->assertNotSerializable(new SensitiveValue('x'));
     }
 
     /**
@@ -115,6 +118,8 @@ final class CalendarReaderValueObjectsTest extends TestCase
         self::assertNull(CalendarFields::zone(str_repeat('a', 65)));
         self::assertNull(CalendarFields::zone(null));
         self::assertSame('primary', CalendarFields::calendarId('primary'));
+        self::assertSame('team.cal@group.example.test', CalendarFields::calendarId('team.cal@group.example.test'));
+        self::assertSame('..a', CalendarFields::calendarId('..a'), 'only dot-only ids are path segments');
     }
 
     /**
@@ -125,6 +130,8 @@ final class CalendarReaderValueObjectsTest extends TestCase
         yield 'empty' => [''];
         yield 'too long' => [str_repeat('c', 513)];
         yield 'control character' => ["cal\n1"];
+        yield 'dot segment (LZ-I2)' => ['..'];
+        yield 'single dot' => ['.'];
     }
 
     #[DataProvider('badCalendarIds')]

@@ -25,6 +25,7 @@ use function max;
 use function parse_url;
 use function preg_match;
 use function sprintf;
+use function str_contains;
 use function str_starts_with;
 use function strlen;
 use function strtolower;
@@ -130,8 +131,8 @@ final readonly class CalendarTokenEndpoint
         if (!self::isRedirectUri($redirectUri)) {
             throw new InvalidArgumentException('The OAuth redirect URI must be an absolute https URL (http only for localhost).');
         }
-        if ($state === '' || preg_match('/^[A-Za-z0-9._~-]{43,128}$/D', $codeChallenge) !== 1) {
-            throw new InvalidArgumentException('The OAuth state must not be empty and the code challenge must be a PKCE S256 challenge.');
+        if (!CalendarOAuthState::isValid($state) || preg_match('/^[A-Za-z0-9._~-]{43,128}$/D', $codeChallenge) !== 1) {
+            throw new InvalidArgumentException('The OAuth state must be 32-512 unreserved characters (CalendarOAuthState::create()) and the code challenge a PKCE S256 challenge.');
         }
 
         return $base . '?' . http_build_query($query + [
@@ -144,13 +145,13 @@ final readonly class CalendarTokenEndpoint
     }
 
     /**
-     * An absolute `https` URL without user information, or `http` on a loopback host.
+     * An absolute `https` URL without user information or fragment (RFC 6749 §3.1.2), or `http` on a loopback host.
      */
     public static function isRedirectUri(string $uri): bool
     {
         $scheme = strtolower((string) parse_url($uri, PHP_URL_SCHEME));
         $host   = strtolower((string) parse_url($uri, PHP_URL_HOST));
-        if ($host === '' || parse_url($uri, PHP_URL_USER) !== null) {
+        if ($host === '' || parse_url($uri, PHP_URL_USER) !== null || str_contains($uri, '#')) {
             return false;
         }
 

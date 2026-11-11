@@ -26,7 +26,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | Option | Description |
 |--------|-------------|
 | `user_class` | FQCN of User entity (`UserInterface` + `getId()`) |
-| `accepted_user_classes` | Since 1.19 (JV-T3), default `[]`. Other security user classes or interfaces (wrappers / DTOs of a hexagonal host) whose `getId()` is a `user_class` id. Only these are converted to the `user_class` entity, and only when a row has the id; any other security user that is not a `user_class` instance is refused (`AccessDeniedException`). Unknown class names are refused at compile time |
+| `accepted_user_classes` | Since 1.19 (JV-T3), default `[]`. Other concrete security user classes (wrappers / DTOs of a hexagonal host) whose `getId()` is a `user_class` id; interfaces such as `UserInterface` are refused at compile time, since they would accept every user again (audit LZ-I3). Only these are converted to the `user_class` entity, and only when a row has the id; any other security user that is not a `user_class` instance is refused (`AccessDeniedException`). Unknown class names are refused at compile time too |
 
 ## Integration
 

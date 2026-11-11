@@ -37,11 +37,12 @@ interface CalendarOAuthClientInterface
     /**
      * Where the browser goes to consent.
      *
-     * @param string $redirectUri Absolute `https` callback URL (`http` only for `localhost` / `127.0.0.1`)
-     * @param string $state Opaque anti-CSRF value the callback compares
+     * @param string $redirectUri Absolute `https` callback URL without fragment (`http` only for `localhost` / `127.0.0.1`)
+     * @param string $state Anti-CSRF value from {@see CalendarOAuthState::create()} (32-512 unreserved characters), kept in
+     *                      the session, checked with {@see CalendarOAuthState::matches()} on the callback, used once
      * @param string $codeChallenge {@see CalendarPkce::$challenge}
      *
-     * @throws InvalidArgumentException On a non-https redirect URI or an empty state / challenge
+     * @throws InvalidArgumentException On a bad redirect URI, a short or malformed state, or a bad challenge
      */
     public function authorizationUrl(string $redirectUri, string $state, string $codeChallenge): string;
 

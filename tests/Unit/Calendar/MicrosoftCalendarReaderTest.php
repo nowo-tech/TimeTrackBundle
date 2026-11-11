@@ -16,6 +16,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
+use function array_map;
 use function count;
 use function iterator_to_array;
 use function json_encode;
@@ -104,12 +105,12 @@ final class MicrosoftCalendarReaderTest extends TestCase
         self::assertTrue($batch->complete);
         self::assertCount(1, $batch->meetings);
         $meeting = $batch->meetings[0];
-        self::assertSame(['occ-1', 'master-1', '2026-11-12T09:00:00Z', 'Fake review', 'Room 2', null], [$meeting->eventId, $meeting->seriesId, $meeting->originalStart, $meeting->title, $meeting->location, $meeting->timeZone]);
-        self::assertSame('never asked for', $meeting->description, 'a body the provider sends anyway is mapped as given');
+        self::assertSame(['occ-1', 'master-1', '2026-11-12T09:00:00Z', 'Fake review', 'Room 2', null], [$meeting->eventId(), $meeting->seriesId(), $meeting->originalStart(), $meeting->title(), $meeting->location(), $meeting->timeZone]);
+        self::assertSame('never asked for', $meeting->description(), 'a body the provider sends anyway is mapped as given');
         self::assertSame([false, false, false, false, true], [$meeting->allDay, $meeting->cancelled, $meeting->declined, $meeting->free, $meeting->private]);
-        self::assertSame(['boss@example.test', false], [$meeting->organizerEmail, $meeting->organizerSelf]);
-        self::assertEquals([new CalendarAttendee('peer@example.test', false, true, false), new CalendarAttendee('room@example.test', false, false, true)], $meeting->attendees);
-        self::assertSame(['https://teams.microsoft.com/l/meetup-join/fake'], $meeting->joinCandidates);
+        self::assertSame(['boss@example.test', false], [$meeting->organizerEmail(), $meeting->organizerSelf]);
+        self::assertSame([['peer@example.test', false, true, false], ['room@example.test', false, false, true]], array_map(static fn (CalendarAttendee $a): array => [$a->email(), $a->self, $a->declined, $a->resource], $meeting->attendees()));
+        self::assertSame(['https://teams.microsoft.com/l/meetup-join/fake'], $meeting->joinCandidates());
     }
 
     public function testMeetingsWithReadAskForTheBodyAsText(): void
@@ -127,8 +128,8 @@ final class MicrosoftCalendarReaderTest extends TestCase
         self::assertFalse($batch->complete, 'stopped at the page cap');
         self::assertCount(1, $batch->meetings);
         $meeting = $batch->meetings[0];
-        self::assertSame(['single', null, null, 'TASK-9', '', 'Europe/Madrid'], [$meeting->eventId, $meeting->seriesId, $meeting->originalStart, $meeting->description, $meeting->location, $meeting->timeZone]);
-        self::assertSame([true, true, true, true, false, true, null, []], [$meeting->allDay, $meeting->cancelled, $meeting->declined, $meeting->free, $meeting->private, $meeting->organizerSelf, $meeting->organizerEmail, $meeting->joinCandidates]);
+        self::assertSame(['single', null, null, 'TASK-9', '', 'Europe/Madrid'], [$meeting->eventId(), $meeting->seriesId(), $meeting->originalStart(), $meeting->description(), $meeting->location(), $meeting->timeZone]);
+        self::assertSame([true, true, true, true, false, true, null, []], [$meeting->allDay, $meeting->cancelled, $meeting->declined, $meeting->free, $meeting->private, $meeting->organizerSelf, $meeting->organizerEmail(), $meeting->joinCandidates()]);
     }
 
     public function testRefusesAnUnknownScope(): void

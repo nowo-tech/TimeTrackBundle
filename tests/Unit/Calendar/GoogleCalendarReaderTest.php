@@ -17,6 +17,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
+use function array_map;
 use function count;
 use function iterator_to_array;
 use function json_encode;
@@ -117,20 +118,20 @@ final class GoogleCalendarReaderTest extends TestCase
         self::assertTrue($batch->complete);
         self::assertCount(2, $batch->meetings);
         [$meeting, $allDay] = $batch->meetings;
-        self::assertSame(['occ-1', 'series-1', '2026-11-12T08:00:00+01:00'], [$meeting->eventId, $meeting->seriesId, $meeting->originalStart]);
-        self::assertSame(['Fake planning #TASK-1', 'Agenda TASK-2', 'Room 1', 'Europe/Madrid'], [$meeting->title, $meeting->description, $meeting->location, $meeting->timeZone]);
+        self::assertSame(['occ-1', 'series-1', '2026-11-12T08:00:00+01:00'], [$meeting->eventId(), $meeting->seriesId(), $meeting->originalStart()]);
+        self::assertSame(['Fake planning #TASK-1', 'Agenda TASK-2', 'Room 1', 'Europe/Madrid'], [$meeting->title(), $meeting->description(), $meeting->location(), $meeting->timeZone]);
         self::assertSame('2026-11-12T08:00:00+00:00', $meeting->start->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM));
         self::assertSame([false, false, true, true, true], [$meeting->allDay, $meeting->cancelled, $meeting->declined, $meeting->free, $meeting->private]);
-        self::assertSame(['boss@example.test', false], [$meeting->organizerEmail, $meeting->organizerSelf]);
-        self::assertEquals([
-            new CalendarAttendee('me@example.test', true, true, false),
-            new CalendarAttendee('room@resource.example.test', false, false, true),
-            new CalendarAttendee('', false, false, false),
-        ], $meeting->attendees);
-        self::assertSame(['https://meet.google.com/aaa-bbbb-ccc', 'https://zoom.us/j/1'], $meeting->joinCandidates);
+        self::assertSame(['boss@example.test', false], [$meeting->organizerEmail(), $meeting->organizerSelf]);
+        self::assertSame([
+            ['me@example.test', true, true, false],
+            ['room@resource.example.test', false, false, true],
+            ['', false, false, false],
+        ], array_map(static fn (CalendarAttendee $a): array => [$a->email(), $a->self, $a->declined, $a->resource], $meeting->attendees()));
+        self::assertSame(['https://meet.google.com/aaa-bbbb-ccc', 'https://zoom.us/j/1'], $meeting->joinCandidates());
 
-        self::assertSame(['all-day', null, '2026-11-12', true, true, false, false], [$allDay->eventId, $allDay->seriesId, $allDay->originalStart, $allDay->allDay, $allDay->cancelled, $allDay->private, $allDay->declined]);
-        self::assertSame(['me@example.test', true, null, [], [], '', ''], [$allDay->organizerEmail, $allDay->organizerSelf, $allDay->timeZone, $allDay->attendees, $allDay->joinCandidates, $allDay->title, $allDay->description]);
+        self::assertSame(['all-day', null, '2026-11-12', true, true, false, false], [$allDay->eventId(), $allDay->seriesId(), $allDay->originalStart(), $allDay->allDay, $allDay->cancelled, $allDay->private, $allDay->declined]);
+        self::assertSame(['me@example.test', true, null, [], [], '', ''], [$allDay->organizerEmail(), $allDay->organizerSelf, $allDay->timeZone, $allDay->attendees(), $allDay->joinCandidates(), $allDay->title(), $allDay->description()]);
     }
 
     public function testAMeetingReadStoppedAtThePageCapIsIncomplete(): void
@@ -148,7 +149,7 @@ final class GoogleCalendarReaderTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        $this->reader([])->meetings(new CalendarCredential('t'), new DateTimeImmutable('-1 day'), new DateTimeImmutable(), '');
+        $this->reader([])->meetings(new CalendarCredential('t'), new DateTimeImmutable('-1 day'), new DateTimeImmutable(), '..');
     }
 
     /**

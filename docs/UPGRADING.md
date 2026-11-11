@@ -83,7 +83,7 @@ the foreign keys.
 nowo_time_track:
   user_class: App\Entity\User
   accepted_user_classes:
-    - App\Security\SecurityUser      # your wrapper; an interface works too
+    - App\Security\SecurityUser      # your wrapper class (interfaces are refused)
 ```
 
 Hosts whose firewall user **is** the `user_class` entity (the standard path, Beacon) change nothing. Hosts that alias

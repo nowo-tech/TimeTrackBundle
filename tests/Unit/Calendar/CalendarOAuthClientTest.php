@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Calendar;
 
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Calendar\CalendarOAuthState;
 use Nowo\TimeTrackBundle\Calendar\CalendarPkce;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncException;
 use Nowo\TimeTrackBundle\Calendar\CalendarTokenEndpoint;
@@ -23,6 +24,7 @@ use function array_shift;
 use function parse_str;
 use function parse_url;
 use function str_repeat;
+use function strlen;
 
 use const DATE_ATOM;
 use const PHP_URL_QUERY;
@@ -34,6 +36,8 @@ use const PHP_URL_QUERY;
 final class CalendarOAuthClientTest extends TestCase
 {
     private const REDIRECT = 'https://host.example.test/account/calendars/callback';
+
+    private const STATE = 'state-0123456789abcdefghijklmnopqrstuv';
 
     /** @var list<array{method: string, url: string, body: string}> */
     private array $requests = [];
@@ -53,7 +57,7 @@ final class CalendarOAuthClientTest extends TestCase
         self::assertFalse((new GoogleCalendarOAuthClient($this->endpoint([])))->isConfigured());
         self::assertSame(GoogleCalendarOAuthClient::SCOPES, $client->scopes());
 
-        $url = $client->authorizationUrl(self::REDIRECT, 'state-1', $pkce->challenge);
+        $url = $client->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge);
         self::assertStringStartsWith(GoogleCalendarOAuthClient::AUTHORIZATION_URL . '?', $url);
         parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
         self::assertSame([
@@ -64,19 +68,19 @@ final class CalendarOAuthClientTest extends TestCase
             'include_granted_scopes' => 'false',
             'redirect_uri'           => self::REDIRECT,
             'response_type'          => 'code',
-            'state'                  => 'state-1',
+            'state'                  => self::STATE,
             'code_challenge'         => $pkce->challenge,
             'code_challenge_method'  => 'S256',
         ], $query);
 
-        $tokens = $client->exchangeCode('code-REDACTED-TEST', $pkce->verifier, self::REDIRECT);
-        self::assertSame(['at-REDACTED-TEST', 'rt-REDACTED-TEST', '2026-11-12T10:59:00+00:00'], [$tokens->accessToken, $tokens->refreshToken, $tokens->expiresAt?->format(DATE_ATOM)]);
+        $tokens = $client->exchangeCode('code-REDACTED-TEST', $pkce->verifier(), self::REDIRECT);
+        self::assertSame(['at-REDACTED-TEST', 'rt-REDACTED-TEST', '2026-11-12T10:59:00+00:00'], [$tokens->accessToken(), $tokens->refreshToken(), $tokens->expiresAt?->format(DATE_ATOM)]);
         self::assertSame(['POST', GoogleCalendarOAuthClient::TOKEN_URL], [$this->requests[0]['method'], $this->requests[0]['url']]);
         parse_str($this->requests[0]['body'], $form);
-        self::assertSame(['grant_type' => 'authorization_code', 'code' => 'code-REDACTED-TEST', 'code_verifier' => $pkce->verifier, 'redirect_uri' => self::REDIRECT, 'client_id' => 'google-client-id', 'client_secret' => 'secret-REDACTED-TEST'], $form);
+        self::assertSame(['grant_type' => 'authorization_code', 'code' => 'code-REDACTED-TEST', 'code_verifier' => $pkce->verifier(), 'redirect_uri' => self::REDIRECT, 'client_id' => 'google-client-id', 'client_secret' => 'secret-REDACTED-TEST'], $form);
 
         $refreshed = $client->refresh('rt-REDACTED-TEST');
-        self::assertSame(['at2-REDACTED-TEST', null, '2026-11-12T10:01:00+00:00'], [$refreshed->accessToken, $refreshed->refreshToken, $refreshed->expiresAt?->format(DATE_ATOM)]);
+        self::assertSame(['at2-REDACTED-TEST', null, '2026-11-12T10:01:00+00:00'], [$refreshed->accessToken(), $refreshed->refreshToken(), $refreshed->expiresAt?->format(DATE_ATOM)]);
         parse_str($this->requests[1]['body'], $form);
         self::assertSame('refresh_token', $form['grant_type'] ?? null);
 
@@ -99,18 +103,18 @@ final class CalendarOAuthClientTest extends TestCase
         self::assertSame(CalendarProvider::Microsoft, $client->provider());
         self::assertTrue($client->isConfigured());
         self::assertSame('offline_access https://graph.microsoft.com/Calendars.Read', $client->scopes());
-        $url = $client->authorizationUrl('http://localhost:8000/callback', 'state-2', $pkce->challenge);
+        $url = $client->authorizationUrl('http://localhost:8000/callback', self::STATE, $pkce->challenge);
         self::assertStringStartsWith('https://login.microsoftonline.com/contoso.example/oauth2/v2.0/authorize?', $url);
         parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
         self::assertSame(['ms-client-id', 'query', 'offline_access https://graph.microsoft.com/Calendars.Read', 'select_account', 'S256'], [$query['client_id'] ?? null, $query['response_mode'] ?? null, $query['scope'] ?? null, $query['prompt'] ?? null, $query['code_challenge_method'] ?? null]);
 
-        $tokens = $client->exchangeCode('code-REDACTED-TEST', $pkce->verifier, self::REDIRECT);
+        $tokens = $client->exchangeCode('code-REDACTED-TEST', $pkce->verifier(), self::REDIRECT);
         self::assertNull($tokens->expiresAt, 'no expires_in');
         self::assertSame('https://login.microsoftonline.com/contoso.example/oauth2/v2.0/token', $this->requests[0]['url']);
         parse_str($this->requests[0]['body'], $form);
         self::assertSame('offline_access https://graph.microsoft.com/Calendars.Read', $form['scope'] ?? null);
         $refreshed = $client->refresh('rt-REDACTED-TEST');
-        self::assertSame(['rt2-REDACTED-TEST', '2026-11-12T10:00:00+00:00'], [$refreshed->refreshToken, $refreshed->expiresAt?->format(DATE_ATOM)], 'never in the past');
+        self::assertSame(['rt2-REDACTED-TEST', '2026-11-12T10:00:00+00:00'], [$refreshed->refreshToken(), $refreshed->expiresAt?->format(DATE_ATOM)], 'never in the past');
 
         self::assertFalse($client->supportsRevoke());
         self::assertFalse($client->revoke('rt-REDACTED-TEST'));
@@ -119,7 +123,7 @@ final class CalendarOAuthClientTest extends TestCase
         $default = new MicrosoftCalendarOAuthClient($this->endpoint([]), '', '', 'bad tenant/../');
         self::assertFalse($default->isConfigured());
         self::assertSame('offline_access https://graph.microsoft.com/Calendars.ReadBasic', $default->scopes());
-        self::assertStringStartsWith('https://login.microsoftonline.com/common/oauth2/v2.0/authorize?', $default->authorizationUrl(self::REDIRECT, 's', $pkce->challenge));
+        self::assertStringStartsWith('https://login.microsoftonline.com/common/oauth2/v2.0/authorize?', $default->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge));
     }
 
     public function testMicrosoftRefusesAnUnknownScope(): void
@@ -135,12 +139,15 @@ final class CalendarOAuthClientTest extends TestCase
     public static function badAuthorizationArguments(): iterable
     {
         $challenge = str_repeat('c', 43);
-        yield 'http redirect' => ['http://host.example.test/callback', 's', $challenge];
-        yield 'relative redirect' => ['/callback', 's', $challenge];
-        yield 'user info' => ['https://user@host.example.test/callback', 's', $challenge];
-        yield 'javascript' => ['javascript:alert(1)', 's', $challenge];
+        yield 'http redirect' => ['http://host.example.test/callback', self::STATE, $challenge];
+        yield 'relative redirect' => ['/callback', self::STATE, $challenge];
+        yield 'user info' => ['https://user@host.example.test/callback', self::STATE, $challenge];
+        yield 'javascript' => ['javascript:alert(1)', self::STATE, $challenge];
+        yield 'fragment (LZ-I5)' => [self::REDIRECT . '#x', self::STATE, $challenge];
         yield 'empty state' => [self::REDIRECT, '', $challenge];
-        yield 'short challenge' => [self::REDIRECT, 's', 'plain'];
+        yield 'short state (LZ-I1)' => [self::REDIRECT, 'x', $challenge];
+        yield 'state with a reserved character' => [self::REDIRECT, str_repeat('s', 40) . '&', $challenge];
+        yield 'short challenge' => [self::REDIRECT, self::STATE, 'plain'];
     }
 
     #[DataProvider('badAuthorizationArguments')]
@@ -149,6 +156,20 @@ final class CalendarOAuthClientTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         (new GoogleCalendarOAuthClient($this->endpoint([]), 'id', 'secret'))->authorizationUrl($redirect, $state, $challenge);
+    }
+
+    public function testTheStateHelper(): void
+    {
+        $state = CalendarOAuthState::create();
+        self::assertSame(43, strlen($state));
+        self::assertTrue(CalendarOAuthState::isValid($state));
+        self::assertNotSame($state, CalendarOAuthState::create());
+        self::assertTrue(CalendarOAuthState::matches($state, $state));
+        self::assertFalse(CalendarOAuthState::matches($state, CalendarOAuthState::create()));
+        self::assertFalse(CalendarOAuthState::matches($state, null));
+        self::assertFalse(CalendarOAuthState::matches($state, ['x']));
+        self::assertFalse(CalendarOAuthState::matches(null, $state), 'nothing stored: refused');
+        self::assertFalse(CalendarOAuthState::matches('x', 'x'), 'a malformed stored state never matches');
     }
 
     public function testLoopbackRedirects(): void

@@ -50,14 +50,16 @@ final class CalendarFields
     }
 
     /**
-     * The calendar id to read: non-empty, at most 512 bytes, no control characters.
+     * The calendar id to read: non-empty, at most 512 bytes, no control characters, not only dots (a `.` / `..` path
+     * segment; audit LZ-I2). Hosts pass only ids that {@see CalendarReaderInterface::calendars()} returned for the same
+     * connection.
      *
      * @throws InvalidArgumentException
      */
     public static function calendarId(string $calendarId): string
     {
-        if ($calendarId === '' || strlen($calendarId) > self::MAX_CALENDAR_ID_LENGTH || preg_match('/[\x00-\x1F\x7F]/', $calendarId) === 1) {
-            throw new InvalidArgumentException('The calendar id must be 1-512 characters without control characters.');
+        if ($calendarId === '' || strlen($calendarId) > self::MAX_CALENDAR_ID_LENGTH || preg_match('/[\x00-\x1F\x7F]|^\.+$/D', $calendarId) === 1) {
+            throw new InvalidArgumentException('The calendar id must be 1-512 characters without control characters and not only dots.');
         }
 
         return $calendarId;

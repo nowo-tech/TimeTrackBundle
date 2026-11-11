@@ -35,12 +35,15 @@ Current release **v1.18.0** (2026-11-09) — see [CHANGELOG.md](CHANGELOG.md).
 TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
 
 - **1.19** (spec 198 side): calendar readers and OAuth helpers for a host meeting sync, `accepted_user_classes`,
-  `GET me` `links.workingTime`, the REQ-ARCH-001 / REQ-RUNTIME-002 checks.
+  `GET me` `links.workingTime`, REQ-RUNTIME-002, and part of REQ-ARCH-001 (XML host test, wrapper users, listener
+  switch).
 - **1.20** (spec 204): `leave` on the workday, the `daysOff` leave kind and `links.leave`; budget versus actual with
-  TaskBoard here or in its own minor.
+  TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user id value object next to the
+  `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager so no service flushes the
+  host's (rule 6).
+- **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.20 are removed.
 - **1.21** (spec 199): the monitoring API, with a full audit. Off unless your organisation enables it with a recorded
   DPIA; you see it first.
-- Later, when a host asks: the user id mode (`user_reference: id`, the bundle tables in their own entity manager).
 
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 

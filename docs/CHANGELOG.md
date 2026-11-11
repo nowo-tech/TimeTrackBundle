@@ -55,7 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Target **1.19.0** (TimeTrack closure, Block 1 / Beacon spec 198 and spec 210): the calendar meeting reader Beacon asked
 for (BUNDLES request 2026-11-09), `accepted_user_classes` for the user reference port (audit JV-T3), `GET me
-links.workingTime`, and the REQ-ARCH-001 / REQ-RUNTIME-002 checks. No schema change, no client contract break.
+links.workingTime`, REQ-RUNTIME-002 (met) and part of REQ-ARCH-001. No schema change, no client contract break.
+
+Audit LZ (REQ-SEC-004): Pass-Low at `b636b0a`; LZ-L1 and LZ-I1 / I2 / I3 / I5 are fixed in this release, LZ-I4 / I8
+documented.
+
+**REQ-ARCH-001 is only partially met.** This release adds the XML-mapped host test, wrapper users with
+`accepted_user_classes`, the former-person listener switch and the docs. Still open, both pre-existing:
+- rule 6: the services flush the configured entity manager, which is the host's by default;
+- rules 1 / 3: 21 host ports take Symfony `UserInterface`.
+Planned for **1.20**, additive: ports with a user id value object next to the old ones, and a documented and tested
+bundle-owned entity manager. The old `UserInterface` ports become deprecated then and are removed in **2.0**.
 
 ### Added
 
@@ -87,6 +97,21 @@ links.workingTime`, and the REQ-ARCH-001 / REQ-RUNTIME-002 checks. No schema cha
 - `retention.former_person_listener` (default true): false leaves `FormerPersonSnapshotListener` off the host entity
   manager, for DDD hosts that delete users through their own flow and call `FormerPersonTimeEntries` themselves.
 
+### Security (audit LZ)
+
+- **LZ-L1:** the access and refresh tokens (`CalendarTokens`), the PKCE verifier (`CalendarPkce`), the credential and
+  the meeting personal data (`CalendarMeetingView`, `CalendarAttendee`) are no longer public properties. They sit in an
+  internal `SensitiveValue` and are read through methods (`accessToken()`, `refreshToken()`, `verifier()`, `email()`,
+  `title()`, `description()`, `location()`, `organizerEmail()`, `attendees()`, `joinCandidates()`, `eventId()`,
+  `seriesId()`, `originalStart()`). `json_encode()`, `(array)` casts, `var_export()`, `print_r()`, Symfony Serializer
+  and Monolog formatters see `[redacted]` (every class is `JsonSerializable`); a test covers each channel.
+- **LZ-I1:** `CalendarOAuthState::create()` / `matches()` (random state, constant-time compare);
+  `authorizationUrl()` refuses a state shorter than 32 unreserved characters.
+- **LZ-I2:** calendar ids made only of dots are refused; MEETINGS says to pass only ids `calendars()` returned.
+- **LZ-I3:** `accepted_user_classes` takes concrete classes only: `UserInterface` or any other interface is refused at
+  compile time.
+- **LZ-I5:** a redirect URI with a fragment is refused (RFC 6749 §3.1.2).
+
 ### Changed
 
 - **JV-T3:** `DoctrineUserReferenceResolver` converts a security user that is not a `user_class` instance only when its
@@ -104,7 +129,7 @@ links.workingTime`, and the REQ-ARCH-001 / REQ-RUNTIME-002 checks. No schema cha
   `Calendars.Read`, what Beacon can delete). CLIENT-API: `links.workingTime`; the workday API checked against spec 198.
 - ROADMAP: current state refreshed (1.18, the 1.19 – 1.21 plan); the monitoring text follows the owner decision of
   2026-11-11 (off unless the organisation enables it with a recorded DPIA; the worker sees it first).
-- USAGE: "Standard Symfony host" and "DDD / hexagonal host" sections (REQ-ARCH-001); `docs/FRANKENPHP-WORKER-AUDIT.md`
+- USAGE: "Standard Symfony host" and "DDD / hexagonal host" sections (REQ-ARCH-001, partial); `docs/FRANKENPHP-WORKER-AUDIT.md`
   re-audited for kernel reset false (REQ-RUNTIME-002) with the new worker test.
 
 ### Tests
