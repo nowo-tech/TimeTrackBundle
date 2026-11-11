@@ -3,6 +3,10 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.19.0](#to-1190)
+  - [Behaviour change: wrapper security users need `accepted_user_classes` (JV-T3)](#behaviour-change-wrapper-security-users-need-accepted_user_classes-jv-t3)
+  - [Calendar readers for your meeting sync (Beacon spec 210)](#calendar-readers-for-your-meeting-sync-beacon-spec-210)
+  - [Other additions](#other-additions)
 - [To 1.18.0](#to-1180)
 - [To 1.17.1](#to-1171)
 - [To 1.17.0](#to-1170)
@@ -61,6 +65,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.19.0
+
+From **1.18.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Target **1.19.0**, from **1.18.0**:
 
