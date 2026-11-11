@@ -180,7 +180,7 @@ final class MeetingsApiTest extends FunctionalTestCase
         $me = $this->api('GET', '/api/time-track/me', null, $this->login());
         self::assertTrue($me['features']['meetings'] ?? null);
         self::assertSame(['status' => 'connected', 'refreshAfterSeconds' => 300], $me['meetings'] ?? null);
-        self::assertSame(['calendars' => null], $me['links'] ?? null, 'the test host is http: no link');
+        self::assertSame(['calendars' => null, 'workingTime' => null], $me['links'] ?? null, 'the test host is http: no link');
 
         $token  = $this->scoped(ClientScope::TimerWrite, ClientScope::TimerRead);
         $switch = $this->api('POST', '/api/time-track/timer/switch', ['taskId' => 'task-1', 'metadata' => ['origin' => 'meeting']], $token);

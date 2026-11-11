@@ -10,15 +10,20 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
+use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClientInterface;
 use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
+use Nowo\TimeTrackBundle\Calendar\CalendarReaderInterface;
 use Nowo\TimeTrackBundle\Calendar\CalendarRefHasher;
 use Nowo\TimeTrackBundle\Calendar\CalendarRuleService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSuggestionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
+use Nowo\TimeTrackBundle\Calendar\CalendarTokenEndpoint;
 use Nowo\TimeTrackBundle\Calendar\CalendarWorkingHours;
 use Nowo\TimeTrackBundle\Calendar\GoogleCalendarEventSource;
+use Nowo\TimeTrackBundle\Calendar\GoogleCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarEventSource;
+use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Client\AlwaysActiveClientCredentialState;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
@@ -135,6 +140,7 @@ use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 
+use function array_diff_key;
 use function array_key_exists;
 use function array_merge;
 use function array_unique;
@@ -307,7 +313,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerClientApi($container, $config);
         $this->registerImports($container, $config);
         $this->registerTimesheets($container, $config, $emRef);
-        $this->registerUserReferences($container, (string) $config['user_class'], $emRef);
+        /** @var list<class-string> $acceptedUserClasses */
+        $acceptedUserClasses = $config['accepted_user_classes'];
+        $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -320,13 +328,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     /**
      * Since 1.18: the {@see UserReferenceResolverInterface} port (default {@see DoctrineUserReferenceResolver}), injected
      * into every service that stores the security user in a `user` association. Hosts override the alias.
+     *
+     * @param list<class-string> $acceptedUserClasses Since 1.19: `accepted_user_classes` (JV-T3)
      */
-    private function registerUserReferences(ContainerBuilder $container, string $userClass, Reference $emRef): void
+    private function registerUserReferences(ContainerBuilder $container, string $userClass, Reference $emRef, array $acceptedUserClasses): void
     {
         $container->setDefinition(DoctrineUserReferenceResolver::class, (new Definition(DoctrineUserReferenceResolver::class))
             ->setAutowired(false)
             ->setArgument('$entityManager', $emRef)
-            ->setArgument('$userClass', $userClass));
+            ->setArgument('$userClass', $userClass)
+            ->setArgument('$acceptedUserClasses', $acceptedUserClasses));
         $container->setAlias(UserReferenceResolverInterface::class, DoctrineUserReferenceResolver::class);
 
         $reference = new Reference(UserReferenceResolverInterface::class);
@@ -357,7 +368,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     {
         /** @var array{max_entry_seconds: int} $imports */
         $imports = $config['imports'];
-        /** @var array{include_imported: bool, anonymise_on_user_delete: bool} $retention */
+        /** @var array{include_imported: bool, anonymise_on_user_delete: bool, former_person_listener: bool} $retention */
         $retention = $config['retention'];
 
         $container->setParameter('nowo_time_track.imports.max_entry_seconds', $imports['max_entry_seconds']);
@@ -400,6 +411,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$anonymiseOnUserDelete' => $retention['anonymise_on_user_delete'],
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
+        if (!$retention['former_person_listener']) {
+            // Since 1.19 (REQ-ARCH-001): no listener on the host entity manager; the host calls FormerPersonTimeEntries.
+            return;
+        }
         $container->setDefinition(FormerPersonSnapshotListener::class, (new Definition(FormerPersonSnapshotListener::class))
             ->setArgument('$entries', new Reference(FormerPersonTimeEntries::class))
             ->setArgument('$userClass', $config['user_class'])
@@ -408,7 +423,12 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->addTag('doctrine.event_listener', ['event' => 'onFlush'])
             // Since 1.16 (HA-L18): first, so a host's postFlush listener that flushes cannot cancel the settling.
             ->addTag('doctrine.event_listener', ['event' => 'postFlush', 'priority' => 1000])
-            ->addTag('kernel.reset', ['method' => 'reset']));
+            ->addTag('kernel.reset', ['method' => 'reset'])
+            // Since 1.19 (REQ-RUNTIME-002): cleared by the bundle itself at each boundary, never by kernel.reset alone.
+            ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'onBoundary', 'priority' => -1024])
+            ->addTag('kernel.event_listener', ['event' => 'console.terminate', 'method' => 'onBoundary', 'priority' => -1024])
+            ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'method' => 'onBoundary', 'priority' => -1024])
+            ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageFailedEvent', 'method' => 'onBoundary', 'priority' => -1024]));
     }
 
     /**
@@ -495,7 +515,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $clockRef    = new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
         $loggerRef   = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
         $dispatchRef = new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE);
-        $container->setParameter('nowo_time_track.calendar', $calendar);
+        // Since 1.19: the OAuth apps (secrets) stay out of the parameter bag.
+        $container->setParameter('nowo_time_track.calendar', array_diff_key($calendar, ['oauth' => true]));
         $container->setParameter('nowo_time_track.calendar.enabled', $enabled);
 
         $container->setDefinition(DoctrineOrmCalendarRepository::class, (new Definition(DoctrineOrmCalendarRepository::class))
@@ -537,17 +558,12 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ]));
             $matcher = new Reference(CalendarEventMatcher::class);
         }
+        $this->registerCalendarReaders($container, $calendar, $clockRef);
         $sources = [];
         // The adapters need symfony/http-client (a `suggest`): without the framework `http_client` a sync fails with
         // the code `no_http_client`.
         if ($enabled && $credentials instanceof Reference) {
-            $container->setDefinition(CalendarHttpClient::class, (new Definition(CalendarHttpClient::class))
-                ->setArguments(['$httpClient' => new Reference('http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE), '$clock' => $clockRef]));
-            foreach ([GoogleCalendarEventSource::class, MicrosoftCalendarEventSource::class] as $sourceClass) {
-                $container->setDefinition($sourceClass, (new Definition($sourceClass))
-                    ->setArguments(['$http' => new Reference(CalendarHttpClient::class), '$maxPages' => $calendar['max_pages']]));
-                $sources[] = new Reference($sourceClass);
-            }
+            $sources = [new Reference(GoogleCalendarEventSource::class), new Reference(MicrosoftCalendarEventSource::class)];
         }
         $container->setDefinition(CalendarConnectionService::class, (new Definition(CalendarConnectionService::class))
             ->setPublic(true)
@@ -635,6 +651,43 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$manualEntries', new Reference(ManualEntryService::class));
 
         $this->registerMeetings($container, $config, $clockRef, $loggerRef);
+    }
+
+    /**
+     * Since 1.19 (Beacon request 2026-11-09): the calendar readers ({@see CalendarReaderInterface}) and the OAuth helpers
+     * ({@see CalendarOAuthClientInterface}), registered whether or not calendar suggestions are on, so a host meeting
+     * sync can inject them. They need symfony/http-client (a `suggest`); without it they fail with `no_http_client`.
+     *
+     * @param array<string, mixed> $calendar Processed `calendar` configuration
+     */
+    private function registerCalendarReaders(ContainerBuilder $container, array $calendar, Reference $clockRef): void
+    {
+        /** @var array{max_pages: int, microsoft_scope: string, oauth: array{google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
+        $httpRef = new Reference('http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $container->setDefinition(CalendarHttpClient::class, (new Definition(CalendarHttpClient::class))
+            ->setArguments(['$httpClient' => $httpRef, '$clock' => $clockRef]));
+        $container->setDefinition(GoogleCalendarEventSource::class, (new Definition(GoogleCalendarEventSource::class))
+            ->setArguments(['$http' => new Reference(CalendarHttpClient::class), '$maxPages' => $calendar['max_pages']]));
+        $container->setDefinition(MicrosoftCalendarEventSource::class, (new Definition(MicrosoftCalendarEventSource::class))
+            ->setArguments(['$http' => new Reference(CalendarHttpClient::class), '$maxPages' => $calendar['max_pages'], '$scope' => $calendar['microsoft_scope']]));
+        $container->setDefinition(CalendarTokenEndpoint::class, (new Definition(CalendarTokenEndpoint::class))
+            ->setArguments(['$httpClient' => $httpRef, '$clock' => $clockRef]));
+        $google = $calendar['oauth']['google'];
+        $container->setDefinition(GoogleCalendarOAuthClient::class, (new Definition(GoogleCalendarOAuthClient::class))
+            ->setArguments([
+                '$endpoint'     => new Reference(CalendarTokenEndpoint::class),
+                '$clientId'     => $google['client_id'],
+                '$clientSecret' => $google['client_secret'],
+            ]));
+        $microsoft = $calendar['oauth']['microsoft'];
+        $container->setDefinition(MicrosoftCalendarOAuthClient::class, (new Definition(MicrosoftCalendarOAuthClient::class))
+            ->setArguments([
+                '$endpoint'     => new Reference(CalendarTokenEndpoint::class),
+                '$clientId'     => $microsoft['client_id'],
+                '$clientSecret' => $microsoft['client_secret'],
+                '$tenant'       => $microsoft['tenant'],
+                '$scope'        => $calendar['microsoft_scope'],
+            ]));
     }
 
     /**
@@ -762,21 +815,23 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$clock', $clockRef)
             ->setArgument('$logger', $loggerRef);
         // Since 1.13: client API working-time routes.
-        /** @var array{workday_provider: string|null, rate_limit: array{cache_pool: string}} $api */
+        /** @var array{workday_provider: string|null, links_working_time_route: string|null, rate_limit: array{cache_pool: string}} $api */
         $api     = $config['client_api'];
         $workday = $api['workday_provider'];
         $container->setDefinition(ClientIdempotencyStore::class, (new Definition(ClientIdempotencyStore::class))
             ->setArguments(['$cache' => new Reference($api['rate_limit']['cache_pool'])]));
         $container->setDefinition(ClientWorkingTimeContext::class, (new Definition(ClientWorkingTimeContext::class))
             ->setArguments([
-                '$timesheets'      => new Reference(TimesheetService::class),
-                '$balance'         => new Reference(WorkingTimeBalanceService::class),
-                '$accessGuard'     => new Reference(TimesheetAccessGuard::class),
-                '$lockGuard'       => new Reference(PeriodLockGuard::class),
-                '$workdayProvider' => is_string($workday) && $workday !== '' ? new Reference($workday) : null,
-                '$timerService'    => new Reference(TimerService::class),
-                '$translator'      => new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
-                '$profileProvider' => new Reference(ClientUserProfileProviderInterface::class),
+                '$timesheets'       => new Reference(TimesheetService::class),
+                '$balance'          => new Reference(WorkingTimeBalanceService::class),
+                '$accessGuard'      => new Reference(TimesheetAccessGuard::class),
+                '$lockGuard'        => new Reference(PeriodLockGuard::class),
+                '$workdayProvider'  => is_string($workday) && $workday !== '' ? new Reference($workday) : null,
+                '$timerService'     => new Reference(TimerService::class),
+                '$translator'       => new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$profileProvider'  => new Reference(ClientUserProfileProviderInterface::class),
+                '$urlGenerator'     => new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$workingTimeRoute' => $api['links_working_time_route'],
             ]));
         $container->getDefinition(TimeTrackWorkingTimeApiController::class)
             ->setArgument('$clock', $clockRef);

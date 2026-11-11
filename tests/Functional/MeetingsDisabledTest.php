@@ -32,6 +32,6 @@ final class MeetingsDisabledTest extends FunctionalTestCase
         self::assertIsArray($me);
         self::assertArrayHasKey('meetings', $me);
         self::assertNull($me['meetings']);
-        self::assertSame(['calendars' => null], $me['links'] ?? null);
+        self::assertSame(['calendars' => null, 'workingTime' => null], $me['links'] ?? null);
     }
 }

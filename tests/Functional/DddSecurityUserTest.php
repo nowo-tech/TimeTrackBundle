@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
-use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -16,14 +15,22 @@ use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\SecurityUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
  * Since 1.18 (DDD adapter audit G1): a firewall user that is not the `user_class` entity drives the services; the
- * bundle stores a Doctrine reference built from its `getId()`. Foreign keys are enforced (SQLite pragma here, native
- * on MySQL / PostgreSQL), so an id with no user row fails instead of storing a dangling owner (JV-T3).
+ * bundle stores the `user_class` entity with its `getId()`. Since 1.19 (JV-T3) only classes listed in
+ * `accepted_user_classes` are converted and an id with no user row is refused before anything is written, also
+ * without enforced foreign keys (SQLite pragma on here, native on MySQL / PostgreSQL).
  */
 final class DddSecurityUserTest extends FunctionalTestCase
 {
+    protected static function timeTrackConfig(): array
+    {
+        return ['accepted_user_classes' => [SecurityUser::class]];
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -91,12 +98,28 @@ final class DddSecurityUserTest extends FunctionalTestCase
     {
         $timers = self::getContainer()->get(TimerService::class);
         self::assertInstanceOf(TimerService::class, $timers);
+        $connection = $this->entityManager()->getConnection();
+        if ($connection->getDatabasePlatform() instanceof SQLitePlatform) {
+            $connection->executeStatement('PRAGMA foreign_keys = OFF');
+        }
 
         try {
             $timers->start(new SecurityUser(999999, 'ghost@example.com'), 'task-1', ClientType::Web);
             self::fail('A timer for a user id with no row must not be stored.');
-        } catch (ForeignKeyConstraintViolationException) {
+        } catch (AccessDeniedException) {
             $this->addToAssertionCount(1);
         }
+        self::assertSame(0, $this->entityManager()->getRepository(ActiveTimer::class)->count([]), 'refused before the flush, even without foreign keys');
+    }
+
+    public function testASecurityUserOfAClassThatIsNotAcceptedIsRefused(): void
+    {
+        $id = $this->user->getId();
+        self::assertNotNull($id);
+        $auth = self::getContainer()->get(ClientAuthService::class);
+        self::assertInstanceOf(ClientAuthService::class, $auth);
+
+        $this->expectException(AccessDeniedException::class);
+        $auth->issueToken(new TestUser((string) $id, 'person@example.com'), ClientType::Desktop);
     }
 }

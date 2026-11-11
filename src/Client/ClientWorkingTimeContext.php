@@ -17,13 +17,16 @@ use Nowo\TimeTrackBundle\Workday\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdayState;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
 use ReflectionMethod;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
+use Throwable;
 
 use function in_array;
 use function is_string;
 use function method_exists;
 use function preg_replace;
+use function str_starts_with;
 use function strtolower;
 
 /**
@@ -45,7 +48,27 @@ final readonly class ClientWorkingTimeContext
         private ?TimerService $timerService = null,
         private ?TranslatorInterface $translator = null,
         private ?ClientUserProfileProviderInterface $profileProvider = null,
+        private ?UrlGeneratorInterface $urlGenerator = null,
+        private ?string $workingTimeRoute = null,
     ) {
+    }
+
+    /**
+     * Since 1.19 (spec 198): `GET me.links.workingTime`, the absolute https URL of the host's working-time page
+     * (`client_api.links_working_time_route`; corrections and exports stay on the web), or null.
+     */
+    public function workingTimeLink(): ?string
+    {
+        if ($this->workingTimeRoute === null || $this->workingTimeRoute === '' || !$this->urlGenerator instanceof UrlGeneratorInterface) {
+            return null;
+        }
+        try {
+            $url = $this->urlGenerator->generate($this->workingTimeRoute, [], UrlGeneratorInterface::ABSOLUTE_URL);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return str_starts_with($url, 'https://') ? $url : null;
     }
 
     /**

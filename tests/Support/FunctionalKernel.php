@@ -8,6 +8,7 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as Doctrine
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
@@ -51,9 +52,9 @@ final class FunctionalKernel extends Kernel
     /**
      * @param array<string, mixed> $timeTrackConfig
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false)
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true)
     {
-        parent::__construct('test', true);
+        parent::__construct('test', $debug);
     }
 
     public function registerBundles(): iterable
@@ -85,7 +86,7 @@ final class FunctionalKernel extends Kernel
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -150,7 +151,13 @@ final class FunctionalKernel extends Kernel
                     'is_bundle' => false,
                     'dir'       => __DIR__ . '/../Fixtures/FunctionalEntity',
                     'prefix'    => 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\FunctionalEntity',
-                ]],
+                ]] + ($this->xmlHostUser ? ['DddHost' => [
+                    // Since 1.19 (REQ-ARCH-001): a DDD host's user_class, plain PHP mapped in XML.
+                    'type'      => 'xml',
+                    'is_bundle' => false,
+                    'dir'       => __DIR__ . '/../Fixtures/DddHost/doctrine',
+                    'prefix'    => 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\DddHost',
+                ]] : []),
             ] + $this->nativeLazyObjects(),
         ]);
         $container->extension('security', [
@@ -162,7 +169,7 @@ final class FunctionalKernel extends Kernel
             ],
         ]);
         $container->extension('nowo_time_track', array_replace_recursive([
-            'user_class' => AppUser::class,
+            'user_class' => $this->xmlHostUser ? HostUser::class : AppUser::class,
             'clients'    => [
                 'enabled'              => true,
                 'user_provider'        => 'security.user.provider.concrete.app_users',

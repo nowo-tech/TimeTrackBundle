@@ -38,6 +38,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\TerminateEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
 
 use function array_column;
 use function array_map;
@@ -616,6 +620,23 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->entityManager()->getUnitOfWork()->scheduleForDelete($this->user);
         $listener->onFlush(new OnFlushEventArgs($this->entityManager()));
         $listener->reset();
+        $listener->postFlush(new PostFlushEventArgs($this->entityManager()));
+        $this->entityManager()->clear();
+
+        self::assertNull($this->reload('e-1')->getPersonRef(), 'what a failed flush prepared is never written');
+    }
+
+    public function testTheRequestBoundaryForgetsAFailedFlushWithoutTheServicesResetter(): void
+    {
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $listener = self::getContainer()->get(FormerPersonSnapshotListener::class);
+        self::assertInstanceOf(FormerPersonSnapshotListener::class, $listener);
+        $this->entityManager()->getUnitOfWork()->scheduleForDelete($this->user);
+        $listener->onFlush(new OnFlushEventArgs($this->entityManager()));
+        // REQ-RUNTIME-002: kernel.terminate clears it (registered by the bundle), with no kernel.reset in between.
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->dispatch(new TerminateEvent(self::$kernel ?? throw new LogicException('no kernel'), new Request(), new Response()), KernelEvents::TERMINATE);
         $listener->postFlush(new PostFlushEventArgs($this->entityManager()));
         $this->entityManager()->clear();
 

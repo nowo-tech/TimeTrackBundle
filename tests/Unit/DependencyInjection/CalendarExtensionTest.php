@@ -10,8 +10,11 @@ use Nowo\TimeTrackBundle\Calendar\CalendarEventMatcher;
 use Nowo\TimeTrackBundle\Calendar\CalendarHttpClient;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
+use Nowo\TimeTrackBundle\Calendar\CalendarTokenEndpoint;
 use Nowo\TimeTrackBundle\Calendar\GoogleCalendarEventSource;
+use Nowo\TimeTrackBundle\Calendar\GoogleCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarEventSource;
+use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
@@ -49,12 +52,59 @@ final class CalendarExtensionTest extends TestCase
             self::assertSame(DoctrineOrmCalendarRepository::class, (string) $container->getAlias($interface));
         }
         self::assertFalse($container->hasDefinition(CalendarEventMatcher::class));
-        self::assertFalse($container->hasDefinition(CalendarHttpClient::class));
+        // Since 1.19: the readers and OAuth helpers are registered for host meeting syncs, but the suggestion sync
+        // gets no source while calendar suggestions are off.
+        self::assertTrue($container->hasDefinition(CalendarHttpClient::class));
+        $sources = $container->getDefinition(CalendarSyncService::class)->getArgument('$sources');
+        self::assertInstanceOf(IteratorArgument::class, $sources);
+        self::assertSame([], $sources->getValues());
         self::assertFalse($container->hasAlias(TaskKeyResolverInterface::class));
         self::assertFalse($container->hasAlias(TimesheetScopeProviderInterface::class));
         self::assertNull($container->getDefinition(CalendarSyncService::class)->getArgument('$matcher'));
         self::assertNull($container->getDefinition(CalendarConnectionService::class)->getArgument('$scopeProvider'));
         self::assertFalse($container->getDefinition(CalendarSettings::class)->getArgument('$enabled'));
+    }
+
+    public function testTheReadersAndOAuthHelpersFollowTheConfiguration(): void
+    {
+        $off = $this->load([]);
+        self::assertSame(['Calendars.ReadBasic', '', '', '', '', 'common'], [
+            $off->getDefinition(MicrosoftCalendarEventSource::class)->getArgument('$scope'),
+            $off->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$clientId'),
+            $off->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$clientSecret'),
+            $off->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$clientId'),
+            $off->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$clientSecret'),
+            $off->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$tenant'),
+        ]);
+
+        $on = $this->load(['calendar' => [
+            'max_pages'       => 4,
+            'microsoft_scope' => 'Calendars.Read',
+            'oauth'           => [
+                'google'    => ['client_id' => 'g-id', 'client_secret' => '%env(GOOGLE_CALENDAR_SECRET)%'],
+                'microsoft' => ['client_id' => 'm-id', 'client_secret' => '%env(MS_CALENDAR_SECRET)%', 'tenant' => 'organizations'],
+            ],
+        ]]);
+        self::assertSame([4, 'Calendars.Read'], [$on->getDefinition(MicrosoftCalendarEventSource::class)->getArgument('$maxPages'), $on->getDefinition(MicrosoftCalendarEventSource::class)->getArgument('$scope')]);
+        self::assertSame(4, $on->getDefinition(GoogleCalendarEventSource::class)->getArgument('$maxPages'));
+        self::assertSame(['g-id', 'm-id', 'organizations', 'Calendars.Read'], [
+            $on->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$clientId'),
+            $on->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$clientId'),
+            $on->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$tenant'),
+            $on->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$scope'),
+        ]);
+        self::assertSame(CalendarTokenEndpoint::class, (string) $on->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$endpoint'));
+        $parameter = $on->getParameter('nowo_time_track.calendar');
+        self::assertIsArray($parameter);
+        self::assertArrayNotHasKey('oauth', $parameter, 'the OAuth secrets stay out of the parameter bag');
+        self::assertSame('Calendars.Read', $parameter['microsoft_scope']);
+    }
+
+    public function testAnUnknownMicrosoftScopeIsRefused(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->load(['calendar' => ['microsoft_scope' => 'Calendars.ReadWrite']]);
     }
 
     public function testServerModeWiresTheAdapters(): void
@@ -79,7 +129,12 @@ final class CalendarExtensionTest extends TestCase
     {
         $container = $this->load(['calendar' => ['enabled' => true, 'task_key_resolver' => 'app.keys', 'modes' => ['local']]]);
 
-        self::assertFalse($container->hasDefinition(CalendarHttpClient::class));
+        // Since 1.19: the readers and OAuth helpers are registered for host meeting syncs, but the suggestion sync
+        // gets no source while calendar suggestions are off.
+        self::assertTrue($container->hasDefinition(CalendarHttpClient::class));
+        $sources = $container->getDefinition(CalendarSyncService::class)->getArgument('$sources');
+        self::assertInstanceOf(IteratorArgument::class, $sources);
+        self::assertSame([], $sources->getValues());
         $sources = $container->getDefinition(CalendarSyncService::class)->getArgument('$sources');
         self::assertInstanceOf(IteratorArgument::class, $sources);
         self::assertSame([], $sources->getValues());
