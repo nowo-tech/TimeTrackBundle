@@ -19,7 +19,8 @@ use SensitiveParameter;
  *
  * Since 1.20 the OAuth app may come from a host {@see CalendarOAuthAppProviderInterface} (`calendar.oauth.app_provider`),
  * read on every call: without an app there, {@see self::isConfigured()} is false, the consent URL, code exchange and
- * refresh throw `not_configured`, and {@see self::revoke()} returns false without a request.
+ * refresh throw `not_configured`. {@see self::revoke()} never needs the app (Google revokes by the token alone, audit
+ * ML-L2; Microsoft never revokes).
  */
 interface CalendarOAuthClientInterface
 {

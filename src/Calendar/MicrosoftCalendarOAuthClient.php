@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Calendar;
 
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
+use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 
 use function in_array;
@@ -28,6 +29,9 @@ final readonly class MicrosoftCalendarOAuthClient implements CalendarOAuthClient
 {
     public const LOGIN_BASE = 'https://login.microsoftonline.com/';
 
+    /** Since 1.20 (audit ML-I2): a tenant id, domain or alias; `.` and `..` are refused (path segments). */
+    public const TENANT_PATTERN = '/^(?!\.{1,2}$)[A-Za-z0-9.-]{1,64}$/D';
+
     /** Graph resource prefix of the delegated scopes. */
     public const GRAPH_SCOPE_PREFIX = 'https://graph.microsoft.com/';
 
@@ -43,6 +47,7 @@ final readonly class MicrosoftCalendarOAuthClient implements CalendarOAuthClient
      *                       with an app provider, the default of an app without a tenant
      * @param string $scope `Calendars.ReadBasic` or `Calendars.Read` (`calendar.microsoft_scope`)
      * @param CalendarOAuthAppProviderInterface|null $appProvider Since 1.20: runtime app source (`calendar.oauth.app_provider`)
+     * @param LoggerInterface|null $logger Since 1.20: warns when the app provider throws (no message, no secret)
      */
     public function __construct(
         private CalendarTokenEndpoint $endpoint,
@@ -52,12 +57,13 @@ final readonly class MicrosoftCalendarOAuthClient implements CalendarOAuthClient
         string $tenant = 'common',
         private string $scope = MicrosoftCalendarEventSource::SCOPE_READ_BASIC,
         ?CalendarOAuthAppProviderInterface $appProvider = null,
+        ?LoggerInterface $logger = null,
     ) {
         if (!in_array($scope, [MicrosoftCalendarEventSource::SCOPE_READ_BASIC, MicrosoftCalendarEventSource::SCOPE_READ], true)) {
             throw new InvalidArgumentException(sprintf('The Microsoft calendar scope must be "%s" or "%s".', MicrosoftCalendarEventSource::SCOPE_READ_BASIC, MicrosoftCalendarEventSource::SCOPE_READ));
         }
         $this->tenant = $this->tenant($tenant);
-        $this->app    = new CalendarOAuthAppSource(CalendarProvider::Microsoft, $clientId, $clientSecret, $this->tenant, $appProvider);
+        $this->app    = new CalendarOAuthAppSource(CalendarProvider::Microsoft, $clientId, $clientSecret, $this->tenant, $appProvider, $logger);
     }
 
     /**
@@ -159,6 +165,6 @@ final readonly class MicrosoftCalendarOAuthClient implements CalendarOAuthClient
 
     private function tenant(string $tenant): string
     {
-        return preg_match('/^[A-Za-z0-9.-]{1,64}$/D', $tenant) === 1 ? $tenant : 'common';
+        return preg_match(self::TENANT_PATTERN, $tenant) === 1 ? $tenant : 'common';
     }
 }

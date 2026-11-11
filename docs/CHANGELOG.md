@@ -68,16 +68,28 @@ option the behaviour is that of 1.19.1.
   worker with kernel reset false or a Messenger worker). With a provider the static client ids and secrets are ignored
   and not compiled into the container; `calendar.oauth.microsoft.tenant` is the default of an app without a tenant.
 - **`Calendar\CalendarOAuthApp`**: final readonly value object (`clientId`, client secret, optional `tenant`). The secret
-  is read only through `revealClientSecret()`; `__toString()`, `__debugInfo()` (var_dump, VarDumper, the profiler),
-  `json_encode()`, `__serialize()`, `var_export()`, casts, Serializer and Monolog see `[redacted]`, and unserializing
-  throws.
+  is read only through `revealClientSecret()`; `__toString()`, `__debugInfo()` (var_dump, VarDumper and the profiler's
+  dump panel), `json_encode()`, `__serialize()`, `var_export()`, an `(array)` cast, Serializer and Monolog see
+  `[redacted]`, and unserializing throws. Deliberate reflection on the internal wrapper still reads it (audit ML-I1).
 - **`Calendar\CalendarOAuthClients`**: provider discovery for a host Integrations page, its connect buttons and its
   refresh job (`configuredProviders()`, `isConfigured(CalendarProvider)`, `client(CalendarProvider)`), asked live on
   each call.
 - **`CalendarSyncException::NOT_CONFIGURED`** (`not_configured`): with an app provider, a null app, an empty client id or
   secret, or an exception from the provider (its message dropped) hides the provider (`isConfigured()` false) and fails
-  its calls closed: `authorizationUrl()`, `exchangeCode()` and `refresh()` throw `not_configured` without a request,
-  `revoke()` returns false without a request. Stored tokens are never touched by the bundle.
+  its calls closed: `authorizationUrl()`, `exchangeCode()` and `refresh()` throw `not_configured` without a request.
+  Google `revoke()` needs no client credentials and still revokes (audit ML-L2). Stored tokens are never touched by
+  the bundle. A provider exception logs a warning on the `time_track` channel with the provider name and the exception
+  class only (optional PSR-3 logger, audit ML-I3).
+- **`calendar.http_client`** (service id, default the framework `http_client`): the HTTP client of the calendar readers
+  and the OAuth token calls, so a host can use a client the profiler does not trace (audit ML-L1).
+
+### Security
+
+- Audit ML (Pass, no GHSA). ML-L1 (since 1.19.0): in debug, the profiler's HTTP Client panel records token request
+  bodies in plain text (`client_secret`, `code`, `code_verifier`, `refresh_token`); the redaction claims now name
+  VarDumper and the dump panel only, SECURITY.md says never to enable the profiler where real secrets are used, and
+  `calendar.http_client` lets a host bypass the traced client. ML-I2: Microsoft tenants `.` and `..` are refused
+  (`common`); the pattern is `MicrosoftCalendarOAuthClient::TENANT_PATTERN`.
 
 ### Unchanged
 
@@ -94,8 +106,11 @@ option the behaviour is that of 1.19.1.
 - `CalendarOAuthAppTest`: the secret stays out of `__toString()`, `serialize()`, `var_export()`, `var_dump()`,
   `print_r()`, VarDumper, `json_encode()`, casts, Serializer and Monolog.
 - `CalendarOAuthAppWorkerTest`: one kernel kept alive (debug off, services resetter never run), 150 rounds alternating
-  app one, app two and no app with a request through `http_kernel` in between; every call uses the app stored at that
-  moment and no secret reaches the test logger.
+  apps one, apps two and no app with a request through `http_kernel` in between, for Google and Microsoft (tenant
+  alternating, token URL asserted each round); every call uses the app stored at that moment, Google still revokes
+  without an app, and no secret reaches the test logger.
+- Audit ML: Google revoke without an app (and with a failing store), `.` / `..` tenants, the provider-failure warning
+  without the secret or the message, the `calendar.http_client` wiring.
 - `CalendarExtensionTest`: the provider wiring, no static secret compiled in with a provider, a blank service id
   refused.
 

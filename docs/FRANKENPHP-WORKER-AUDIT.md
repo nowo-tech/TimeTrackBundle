@@ -41,8 +41,9 @@ helpers.
 - **No secret in memory between calls** beyond the static configuration of 1.19 (which is not compiled in when a
   provider is set): `CalendarOAuthApp` instances live for one call.
 - Test: `tests/Functional/CalendarOAuthAppWorkerTest.php` — one kernel (debug off), services resetter never run, 150
-  rounds alternating app one, app two and no app, a request through `http_kernel` between rounds; every consent URL and
-  token request carries the app stored at that moment, a removed app hides the provider and sends nothing, and no
+  rounds alternating apps one, apps two and no app (Google and Microsoft, the Microsoft tenant alternating), a request
+  through `http_kernel` between rounds; every consent URL, token URL and token request carries the app stored at that
+  moment, a removed app hides the provider and sends no token call (Google still revokes by the token alone), and no
   secret reaches the test logger. Igor and PHPStan (`ruleset-worker`) clean.
 
 ## Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)

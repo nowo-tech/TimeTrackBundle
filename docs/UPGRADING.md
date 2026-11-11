@@ -88,11 +88,17 @@ To keep the apps in your database instead (encrypted, edited in an admin page, w
    `.env` values (with a provider they are ignored and no longer compiled into the container).
 3. Handle the new `CalendarSyncException::NOT_CONFIGURED` (`not_configured`) where you call `authorizationUrl()`,
    `exchangeCode()` or `refresh()`: the app was removed. Show it on the connection, skip it in your refresh job and keep
-   the stored tokens. `revoke()` returns false in that case.
-4. Optional: use `Calendar\CalendarOAuthClients` (`configuredProviders()`, `isConfigured()`) for provider discovery.
+   the stored tokens. In a Messenger refresh handler, rethrow it as
+   `Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException` so the message is not retried in a
+   loop. `revoke()` needs no app (Google revokes by the token alone; Microsoft never revokes).
+4. If the Symfony profiler can be on where real secrets are used, set `calendar.http_client` to a client it does not
+   trace: its HTTP Client panel records token request bodies, `client_secret` included (audit ML-L1). Better: never
+   enable the profiler there.
+5. Optional: use `Calendar\CalendarOAuthClients` (`configuredProviders()`, `isConfigured()`) for provider discovery.
 
 Code that builds `GoogleCalendarOAuthClient` / `MicrosoftCalendarOAuthClient` by hand keeps working; both take an
-optional last argument `$appProvider`.
+optional `$appProvider` and `$logger` (PSR-3) after the existing ones. Microsoft tenants `.` and `..` now fall back to
+`common` (audit ML-I2).
 
 ## To 1.19.1
 

@@ -130,7 +130,7 @@ if (!$batch->complete) {
   provider messages. A bad calendar id (empty, > 512 bytes,
   control characters) throws `InvalidArgumentException`.
 - `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` keep ids and personal data behind methods:
-  `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, Symfony VarDumper (`dump()`, the profiler),
+  `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, Symfony VarDumper (`dump()`, the dump panel),
   Symfony Serializer and Monolog see `[redacted]`, and serialization
   throws (audit LZ-L1). Build your read model from them inside the sync and keep only your minimal fields.
 
@@ -150,8 +150,8 @@ Changing it does not widen existing grants: bump your consent version so users r
 
 Optional: `GoogleCalendarOAuthClient` and `MicrosoftCalendarOAuthClient` (`CalendarOAuthClientInterface`), configured
 under `calendar.oauth` (empty client id or secret = `isConfigured()` false: hide the provider). Since 1.20 the apps can
-come from your database at runtime (`calendar.oauth.app_provider`, read on every call; without an app the calls fail
-with `not_configured`): see [USAGE.md](USAGE.md#calendar-oauth-apps-at-runtime-120).
+come from your database at runtime (`calendar.oauth.app_provider`, read on every call; without an app the token calls
+fail with `not_configured`, Google `revoke()` still works): see [USAGE.md](USAGE.md#calendar-oauth-apps-at-runtime-120).
 
 ```php
 $pkce  = CalendarPkce::create();

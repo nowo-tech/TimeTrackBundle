@@ -6,12 +6,16 @@ namespace Nowo\TimeTrackBundle\Calendar;
 
 use Exception;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
+use Psr\Log\LoggerInterface;
 use SensitiveParameter;
+
+use function get_debug_type;
 
 /**
  * Since 1.20: where an OAuth client reads its app. With a host {@see CalendarOAuthAppProviderInterface} the app is
  * asked for on every call and never kept (REQ-RUNTIME-002); a null answer, an incomplete app or an exception (its
- * message dropped) means "not configured" and the token calls fail closed. Without one, the static
+ * message dropped; audit ML-I3: a warning with the provider name and the exception class only) means "not configured"
+ * and the token calls fail closed. Without one, the static
  * `calendar.oauth.*` values apply exactly as in 1.19.
  *
  * @internal
@@ -26,6 +30,7 @@ final readonly class CalendarOAuthAppSource
      * @param string $clientSecret Static client secret (1.19 behaviour, used without a provider)
      * @param string|null $tenant Static Microsoft tenant
      * @param CalendarOAuthAppProviderInterface|null $appProvider Host runtime provider (`calendar.oauth.app_provider`)
+     * @param LoggerInterface|null $logger Warns when the host provider throws (provider name and exception class only)
      */
     public function __construct(
         private CalendarProvider $provider,
@@ -34,6 +39,7 @@ final readonly class CalendarOAuthAppSource
         string $clientSecret = '',
         ?string $tenant = null,
         private ?CalendarOAuthAppProviderInterface $appProvider = null,
+        private ?LoggerInterface $logger = null,
     ) {
         $this->static = new CalendarOAuthApp($clientId, $clientSecret, $tenant);
     }
@@ -62,18 +68,6 @@ final readonly class CalendarOAuthAppSource
         return $app;
     }
 
-    /**
-     * The app for one call, or null when the host provider has none.
-     */
-    public function tryForCall(): ?CalendarOAuthApp
-    {
-        try {
-            return $this->forCall();
-        } catch (CalendarSyncException) {
-            return null;
-        }
-    }
-
     private function current(): ?CalendarOAuthApp
     {
         if (!$this->appProvider instanceof CalendarOAuthAppProviderInterface) {
@@ -81,8 +75,13 @@ final readonly class CalendarOAuthAppSource
         }
         try {
             return $this->appProvider->app($this->provider->value);
-        } catch (Exception) {
-            // Fail closed; the host message may carry store details, so it is dropped.
+        } catch (Exception $e) {
+            // Fail closed; the host message may carry store details or the secret, so only its class is logged.
+            $this->logger?->warning('The calendar OAuth app provider failed; the provider is treated as not configured.', [
+                'provider'        => $this->provider->value,
+                'exception_class' => get_debug_type($e),
+            ]);
+
             return null;
         }
     }

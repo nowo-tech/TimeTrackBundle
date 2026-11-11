@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Calendar;
 
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
+use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 
 /**
@@ -32,6 +33,7 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
      * @param string $clientId OAuth client id (`calendar.oauth.google.client_id`; unused with an app provider)
      * @param string $clientSecret OAuth client secret (`calendar.oauth.google.client_secret`; unused with an app provider)
      * @param CalendarOAuthAppProviderInterface|null $appProvider Since 1.20: runtime app source (`calendar.oauth.app_provider`)
+     * @param LoggerInterface|null $logger Since 1.20: warns when the app provider throws (no message, no secret)
      */
     public function __construct(
         private CalendarTokenEndpoint $endpoint,
@@ -39,8 +41,9 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
         #[SensitiveParameter]
         string $clientSecret = '',
         ?CalendarOAuthAppProviderInterface $appProvider = null,
+        ?LoggerInterface $logger = null,
     ) {
-        $this->app = new CalendarOAuthAppSource(CalendarProvider::Google, $clientId, $clientSecret, null, $appProvider);
+        $this->app = new CalendarOAuthAppSource(CalendarProvider::Google, $clientId, $clientSecret, null, $appProvider, $logger);
     }
 
     /**
@@ -122,10 +125,12 @@ final readonly class GoogleCalendarOAuthClient implements CalendarOAuthClientInt
     }
 
     /**
-     * `POST /revoke` (best effort). Since 1.20: false without a configured app (fail closed), nothing is sent.
+     * `POST /revoke` (best effort). Google revokes by the token alone (no client credentials), so it works whether or
+     * not an app is configured: disconnecting or erasing a connection after the app was removed still ends the grant
+     * (audit ML-L2).
      */
     public function revoke(#[SensitiveParameter] string $token): bool
     {
-        return $token !== '' && $this->app->tryForCall() instanceof CalendarOAuthApp && $this->endpoint->revoke(self::REVOKE_URL, ['token' => $token]);
+        return $token !== '' && $this->endpoint->revoke(self::REVOKE_URL, ['token' => $token]);
     }
 }

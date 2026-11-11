@@ -559,7 +559,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ]));
             $matcher = new Reference(CalendarEventMatcher::class);
         }
-        $this->registerCalendarReaders($container, $calendar, $clockRef);
+        $this->registerCalendarReaders($container, $calendar, $clockRef, $loggerRef);
         $sources = [];
         // The adapters need symfony/http-client (a `suggest`): without the framework `http_client` a sync fails with
         // the code `no_http_client`.
@@ -662,10 +662,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      *
      * @param array<string, mixed> $calendar Processed `calendar` configuration
      */
-    private function registerCalendarReaders(ContainerBuilder $container, array $calendar, Reference $clockRef): void
+    private function registerCalendarReaders(ContainerBuilder $container, array $calendar, Reference $clockRef, Reference $loggerRef): void
     {
-        /** @var array{max_pages: int, microsoft_scope: string, oauth: array{app_provider: string|null, google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
-        $httpRef = new Reference('http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        /** @var array{max_pages: int, microsoft_scope: string, http_client: string, oauth: array{app_provider: string|null, google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
+        // Since 1.20 (audit ML-L1): `calendar.http_client`; the framework client is optional (null without
+        // symfony/http-client), a host's own client id must exist.
+        $httpRef = $calendar['http_client'] === 'http_client'
+            ? new Reference('http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE)
+            : new Reference($calendar['http_client']);
         $container->setDefinition(CalendarHttpClient::class, (new Definition(CalendarHttpClient::class))
             ->setArguments(['$httpClient' => $httpRef, '$clock' => $clockRef]));
         $container->setDefinition(GoogleCalendarEventSource::class, (new Definition(GoogleCalendarEventSource::class))
@@ -685,7 +689,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$clientId'     => $appRef instanceof Reference ? '' : $google['client_id'],
                 '$clientSecret' => $appRef instanceof Reference ? '' : $google['client_secret'],
                 '$appProvider'  => $appRef,
-            ]));
+                '$logger'       => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $microsoft = $calendar['oauth']['microsoft'];
         $container->setDefinition(MicrosoftCalendarOAuthClient::class, (new Definition(MicrosoftCalendarOAuthClient::class))
             ->setArguments([
@@ -695,7 +701,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$tenant'       => $microsoft['tenant'],
                 '$scope'        => $calendar['microsoft_scope'],
                 '$appProvider'  => $appRef,
-            ]));
+                '$logger'       => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(CalendarOAuthClients::class, (new Definition(CalendarOAuthClients::class))
             ->setArguments([
                 '$google'    => new Reference(GoogleCalendarOAuthClient::class),

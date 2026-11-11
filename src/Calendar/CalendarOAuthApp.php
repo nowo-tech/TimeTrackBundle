@@ -18,8 +18,11 @@ use function trim;
  * secret and, for Microsoft, the tenant — as a {@see CalendarOAuthAppProviderInterface} returns it at runtime.
  *
  * The secret is read through {@see self::revealClientSecret()} only. `__toString()`, debug output (`var_dump()`,
- * `print_r()`, Symfony VarDumper and the profiler), `json_encode()`, `serialize()`, `var_export()`, `(array)` casts
- * and `get_object_vars()` see `[redacted]` or an empty closure; unserializing throws (a redacted copy is no app).
+ * `print_r()`, Symfony VarDumper and the profiler's dump panel), `json_encode()`, `serialize()`, `var_export()`, an
+ * `(array)` cast and `get_object_vars()` see `[redacted]` or an empty closure; unserializing throws (a redacted copy is
+ * no app). This guards against accidental output, not deliberate access: reflection on the internal wrapper, or a cast
+ * of that wrapper itself, still reaches the secret (audit ML-I1). The token request bodies are another channel: in
+ * debug, the profiler's HTTP Client panel records them in plain text (audit ML-L1, see `calendar.http_client`).
  * Build one per call from the host store; never cache it in a long-lived service.
  */
 final readonly class CalendarOAuthApp implements JsonSerializable, Stringable

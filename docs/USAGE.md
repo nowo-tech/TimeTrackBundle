@@ -627,7 +627,7 @@ final class CalendarOAuthSettingsSection extends AbstractSettingsSection
         yield SettingField::string('microsoft_client_id', null, 'Microsoft client id');
         yield SettingField::secret('microsoft_client_secret', 'Microsoft client secret');
         yield SettingField::string('microsoft_tenant', null, 'Microsoft tenant', 'common, organizations, consumers or a tenant id', false, [
-            new Regex('/^[A-Za-z0-9.-]{1,64}$/D'),
+            new Regex('/^(?!\.{1,2}$)[A-Za-z0-9.-]{1,64}$/D'), // MicrosoftCalendarOAuthClient::TENANT_PATTERN
         ]);
     }
 }
@@ -663,21 +663,32 @@ final readonly class InstanceSettingsCalendarOAuthApps implements CalendarOAuthA
 ```
 
 - **Read on every use, never kept** (REQ-RUNTIME-002): the helpers ask the provider once per call — consent URL, code
-  exchange, each refresh, revoke, `isConfigured()` — and keep nothing, so a rotated secret applies to the next call in
+  exchange, each refresh, `isConfigured()` — and keep nothing, so a rotated secret applies to the next call in
   FrankenPHP worker mode with kernel reset false and in long-running Messenger workers. Do not memoise the app in your
   provider either; InstanceSettings' own memo lasts one request or one message.
 - **Discovery:** `Calendar\CalendarOAuthClients::configuredProviders()` / `isConfigured(CalendarProvider)` (or each
   helper's `isConfigured()`) for the Integrations page, the connect buttons and the refresh job. A provider whose app
   was removed disappears on the next call.
 - **Removed app, existing connections:** `authorizationUrl()`, `exchangeCode()` and `refresh()` throw
-  `CalendarSyncException('not_configured')` without a request; `revoke()` returns false without a request. Treat
-  `not_configured` as "integration switched off": show it on the connection, skip the connection in the refresh job
-  (no retry loop) and **keep the stored tokens** — the bundle deletes nothing, and the connection works again once an
-  administrator restores the app. Only `token_expired` means the user must reconnect.
+  `CalendarSyncException('not_configured')` without a request. Treat `not_configured` as "integration switched off":
+  show it on the connection, skip the connection in the refresh job (no retry loop; in a Messenger handler throw
+  `UnrecoverableMessageHandlingException`) and **keep the stored tokens** — the bundle deletes nothing, and the
+  connection works again once an administrator restores the app. Only `token_expired` means the user must reconnect.
+- **Disconnecting or erasing with the app removed:** `revoke()` needs no app. Google revokes by the token alone, so the
+  grant still ends at Google (audit ML-L2); Microsoft Graph never revokes (tell the user to remove the app at
+  https://myapps.microsoft.com). Delete your stored tokens whatever it answers.
 - **The secret:** `CalendarOAuthApp::revealClientSecret()` is the only way to read it. `__toString()`, debug output
-  (`var_dump()`, VarDumper, the profiler), `json_encode()`, `serialize()`, `var_export()`, casts, Serializer and Monolog
-  see `[redacted]`; unserializing throws. An exception thrown by your provider is treated as "not configured" and its
-  message is dropped, so a store error never reaches the bundle's errors.
+  (`var_dump()`, `print_r()`, VarDumper and the profiler's dump panel), `json_encode()`, `serialize()`,
+  `var_export()`, an `(array)` cast, Serializer and Monolog see `[redacted]`; unserializing throws. This prevents
+  accidental output, not deliberate access: reflection on the internal wrapper, or a cast of that wrapper itself, still
+  reads it (audit ML-I1).
+- **The profiler's HTTP Client panel is not redacted** (audit ML-L1): in debug, `TraceableHttpClient` records every
+  token request body in plain text — `client_secret`, `code`, `code_verifier`, `refresh_token`. Never enable the
+  profiler where real secrets are used, or point `calendar.http_client` at a client the profiler does not trace (for
+  example a plain `HttpClient::create()` service); it carries the readers' Bearer calls too.
+- **A failing store:** an exception thrown by your provider is treated as "not configured"; its message is dropped and
+  the `time_track` logger gets a warning with the provider name and the exception class only (audit ML-I3), so a
+  broken key does not look like "switched off" in your logs.
 - Without `app_provider` nothing changes: the static values apply exactly as in 1.19.
 
 ## Standard Symfony host

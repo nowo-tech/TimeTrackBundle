@@ -15,7 +15,9 @@ use Nowo\TimeTrackBundle\Calendar\GoogleCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
+use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -23,9 +25,12 @@ use Throwable;
 
 use function array_shift;
 use function count;
+use function implode;
+use function in_array;
 use function is_string;
 use function parse_str;
 use function parse_url;
+use function preg_match;
 use function str_repeat;
 
 use const PHP_URL_QUERY;
@@ -111,18 +116,76 @@ final class CalendarOAuthAppProviderTest extends TestCase
                 $this->assertNotConfigured(static fn (): string => $client->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge));
                 $this->assertNotConfigured(static fn (): CalendarTokens => $client->exchangeCode('code-x', $pkce->verifier(), self::REDIRECT));
                 $this->assertNotConfigured(static fn (): CalendarTokens => $client->refresh('rt-x'));
-                self::assertFalse($client->revoke('rt-x'));
             }
+            self::assertFalse($microsoft->revoke('rt-x'), 'Graph never revokes');
         }
-        self::assertSame([], $this->requests, 'nothing is sent without an app');
+        self::assertSame([], $this->requests, 'no token call is sent without an app');
 
         $apps->apps = ['microsoft' => new CalendarOAuthApp('ms', $this->secret('ms'))];
         self::assertSame([CalendarProvider::Microsoft], $clients->configuredProviders(), 'Google hidden, Microsoft offered');
         self::assertSame($google, $clients->client(CalendarProvider::Google));
         $apps->apps = ['google' => new CalendarOAuthApp('g', $this->secret('g')), 'microsoft' => new CalendarOAuthApp('ms', $this->secret('ms'))];
         self::assertSame([CalendarProvider::Google, CalendarProvider::Microsoft], $clients->configuredProviders());
-        self::assertTrue($google->revoke('rt-x'), 'with an app Google revokes again');
+        self::assertTrue($google->revoke('rt-x'), 'with an app Google revokes');
         self::assertCount(1, $this->requests);
+    }
+
+    public function testGoogleRevokesTheGrantEvenWithoutAnApp(): void
+    {
+        // Audit ML-L2: revoking needs no client credentials, so disconnecting or erasing a connection after the app was
+        // removed still ends the grant at Google.
+        $apps   = new MutableCalendarOAuthAppProvider();
+        $google = new GoogleCalendarOAuthClient($this->endpoint([new MockResponse(''), new MockResponse('')]), appProvider: $apps);
+
+        self::assertFalse($google->isConfigured());
+        $apps->asked = [];
+        self::assertTrue($google->revoke('rt-x'));
+        $apps->failing = true;
+        self::assertTrue($google->revoke('rt-y'), 'a store that is down does not block the revoke either');
+        self::assertSame([GoogleCalendarOAuthClient::REVOKE_URL, GoogleCalendarOAuthClient::REVOKE_URL], [$this->requests[0]['url'], $this->requests[1]['url']]);
+        self::assertSame(['token=rt-x', 'token=rt-y'], [$this->requests[0]['body'], $this->requests[1]['body']], 'the token only, no client credentials');
+        self::assertSame([], $apps->asked, 'the app is not even looked up');
+        self::assertFalse($google->revoke(''), 'nothing to revoke');
+    }
+
+    public function testAMalformedTenantFallsBackToCommon(): void
+    {
+        // Audit ML-I2: `.` and `..` would be path segments of the login URL.
+        $apps   = new MutableCalendarOAuthAppProvider();
+        $client = new MicrosoftCalendarOAuthClient($this->endpoint(), '', '', '..', appProvider: $apps);
+        $pkce   = CalendarPkce::create();
+
+        foreach (['.', '..', 'a/b', '', 'contoso.example', '.well-known', 'x..y'] as $tenant) {
+            $apps->apps['microsoft'] = new CalendarOAuthApp('ms', $this->secret('t'), $tenant);
+            $expected                = in_array($tenant, ['contoso.example', '.well-known', 'x..y'], true) ? $tenant : 'common';
+            self::assertStringStartsWith('https://login.microsoftonline.com/' . $expected . '/oauth2/v2.0/authorize?', $client->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge), 'tenant "' . $tenant . '"');
+        }
+        $apps->apps['microsoft'] = new CalendarOAuthApp('ms', $this->secret('t'));
+        self::assertStringStartsWith('https://login.microsoftonline.com/common/', $client->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge), 'a configured ".." tenant is refused too');
+        self::assertSame(1, preg_match(MicrosoftCalendarOAuthClient::TENANT_PATTERN, 'organizations'));
+    }
+
+    public function testAFailingStoreIsLoggedWithoutItsMessageOrTheSecret(): void
+    {
+        // Audit ML-I3: a broken store key must not look like "switched off", but its message never reaches the log.
+        $apps                    = new MutableCalendarOAuthAppProvider();
+        $apps->apps['microsoft'] = new CalendarOAuthApp('id', $this->secret('logged'));
+        $apps->failing           = true;
+        $logger                  = new RecordingLogger();
+        $client                  = new MicrosoftCalendarOAuthClient($this->endpoint(), appProvider: $apps, logger: $logger);
+
+        self::assertFalse($client->isConfigured());
+        $this->assertNotConfigured(static fn (): CalendarTokens => $client->refresh('rt-x'));
+        self::assertCount(2, $logger->records);
+        self::assertSame(['warning', 'The calendar OAuth app provider failed; the provider is treated as not configured.'], [$logger->records[0]['level'], $logger->records[0]['message']]);
+        self::assertSame(['provider' => 'microsoft', 'exception_class' => RuntimeException::class], $logger->records[0]['context']);
+        $log = implode("\n", [...$logger->messages(), ...$logger->contextValues()]);
+        self::assertStringNotContainsString($this->secret('logged'), $log);
+        self::assertStringNotContainsString('store down', $log);
+
+        $apps->failing = false;
+        self::assertTrue($client->isConfigured());
+        self::assertCount(2, $logger->records, 'nothing logged when the store answers');
     }
 
     public function testAFailingStoreFailsClosedWithoutItsMessage(): void
@@ -134,7 +197,6 @@ final class CalendarOAuthAppProviderTest extends TestCase
 
         self::assertFalse($client->isConfigured());
         $this->assertNotConfigured(static fn (): CalendarTokens => $client->refresh('rt-x'), $this->secret('leak'));
-        self::assertFalse($client->revoke('rt-x'));
         self::assertSame([], $this->requests);
     }
 

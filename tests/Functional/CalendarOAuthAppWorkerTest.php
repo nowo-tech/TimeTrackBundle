@@ -8,6 +8,7 @@ use Nowo\TimeTrackBundle\Calendar\CalendarOAuthApp;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
 use Nowo\TimeTrackBundle\Calendar\CalendarPkce;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncException;
+use Nowo\TimeTrackBundle\Calendar\GoogleCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
@@ -31,10 +32,11 @@ use const PHP_URL_QUERY;
 
 /**
  * Since 1.20 (REQ-RUNTIME-002, Beacon request 2026-11-11): FrankenPHP worker mode with the kernel kept alive and the
- * services resetter never run. One container serves 150 rounds that alternate the host's OAuth app — app one, app two,
- * none — with a request through `http_kernel` between them: every call uses the app stored at that moment (consent
- * URL, code exchange, refresh), a removed app hides the provider and fails its calls closed, and no secret reaches the
- * log. Every secret here is a fake marker built at run time.
+ * services resetter never run. One container serves 150 rounds that alternate the host's OAuth apps (Google and
+ * Microsoft, the Microsoft tenant alternating too) — apps one, apps two, none — with a request through `http_kernel`
+ * between them: every call uses the app stored at that moment (consent URL, token URL, code exchange, refresh), a
+ * removed app hides the provider and fails its calls closed (Google still revokes by the token alone), and no secret
+ * reaches the log. Every secret here is a fake marker built at run time.
  */
 final class CalendarOAuthAppWorkerTest extends KernelTestCase
 {
@@ -63,9 +65,12 @@ final class CalendarOAuthAppWorkerTest extends KernelTestCase
         self::assertInstanceOf(CalendarOAuthClients::class, $clients);
         self::assertInstanceOf(NoNetworkHttpResponses::class, $network);
         self::assertInstanceOf(RecordingLogger::class, $logger);
-        $google  = $clients->client(CalendarProvider::Google);
-        $pkce    = CalendarPkce::create();
-        $secrets = [];
+        $google    = $clients->client(CalendarProvider::Google);
+        $microsoft = $clients->client(CalendarProvider::Microsoft);
+        $pkce      = CalendarPkce::create();
+        $secrets   = [];
+        // Audit ML-I4: the Microsoft app alternates its tenant (its own, then none = the configured default `common`).
+        $tenants = [0 => 'tenant-one.example', 1 => null];
 
         for ($round = 0; $round < 150; ++$round) {
             $this->request();
@@ -74,42 +79,56 @@ final class CalendarOAuthAppWorkerTest extends KernelTestCase
                 $apps->apps = [];
                 self::assertSame([], $clients->configuredProviders(), sprintf('round %d: no app, no provider', $round));
                 $sent = count($network->bodies);
-                foreach ([
-                    static fn (): string => $google->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge),
-                    static fn (): mixed => $google->exchangeCode('code-x', $pkce->verifier(), self::REDIRECT),
-                    static fn (): mixed => $google->refresh('rt-x'),
-                ] as $call) {
-                    try {
-                        $call();
-                        self::fail(sprintf('round %d: refused without an app', $round));
-                    } catch (CalendarSyncException $e) {
-                        self::assertSame(CalendarSyncException::NOT_CONFIGURED, $e->errorCode);
+                foreach ([$google, $microsoft] as $client) {
+                    foreach ([
+                        static fn (): string => $client->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge),
+                        static fn (): mixed => $client->exchangeCode('code-x', $pkce->verifier(), self::REDIRECT),
+                        static fn (): mixed => $client->refresh('rt-x'),
+                    ] as $call) {
+                        try {
+                            $call();
+                            self::fail(sprintf('round %d: refused without an app', $round));
+                        } catch (CalendarSyncException $e) {
+                            self::assertSame(CalendarSyncException::NOT_CONFIGURED, $e->errorCode);
+                        }
                     }
                 }
+                self::assertCount($sent, $network->bodies, sprintf('round %d: no token call without an app', $round));
+                // Audit ML-L2: Google still revokes by the token alone (the test network answers 503: false).
                 self::assertFalse($google->revoke('rt-x'));
-                self::assertCount($sent, $network->bodies, sprintf('round %d: nothing sent without an app', $round));
+                self::assertSame('token=rt-x', $network->bodies[count($network->bodies) - 1]);
+                self::assertFalse($microsoft->revoke('rt-x'));
 
                 continue;
             }
-            $id         = 'worker-id-' . $variant;
-            $secret     = 'REDACTED-TEST-worker-' . $variant . '-' . str_repeat('w', 4);
-            $secrets[]  = $secret;
-            $apps->apps = ['google' => new CalendarOAuthApp($id, $secret)];
-            self::assertSame([CalendarProvider::Google], $clients->configuredProviders(), sprintf('round %d', $round));
-            parse_str((string) parse_url($google->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge), PHP_URL_QUERY), $query);
-            self::assertSame($id, $query['client_id'] ?? null, sprintf('round %d: consent URL with the current app', $round));
-            foreach ([
-                static fn (): mixed => $google->exchangeCode('code-x', $pkce->verifier(), self::REDIRECT),
-                static fn (): mixed => $google->refresh('rt-x'),
-            ] as $call) {
-                try {
-                    $call();
-                    self::fail('the test network answers 503');
-                } catch (CalendarSyncException $e) {
-                    self::assertSame(CalendarSyncException::PROVIDER_ERROR, $e->errorCode);
+            $tenant     = $tenants[$variant];
+            $apps->apps = [
+                'google'    => new CalendarOAuthApp('worker-id-' . $variant, $this->secret('google', $variant)),
+                'microsoft' => new CalendarOAuthApp('worker-ms-' . $variant, $this->secret('microsoft', $variant), $tenant),
+            ];
+            $secrets[] = $this->secret('google', $variant);
+            $secrets[] = $this->secret('microsoft', $variant);
+            self::assertSame([CalendarProvider::Google, CalendarProvider::Microsoft], $clients->configuredProviders(), sprintf('round %d', $round));
+            $base = 'https://login.microsoftonline.com/' . ($tenant ?? 'common') . '/oauth2/v2.0/';
+            self::assertStringStartsWith($base . 'authorize?', $microsoft->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge), sprintf('round %d: Microsoft consent URL with the current tenant', $round));
+            foreach (['google' => [$google, 'worker-id-', GoogleCalendarOAuthClient::TOKEN_URL], 'microsoft' => [$microsoft, 'worker-ms-', $base . 'token']] as $name => [$client, $idPrefix, $tokenUrl]) {
+                $id = $idPrefix . $variant;
+                parse_str((string) parse_url($client->authorizationUrl(self::REDIRECT, self::STATE, $pkce->challenge), PHP_URL_QUERY), $query);
+                self::assertSame($id, $query['client_id'] ?? null, sprintf('round %d: %s consent URL with the current app', $round, $name));
+                foreach ([
+                    static fn (): mixed => $client->exchangeCode('code-x', $pkce->verifier(), self::REDIRECT),
+                    static fn (): mixed => $client->refresh('rt-x'),
+                ] as $call) {
+                    try {
+                        $call();
+                        self::fail('the test network answers 503');
+                    } catch (CalendarSyncException $e) {
+                        self::assertSame(CalendarSyncException::PROVIDER_ERROR, $e->errorCode);
+                    }
+                    self::assertSame($tokenUrl, $network->urls[count($network->urls) - 1], sprintf('round %d: %s token URL', $round, $name));
+                    parse_str($network->bodies[count($network->bodies) - 1], $form);
+                    self::assertSame([$id, $this->secret($name, $variant)], [$form['client_id'] ?? null, $form['client_secret'] ?? null], sprintf('round %d: %s token call with the current app', $round, $name));
                 }
-                parse_str($network->bodies[count($network->bodies) - 1], $form);
-                self::assertSame([$id, $secret], [$form['client_id'] ?? null, $form['client_secret'] ?? null], sprintf('round %d: token call with the current app', $round));
             }
         }
 
@@ -117,6 +136,14 @@ final class CalendarOAuthAppWorkerTest extends KernelTestCase
         foreach ($secrets as $secret) {
             self::assertStringNotContainsString($secret, $log, 'no client secret in the log');
         }
+    }
+
+    /**
+     * A fake secret per provider and variant, built so no credential-like literal is committed.
+     */
+    private function secret(string $provider, int $variant): string
+    {
+        return 'REDACTED-TEST-' . $provider . '-' . $variant . '-' . str_repeat('w', 4);
     }
 
     /**

@@ -30,6 +30,7 @@ use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Reference;
 
 use function array_map;
@@ -124,6 +125,26 @@ final class CalendarExtensionTest extends TestCase
         self::assertSame('organizations', $on->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$tenant'), 'the default tenant of an app without one');
 
         self::assertNull($this->load(['calendar' => ['oauth' => ['app_provider' => null]]])->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$appProvider'));
+    }
+
+    public function testTheCalendarHttpClientCanBeReplaced(): void
+    {
+        // Audit ML-L1: a host can send the token calls through a client the profiler does not trace.
+        $default = $this->load([]);
+        foreach ([CalendarTokenEndpoint::class, CalendarHttpClient::class] as $service) {
+            $reference = $default->getDefinition($service)->getArgument('$httpClient');
+            self::assertInstanceOf(Reference::class, $reference);
+            self::assertSame(['http_client', ContainerInterface::NULL_ON_INVALID_REFERENCE], [(string) $reference, $reference->getInvalidBehavior()]);
+        }
+        self::assertSame('logger', (string) $default->getDefinition(GoogleCalendarOAuthClient::class)->getArgument('$logger'));
+
+        $custom = $this->load(['calendar' => ['http_client' => 'app.untraced_http_client']]);
+        foreach ([CalendarTokenEndpoint::class, CalendarHttpClient::class] as $service) {
+            $reference = $custom->getDefinition($service)->getArgument('$httpClient');
+            self::assertInstanceOf(Reference::class, $reference);
+            self::assertSame(['app.untraced_http_client', ContainerInterface::EXCEPTION_ON_INVALID_REFERENCE], [(string) $reference, $reference->getInvalidBehavior()]);
+        }
+        self::assertSame('logger', (string) $custom->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$logger'));
     }
 
     public function testABlankAppProviderIsRefused(): void
