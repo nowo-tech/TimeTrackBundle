@@ -100,7 +100,7 @@ final class CalendarClientApiTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(403, 'accept also needs entries:write');
         $this->api('OPTIONS', '/api/time-track/suggestions', null, null, ['HTTP_ORIGIN' => 'chrome-extension://functional']);
         self::assertResponseStatusCodeSame(204);
-        self::assertSame('GET, POST, DELETE, OPTIONS', $this->client->getResponse()->headers->get('Access-Control-Allow-Methods'));
+        self::assertSame('GET, POST, PATCH, DELETE, OPTIONS', $this->client->getResponse()->headers->get('Access-Control-Allow-Methods'));
         self::assertSame('Authorization, Content-Type, Idempotency-Key', $this->client->getResponse()->headers->get('Access-Control-Allow-Headers'), 'GG-I6');
         self::assertSame('no-store, private', $this->client->getResponse()->headers->get('Cache-Control'), 'GG-I1');
     }

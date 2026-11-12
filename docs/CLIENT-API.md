@@ -1,4 +1,4 @@
-# Client API reference (1.19, contract v0.3.1 + timetrack-next v1.1)
+# Client API reference (1.21, contract v0.3.1 + timetrack-next v1.1)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,8 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in 1.21 (billable)](#changes-in-121-billable)
+  - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
 - [Changes in 1.19 (links.workingTime)](#changes-in-119-linksworkingtime)
 - [Changes in 1.14 (calendar suggestions, manual entries)](#changes-in-114-calendar-suggestions-manual-entries)
   - [GET me/meetings (1.14)](#get-memeetings-114)
@@ -32,6 +34,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
   - [POST timer/discard-idle](#post-timerdiscard-idle)
   - [POST heartbeat (deprecated)](#post-heartbeat-deprecated)
   - [GET entries](#get-entries)
+  - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
   - [GET export](#get-export)
   - [POST device/code](#post-devicecode)
   - [POST device/token](#post-devicetoken)
@@ -39,6 +42,49 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in 1.21 (billable)
+
+Additive, in the current contract version (no new path segment, no new scope; old clients ignore it). Beacon decision
+D-20261111-12. The TimeTrack Extension and TimeTrack Desktop pick the field up in their own releases.
+
+- **Read**: every entry object (`GET entries`, `GET export`, the `entry` of `timer/stop`, `timer/switch`, `POST
+  entries`) has had **`billable`** (`true`, `false` or `null` = unset) since 1.11. New live entries now take the host's
+  default (`TimeEntryBillableDefaultProviderInterface`) when the client sends none; without one it stays `null`.
+- **Create**: `POST entries` accepts an optional **`billable`** (`true` / `false`; absent or `null` = the host default).
+  Any other type answers `400 invalid_request`; an explicit value the host's `edit_billable` check refuses answers
+  `403 billable_forbidden`. It is part of the body the `Idempotency-Key` replay compares.
+- **Change**: `PATCH entries/{id}` (below).
+- **CORS**: `Access-Control-Allow-Methods` now lists `PATCH`.
+
+### PATCH entries/{id} (1.21)
+
+Scope **`entries:write`**. Changes the `billable` flag of one of the caller's **own** entries. Body exactly
+`{"billable": true | false | null}`; no other field can be changed (a body with another key is refused, so a later
+version can accept more without ambiguity). No `Idempotency-Key`: the request is idempotent.
+
+| Answer | When |
+| --- | --- |
+| `200 {"entry": {...}}` | changed, or already that value (the entry object, `locked: false`) |
+| `400 invalid_request` | no `billable`, not a boolean or null, or another field |
+| `403 insufficient_scope` | the token lacks `entries:write` |
+| `403 forbidden` | the host's `edit` or `edit_billable` access check refused it |
+| `404 not_found` | no such entry, or another user's (they look alike); every request while `manual_entries.enabled` is false |
+| `409 read_only` | an imported entry |
+| `409 anonymised` | an anonymised or ownerless entry |
+| `409 period_locked` (+ `lockedThrough`) / `period_submitted` | the entry's period is locked (approved) or waiting for approval |
+| `429 rate_limited` | more than 120 changes per hour per token |
+
+Every answer carries `Cache-Control: no-store, private`. Each real change is audited by the host
+(`TimeEntryBillableChangedEvent`, `via: api`).
+
+```http
+PATCH /api/time-track/entries/0f9d…-…
+Authorization: Bearer …
+Content-Type: application/json
+
+{"billable": true}
+```
 
 ## Changes in 1.19 (links.workingTime)
 
@@ -76,7 +122,7 @@ Additive; with `calendar` and `manual_entries` off (the default) every new route
 | `POST /api/time-track/suggestions/accept` | `suggestions:write` **and** `entries:write` | `{ids: [1-100 ids] \| groupKey, taskId?, note?}` | 200 `{outcomes: [{id, entryId}\|{id, error}]}` with `error` `period_locked`, `period_submitted`, `overlap`, `not_trackable`, `entry_too_old`, `not_found` (unknown, another user's or already decided); one `calendar` entry per occurrence, partial success allowed |
 | `POST /api/time-track/suggestions/dismiss` | `suggestions:write` | `{ids \| groupKey}` | 200 `{dismissed: [ids]}` (dismissed suggestions are not suggested again until they expire) |
 | `POST /api/time-track/suggestions/resolve-keys` | `suggestions:read` | `{scopeKey?, keys: [1-50 strings of 1-32 characters]}` | 200 `{matches: {key: {taskId, title, boardId, trackable: true}}}` (keys of unknown tasks and of tasks the user cannot track are left out alike); 60 / min per token; 400; 404 |
-| `POST /api/time-track/entries` | `entries:write` | header `Idempotency-Key` (1–64 visible characters, required); `{taskId, startedAt, endedAt, source: manual\|calendar, note?}` (RFC 3339 with offset) | 201 `{entry}` (`metadata.origin` = source); 400 `invalid_request`; 403 `task_forbidden`; 409 `period_locked` (+ `lockedThrough`), `period_submitted`, `overlap` (a live entry or the running timer); 422 `invalid_range` (end ≤ start), `entry_too_long` (> 24 h), `entry_in_future`, `entry_too_old` (> `manual_entries.max_age_days`), `idempotency_mismatch`; 120 / h per token; 404 when `manual_entries.enabled` is false |
+| `POST /api/time-track/entries` | `entries:write` | header `Idempotency-Key` (1–64 visible characters, required); `{taskId, startedAt, endedAt, source: manual\|calendar, note?, billable?}` (`billable` since 1.21) (RFC 3339 with offset) | 201 `{entry}` (`metadata.origin` = source); 400 `invalid_request`; 403 `task_forbidden`; 409 `period_locked` (+ `lockedThrough`), `period_submitted`, `overlap` (a live entry or the running timer); 422 `invalid_range` (end ≤ start), `entry_too_long` (> 24 h), `entry_in_future`, `entry_too_old` (> `manual_entries.max_age_days`), `idempotency_mismatch`; 120 / h per token; 404 when `manual_entries.enabled` is false |
 
 The same `Idempotency-Key` and body get the same answer for 24 h (201, 409 and 422 are replayed), also for two requests
 sent at once. CORS preflights allow the `Idempotency-Key` header. Every answer of these routes carries `Cache-Control:
@@ -486,6 +532,7 @@ Deprecated since 1.9, removed in 2.0 (`Deprecation: true` header). Scope `timer:
 Scope `entries:read`. Own entries, newest first: `?from=&to=&limit=1..100&offset=` → `200 {"entries": [...], "limit",
 "offset"}`. `from` / `to`: RFC 3339 or `Y-m-d`, default the last 7 days, span capped at 366 days. The deprecated
 `userId` parameter keeps the 1.x team view through `TeamAccessGuard`.
+Each entry carries `billable` (`true`, `false`, `null`); change it with [PATCH entries/{id}](#patch-entriesid-121) (1.21).
 
 ### GET export
 

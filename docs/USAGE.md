@@ -13,6 +13,7 @@
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Calendar OAuth apps at runtime (1.20)](#calendar-oauth-apps-at-runtime-120)
+- [Billable entries (1.21)](#billable-entries-121)
 - [Standard Symfony host](#standard-symfony-host)
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
 - [Worker mode (FrankenPHP, kernel reset false)](#worker-mode-frankenphp-kernel-reset-false)
@@ -691,6 +692,98 @@ final readonly class InstanceSettingsCalendarOAuthApps implements CalendarOAuthA
   broken key does not look like "switched off" in your logs.
 - Without `app_provider` nothing changes: the static values apply exactly as in 1.19.
 
+## Billable entries (1.21)
+
+`TimeEntry::$billable` (nullable boolean, since 1.11) was set only by imports. Since 1.21 (Beacon D-20261111-12) it is
+editable, and new live entries can take a default from your application. No schema change: the column exists.
+
+### A default for new entries
+
+Implement `Integration\TimeEntryBillableDefaultProviderInterface` and alias the interface to your service. It is asked
+once for every new **live** entry stored without an explicit value: a timer stop or switch, an idle reassign, `POST
+entries` without `billable`, an accepted calendar suggestion. Imported entries keep their source's value and never ask.
+Scalars only (REQ-ARCH-001): the entry's tenant scope (`''` when it has none) and the task id. Return null to keep the
+behaviour before 1.21 (the flag stays unset). The default, `NullTimeEntryBillableDefaultProvider`, answers null.
+
+```php
+namespace App\TimeTrack;
+
+use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
+
+final readonly class ProjectBillableDefault implements TimeEntryBillableDefaultProviderInterface
+{
+    public function __construct(private ProjectSettings $projects) {}
+
+    public function defaultFor(string $scopeKey, ?string $taskRef): ?bool
+    {
+        return $taskRef === null ? null : $this->projects->newTimeIsBillableForTask($taskRef); // null = no default
+    }
+}
+```
+
+```yaml
+# config/services.yaml
+services:
+  Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface: '@App\TimeTrack\ProjectBillableDefault'
+```
+
+It runs inside the write transaction: keep it fast, read-only and free of request state (worker mode).
+
+### Changing the flag
+
+Call `Service\TimeEntryBillableService` (public) instead of writing the column:
+
+```php
+$entry = $this->billable->changeById($this->getUser(), $entryId, true);   // or ->change($user, $entry, false)
+```
+
+| Refusal | When |
+|---|---|
+| `BillableChangeRefusedException` `not_found` | no entry with that id (or the store cannot look one up) |
+| `BillableChangeRefusedException` `read_only` | an imported entry |
+| `BillableChangeRefusedException` `anonymised` | an anonymised or ownerless entry: it never changes |
+| `BillableChangeRefusedException` `forbidden` | the grant says no: `TeamAccessGuard::isBillableEditGranted()` — by default the edit grant (the owner, a manager with `security.manager_can_edit_entries`, an admin role in `security.admin_roles`, then your `nowo_time_track.time_entry.access_check` listener for action `edit`), then the same listener for action `edit_billable` (`TeamAccessGuard::ACTION_EDIT_BILLABLE`, `deny()` / `grant()`), so you can decide billable apart from editing |
+| `PeriodLockedException` / `PeriodSubmittedException` (409) | the entry's period is locked (approved) or submitted, checked with `WriteKind::Edit` after the grant; no role or listener overrides it, only an audited reopen |
+
+With the Doctrine store the lock check and the write run in one transaction holding the owner's write lock, and the
+entry is re-read there with a row lock (`LockingFindableTimeEntryRepositoryInterface::findForUpdate()`) and checked again,
+so an entry anonymised, replaced or moved to another owner after you loaded it is refused. A replacement store with only
+`FindableTimeEntryRepositoryInterface` is re-read with `findById()` in the same transaction, without a row lock; one
+without `UserSerialisedTimeEntryRepositoryInterface` / `FindableTimeEntryRepositoryInterface` runs the steps one after
+the other.
+Setting the value an entry already has writes nothing.
+
+- **`security.admin_roles` are not tenant-aware:** a user with one of those roles passes the edit grant for every
+  entry, in every tenant scope. In a multi-tenant host, keep those roles for platform staff or deny the `edit` /
+  `edit_billable` actions of other tenants in your access-check listener.
+- **Errors for other people's entries:** `read_only` and `anonymised` are answered before the grant. A host controller
+  that takes an entry id from someone who is not its owner should answer both (and `forbidden`) as 404, as the client
+  API does, so the caller learns nothing about entries it cannot see.
+- **An explicit value on `POST entries`** (or `ManualEntryService::create(..., billable: …)`) asks the `edit_billable`
+  check for the new entry too; a refusal is `ManualEntryException` `billable_forbidden` (403) and nothing is stored.
+  Without a value the host default applies and nothing is asked.
+
+**Audit.** Each real change dispatches `TimeEntryBillableChangedEvent` (`TimeTrackEvents::TIME_ENTRY_BILLABLE_CHANGED`)
+after the commit: `entryId`, `ownerId`, `actorId`, `oldBillable`, `newBillable`, `occurredAt` and `via` (`api` or
+`host`). Ids and scalars only. The bundle has no audit table, so store it in yours (AuditKit, your own log):
+
+```php
+#[AsEventListener(event: TimeTrackEvents::TIME_ENTRY_BILLABLE_CHANGED)]
+public function onBillableChanged(TimeEntryBillableChangedEvent $event): void
+{
+    $this->audit->record('time_entry.billable', $event->entryId, $event->actorId, ['from' => $event->oldBillable, 'to' => $event->newBillable], $event->occurredAt);
+}
+```
+
+A listener that throws is logged and does not undo the change. A refusal by the period lock also writes the
+`edit_blocked` timesheet row when `timesheets.audit_blocked_edits` is on.
+
+### Client API
+
+`billable` is read on `GET entries` / `GET export` (since 1.11), accepted on `POST entries` (`true`, `false`, or absent /
+null for the host default) and changed with `PATCH entries/{id}` `{"billable": true|false|null}` (scope
+`entries:write`, own entries only, same rules as above). See [CLIENT-API.md](CLIENT-API.md#patch-entriesid-121).
+
 ## Standard Symfony host
 
 The zero-config path (REQ-ARCH-001): `user_class` is your attribute-mapped `App\Entity\User`, the same object your
@@ -756,6 +849,7 @@ security user or the `TimeEntry` entity also expose scalar accessors, so a liste
 | `TimerStopEvent`, `TimeEntryAccessCheckEvent` | `getUserId()` (the acting user), `getEntryId()`, `getEntryView()` |
 | `TimeEntryCreatedEvent`, `TimeEntryImportedEvent` | `getUserId()` (the entry owner, null when ownerless), `getEntryId()`, `getEntryView()` |
 | `IdleResolvedEvent`, `TaskEffortAccessCheckEvent` | `getUserId()` |
+| `TimeEntryBillableChangedEvent` (1.21) | public readonly `entryId`, `ownerId`, `actorId`, `oldBillable`, `newBillable`, `occurredAt`, `via` (no entity) |
 | `TimeEntryListQueryEvent`, `TimesheetAccessCheckEvent` | `getViewerId()` |
 
 `getUserId()` is the **acting** user on the timer, idle and access-check events, and the entry **owner** on
@@ -838,11 +932,11 @@ services:
 
 ### Known limitations
 
-REQ-ARCH-001 is **partially met** in 1.19 and 1.20. Open (pre-existing), planned for 1.21 (additive) and 2.0 (removal):
+REQ-ARCH-001 is **partially met** in 1.19 – 1.21. Open (pre-existing), planned for 1.22 (additive) and 2.0 (removal):
 
-- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.21 adds a
+- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.22 adds a
   documented and tested bundle-owned entity manager, so no service flushes yours.
-- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.21 adds ports with a user id value object next to them;
+- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.22 adds ports with a user id value object next to them;
   the `UserInterface` ports are deprecated then and removed in 2.0.
 - Users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign keys).
 - Ports that hand a user back to you (`TeamContextProviderInterface::isManagerOf()`, the timesheet scope / approver

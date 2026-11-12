@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\OverlappingTimeEntryRepositoryInterface;
@@ -74,6 +75,10 @@ final readonly class ManualEntryService
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
         ?UserReferenceResolverInterface $userReferences = null,
+        // Since 1.21: the default `billable` of an entry created without one (null = none, the flag stays unset).
+        private ?TimeEntryBillableDefaultProviderInterface $billableDefaults = null,
+        // Since 1.21 (audit MV-T-L3): asks `edit_billable` for an explicit `billable` (null = the caller's value is trusted).
+        private ?TeamAccessGuard $accessGuard = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -101,11 +106,14 @@ final readonly class ManualEntryService
      * @param int|null $maxAgeDays Oldest allowed start in days (null = `manual_entries.max_age_days`)
      * @param (callable(): void)|null $prepare Runs first inside the transaction (may throw to refuse)
      * @param (callable(TimeEntry): void)|null $finish Runs after the insert inside the transaction
+     * @param bool|null $billable Since 1.21: the entry's `billable` flag; null = the host default
+     *                            ({@see TimeEntryBillableDefaultProviderInterface}), unset when it has none. An explicit
+     *                            value needs {@see TeamAccessGuard::isBillableEditGranted()} (`billable_forbidden`)
      *
      * @throws ManualEntryException
      * @throws PeriodWriteRefusedException When the period is locked or submitted
      */
-    public function create(UserInterface $user, string $taskId, DateTimeImmutable $start, DateTimeImmutable $end, TimeEntrySource $source, ?string $note = null, array $metadata = [], ?int $maxAgeDays = null, ?callable $prepare = null, ?callable $finish = null): TimeEntry
+    public function create(UserInterface $user, string $taskId, DateTimeImmutable $start, DateTimeImmutable $end, TimeEntrySource $source, ?string $note = null, array $metadata = [], ?int $maxAgeDays = null, ?callable $prepare = null, ?callable $finish = null, ?bool $billable = null): TimeEntry
     {
         if (!in_array($source, [TimeEntrySource::Manual, TimeEntrySource::Calendar], true)) {
             throw new ManualEntryException(ManualEntryException::INVALID_RANGE);
@@ -136,7 +144,7 @@ final readonly class ManualEntryService
         }
 
         // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-        $entry = $this->serialised($user, function () use ($user, $task, $start, $end, $seconds, $source, $metadata, $prepare, $finish): TimeEntry {
+        $entry = $this->serialised($user, function () use ($user, $task, $start, $end, $seconds, $source, $metadata, $prepare, $finish, $billable): TimeEntry {
             if ($prepare !== null) {
                 $prepare();
             }
@@ -147,6 +155,10 @@ final readonly class ManualEntryService
             }
             $entry = new TimeEntry($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
             $entry->assignScopeKey($scopeKey);
+            if ($billable !== null && $this->accessGuard instanceof TeamAccessGuard && !$this->accessGuard->isBillableEditGranted($user, $entry)) {
+                throw new ManualEntryException(ManualEntryException::BILLABLE_FORBIDDEN);
+            }
+            $entry->markBillable($billable ?? $this->billableDefaults?->defaultFor($scopeKey ?? '', $task->id));
             $this->entries->save($entry);
             if ($finish !== null) {
                 $finish($entry);

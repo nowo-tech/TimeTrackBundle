@@ -39,13 +39,16 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
   switch).
 - **1.20** (Beacon request 2026-11-11): calendar OAuth apps read at runtime from the host
   (`calendar.oauth.app_provider`, e.g. encrypted in its database), instead of `.env`.
-- **1.21** (spec 204, Block 2; was 1.20): `leave` on the workday, the `daysOff` leave kind and `links.leave`; budget
-  versus actual with TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user id value object next
-  to the `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager so no service flushes
-  the host's (rule 6).
-- **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.21 are removed.
-- **1.22** (spec 199; was 1.21): the monitoring API, with a full audit. Off unless your organisation enables it with a recorded
-  DPIA; you see it first.
+- **1.21** (Beacon D-20261111-12): the `billable` flag of an entry is editable (audited `TimeEntryBillableService`,
+  `PATCH entries/{id}`, `billable` on `POST entries`) and new entries take a host default
+  (`TimeEntryBillableDefaultProviderInterface`).
+- **1.22** (spec 204, Block 2; was 1.21, before that 1.20): `leave` on the workday, the `daysOff` leave kind and
+  `links.leave`; budget versus actual with TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user
+  id value object next to the `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager
+  so no service flushes the host's (rule 6).
+- **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.22 are removed.
+- **1.23** (spec 199; was 1.22, before that 1.21): the monitoring API, with a full audit. Off unless your organisation
+  enables it with a recorded DPIA; you see it first.
 
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 

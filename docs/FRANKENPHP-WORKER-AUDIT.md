@@ -82,7 +82,7 @@ answers from the identity map first.
 (for example `EntityManager::clear()` on `kernel.terminate`), or keep the services resetter. Otherwise a user loaded in
 an earlier request and deleted out of band since then still counts as known to the resolver until the manager is
 cleared; databases that enforce the foreign keys still refuse the write at flush. Memory is not the issue: the worker
-test below shows the hot path keeps no growth with the same people. The bundle-owned entity manager planned for 1.21
+test below shows the hot path keeps no growth with the same people. The bundle-owned entity manager planned for 1.22
 (REQ-ARCH-001 rule 6) lets the bundle clear its own manager itself.
 
 ### Locks, handles, HTTP

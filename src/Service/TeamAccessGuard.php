@@ -58,6 +58,27 @@ final readonly class TeamAccessGuard
         return in_array($targetUserId, $this->teamContext->getManagedUserIds($viewer), true);
     }
 
+    /** Since 1.21: the access-check action of {@see self::isBillableEditGranted()} (audit MV-T-L3). */
+    public const ACTION_EDIT_BILLABLE = 'edit_billable';
+
+    /**
+     * Since 1.21 (audit MV-T-L3): whether the editor may set the entry's `billable` flag. The default is the edit grant
+     * ({@see self::isEditGranted()}, which dispatches the `edit` check); then {@see TimeEntryAccessCheckEvent} with action
+     * `edit_billable` lets a host grant or deny it on its own (e.g. only project managers decide what is billable).
+     * Imported entries and entries without a user owner are never granted, and no event is dispatched for them. The
+     * period lock is not part of it: callers check it themselves.
+     */
+    public function isBillableEditGranted(UserInterface $editor, TimeEntry $entry): bool
+    {
+        if ($entry->isReadOnly() || !$entry->getUser() instanceof UserInterface) {
+            return false;
+        }
+        $event = new TimeEntryAccessCheckEvent($editor, $entry, self::ACTION_EDIT_BILLABLE, $this->isEditGranted($editor, $entry));
+        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
+
+        return $event->isGranted();
+    }
+
     /** Since 1.11: the access-check action of {@see self::canDeleteImportedEntry()}. */
     public const ACTION_DELETE_IMPORTED = 'delete_imported';
 
@@ -68,6 +89,17 @@ final readonly class TeamAccessGuard
      * the event, so a granting listener is ignored.
      */
     public function canEditEntry(UserInterface $editor, TimeEntry $entry): bool
+    {
+        return $this->isEditGranted($editor, $entry) && $this->isWritable($entry);
+    }
+
+    /**
+     * Since 1.21: {@see self::canEditEntry()} without the period lock — the edit grant alone (owner, manager when
+     * `security.manager_can_edit_entries`, admin roles, then the `edit` access-check event). Callers that tell a refusal
+     * (403) from a lock (409) ask this first and then the period lock themselves. Imported entries and entries without a
+     * user owner (ownerless or anonymised) are never granted.
+     */
+    public function isEditGranted(UserInterface $editor, TimeEntry $entry): bool
     {
         if ($entry->isReadOnly()) {
             return false;
@@ -89,7 +121,7 @@ final readonly class TeamAccessGuard
         $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
-        return $event->isGranted() && $this->isWritable($entry);
+        return $event->isGranted();
     }
 
     /**

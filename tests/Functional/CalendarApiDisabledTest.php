@@ -28,6 +28,8 @@ final class CalendarApiDisabledTest extends FunctionalTestCase
             ['POST', '/api/time-track/suggestions/dismiss', ['ids' => ['a']]],
             ['POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-1']]],
             ['POST', '/api/time-track/entries', ['taskId' => 'task-1']],
+            // Since 1.21 (audit MV-T-L2): the billable change follows manual_entries too.
+            ['PATCH', '/api/time-track/entries/abc', ['billable' => true]],
         ] as [$method, $uri, $payload]) {
             $body = $this->api($method, $uri, $payload, $token, ['HTTP_IDEMPOTENCY_KEY' => 'k']);
             self::assertResponseStatusCodeSame(404, $method . ' ' . $uri);

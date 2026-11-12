@@ -65,8 +65,10 @@ use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Integration\NullTimeEntryBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Meeting\MeetingLinkDetector;
@@ -106,6 +108,7 @@ use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
+use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
@@ -317,6 +320,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         /** @var list<class-string> $acceptedUserClasses */
         $acceptedUserClasses = $config['accepted_user_classes'];
         $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses);
+        $this->registerBillable($container);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -324,6 +328,37 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->setArgument('$cssFramework', $config['templates']['css_framework'])
                 ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
         }
+    }
+
+    /**
+     * Since 1.21 (Beacon D-20261111-12): the {@see TimeEntryBillableDefaultProviderInterface} port (default
+     * {@see NullTimeEntryBillableDefaultProvider}; hosts override the alias), injected into the services that store new
+     * live entries, and the audited {@see TimeEntryBillableService} (public, for host controllers).
+     */
+    private function registerBillable(ContainerBuilder $container): void
+    {
+        $container->setDefinition(NullTimeEntryBillableDefaultProvider::class, new Definition(NullTimeEntryBillableDefaultProvider::class));
+        $container->setAlias(TimeEntryBillableDefaultProviderInterface::class, NullTimeEntryBillableDefaultProvider::class);
+        $defaults = new Reference(TimeEntryBillableDefaultProviderInterface::class);
+        foreach ([TimerService::class, ManualEntryService::class] as $serviceId) {
+            if ($container->hasDefinition($serviceId)) {
+                $container->getDefinition($serviceId)->setArgument('$billableDefaults', $defaults);
+            }
+        }
+        if ($container->hasDefinition(ManualEntryService::class)) {
+            $container->getDefinition(ManualEntryService::class)->setArgument('$accessGuard', new Reference(TeamAccessGuard::class));
+        }
+        $container->setDefinition(TimeEntryBillableService::class, (new Definition(TimeEntryBillableService::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$entries'         => new Reference(TimeEntryRepositoryInterface::class),
+                '$accessGuard'     => new Reference(TeamAccessGuard::class),
+                '$periodLockGuard' => new Reference(PeriodLockGuard::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'           => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'          => new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
     }
 
     /**

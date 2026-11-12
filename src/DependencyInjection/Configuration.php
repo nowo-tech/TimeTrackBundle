@@ -517,6 +517,14 @@ final class Configuration implements ConfigurationInterface
                                         ->scalarNode('name')->defaultValue('nowo_time_track_api_entries_create')->end()
                                     ->end()
                                 ->end()
+                                // Since 1.21: PATCH entries/{id} (billable).
+                                ->arrayNode('entries_update')
+                                    ->addDefaultsIfNotSet()
+                                    ->children()
+                                        ->scalarNode('path')->defaultValue('/api/time-track/entries/{id}')->end()
+                                        ->scalarNode('name')->defaultValue('nowo_time_track_api_entries_update')->end()
+                                    ->end()
+                                ->end()
                                 // Since 1.14 (contract §22.2).
                                 ->arrayNode('me_meetings')
                                     ->addDefaultsIfNotSet()

@@ -8,6 +8,7 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as Doctrine
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
+use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
@@ -15,6 +16,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\PsrOnlyClock;
+use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
@@ -161,6 +163,9 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(MutableCalendarOAuthAppProvider::class)->public();
         $container->services()->alias('time_track_test.calendar_oauth_clients', CalendarOAuthClients::class)->public();
         $container->services()->set(RacingCachePool::class)->public();
+        // Since 1.21: the host's billable default (answers null, the default behaviour, until a test sets an answer).
+        $container->services()->set(StubBillableDefaultProvider::class)->args([null])->public();
+        $container->services()->alias(TimeEntryBillableDefaultProviderInterface::class, StubBillableDefaultProvider::class);
         if ($this->psrOnlyClock) {
             // Since 1.19.1: the host's own PSR clock wins over the framework's `clock` alias (as in Beacon).
             $container->services()->set(PsrOnlyClock::class)->public();

@@ -113,6 +113,8 @@ final class TimeTrackRouteLoader extends Loader
                 'suggestions_resolve_keys'   => ['resolveKeys', ['POST', 'OPTIONS'], $calendar],
                 // Same path as GET entries: POST only (the GET route answers the preflight).
                 'entries_create' => ['createEntry', ['POST'], $calendar],
+                // Since 1.21: the billable flag of an own entry.
+                'entries_update' => ['updateEntry', ['PATCH', 'OPTIONS'], $calendar],
                 // Contract §22: the caller's own meetings (404 while off).
                 'me_meetings' => ['meetings', ['GET', 'OPTIONS'], TimeTrackMeetingsApiController::class],
             ];

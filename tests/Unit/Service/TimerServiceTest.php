@@ -11,10 +11,13 @@ use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
+use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
@@ -47,6 +50,27 @@ final class TimerServiceTest extends TestCase
         self::assertNotNull($entry);
         self::assertSame('task-1', $entry->getTaskId());
         self::assertNull($this->service->getActive($this->user));
+    }
+
+    public function testTimerEntriesTakeTheHostBillableDefault(): void
+    {
+        $provider = new StubBillableDefaultProvider(false);
+        $service  = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), new InMemoryTimeEntryRepository(), new EventDispatcher(), billableDefaults: $provider);
+        $service->start($this->user, 'task-1', ClientType::Web);
+        self::assertFalse($service->stop($this->user)?->getBillable());
+
+        $service = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), new InMemoryTimeEntryRepository(), new EventDispatcher(), billableDefaults: $provider);
+        $service->startAt($this->user, 'task-1', ClientType::Web, [], new DateTimeImmutable('-30 minutes'));
+        $provider->answer = true;
+        $result           = $service->resolveIdle($this->user, new DateTimeImmutable('-20 minutes'), new DateTimeImmutable('-10 minutes'), IdleResolution::Reassign, 'task-2', IdleFollowUp::Stop);
+        self::assertNotNull($result);
+        self::assertTrue($result['reassigned']?->getBillable());
+        self::assertTrue($result['entry']?->getBillable());
+        self::assertSame([['', 'task-1'], ['', 'task-2'], ['', 'task-1']], $provider->calls);
+
+        // Without a provider (and with a null answer) the flag stays unset, as before 1.21.
+        $this->service->start($this->user, 'task-1', ClientType::Web);
+        self::assertNull($this->service->stop($this->user)?->getBillable());
     }
 
     public function testSecondStartThrowsConflict(): void

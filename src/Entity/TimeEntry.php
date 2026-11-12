@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
@@ -489,6 +490,23 @@ class TimeEntry
     public function getBillable(): ?bool
     {
         return $this->billable;
+    }
+
+    /**
+     * Since 1.21: sets the billable flag (null = unknown); true when it changed. No checks here: use
+     * {@see TimeEntryBillableService}, which authorises, honours the period lock and audits.
+     *
+     * @internal used by the bundle's services only (a new entry's default, the billable service)
+     */
+    public function markBillable(?bool $billable): bool
+    {
+        if ($this->billable === $billable) {
+            return false;
+        }
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->billable = $billable;
+
+        return true;
     }
 
     /**

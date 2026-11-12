@@ -158,6 +158,23 @@ final class DoctrineRepositoriesTest extends FunctionalTestCase
         self::assertSame([], $repository->findPageByUsersAndPeriod([], $from, $to, 0, 10));
     }
 
+    /** Since 1.21 (audit MV-T-L1): the row re-read with a write lock inside the owner's transaction. */
+    public function testTimeEntryRepositoryRereadsAnEntryForUpdate(): void
+    {
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+        $entry = new TimeEntry($this->user, 'task-u', 'U', null, new DateTimeImmutable('-2 hours'), new DateTimeImmutable('-1 hour'), 3600, TimeEntrySource::Web);
+        $repository->save($entry);
+        $id = $entry->getId();
+        $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_entries SET billable = ? WHERE id = ?', [1, $id]);
+
+        $read = $repository->inUserTransaction($this->user, static fn (): array => [$repository->findForUpdate($id), $repository->findForUpdate('missing')]);
+        self::assertSame($entry, $read[0]);
+        self::assertTrue($read[0]->getBillable(), 'refreshed from the row');
+        self::assertNull($read[1]);
+        self::assertSame($entry, $repository->findById($id));
+    }
+
     public function testTimeEntryRepositoryFindsTheLatestEndOfAUser(): void
     {
         $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
