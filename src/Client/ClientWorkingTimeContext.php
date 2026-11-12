@@ -9,6 +9,7 @@ use DateTimeZone;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
@@ -309,8 +310,9 @@ final readonly class ClientWorkingTimeContext
      */
     private function language(UserInterface $user): ?string
     {
-        if ($this->profileProvider instanceof ClientUserLocaleProviderInterface) {
-            $locale = $this->profileProvider->getLocale($user);
+        $provider = Ports::locale($this->profileProvider);
+        if ($provider instanceof ClientUserLocaleProviderInterface) {
+            $locale = $provider->getLocale($user);
         } else {
             $locale = method_exists($user, 'getLocale') && (new ReflectionMethod($user, 'getLocale'))->getNumberOfRequiredParameters() === 0 ? $user->getLocale() : null;
         }

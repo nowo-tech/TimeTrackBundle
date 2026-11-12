@@ -47,11 +47,15 @@ final class FormerPersonSnapshotListener implements ResetInterface
 
     /**
      * @param class-string $userClass `user_class`
+     * @param TimeTrackEntityManager|null $privateEntityManager Since 1.23.0 (`database.private_entity_manager`): dropped
+     *                                                          after a user's entries were settled, so no entry it loaded
+     *                                                          keeps pointing at the deleted user
      */
     public function __construct(
         private readonly FormerPersonTimeEntries $entries,
         private readonly string $userClass,
         private readonly ?TimerService $timers = null,
+        private readonly ?TimeTrackEntityManager $privateEntityManager = null,
     ) {
     }
 
@@ -108,6 +112,10 @@ final class FormerPersonSnapshotListener implements ResetInterface
             } else {
                 $this->entries->settleDeleted($settle['ids'], $settle['personRef'], $settle['name']);
             }
+            // Since 1.23.0 (`user_mapping: id`): the bundle's row of the user goes, as your user's row did.
+            $this->entries->forgetUser($settle['userId']);
+            // Since 1.23.0: the private manager's copies of the settled entries are stale; the next read loads them again.
+            $this->privateEntityManager?->reset();
         }
     }
 

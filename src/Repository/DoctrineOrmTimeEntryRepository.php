@@ -11,11 +11,13 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Psr\Log\LoggerInterface;
 use SortDirection;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -105,7 +107,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, [$userId]);
     }
 
     /**
@@ -131,7 +133,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, $userIds);
     }
 
     /**
@@ -145,10 +147,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             return 0;
         }
 
-        return (int) $this->periodQuery($userIds, $from, $to)
-            ->select('COUNT(e.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
+        return $this->countOwned($this->periodQuery($userIds, $from, $to), $userIds);
     }
 
     /**
@@ -231,7 +230,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, [$userId]);
     }
 
     /**
@@ -259,7 +258,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, $userIds);
     }
 
     /**
@@ -273,12 +272,9 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             return 0;
         }
 
-        return (int) $this->periodQuery($userIds, $from, $to)
-            ->select('COUNT(e.id)')
+        return $this->countOwned($this->periodQuery($userIds, $from, $to)
             ->andWhere('e.source <> :import')
-            ->setParameter('import', TimeEntrySource::Import->value)
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setParameter('import', TimeEntrySource::Import->value), $userIds);
     }
 
     /**
@@ -302,6 +298,42 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
             throw $exception;
         }
+    }
+
+    /**
+     * Since 1.23.0: with the id user mapping, only the entries whose owner id equals one of the ids byte for byte
+     * ({@see ExactUserIds}); the result as it is with the relation mapping.
+     *
+     * @param list<TimeEntry> $entries
+     * @param list<string> $userIds
+     *
+     * @return list<TimeEntry>
+     */
+    private function exactOwners(array $entries, array $userIds): array
+    {
+        return ExactUserIds::keep($this->entityManager, TimeEntry::class, $entries, $userIds);
+    }
+
+    /**
+     * The number of entries of the query (one of the users): a SQL `COUNT` with the relation mapping (1.22), and with
+     * the id mapping (since 1.23.0, audit OA-L2) the owners counted in PHP, byte for byte.
+     *
+     * @param list<string> $userIds
+     */
+    private function countOwned(QueryBuilder $query, array $userIds): int
+    {
+        if (!ExactUserIds::applies($this->entityManager, TimeEntry::class)) {
+            return (int) $query->select('COUNT(e.id)')->getQuery()->getSingleScalarResult();
+        }
+
+        $count = 0;
+        /** @var list<array{owner: string|null}> $rows */
+        $rows = $query->select('IDENTITY(e.user) AS owner')->getQuery()->getArrayResult();
+        foreach ($rows as $row) {
+            $count += in_array($row['owner'], $userIds, true) ? 1 : 0;
+        }
+
+        return $count;
     }
 
     /**
@@ -344,7 +376,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, [$userId]);
     }
 
     /**
@@ -453,12 +485,11 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 $removal = $removal->merge(new ImportedTimeEntryRemoval(kept: $kept));
                 continue;
             }
-            $this->entityManager->createQueryBuilder()
+            TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                 ->delete(TimeEntry::class, 'e')
                 ->where('e.id IN (:ids)')
                 ->setParameter('ids', array_column($rows, 'id'))
-                ->getQuery()
-                ->execute();
+                ->getQuery(), $this->entityManager);
             $this->detachRemoved(array_column($rows, 'id'));
             // Since 1.15 an ownerless entry has no owner id to report.
             $owners  = array_filter(array_column($rows, 'userId'), static fn (int|string|null $id): bool => $id !== null);
@@ -561,15 +592,14 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         }
         $changed = 0;
         foreach ($byScope as $scopeKey => $ids) {
-            $changed += (int) $this->entityManager->createQueryBuilder()
+            $changed += (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                 ->update(TimeEntry::class, 'e')
                 ->set('e.scopeKey', ':scope')
                 ->where('e.id IN (:ids)')
                 ->andWhere('e.scopeKey IS NULL')
                 ->setParameter('scope', (string) $scopeKey)
                 ->setParameter('ids', $ids)
-                ->getQuery()
-                ->execute();
+                ->getQuery(), $this->entityManager);
             $this->detachRemoved($ids);
         }
 
@@ -663,7 +693,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         } else {
             $update->set('e.user', 'NULL')->set('e.personRef', ':toRef')->set('e.personNameSnapshot', ':toName')->setParameter('toRef', $toPersonRef)->setParameter('toName', $toPersonName);
         }
-        $changed = (int) $update->getQuery()->execute();
+        $changed = (int) TimeTrackSavepoint::execute($update->getQuery(), $this->entityManager);
         $this->detachRemoved($entryIds);
 
         return $changed;
@@ -726,7 +756,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function applyTaskMove(array $entryIds, ?string $boardId, ?string $scopeKey): int
     {
-        $changed = (int) $this->entityManager->createQueryBuilder()
+        $changed = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->update(TimeEntry::class, 'e')
             ->set('e.boardIdSnapshot', ':boardId')
             ->set('e.scopeKey', ':scopeKey')
@@ -734,8 +764,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->setParameter('boardId', $boardId)
             ->setParameter('scopeKey', $scopeKey)
             ->setParameter('ids', $entryIds)
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
         $this->detachRemoved($entryIds);
 
         return $changed;
@@ -789,7 +818,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     {
         $changed = 0;
         foreach (array_chunk($entryIds, self::FORMER_PERSON_BATCH) as $ids) {
-            $changed += (int) $this->entityManager->createQueryBuilder()
+            $changed += (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                 ->update(TimeEntry::class, 'e')
                 ->set('e.user', 'NULL')
                 ->set('e.personRef', ':ref')
@@ -801,8 +830,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                 ->setParameter('ref', $personRef)
                 ->setParameter('name', $name)
                 ->setParameter('ids', $ids)
-                ->getQuery()
-                ->execute();
+                ->getQuery(), $this->entityManager);
         }
 
         return $changed;
@@ -984,7 +1012,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                     continue;
                     // @codeCoverageIgnoreEnd
                 }
-                $changed += (int) $this->entityManager->createQueryBuilder()
+                $changed += (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                     ->update(TimeEntry::class, 'e')
                     ->set('e.user', 'NULL')
                     ->set('e.personRef', 'NULL')
@@ -1000,8 +1028,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                     ->setParameter('metadata', TimeEntry::anonymisedMetadata($row['metadata']), Types::JSON)
                     ->setParameter('at', $at, Types::DATETIME_IMMUTABLE)
                     ->setParameter('id', $row['id'])
-                    ->getQuery()
-                    ->execute();
+                    ->getQuery(), $this->entityManager);
             }
             $this->detachRemoved(array_column($rows, 'id'));
         } while (count($rows) === self::FORMER_PERSON_BATCH);
@@ -1032,11 +1059,10 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             }
             $ids    = array_column($rows, 'id');
             $lastId = $ids[count($ids) - 1];
-            $changed += (int) $apply($this->entityManager->createQueryBuilder()->update(TimeEntry::class, 'e'))
+            $changed += (int) TimeTrackSavepoint::execute($apply($this->entityManager->createQueryBuilder()->update(TimeEntry::class, 'e'))
                 ->where('e.id IN (:ids)')
                 ->setParameter('ids', $ids)
-                ->getQuery()
-                ->execute();
+                ->getQuery(), $this->entityManager);
             $this->detachRemoved($ids);
         } while (count($rows) === self::FORMER_PERSON_BATCH);
 

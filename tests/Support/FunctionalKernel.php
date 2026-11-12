@@ -24,6 +24,8 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
+use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinClientPorts;
+use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinPortConfig;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
 use Psr\Clock\ClockInterface;
@@ -54,6 +56,7 @@ use function serialize;
 use function sort;
 use function str_ends_with;
 use function str_starts_with;
+use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 use function sys_get_temp_dir;
 
 use const PHP_VERSION_ID;
@@ -108,7 +111,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -168,6 +171,12 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(MutableCalendarOAuthAppProvider::class)->public();
         $container->services()->alias('time_track_test.calendar_oauth_clients', CalendarOAuthClients::class)->public();
         $container->services()->set(RacingCachePool::class)->public();
+        // Since 1.23.0 (REQ-ARCH-001 rule 3): the framework-free twins of the stub ports, sharing the stubs' state
+        // (used where a test runs its scenarios through TwinPortConfig::twin()).
+        $container->services()->set(TwinClientPorts::class)->public();
+        foreach (TwinPortConfig::TWINS as $stub => $twin) {
+            $container->services()->set($twin)->args([service($stub)])->public();
+        }
         // Since 1.21: the host's billable default (answers null, the default behaviour, until a test sets an answer).
         $container->services()->set(StubBillableDefaultProvider::class)->args([null])->public();
         $container->services()->alias(TimeEntryBillableDefaultProviderInterface::class, StubBillableDefaultProvider::class);
@@ -214,7 +223,24 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
                 'login_rate_limit'     => ['max_attempts' => 2, 'cache_pool' => 'cache.time_track_test'],
             ],
             'client_api' => ['rate_limit' => ['cache_pool' => 'cache.time_track_test']],
-        ], $this->timeTrackConfig));
+        ], self::privateEntityManager(), $this->timeTrackConfig));
+    }
+
+    /**
+     * Since 1.23.0: `TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER=1` runs the suite with `database.private_entity_manager: true`
+     * (CI job "Functional suite - private entity manager"); a test's own configuration still wins.
+     *
+     * @return array<string, mixed>
+     */
+    public static function privateEntityManager(): array
+    {
+        $database = getenv('TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER') === '1' ? ['private_entity_manager' => true] : [];
+        // Since 1.23.0: `TIME_TRACK_TEST_MAPPING_TYPE=xml` runs the suite on the shipped XML mapping (REQ-ARCH-001 rule 2).
+        if (getenv('TIME_TRACK_TEST_MAPPING_TYPE') === 'xml') {
+            $database['mapping_type'] = 'xml';
+        }
+
+        return $database === [] ? [] : ['database' => $database];
     }
 
     /**

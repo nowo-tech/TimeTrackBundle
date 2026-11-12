@@ -32,6 +32,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetRepository;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
@@ -200,6 +201,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         self::assertTrue($this->reload('free')->isOwnerless());
     }
 
+    #[Group('shared-entity-manager')]
     public function testAnEntryWithNoIdentityHasAnUnknownOwner(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));

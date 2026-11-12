@@ -10,6 +10,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Since 1.13 (host, `timesheets.approver_provider`): who approves whose timesheets, **per tenant scope** (Beacon:
  * `working_time.manage_team` in the organization, fallback `time_track.timesheet.approve`). The bundle never lets
  * anybody approve their own timesheet, whatever this provider says. Must be scope-safe and side-effect free.
+ *
+ * @deprecated since 1.23.0, implement {@see TimesheetApproverPolicyInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface TimesheetApproverProviderInterface
 {

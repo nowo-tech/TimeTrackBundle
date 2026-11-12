@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Psr\Clock\ClockInterface;
@@ -67,7 +68,7 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
     /** Conditional DQL update approved → consumed; true when this call won. */
     public function markConsumed(DeviceAuthorization $authorization): bool
     {
-        $updated = $this->entityManager->createQueryBuilder()
+        $updated = TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->update(DeviceAuthorization::class, 'd')
             ->set('d.status', ':consumed')
             ->where('d.id = :id')
@@ -75,8 +76,7 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
             ->setParameter('consumed', DeviceAuthorizationStatus::Consumed->value)
             ->setParameter('approved', DeviceAuthorizationStatus::Approved->value)
             ->setParameter('id', $authorization->getId())
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
 
         return $updated === 1;
     }
@@ -84,12 +84,11 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
     /** Deletes the expired requests in one DQL statement. */
     public function purgeExpired(): int
     {
-        return $this->entityManager->createQueryBuilder()
+        return TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete(DeviceAuthorization::class, 'd')
             ->where('d.expiresAt <= :now')
             ->setParameter('now', $this->clock->now())
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
     }
 
     /** Counts the requests that have not expired yet in one DQL statement. */

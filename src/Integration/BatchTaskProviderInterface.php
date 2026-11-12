@@ -11,6 +11,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Since 1.12 (optional): a {@see TaskProviderInterface} that answers {@see TaskProviderInterface::canUserTrack()} for
  * many tasks at once. {@see TimerService::hiddenTaskEntryIds()} then makes one call per entry owner instead of one per
  * (owner, task), e.g. on a 10 000-row export.
+ *
+ * @deprecated since 1.23.0, implement {@see BatchTaskDirectoryInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface BatchTaskProviderInterface extends TaskProviderInterface
 {

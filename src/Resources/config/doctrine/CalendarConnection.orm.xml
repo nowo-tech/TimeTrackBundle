@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\CalendarConnection (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\CalendarConnection" table="time_track_calendar_connections">
+        <indexes>
+            <index name="idx_time_track_calendar_connections_due" columns="mode,status,next_attempt_at"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_calendar_connections" columns="user_id,scope_key,provider"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="status" type="string" column="status" length="16" enum-type="Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus"/>
+        <field name="consentedAt" type="datetime_immutable" column="consented_at"/>
+        <field name="lastSyncAt" type="datetime_immutable" column="last_sync_at" nullable="true"/>
+        <field name="lastErrorCode" type="string" column="last_error_code" length="32" nullable="true"/>
+        <field name="lastAttemptAt" type="datetime_immutable" column="last_attempt_at" nullable="true"/>
+        <field name="nextAttemptAt" type="datetime_immutable" column="next_attempt_at" nullable="true"/>
+        <field name="failureCount" type="integer" column="failure_count">
+            <options>
+                <option name="default">0</option>
+            </options>
+        </field>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="updatedAt" type="datetime_immutable" column="updated_at"/>
+        <field name="scopeKey" type="string" column="scope_key" length="64"/>
+        <field name="provider" type="string" column="provider" length="16" enum-type="Nowo\TimeTrackBundle\Enum\CalendarProvider"/>
+        <field name="mode" type="string" column="mode" length="8" enum-type="Nowo\TimeTrackBundle\Enum\CalendarConnectionMode"/>
+        <field name="credentialRef" type="string" column="credential_ref" length="128" nullable="true"/>
+        <field name="consentVersion" type="string" column="consent_version" length="16"/>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="false" on-delete="CASCADE"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

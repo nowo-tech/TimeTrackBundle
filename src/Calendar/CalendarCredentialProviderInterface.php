@@ -12,6 +12,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * registrations), keeps the tokens encrypted at rest (Beacon: Halite / AEAD store, later Vault) and refreshes them;
  * the bundle asks for a short-lived access token per sync and never stores it. Configured with
  * `calendar.credential_provider`; without it server mode is off.
+ *
+ * @deprecated since 1.23.0, implement {@see CalendarCredentialSourceInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface CalendarCredentialProviderInterface
 {

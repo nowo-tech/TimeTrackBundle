@@ -8,6 +8,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Resolves team membership and manager relationships for reports and ACL.
+ *
+ * @deprecated since 1.23.0, implement {@see TeamDirectoryInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface TeamContextProviderInterface
 {

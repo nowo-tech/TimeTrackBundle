@@ -29,4 +29,19 @@ final class ImportedTimeEntryRepositoryResolver
 
         return $store;
     }
+
+    /**
+     * Since 1.23.0: the configured time entry store, when it implements the framework-free
+     * {@see ImportedTimeEntryStoreInterface} (the deprecated {@see ImportedTimeEntryRepositoryInterface} extends it).
+     *
+     * @throws LogicException when the configured store does not implement the interface
+     */
+    public static function resolveStore(TimeEntryRepositoryInterface $store): ImportedTimeEntryStoreInterface
+    {
+        if (!$store instanceof ImportedTimeEntryStoreInterface) {
+            throw new LogicException(sprintf('The configured TimeEntryRepositoryInterface (%s) does not implement ImportedTimeEntryStoreInterface: imported time entries are not available. Implement it on your store or decorator, or alias ImportedTimeEntryStoreInterface yourself.', $store::class));
+        }
+
+        return $store;
+    }
 }

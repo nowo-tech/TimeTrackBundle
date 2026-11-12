@@ -37,7 +37,9 @@ use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
+use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryStore;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use stdClass;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -243,6 +245,23 @@ final class ImportedEntriesTest extends FunctionalTestCase
         (new ImportedTimeEntryWriter($racing, $this->dispatcher))->upsert($other, $this->data('e-1', seconds: 60));
     }
 
+    public function testAConcurrentInsertIsRetriedThroughAFrameworkFreeStoreToo(): void
+    {
+        // 1.23.0 (REQ-ARCH-001 rule 3): a store implementing only ImportedTimeEntryStoreInterface is retried the same way.
+        $this->writer()->upsert($this->user, $this->data('e-1'));
+        $this->events = [];
+
+        $racing = new RacingImportedTimeEntryStore($this->repository());
+        $racing->staleReads(1);
+        $result = (new ImportedTimeEntryWriter($racing, $this->dispatcher))->upsert($this->user, $this->data('e-1', seconds: 1800));
+
+        self::assertSame(ImportedTimeEntryOutcome::Updated, $result->outcome);
+        self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
+        $this->entityManager()->clear();
+        self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
+        self::assertCount(1, $this->events);
+    }
+
     public function testAConcurrentInsertInABatchWithNewRowsCreatesThemWithTheOwnerReattached(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
@@ -310,6 +329,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
         self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
     }
 
+    #[Group('shared-entity-manager')]
     public function testAttachUserReturnsAManagedUser(): void
     {
         $repository = $this->repository();

@@ -109,7 +109,8 @@ final class ClientApiV110ConfigurationTest extends TestCase
         self::assertSame('https://beacon.example.com', $container->getDefinition(ClientTaskPresenter::class)->getArgument('$taskUrlOrigin'));
         $provider = $container->getDefinition(IdleCheckSettingsResolver::class)->getArgument('$provider');
         self::assertInstanceOf(Reference::class, $provider);
-        self::assertSame('app.idle_check', (string) $provider);
+        self::assertSame('nowo_time_track.port.idle_check_provider', (string) $provider);
+        self::assertSame('app.idle_check', (string) $container->getAlias('nowo_time_track.port.idle_check_provider'));
 
         $controller = $container->getDefinition(TimeTrackClientApiController::class);
         self::assertSame(ClientTaskPresenter::class, (string) $controller->getArgument('$taskPresenter'));

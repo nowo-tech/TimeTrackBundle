@@ -7,7 +7,9 @@ namespace Nowo\TimeTrackBundle\Repository;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
 use function array_column;
@@ -55,12 +57,11 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
         $connection->beginTransaction();
 
         try {
-            $deleted = $this->entityManager->createQueryBuilder()
+            $deleted = TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                 ->delete(ActiveTimer::class, 't')
                 ->where('t.id = :id')
                 ->setParameter('id', $timer->getId())
-                ->getQuery()
-                ->execute();
+                ->getQuery(), $this->entityManager);
 
             if ($deleted !== 1) {
                 $connection->rollBack();
@@ -100,7 +101,8 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $timer;
+        // Since 1.23.0 (id user mapping): the owner id must match byte for byte (audit LQ).
+        return ExactUserIds::keepOne($this->entityManager, ActiveTimer::class, $timer, $userId);
     }
 
     /**
@@ -130,14 +132,13 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
         if ($ids === []) {
             return 0;
         }
-        $changed = (int) $this->entityManager->createQueryBuilder()
+        $changed = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->update(ActiveTimer::class, 't')
             ->set('t.boardIdSnapshot', ':boardId')
             ->where('t.id IN (:ids)')
             ->setParameter('boardId', $boardId)
             ->setParameter('ids', $ids)
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
         $unitOfWork = $this->entityManager->getUnitOfWork();
         foreach ($ids as $id) {
             $loaded = $unitOfWork->tryGetById($id, ActiveTimer::class);

@@ -14,6 +14,7 @@
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Moving imported time between owners (1.16)](#moving-imported-time-between-owners-116)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
+- [Identifier columns and look-alike ids (1.23.0, audit OA)](#identifier-columns-and-look-alike-ids-1230-audit-oa)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -264,6 +265,22 @@ Audit status: Appendix ID (2026-11-08, PR #77) at `c9de79c`: Medium (docs) / Low
 | The audit record is lost (audit ID-L1) | `TaskTimeMovedEvent` fires after each committed batch, also for entries already at the target, so a retry reports what an earlier call committed and a failed batch does not hide earlier ones. A throwing listener is logged; the move finishes and the call then throws `TaskTimeMoveEventException` with the full result. The bundle has no audit table, so hosts store the event. `alreadyAtTarget`, `kept` and `secondsKept` repeat in every call's event, so summing them across calls counts twice (audit ID-I3) |
 
 Residuals (author's view, for the auditor): kept entries keep counting in the source tenant until the period is reopened and the call repeated (owner decision 1); a batch holds row locks on up to 500 entries until its commit; with a listener that throws, other listeners of that one event dispatch do not run until the next call.
+
+## Identifier columns and look-alike ids (1.23.0, audit OA)
+
+- **`user_mapping: id`**: the user id columns and the person reference columns (`owner_ref`, `person_ref`,
+  `actor_ref`, `submitted_by_ref`, `decided_by_ref`) use a NO PAD binary collation on MySQL (`utf8mb4_0900_bin`) and
+  MariaDB (`utf8mb4_nopad_bin`); MySQL older than 8.0 gets `utf8mb4_bin` and SQL Server `Latin1_General_100_BIN2`, both
+  of which ignore trailing spaces. Ids with a leading or trailing blank or a control, format, separator or invisible
+  character are refused before any write or release, a row created concurrently must match byte for byte, and the
+  timesheet, calendar, entry and timer stores re-check the owner id (or owner reference) in PHP. `ABC`, `àbc` or `abc `
+  never reach `abc`'s rows.
+- **Relation mapping (default, known limit since 1.13, Low)**: `owner_ref` (timesheets, ledger) and `person_ref`
+  (entries) use the database's default collation. On MySQL / MariaDB with a case- or accent-insensitive default, a
+  lookup by owner reference compares loosely. The values are user ids written by the bundle itself from your users'
+  `getId()`, so a look-alike needs two of your users whose ids differ only by case, accent or trailing blanks; integer
+  and UUID ids cannot collide. If your ids can, use `user_mapping: id` or give those columns a binary collation in your
+  migration. No advisory: no default installation is affected.
 
 ## Secrets & cryptography
 

@@ -175,7 +175,9 @@ final class CalendarExtensionTest extends TestCase
         self::assertSame([GoogleCalendarEventSource::class, MicrosoftCalendarEventSource::class], array_map(static fn (mixed $r): string => (string) $r, $sources->getValues()));
         $credentials = $container->getDefinition(CalendarSyncService::class)->getArgument('$credentials');
         self::assertInstanceOf(Reference::class, $credentials);
-        self::assertSame('app.calendar_tokens', (string) $credentials);
+        // Since 1.23.0 the services reference the port slot, an alias of the configured service (TimeTrackPortsPass).
+        self::assertSame('nowo_time_track.port.credential_provider', (string) $credentials);
+        self::assertSame('app.calendar_tokens', (string) $container->getAlias('nowo_time_track.port.credential_provider'));
         self::assertSame(['google'], $container->getDefinition(CalendarSettings::class)->getArgument('$providers'));
         self::assertTrue($container->getDefinition(CalendarConnectionService::class)->isPublic());
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\Timesheet;
 
+use Closure;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
@@ -16,6 +17,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Exception\TimesheetException;
+use Nowo\TimeTrackBundle\Repository\EntryOwnerRefsRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRetentionRepositoryInterface;
@@ -34,11 +36,14 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
 
+use function array_map;
+use function array_values;
 use function str_repeat;
 
 /**
@@ -238,6 +243,61 @@ final class TimesheetServiceUnitTest extends TestCase
         self::assertSame(0, $tester->execute([]));
         self::assertStringContainsString('Locked 0 period(s).', $tester->getDisplay());
         self::assertSame([], $this->timesheets->timesheets);
+    }
+
+    public function testAutoLockThroughTheFrameworkFreeOwnerListingLocksTheSamePeriods(): void
+    {
+        // 1.23.0 (REQ-ARCH-001 rule 3): a store implementing only EntryOwnerRefsRepositoryInterface gives the same run.
+        $user    = $this->owner;
+        $entries = static fn (): array => [(new TimeEntry($user, 'task-1', 'T', null, new DateTimeImmutable('2026-10-06 09:00:00Z'), new DateTimeImmutable('2026-10-06 10:00:00Z'), 3600, TimeEntrySource::Web))->assignScopeKey('org-a')];
+        $legacy  = new class($user, $entries) implements TimeEntryRepositoryInterface, EntryOwnersRepositoryInterface {
+            public function __construct(private readonly TestUser $user, private readonly Closure $entries)
+            {
+            }
+
+            public function save(TimeEntry $entry): void
+            {
+            }
+
+            public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return ($this->entries)();
+            }
+
+            public function ownersWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return [['user' => $this->user, 'scopeKey' => 'org-a']];
+            }
+        };
+        $twin = new class($user, $entries) implements TimeEntryRepositoryInterface, EntryOwnerRefsRepositoryInterface {
+            public function __construct(private readonly TestUser $user, private readonly Closure $entries)
+            {
+            }
+
+            public function save(TimeEntry $entry): void
+            {
+            }
+
+            public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return ($this->entries)();
+            }
+
+            public function ownerRefsWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return [['user' => TimeTrackUserRef::of($this->user, TestUser::class, $this->user->getId(), $this->user->getUserIdentifier()), 'scopeKey' => 'org-a']];
+            }
+        };
+
+        $runs = [];
+        foreach (['legacy' => $legacy, 'twin' => $twin] as $kind => $store) {
+            $this->timesheets = new InMemoryTimesheetRepository();
+            $tester           = new CommandTester(new TimesheetsAutoLockCommand($this->service(), $store, new TimesheetTimezoneResolver(), 3, new MockClock('2026-11-05 10:00:00')));
+            $runs[$kind]      = [$tester->execute([]), $tester->getDisplay(), array_map(static fn (Timesheet $timesheet): array => [$timesheet->getUserId(), $timesheet->getScopeKey(), $timesheet->getPeriodStart(), $timesheet->getStatus()], array_values($this->timesheets->timesheets))];
+        }
+
+        self::assertStringContainsString('Locked 1 period(s).', $runs['legacy'][1]);
+        self::assertSame($runs['legacy'], $runs['twin']);
     }
 
     private function service(bool $enabled = true, bool $submitRequiresEnd = false): TimesheetService

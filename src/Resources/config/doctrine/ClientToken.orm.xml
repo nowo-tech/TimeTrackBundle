@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\ClientToken (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\ClientToken" table="time_track_client_tokens">
+        <indexes>
+            <index name="time_track_client_tokens_hash_idx" columns="token_hash"/>
+            <index name="time_track_client_tokens_expires_idx" columns="expires_at"/>
+            <index name="time_track_client_tokens_credential_idx" columns="credential_id"/>
+        </indexes>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="lastUsedAt" type="datetime_immutable" column="last_used_at" nullable="true"/>
+        <field name="scopes" type="json" column="scopes" nullable="true"/>
+        <field name="tokenHash" type="string" column="token_hash" length="64" unique="true"/>
+        <field name="expiresAt" type="datetime_immutable" column="expires_at"/>
+        <field name="clientType" type="string" column="client_type" length="16" enum-type="Nowo\TimeTrackBundle\Enum\ClientType"/>
+        <field name="credentialId" type="string" column="credential_id" length="191" nullable="true"/>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="false" on-delete="CASCADE"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

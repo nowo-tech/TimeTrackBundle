@@ -12,6 +12,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Creates the host credential of a device approved through the device flow (contract v0.2 §2), so the device shows in
  * the same user-visible list as the other credentials (e.g. Beacon's app passwords) and is revoked the same way
  * (the host then calls {@see ClientTokenRevoker::revokeByCredential()}). Default: {@see OpaqueClientCredentialIssuer}.
+ *
+ * @deprecated since 1.23.0, implement {@see ClientCredentialMinterInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface ClientCredentialIssuerInterface
 {

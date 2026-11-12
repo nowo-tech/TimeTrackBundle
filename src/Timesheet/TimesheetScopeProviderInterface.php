@@ -11,6 +11,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Since 1.13 (host, `timesheets.scope_provider`): which tenant scopes a user tracks time in, and the scope of a task
  * or an entry. Must be scope-safe (never return a scope the user is not in), side-effect free and fast (called per
  * request and per written entry).
+ *
+ * @deprecated since 1.23.0, implement {@see TimesheetScopePolicyInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface TimesheetScopeProviderInterface
 {

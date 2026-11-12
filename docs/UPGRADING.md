@@ -3,6 +3,13 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.23.0](#to-1230)
+  - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
+  - [Event accessors](#event-accessors)
+  - [Private entity manager (`database.private_entity_manager`)](#private-entity-manager-databaseprivate_entity_manager)
+  - [XML mapping (`database.mapping_type`)](#xml-mapping-databasemapping_type)
+  - [User reference by id (`user_mapping: id`)](#user-reference-by-id-user_mapping-id)
+  - [Coming in 2.0](#coming-in-20)
 - [To 1.22.1](#to-1221)
 - [To 1.22.0](#to-1220)
 - [To 1.21.0](#to-1210)
@@ -71,6 +78,132 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.23.0
+
+Target **1.23.0** (minor), from **1.22.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Nothing to change: defaults and existing host services behave exactly as in 1.22.1. 1.23.0 adds the opt-in paths of
+REQ-ARCH-001 (DDD / hexagonal hosts: framework-free ports, a private entity manager, XML mappings, a user reference by id) and deprecates the framework-typed members that 2.0 removes. Check one thing: the
+build now fails when a configured port service implements neither its interface nor the 1.23 twin (1.22 failed at the
+first call with a `TypeError`).
+
+### Framework-free host ports (optional until 2.0)
+
+Every deprecated interface keeps working exactly as in 1.22 until 2.0. To keep Symfony types out of your adapters,
+implement the 1.23 twin instead and keep the same option (see the table in the CHANGELOG):
+
+- `task_provider` → `TaskDirectoryInterface` (`BatchTaskDirectoryInterface`), `team_context_provider` →
+  `TeamDirectoryInterface`, `client_api.task_access_checker` → `TaskAccessPolicyInterface`,
+  `client_api.credential_issuer` → `ClientCredentialMinterInterface`, `client_api.profile_provider` →
+  `ClientUserProfileSourceInterface` (+ `ClientUserLocaleSourceInterface`, `ClientUserDaysOffSourceInterface`,
+  `ClientUserPrivacySourceInterface` on the same service), `client_api.idle_check.provider` →
+  `IdleCheckSettingsPolicyInterface`, `client_api.workday_provider` → `WorkdaySourceInterface`,
+  `timesheets.scope_provider` → `TimesheetScopePolicyInterface`, `timesheets.approver_provider` →
+  `TimesheetApproverPolicyInterface`, `working_time.calendar_provider` → `WorkingCalendarSourceInterface`,
+  `working_time.worked_time_source` → `WorkedTimeRecordInterface`, `meetings.provider` → `MeetingSourceInterface`,
+  `calendar.task_key_resolver` → `TaskKeyLookupInterface`, `calendar.credential_provider` →
+  `CalendarCredentialSourceInterface`.
+- `UserReferenceResolverInterface` (an alias): alias `Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface`
+  to your service instead. Aliasing both interfaces to different services fails the build (keep the 1.23 one).
+- A custom time entry store: `ImportedTimeEntryStoreInterface` / `FilteredImportedTimeEntryStoreInterface` are the
+  deprecated interfaces without `attachUser()`; a store implementing only them keeps the user objects as they are after
+  a failed save. `EntryOwnerRefsRepositoryInterface` replaces `EntryOwnersRepositoryInterface` for the auto-lock.
+- Users are `ValueObject\TimeTrackUserRef` (`userClass`, `id`, `identifier`, `roles`, `user()`). The bundle always
+  passes a reference that carries your security user (`user()`). A reference you **return** to the bundle where it
+  stores the user (`EntryOwnerRefsRepositoryInterface`, `ClientAuthResult::successFor()`,
+  `ImportedTimeEntryClaim::ofRef()`) must carry it too (`TimeTrackUserRef::of($user, …)`); one built by id alone is
+  refused with a `LogicException`.
+- `roles` are the role names the user object reports, without the role hierarchy. Compare users with
+  `isSameUserAs()` (class and id), not with `===`: references are built per call.
+- Which interface is asked: a service implementing the deprecated interface is asked through it (also when it
+  implements the twin too); only-twin services through an internal gate. So when you move to a twin, remove the
+  deprecated interface from the class (and any permissive stub implementation of it you kept "for compatibility"):
+  as long as the class implements it, the bundle asks that stub, not your twin. Symfony's DebugClassLoader reports, in debug
+  mode, each of your classes that implements a deprecated interface.
+- If you inspect the container: the services that used a port configured by option only
+  (`calendar.credential_provider`, `meetings.provider`, `client_api.workday_provider`, `client_api.idle_check.provider`,
+  `timesheets.approver_provider`) now reference the internal alias `nowo_time_track.port.<name>` of your service.
+
+### Event accessors
+
+The deprecated members still work until 2.0. To keep listeners free of Symfony types, read the replacement instead:
+
+| Class | Deprecated | Replacement |
+|---|---|---|
+| `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`, `TaskEffortAccessCheckEvent` | `getUser()` | `userRef()` (or the 1.18 `getUserId()`) |
+| `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent` | `getViewer()` | `viewerRef()` (or the 1.18 `getViewerId()`) |
+| `Client\ClientAuthResult` | `getUser()` | `userRef()`; build it with `successFor(TimeTrackUserRef …)` |
+
+### Private entity manager (`database.private_entity_manager`)
+
+Nothing changes unless you opt in. With `nowo_time_track.database.private_entity_manager: true`:
+
+- The bundle stops flushing, clearing or closing `database.entity_manager` (your `default` one unless you changed it).
+  Your pending changes are stored only when **you** flush. If your code relied on a TimeTrack call (starting a timer,
+  saving an entry, approving a timesheet, …) to flush your own pending changes, flush them yourself.
+- The tables, connection and mapping do not move; the private manager shares that manager's connection, so a
+  transaction you open around a TimeTrack call includes its rows (its statements then run in savepoints) and your
+  rollback undoes them.
+- TimeTrack rows the bundle returns (entries, timers, timesheets, ledger lines, tokens, calendar rows) belong to the
+  private manager: change them through the bundle's services, not with your manager's `persist()` / `remove()` /
+  `flush()`. Entities you change in memory but never save through the bundle are dropped at the next boundary and logged
+  as a warning (entity classes and counts only). Rows you write yourself with SQL or your manager are seen by the bundle
+  from the next request, message or command on (its manager is dropped at every boundary).
+- Your user objects stay yours: the bundle writes its rows with its own reference to the same user row.
+- `$yourManager->getRepository(TimeEntry::class)` (and the other bundle entities) still works on your manager.
+- With doctrine/dbal 3 the rollback middleware is not registered: after a rollback the private manager is only replaced
+  at the next boundary.
+- Your SQL filters are mirrored on the private manager with their parameters (`SQLFilter::setParameter()` /
+  `setParameterList()`) only: a filter that reads other state (a service, a property set on the filter object) must take
+  it from its parameters, or it sees its defaults on the private manager.
+
+`private_entity_manager: false` (the default) is deprecated; in 2.0 the private manager is the only mode.
+
+### XML mapping (`database.mapping_type`)
+
+`nowo_time_track.database.mapping_type: xml` (default `attribute`) maps the bundle entities from
+`src/Resources/config/doctrine/` instead of their attributes: the same tables, columns and indexes (no migration). A host
+that maps them itself can point its own mapping at that directory (`type: xml`, `prefix: Nowo\TimeTrackBundle\Entity`).
+
+### User reference by id (`user_mapping: id`)
+
+Nothing changes by default (`user_mapping: relation`: foreign keys to your users table). To keep the bundle tables free of
+references to your users table (DDD hosts, users that are not Doctrine entities of the bundle's entity manager):
+
+```yaml
+nowo_time_track:
+    user_mapping: id
+```
+
+0. This is a schema change for an existing installation: the `user_id` columns become strings (at most 128 characters,
+   binary collation on MySQL / MariaDB) referencing the new table `<table_prefix>host_users` (`id`, `user_class`)
+   instead of your users table. Generate the migration (`doctrine:migrations:diff`), and fill `host_users` with the ids
+   already referenced before adding the foreign keys, e.g.
+   `INSERT INTO time_track_host_users (id, user_class) SELECT DISTINCT user_id, 'App\Entity\User' FROM time_track_entries WHERE user_id IS NOT NULL`
+   (and the same for the other tables), then convert the columns. New installations need nothing else.
+1. Your security user (`user_class` or a class in `accepted_user_classes`) needs a `getId()`; its string form is the
+   stored id. The bundle does not look the id up in your users table (there may be none).
+2. Deleting a user: call `FormerPersonTimeEntries::release($user)` (or keep the former-person listener for a Doctrine user
+   entity): it also deletes the user's row, so its timers, tokens, device codes and calendar rows go and its entries,
+   timesheets and ledger lines keep no user, as the foreign keys to your users table did. A user deleted without either
+   keeps its row.
+3. `TimeEntry::getUser()` and the other entities' `getUser()` return the bundle's `UserRef\Entity\HostUser` (its
+   `getId()` is your id, `getUserClass()` your class) instead of your user object; `getUserId()` is unchanged.
+4. Ids compare byte for byte (`usera` is not `UserA`, `abc ` is not `abc`): the id columns and the person reference
+   columns (`owner_ref`, `person_ref`, `actor_ref`, `submitted_by_ref`, `decided_by_ref`) get a NO PAD binary collation
+   (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB; `utf8mb4_bin` on older MySQL and
+   `Latin1_General_100_BIN2` on SQL Server, which ignore trailing spaces), and the stores re-check the ids in PHP.
+5. Ids with a leading or trailing blank or a control, format, separator or invisible character are refused
+   (`LogicException`) before anything is written or released.
+
+### Coming in 2.0
+
+The deprecated port interfaces and members are removed; the private entity manager becomes the only mode.
 
 ## To 1.22.1
 

@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Retention;
 use DateTimeImmutable;
 use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
@@ -14,6 +15,7 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\TimeEntryCsv;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\UserRef\HostUserRows;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -51,6 +53,7 @@ final readonly class FormerPersonTimeEntries
      * @param ClientUserProfileProviderInterface|null $profiles The display name of a user, when the caller passes none
      * @param TimerService|null $timers Stops a running timer before a release or an anonymisation
      * @param bool $anonymiseOnUserDelete `retention.anonymise_on_user_delete`
+     * @param HostUserRows|null $hostUsers Since 1.23.0 (`user_mapping: id`): deletes the bundle's row of a released user
      */
     public function __construct(
         TimeEntryRepositoryInterface $repository,
@@ -59,6 +62,7 @@ final readonly class FormerPersonTimeEntries
         private LoggerInterface $logger = new NullLogger(),
         private ?TimerService $timers = null,
         private bool $anonymiseOnUserDelete = false,
+        private ?HostUserRows $hostUsers = null,
     ) {
         $this->repository = $repository instanceof FormerPersonTimeEntryRepositoryInterface ? $repository : null;
     }
@@ -96,9 +100,25 @@ final readonly class FormerPersonTimeEntries
     public function release(UserInterface $user, ?string $name = null): int
     {
         $store = $this->store();
+        // Since 1.23.0 (`user_mapping: id`, audit OA-M1): an id that does not compare exactly could reach a look-alike's rows.
+        if ($this->hostUsers instanceof HostUserRows && !DoctrineUserReferenceResolver::isExactId(UserIdResolver::getId($user))) {
+            throw new LogicException('This user id cannot be released with the TimeTrack id user mapping: it has a leading or trailing blank or an invisible character.');
+        }
         $this->timers?->stopForUserDeletion($user);
 
-        return $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
+        $released = $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
+        $this->forgetUser(UserIdResolver::getId($user));
+
+        return $released;
+    }
+
+    /**
+     * Since 1.23.0 (`user_mapping: id`): deletes the bundle's row of a deleted user (its timers, tokens and calendar rows go
+     * with it, as with the foreign keys of the relation mapping). Nothing with the relation mapping.
+     */
+    public function forgetUser(string $userId): void
+    {
+        $this->hostUsers?->remove($userId);
     }
 
     /**

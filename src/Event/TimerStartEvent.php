@@ -7,7 +7,9 @@ namespace Nowo\TimeTrackBundle\Event;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -31,10 +33,21 @@ final class TimerStartEvent extends Event
 
     /**
      * Timer owner.
+     *
+     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
      */
     public function getUser(): UserInterface
     {
         return $this->user;
+    }
+
+    /**
+     * Since 1.23.0: framework-free reference of {@see self::getUser()} (REQ-ARCH-001 rule 3): class, id, identifier and
+     * roles; the object itself through `userRef()->user()`. Built per call: compare with `isSameUserAs()`.
+     */
+    public function userRef(): TimeTrackUserRef
+    {
+        return TimeTrackUserRefs::fromUser($this->user);
     }
 
     /**

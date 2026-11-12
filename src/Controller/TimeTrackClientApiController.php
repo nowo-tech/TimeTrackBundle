@@ -43,6 +43,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
+use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
@@ -286,8 +287,10 @@ final readonly class TimeTrackClientApiController
         if ($minSupportedVersion !== null && preg_match(Configuration::SEMVER_PATTERN, $minSupportedVersion) === 1) {
             $body['minSupportedVersion'] = $minSupportedVersion;
         }
-        if ($this->profileProvider instanceof ClientUserPrivacyProviderInterface) {
-            $body['privacy'] = ClientPrivacyNormalizer::normalize($this->profileProvider->getPrivacy($user, $this->privacyLocale($request)), $this->logger);
+        // Since 1.23.0 also the framework-free ClientUserPrivacySourceInterface ({@see Ports}).
+        $privacy = Ports::privacy($this->profileProvider);
+        if ($privacy instanceof ClientUserPrivacyProviderInterface) {
+            $body['privacy'] = ClientPrivacyNormalizer::normalize($privacy->getPrivacy($user, $this->privacyLocale($request)), $this->logger);
         }
 
         $settings  = $this->settingsProvider->getSettings();
@@ -719,8 +722,9 @@ final readonly class TimeTrackClientApiController
      */
     private function userLocale(UserInterface $user): ?string
     {
-        if ($this->profileProvider instanceof ClientUserLocaleProviderInterface) {
-            $locale = $this->profileProvider->getLocale($user);
+        $provider = Ports::locale($this->profileProvider);
+        if ($provider instanceof ClientUserLocaleProviderInterface) {
+            $locale = $provider->getLocale($user);
         } else {
             $locale = method_exists($user, 'getLocale') && $this->isArgumentless(new ReflectionMethod($user, 'getLocale')) ? $user->getLocale() : null;
         }
@@ -737,14 +741,15 @@ final readonly class TimeTrackClientApiController
      */
     private function daysOff(UserInterface $user, ?string $timezone): ?array
     {
-        if (!$this->profileProvider instanceof ClientUserDaysOffProviderInterface) {
+        $provider = Ports::daysOff($this->profileProvider);
+        if (!$provider instanceof ClientUserDaysOffProviderInterface) {
             return null;
         }
 
         [$from, $to] = ClientDaysOffNormalizer::range($this->clock->now(), $timezone ?? date_default_timezone_get());
 
         // Since 1.22: the `leave` kind only when the host reports leave (audit NG-1; without it the 1.21 output).
-        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'), $this->logger, $this->workingTime?->reportsLeave() ?? false);
+        return ClientDaysOffNormalizer::normalize($provider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'), $this->logger, $this->workingTime?->reportsLeave() ?? false);
     }
 
     /**

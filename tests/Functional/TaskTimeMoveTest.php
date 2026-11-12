@@ -29,6 +29,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\MockObject\Stub;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -352,6 +353,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertSame([$id], $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b')->keptIds(TaskTimeKeptReason::SourcePeriodLocked));
     }
 
+    #[Group('shared-entity-manager')]
     public function testRunningTimersFollowTheTask(): void
     {
         $other = $this->createUser('other@example.com');
@@ -378,6 +380,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertNull($conn->fetchOne("SELECT board_id_snapshot FROM time_track_active_timers WHERE task_id = 'task-1'"));
     }
 
+    #[Group('shared-entity-manager')]
     public function testALoadedEntryIsDetachedAndAFlushDoesNotWriteItBack(): void
     {
         $id    = $this->entry('task-1', '2026-02-02 09:00:00', 3600);

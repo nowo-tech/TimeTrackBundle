@@ -11,12 +11,14 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
 use function array_chunk;
@@ -95,7 +97,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $timesheet;
+        return ExactUserIds::keepOne($this->entityManager, Timesheet::class, $timesheet, $ownerId);
     }
 
     /**
@@ -103,7 +105,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuarding(string $ownerId, ?string $scopeKey, string $fromDate, string $toDate): array
     {
-        return $this->guarding('IDENTITY(t.user) = :owner', $ownerId, $scopeKey, $fromDate, $toDate);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('IDENTITY(t.user) = :owner', $ownerId, $scopeKey, $fromDate, $toDate), [$ownerId]);
     }
 
     /**
@@ -111,7 +113,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuardingByOwnerRef(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
     {
-        return $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate), [$ownerRef], static fn (Timesheet $timesheet): string => $timesheet->getOwnerRef());
     }
 
     /**
@@ -121,7 +123,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuardingForMove(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
     {
-        return $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate, LockMode::PESSIMISTIC_READ);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate, LockMode::PESSIMISTIC_READ), [$ownerRef], static fn (Timesheet $timesheet): string => $timesheet->getOwnerRef());
     }
 
     /**
@@ -172,7 +174,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $result, [$ownerId]);
     }
 
     /**
@@ -200,7 +202,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         /** @var list<Timesheet> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $result, $ownerIds);
     }
 
     /**
@@ -224,7 +226,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $timesheet;
+        return ExactUserIds::keepOne($this->entityManager, Timesheet::class, $timesheet, $ownerId);
     }
 
     /**
@@ -264,18 +266,16 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             $ids    = array_map(static fn (array $row): string => $row['id'], $rows);
             $events = 0;
             if ($ids !== []) {
-                $events = (int) $this->entityManager->createQueryBuilder()
+                $events = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                     ->delete(TimesheetEvent::class, 'e')
                     ->where('IDENTITY(e.timesheet) IN (:ids)')
                     ->setParameter('ids', $ids)
-                    ->getQuery()
-                    ->execute();
-                $this->entityManager->createQueryBuilder()
+                    ->getQuery(), $this->entityManager);
+                TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                     ->delete(Timesheet::class, 't')
                     ->where('t.id IN (:ids)')
                     ->setParameter('ids', $ids)
-                    ->getQuery()
-                    ->execute();
+                    ->getQuery(), $this->entityManager);
             }
             $connection->commit();
         } catch (Throwable $exception) {
@@ -377,22 +377,20 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
                 $touched[] = $keep;
             }
             foreach (array_chunk($prefix, self::IDS_PER_QUERY) as $chunk) {
-                $deleted += (int) $this->entityManager->createQueryBuilder()
+                $deleted += (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                     ->delete(BalanceLedgerLine::class, 'l')
                     ->where('l.id IN (:ids)')
                     ->setParameter('ids', $chunk)
-                    ->getQuery()
-                    ->execute();
+                    ->getQuery(), $this->entityManager);
             }
             if ($keep !== null) {
-                $this->entityManager->createQueryBuilder()
+                TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                     ->update(BalanceLedgerLine::class, 'l')
                     ->set('l.purgedBefore', ':before')
                     ->where('l.id = :id')
                     ->setParameter('before', $before, Types::DATE_IMMUTABLE)
                     ->setParameter('id', $keep)
-                    ->getQuery()
-                    ->execute();
+                    ->getQuery(), $this->entityManager);
             }
         }
 

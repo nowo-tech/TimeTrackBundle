@@ -9,6 +9,7 @@ use Doctrine\Common\Collections\Order as SortDirection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
 use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
@@ -17,6 +18,7 @@ use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus;
 use Nowo\TimeTrackBundle\Support\StorageTime;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
 use function array_fill_keys;
@@ -75,7 +77,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $connection;
+        return ExactUserIds::keepOne($this->entityManager, CalendarConnection::class, $connection, $userId);
     }
 
     /**
@@ -97,7 +99,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarConnection> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $result, [$userId]);
     }
 
     /**
@@ -133,7 +135,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarConnection> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return $userId === null ? $result : ExactUserIds::keep($this->entityManager, CalendarConnection::class, $result, [$userId]);
     }
 
     /**
@@ -223,7 +225,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarSuggestion> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
 
     /**
@@ -248,7 +250,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
 
     /**
@@ -269,7 +271,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
 
     /**
@@ -285,7 +287,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             $query->andWhere('s.connection = :connection')->setParameter('connection', $connectionId);
         }
         /** @var int $deleted */
-        $deleted = $query->getQuery()->execute();
+        $deleted = TimeTrackSavepoint::execute($query->getQuery(), $this->entityManager);
 
         return $deleted;
     }
@@ -321,14 +323,13 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         }
         // GG-D-5: the status is in the DELETE predicate, so a row a concurrent accept decided meanwhile is kept.
         /** @var int $deleted */
-        $deleted = $this->entityManager->createQueryBuilder()
+        $deleted = TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete(CalendarSuggestion::class, 's')
             ->where('s.id IN (:ids)')
             ->andWhere('s.status = :pending')
             ->setParameter('ids', array_map(static fn (CalendarSuggestion $s): string => $s->getId(), $unseen))
             ->setParameter('pending', CalendarSuggestionStatus::Pending->value)
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
         // The DQL delete bypasses the identity map: forget the rows it may have removed.
         foreach ($unseen as $suggestion) {
             $this->entityManager->detach($suggestion);
@@ -399,7 +400,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarRule::class, $result, [$userId]);
     }
 
     /**
@@ -418,6 +419,6 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarRule::class, $result, [$userId]);
     }
 }

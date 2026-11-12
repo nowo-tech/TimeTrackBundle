@@ -9,6 +9,7 @@ use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
+use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -52,8 +53,9 @@ final readonly class DerivedWorkingCalendar implements WorkingCalendarProviderIn
         $fromDate = $from->format('Y-m-d');
         $toDate   = $to->format('Y-m-d');
         $off      = [];
-        if ($this->profileProvider instanceof ClientUserDaysOffProviderInterface) {
-            $range = $this->profileProvider->getDaysOff($user, CalendarDayNormalizer::midnight($fromDate, $timezone), CalendarDayNormalizer::midnight($toDate, $timezone)->modify('+1 day -1 second'));
+        $daysOff  = Ports::daysOff($this->profileProvider);
+        if ($daysOff instanceof ClientUserDaysOffProviderInterface) {
+            $range = $daysOff->getDaysOff($user, CalendarDayNormalizer::midnight($fromDate, $timezone), CalendarDayNormalizer::midnight($toDate, $timezone)->modify('+1 day -1 second'));
             foreach (ClientDaysOffNormalizer::normalize($range, $fromDate, $toDate, $this->logger) ?? [] as $dayOff) {
                 $off[$dayOff['date']] = $dayOff;
             }

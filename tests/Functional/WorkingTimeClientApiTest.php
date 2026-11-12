@@ -22,6 +22,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_column;
@@ -38,7 +39,7 @@ use const DATE_ATOM;
  * timesheets with submit / withdraw, `GET me` flags and summary, `locked` / `scopeKey` on entries and the CSV, 409
  * lock answers on timer routes, task effort, and the 1.13 scopes that old tokens do not have.
  */
-final class WorkingTimeClientApiTest extends FunctionalTestCase
+class WorkingTimeClientApiTest extends FunctionalTestCase
 {
     private AppUser $approver;
 
@@ -301,6 +302,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertNull($managed['tasks'][1]['loggedSecondsScope'] ?? null, 'no scope without a figure');
     }
 
+    #[Group('shared-entity-manager')]
     public function testRunningTimersAndLockedSwitches(): void
     {
         $token  = $this->token(ClientScope::TimerWrite, ClientScope::TimerRead, ClientScope::TimesheetWrite);
@@ -342,7 +344,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertSame($current->key, $sheets->view($this->user, (string) $this->user->getId(), 'org-a', $current)->getPeriod()->key);
     }
 
-    private function token(ClientScope ...$scopes): string
+    protected function token(ClientScope ...$scopes): string
     {
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);

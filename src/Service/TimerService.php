@@ -40,7 +40,7 @@ use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
-use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -582,7 +582,7 @@ final readonly class TimerService
 
                 return new TimeEntryPage($total === 0 ? [] : $repository->findPageByUsersAndPeriod($userIds, $from, $to, ($page - 1) * $perPage, $perPage), $page, $perPage, $total);
             }
-            if ($repository instanceof ImportedTimeEntryRepositoryInterface) {
+            if ($repository instanceof ImportedTimeEntryStoreInterface) {
                 $total = $repository->countLiveByUsersAndPeriod($userIds, $from, $to);
                 $page  = $this->clampPage($page, $total, $perPage);
 

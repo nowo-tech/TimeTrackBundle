@@ -59,6 +59,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.23.0** (minor; REQ-ARCH-001 XL track: framework-free ports and events, an opt-in private entity manager,
+XML mappings and an opt-in user reference by id).
+Additive: with the default configuration and every existing host service, the bundle asks the same interfaces with the
+same arguments, writes through the same entity manager and answers exactly as in 1.22.1. No schema, route or client API
+change.
+
+### Added
+
+- **Framework-free twins of every host port typed with Symfony's `UserInterface`** (REQ-ARCH-001 rule 3, strict
+  reading of 2026-11-11). Each twin takes and returns only bundle value objects: the user is a
+  `ValueObject\TimeTrackUserRef` (user class without proxy, id string, identifier, role names; the user object itself
+  hidden in a `WeakMap`, never in a dump or copy), entities become snapshots (`Dto\TimeEntryView`,
+  `ValueObject\CalendarConnectionRef`). Same configuration option as the deprecated port:
+
+  | Deprecated (removed in 2.0) | 1.23 twin |
+  |---|---|
+  | `Integration\TaskProviderInterface` / `BatchTaskProviderInterface` | `Integration\TaskDirectoryInterface` / `BatchTaskDirectoryInterface` |
+  | `Integration\TeamContextProviderInterface` | `Integration\TeamDirectoryInterface` |
+  | `Integration\UserReferenceResolverInterface` | `Integration\UserReferenceProviderInterface` (alias it) |
+  | `Security\TaskAccessCheckerInterface` | `Security\TaskAccessPolicyInterface` |
+  | `Timesheet\TimesheetScopeProviderInterface` | `Timesheet\TimesheetScopePolicyInterface` (`TimeEntryView` instead of `TimeEntry`) |
+  | `Timesheet\TimesheetApproverProviderInterface` | `Timesheet\TimesheetApproverPolicyInterface` |
+  | `WorkingTime\WorkingCalendarProviderInterface` | `WorkingTime\WorkingCalendarSourceInterface` |
+  | `WorkingTime\WorkedTimeSourceInterface` | `WorkingTime\WorkedTimeRecordInterface` |
+  | `Workday\WorkdayProviderInterface` | `Workday\WorkdaySourceInterface` |
+  | `Meeting\MeetingProviderInterface` | `Meeting\MeetingSourceInterface` |
+  | `Calendar\TaskKeyResolverInterface` | `Calendar\TaskKeyLookupInterface` |
+  | `Calendar\CalendarCredentialProviderInterface` | `Calendar\CalendarCredentialSourceInterface` (`CalendarConnectionRef` instead of the entity) |
+  | `Client\ClientCredentialIssuerInterface` | `Client\ClientCredentialMinterInterface` |
+  | `Client\ClientUserProfileProviderInterface` | `Client\ClientUserProfileSourceInterface` |
+  | `Client\ClientUserLocaleProviderInterface`, `…DaysOffProviderInterface`, `…PrivacyProviderInterface` | `Client\ClientUserLocaleSourceInterface`, `…DaysOffSourceInterface`, `…PrivacySourceInterface` (extras of the profile source) |
+  | `Client\IdleCheckSettingsProviderInterface` | `Client\IdleCheckSettingsPolicyInterface` |
+  | `Repository\EntryOwnersRepositoryInterface` | `Repository\EntryOwnerRefsRepositoryInterface` |
+  | `Repository\ImportedTimeEntryRepositoryInterface` / `FilteredImportedTimeEntryRepositoryInterface` | `Repository\ImportedTimeEntryStoreInterface` / `FilteredImportedTimeEntryStoreInterface` (the same methods without `attachUser(UserInterface)`; the deprecated interfaces extend them) |
+
+- **Which interface is asked**: a service implementing the deprecated interface is asked through it exactly as in 1.22
+  (also when it implements the twin too); a service implementing only the twin is asked through an internal gate
+  (`Port\*Gate`, stateless). The new compiler pass `TimeTrackPortsPass` points the port's slot at the gate, or at a
+  runtime decision when the class is not known before compilation, and **fails the build when a configured port
+  service implements neither interface** (1.22 failed with a `TypeError` at the first call). Ports configured by option
+  only (`calendar.credential_provider`, `meetings.provider`, `client_api.workday_provider`,
+  `client_api.idle_check.provider`, `timesheets.approver_provider`) are referenced through internal aliases
+  `nowo_time_track.port.<name>`; the bundle's services see the same instance.
+- **Opt-in private entity manager** `database.private_entity_manager: true` (REQ-ARCH-001 rule 6, REQ-RUNTIME-002
+  rule 4; default `false`, the 1.22 behaviour). The stores and the user reference resolver use
+  `Doctrine\TimeTrackEntityManager`, a private manager created on the connection, mapping and event manager of
+  `database.entity_manager`: a bundle write never flushes, clears or closes your manager, and a failed one closes only the
+  private manager (recreated at the next call). Same tables and connection, so your transaction includes the bundle rows;
+  its flush and bulk statements then run in savepoints (`Doctrine\TimeTrackSavepoint`; when rolling back to the savepoint
+  fails too, the original exception is rethrown). Dropped at every outermost boundary (`UnitOfWorkBoundaries`,
+  `PrivateEntityManagerSubscriber`: main request start and end, Messenger message, outermost console command) and at
+  `kernel.reset`; with doctrine/dbal 4 a rollback that undid its rows replaces it (`PrivateEntityManagerMiddleware`, only
+  on the source manager's connection, `PrivateEntityManagerPass`). The host's SQL filters are mirrored (a filter class
+  registered later too). Its own repository factory (`Doctrine\TimeTrackRepositoryFactory`, audit NZ-M1 pattern)
+  delegates DoctrineBundle `ServiceEntityRepository` classes to your factory and builds the others per private manager
+  (`WeakMap`). A bundle row pointing at an object of another unit of work (your user as your manager or firewall loaded
+  it) is written with the private manager's reference to the same row. Deleting a user through your manager drops the
+  private copies of that user's settled entries. Adapted from AuthKitBundle 1.46.0.
+- Tests: `PrivateEntityManagerPartsTest` (middleware, staleness, closed manager, boundary drop that cannot be poisoned,
+  filters, factory, registry, savepoints, foreign references, build pass), `PrivateEntityManagerHostTest` (your pending
+  work is never flushed, a failed bundle write leaves your manager open, your transaction decides, user deletion),
+  `PrivateEntityManagerWorkerTest` (every `WorkerModeNoResetTest` scenario again plus 100 rounds × 2 people through
+  `http_kernel->handle()` / `terminate()`: the private manager is dropped after every request and a row changed between
+  requests is read fresh), `UnitOfWorkBoundariesTest`, `PrivateEntityManagerSubscriberTest`,
+  `TimeTrackRepositoryFactoryTest`, `PrivateEntityManagerConfigTest`. CI runs the whole functional suite again on
+  SQLite, MySQL, MariaDB and PostgreSQL with the option on (`TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER=1`, leaving out the
+  tests of group `shared-entity-manager`, which assume one shared manager).
+- **XML mappings** of every bundle entity (`src/Resources/config/doctrine/*.orm.xml`, REQ-ARCH-001 rule 2), selected
+  with `database.mapping_type: xml` (default `attribute`). Generated from the attribute mapping and kept equal by
+  `XmlMappingParityTest` (columns, types, lengths, options, nullability, enums, version, identifiers, indexes, unique
+  constraints, associations and join columns of every entity).
+- **Opt-in user reference by id** `user_mapping: id` (default `relation`, the 1.22 foreign keys to your users table).
+  The bundle rows then reference `UserRef\Entity\HostUser`, a bundle-owned row per user (`<table_prefix>host_users`:
+  your user's id, at most 128 characters, and class), mapped only in this mode; `user_class` need not be a Doctrine entity
+  of the bundle's entity manager. The id column (and so every `user_id` referencing it) gets a binary collation on MySQL /
+  MariaDB (NO PAD binary: `utf8mb4_0900_bin` / `utf8mb4_nopad_bin`, see audit OA below) and SQL Server, and the user-id lookups of the entry and timer stores re-check the owner id byte
+  for byte in PHP (`UserRef\ExactUserIds`; audit LQ rule). `DoctrineUserReferenceResolver` creates the row on first use
+  (a concurrent creation is tolerated) for a `user_class` or `accepted_user_classes` security user. Releasing a user
+  (`FormerPersonTimeEntries::release()` or the former-person listener) deletes its row after settling its entries, so
+  timers, tokens, device codes and calendar rows go with it and entries, timesheets and ledger lines lose their user, as
+  with the relation mapping's foreign keys (`UserRef\HostUserRows`). The 1.23 twins receive your class and id
+  (`TimeTrackUserRef`) for a stored owner.
+- Audit OA (before the tag), all with `user_mapping: id` only:
+  - **OA-M1**: ids with a leading or trailing blank or a control, format, separator or invisible character are refused
+    before any write or release (`DoctrineUserReferenceResolver::isExactId()`); after a concurrent creation the row is
+    re-read and must match byte for byte; NO PAD binary collations (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin`
+    on MariaDB); the timesheet and calendar stores and `countByUsersAndPeriod()` / `countLiveByUsersAndPeriod()` re-check
+    the owner ids in PHP too (OA-L2).
+  - **OA-M2**: `owner_ref`, `person_ref`, `actor_ref`, `submitted_by_ref` and `decided_by_ref` get the same collation
+    (new opt-in DDL; the relation mapping is unchanged and its known limit is in SECURITY).
+  - **OA-L1**: `TimeTrackManagerRegistry` treats the host user rows as bundle entities.
+  - Info: `TwinClientPortsTest` (twin-only task access policy and credential minter on the client API paths); UPGRADING
+    notes on classes that implement both interfaces and on the SQL filters the private manager mirrors.
+- Tests: `XmlMappingParityTest`, `MappingOptionsTest`, `DddIdHostTest` (a security user that is no entity, XML mapping,
+  private entity manager, client API, byte-exact ids, release), and CI runs the functional suite on the XML mapping
+  (SQLite; MySQL and PostgreSQL with the private entity manager).
+- **Event accessors** `userRef()` (`TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`,
+  `TaskEffortAccessCheckEvent`) and `viewerRef()` (`TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`) returning a
+  `TimeTrackUserRef` (REQ-ARCH-001 rules 3 and 4).
+- `Client\ClientAuthResult::successFor(TimeTrackUserRef …)` and `userRef()`; `Import\ImportedTimeEntryClaim::ofRef()` and
+  `userRef()`; the store service `ImportedTimeEntryStoreInterface` (`ImportedTimeEntryRepositoryResolver::resolveStore()`).
+- Tests: `GatesTest`, `PortsTest`, `TimeTrackPortsPassTest`, `TimeTrackUserRefTest`, `ProfileExtrasEquivalenceTest`
+  (`GET me` against the LITERAL 1.22.1 decisions for deprecated / twin / both / neither providers),
+  `DefaultPortsWiringTest` (built-in ports served as they are), and the twin re-runs `TwinWorkingTimeClientApiTest`,
+  `TwinCalendarClientApiTest`, `TwinMeetingsApiTest`, `TwinLeaveClientApiTest` (every scenario of those suites again with
+  each stub port replaced by its framework-free twin: same answers).
+
+### Deprecated
+
+- `database.private_entity_manager: false` (the default): in 2.0 the private entity manager is the only mode.
+- The framework-typed ports above, `getUser()` / `getViewer()` of the seven events, `ClientAuthResult::getUser()`; removed
+  in 2.0. `Client\ClientApiPrincipal` is marked `@internal` (built by the API guard for the bundle's own controllers).
+
 ## [1.22.1] - 2026-11-12
 
 Target **1.22.1** (patch; batch audit NL, Medium): the timesheet retention purge no longer touches the host's pending

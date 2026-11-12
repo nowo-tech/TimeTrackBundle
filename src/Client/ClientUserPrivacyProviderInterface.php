@@ -9,6 +9,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 /**
  * Since 1.15: optional extra of the `client_api.profile_provider` service. When the profile provider also implements
  * this interface, `GET me` sends its value as `privacy`; without it the key is absent.
+ *
+ * @deprecated since 1.23.0, implement {@see ClientUserPrivacySourceInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface ClientUserPrivacyProviderInterface
 {

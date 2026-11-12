@@ -10,6 +10,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Since 1.14 (host, contract §22.6, Q-B13, Q-B14): the host's meeting read model (Beacon spec 210). The host owns OAuth,
  * tokens, sync, retention, organization switches and attendee matching; the bundle stores nothing about meetings and
  * only shapes and filters what this provider returns, per request. Configured with `meetings.provider`.
+ *
+ * @deprecated since 1.23.0, implement {@see MeetingSourceInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface MeetingProviderInterface
 {

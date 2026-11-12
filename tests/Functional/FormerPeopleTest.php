@@ -35,6 +35,7 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -175,6 +176,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertFalse($reloaded->isReadOnly());
     }
 
+    #[Group('shared-entity-manager')]
     public function testASqlDeleteOfTheUserKeepsTheEntriesThroughTheForeignKey(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
@@ -189,6 +191,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame(['name' => null, 'anonymised' => false], $entry->toArray()['person'] ?? null);
     }
 
+    #[Group('shared-entity-manager')]
     public function testTheListenerIgnoresOtherEntitiesAndSnapshotsTheConfiguredUser(): void
     {
         self::assertInstanceOf(FormerPersonSnapshotListener::class, self::getContainer()->get(FormerPersonSnapshotListener::class));
@@ -434,6 +437,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame($user->getId(), $this->userIdOf($this->reload('e-1')));
     }
 
+    #[Group('shared-entity-manager')]
     public function testAnEntryThatLostItsUserInSqlIsFrozenForASync(): void
     {
         $writer = $this->writer();
@@ -555,6 +559,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame('Luis', $this->reload('new')->getPersonName());
     }
 
+    #[Group('shared-entity-manager')]
     public function testADeleteKeepsThePendingWorkOfLoadedEntriesAndNamesNewOnes(): void
     {
         $this->writer()->upsert($this->user, $this->data('loaded'));

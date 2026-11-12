@@ -7,6 +7,8 @@ namespace Nowo\TimeTrackBundle\Client;
 use InvalidArgumentException;
 use LogicException;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -45,6 +47,21 @@ final readonly class ClientAuthResult
     }
 
     /**
+     * Since 1.23.0: successful login of the user, framework-free (REQ-ARCH-001 rule 3). Same as {@see self::success()};
+     * the reference must carry the security user your user provider returns ({@see TimeTrackUserRef::of()}): the bundle
+     * stores it on the session token.
+     *
+     * @param list<ClientScope|string>|null $scopes Granted scopes; null = the default scopes
+     *
+     * @throws LogicException When the reference carries no security user object
+     * @throws InvalidArgumentException When $scopes is an empty list or holds an unknown scope
+     */
+    public static function successFor(TimeTrackUserRef $user, ?string $credentialId = null, ?array $scopes = null): self
+    {
+        return self::success(TimeTrackUserRefs::securityUser($user, ClientAuthenticatorInterface::class . '::authenticate()'), $credentialId, $scopes);
+    }
+
+    /**
      * Failed login.
      */
     public static function failure(): self
@@ -62,10 +79,20 @@ final readonly class ClientAuthResult
 
     /**
      * Authenticated user (null on failure).
+     *
+     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
      */
     public function getUser(): ?UserInterface
     {
         return $this->user;
+    }
+
+    /**
+     * Since 1.23.0: framework-free reference of the authenticated user (null on failure). Built per call.
+     */
+    public function userRef(): ?TimeTrackUserRef
+    {
+        return $this->user instanceof UserInterface ? TimeTrackUserRefs::fromUser($this->user) : null;
     }
 
     /**

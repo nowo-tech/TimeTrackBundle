@@ -29,7 +29,7 @@ use const JSON_UNESCAPED_UNICODE;
  * or null (medical leave as *Absent*, never its type, comment or attachment), no reminder on a leave day, and `GET me`
  * gains `features.leave` and `links.leave`. The workday actions keep their 1.21 body.
  */
-final class LeaveClientApiTest extends FunctionalTestCase
+class LeaveClientApiTest extends FunctionalTestCase
 {
     private const MEDICAL_SECRETS = ['medical', 'médica', 'Gripe', 'fiebre', 'sick-note', '.pdf', 'Absence'];
 
@@ -170,7 +170,7 @@ final class LeaveClientApiTest extends FunctionalTestCase
         self::assertSame([], $leaves->calls);
     }
 
-    private function token(ClientScope ...$scopes): string
+    protected function token(ClientScope ...$scopes): string
     {
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);

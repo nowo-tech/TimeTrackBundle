@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Doctrine;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
+use Nowo\TimeTrackBundle\UserRef\UserMapping;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -15,7 +19,10 @@ use function is_int;
 use function is_object;
 use function is_string;
 use function method_exists;
+use function preg_match;
 use function sprintf;
+use function strlen;
+use function trim;
 
 /**
  * Since 1.18: default {@see UserReferenceResolverInterface}. A security user that is the `user_class` entity is
@@ -30,16 +37,21 @@ use function sprintf;
  */
 final readonly class DoctrineUserReferenceResolver implements UserReferenceResolverInterface
 {
+    /** Control, format, separator and invisible filler characters (also matches invalid UTF-8: preg fails). */
+    private const INVISIBLE = '/[\p{Cc}\p{Cf}\p{Z}\x{034F}\x{115F}\x{1160}\x{17B4}\x{17B5}\x{180B}-\x{180F}\x{3164}\x{FE00}-\x{FE0F}\x{FFA0}\x{E0100}-\x{E01EF}]/u';
+
     /**
      * @param EntityManagerInterface $entityManager The bundle's entity manager (`database.entity_manager`)
      * @param class-string $userClass The configured `user_class`
      * @param list<class-string> $acceptedUserClasses Since 1.19: `accepted_user_classes`, the other security user
      *                                                classes (wrappers, DTOs) whose `getId()` is a `user_class` id
+     * @param string $userMapping Since 1.23.0: `user_mapping` (`relation`, the 1.22 behaviour, or `id`)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private string $userClass,
         private array $acceptedUserClasses = [],
+        private string $userMapping = UserMapping::RELATION,
     ) {
     }
 
@@ -51,6 +63,9 @@ final readonly class DoctrineUserReferenceResolver implements UserReferenceResol
      */
     public function reference(UserInterface $user): object
     {
+        if ($this->userMapping === UserMapping::ID) {
+            return $this->hostUser($user);
+        }
         if ($user instanceof $this->userClass) {
             return $user;
         }
@@ -69,6 +84,62 @@ final readonly class DoctrineUserReferenceResolver implements UserReferenceResol
         }
 
         return $entity;
+    }
+
+    /**
+     * Since 1.23.0 (`user_mapping: id`): the bundle's {@see HostUser} row of the user (created on first use; a concurrent
+     * creation of the same row is tolerated), referenced by the stored rows instead of your users table. A `user_class`
+     * instance or a security user of an `accepted_user_classes` class is accepted (no lookup in your users table: there
+     * may be none); the id must be usable and at most {@see HostUser::ID_LENGTH} characters.
+     *
+     * @throws AccessDeniedException When the class is not accepted
+     * @throws LogicException When the user has no usable `getId()` or a longer one
+     */
+    private function hostUser(UserInterface $user): HostUser
+    {
+        if (!$user instanceof HostUser && !$user instanceof $this->userClass && !$this->isAccepted($user)) {
+            throw new AccessDeniedException(sprintf('The security user class "%s" is neither the TimeTrack user_class nor listed in nowo_time_track.accepted_user_classes.', get_debug_type($user)));
+        }
+        $id = UserIdResolver::idOf($user);
+        if ($id === null || !$this->isUsableId(method_exists($user, 'getId') ? $user->getId() : null) || !self::isExactId($id)) {
+            throw new LogicException(sprintf('The security user "%s" has no usable getId() (at most %d characters, no leading or trailing blank, no control, format or invisible character) for the TimeTrack id user mapping.', get_debug_type($user), HostUser::ID_LENGTH));
+        }
+
+        $existing = $this->entityManager->find(HostUser::class, $id);
+        if ($existing instanceof HostUser && $existing->getId() === $id) {
+            return $existing;
+        }
+
+        $connection = $this->entityManager->getConnection();
+        $row        = ['id' => $id, 'user_class' => $this->userClass];
+        $table      = $this->entityManager->getClassMetadata(HostUser::class)->getTableName();
+        try {
+            TimeTrackSavepoint::write($connection, static fn (): int => (int) $connection->insert($table, $row), $this->entityManager);
+        } catch (UniqueConstraintViolationException $exception) {
+            // Created meanwhile by a concurrent request: the row is there, byte for byte (audit OA-M1: a database that
+            // compares ids loosely must never let this id stand for another user's row).
+            if ($connection->fetchOne(sprintf('SELECT id FROM %s WHERE id = ?', $table), [$id]) !== $id) {
+                throw new LogicException('Another TimeTrack host user row matches this user id in the database collation; ids must compare exactly (see docs/UPGRADING.md, user_mapping: id).', 0, $exception);
+            }
+        }
+
+        $reference = $this->entityManager->getReference(HostUser::class, $id);
+        if (!$reference instanceof HostUser) {
+            throw new LogicException('The TimeTrack host user row could not be referenced.'); // @codeCoverageIgnore
+        }
+
+        return $reference;
+    }
+
+    /**
+     * Since 1.23.0 (`user_mapping: id`, audit OA-M1, Vault 1.17 id rule): an id the bundle stores and compares exactly — at
+     * most {@see HostUser::ID_LENGTH} characters of valid UTF-8, no leading or trailing blank, and no control, format,
+     * separator or invisible filler character (databases that ignore trailing spaces or fold look-alikes could
+     * otherwise let it stand for another user).
+     */
+    public static function isExactId(string $id): bool
+    {
+        return strlen($id) <= HostUser::ID_LENGTH && trim($id) === $id && preg_match(self::INVISIBLE, $id) === 0;
     }
 
     private function isAccepted(UserInterface $user): bool

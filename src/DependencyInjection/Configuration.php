@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\DependencyInjection;
 use DateTimeZone;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Nowo\TimeTrackBundle\UserRef\UserMapping;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
@@ -84,6 +85,11 @@ final class Configuration implements ConfigurationInterface
                     ->end()
                     ->defaultValue([])
                 ->end()
+                ->enumNode('user_mapping')
+                    ->info('Since 1.23.0 (REQ-ARCH-001 rule 2): how the bundle rows store their user. relation (default, the 1.22 behaviour): Doctrine relations to user_class (foreign keys to your users table). id: the user class and id in a bundle-owned row (table <table_prefix>host_users, string id, binary collation on MySQL / MariaDB); user_class need not be a Doctrine entity of the bundle entity manager.')
+                    ->values(UserMapping::values())
+                    ->defaultValue(UserMapping::RELATION)
+                ->end()
                 ->scalarNode('table_prefix')
                     ->info('Prefix for time track tables (entries, active_timers, client_tokens).')
                     ->defaultValue('time_track_')
@@ -105,6 +111,15 @@ final class Configuration implements ConfigurationInterface
                     ->children()
                         ->scalarNode('entity_manager')
                             ->defaultValue('default')
+                        ->end()
+                        ->enumNode('mapping_type')
+                            ->info('Since 1.23.0 (REQ-ARCH-001 rule 2): how the bundle entities are mapped: attribute (default) or xml (src/Resources/config/doctrine, the same mapping, for hosts that map everything in XML).')
+                            ->values(['attribute', 'xml'])
+                            ->defaultValue('attribute')
+                        ->end()
+                        ->booleanNode('private_entity_manager')
+                            ->info('Since 1.23.0 (REQ-ARCH-001 rule 6): write and read the bundle rows through a private entity manager created on the connection and mapping of `entity_manager`, so the bundle never flushes, clears or closes that (your) manager. Default false (1.22 behaviour); deprecated as false, the only mode in 2.0.')
+                            ->defaultFalse()
                         ->end()
                     ->end()
                 ->end()

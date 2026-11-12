@@ -33,7 +33,7 @@ use const JSON_THROW_ON_ERROR;
  * - Memory check: 100 warm-up steps, then 1,000 steps (one step = `GET me` + `GET timer`, alternating people); the
  *   growth must stay under 64 KB (the test logger's own records are cleared after each step).
  */
-final class WorkerModeNoResetTest extends FunctionalTestCase
+class WorkerModeNoResetTest extends FunctionalTestCase
 {
     /**
      * A production-like kernel (debug off): in debug mode the framework's own profilers (Doctrine query log, traced
@@ -43,7 +43,7 @@ final class WorkerModeNoResetTest extends FunctionalTestCase
      */
     protected static function createKernel(array $options = []): KernelInterface
     {
-        return new FunctionalKernel(self::timeTrackConfig(), false, false, false);
+        return new FunctionalKernel(static::timeTrackConfig(), false, false, false);
     }
 
     protected static function timeTrackConfig(): array
@@ -119,7 +119,7 @@ final class WorkerModeNoResetTest extends FunctionalTestCase
      *
      * @return array<mixed>
      */
-    private function call(string $method, string $uri, string $token, ?array $payload = null, int $status = Response::HTTP_OK): array
+    protected function call(string $method, string $uri, string $token, ?array $payload = null, int $status = Response::HTTP_OK): array
     {
         $kernel = self::getContainer()->get('http_kernel');
         assert($kernel instanceof HttpKernelInterface && $kernel instanceof TerminableInterface);

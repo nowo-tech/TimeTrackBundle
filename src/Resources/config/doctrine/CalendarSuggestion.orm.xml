@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\CalendarSuggestion (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\CalendarSuggestion" table="time_track_calendar_suggestions">
+        <indexes>
+            <index name="idx_time_track_calendar_suggestions_user" columns="user_id,status,starts_at"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_calendar_suggestions_ref" columns="connection_id,event_ref"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="status" type="string" column="status" length="12" enum-type="Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="startsAt" type="datetime_immutable" column="starts_at"/>
+        <field name="endsAt" type="datetime_immutable" column="ends_at"/>
+        <field name="expiresAt" type="datetime_immutable" column="expires_at"/>
+        <field name="eventRef" type="string" column="event_ref" length="64">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="seriesRef" type="string" column="series_ref" length="64" nullable="true">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="groupKey" type="string" column="group_key" length="48" nullable="true"/>
+        <field name="taskId" type="string" column="task_id" length="36"/>
+        <field name="matchKind" type="string" column="match_kind" length="8" enum-type="Nowo\TimeTrackBundle\Enum\CalendarMatchKind"/>
+        <many-to-one field="entry" target-entity="Nowo\TimeTrackBundle\Entity\TimeEntry">
+            <join-column name="entry_id" referenced-column-name="id" nullable="true" on-delete="SET NULL"/>
+        </many-to-one>
+        <many-to-one field="connection" target-entity="Nowo\TimeTrackBundle\Entity\CalendarConnection">
+            <join-column name="connection_id" referenced-column-name="id" nullable="false" on-delete="CASCADE"/>
+        </many-to-one>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="false" on-delete="CASCADE"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

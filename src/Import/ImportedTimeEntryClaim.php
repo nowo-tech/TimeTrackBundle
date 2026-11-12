@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Import;
 
+use LogicException;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -25,5 +28,24 @@ final readonly class ImportedTimeEntryClaim
         public string $personRef,
         public ?string $scopeKey = null,
     ) {
+    }
+
+    /**
+     * Since 1.23.0: the claim of a user reference (REQ-ARCH-001 rule 3). The reference must carry the security user
+     * ({@see TimeTrackUserRef::of()}): the entry stores it.
+     *
+     * @throws LogicException When the reference carries no security user object
+     */
+    public static function ofRef(TimeTrackUserRef $user, string $personRef, ?string $scopeKey = null): self
+    {
+        return new self(TimeTrackUserRefs::securityUser($user, self::class . '::ofRef()'), $personRef, $scopeKey);
+    }
+
+    /**
+     * Since 1.23.0: framework-free reference of {@see self::$user}. Built per call.
+     */
+    public function userRef(): TimeTrackUserRef
+    {
+        return TimeTrackUserRefs::fromUser($this->user);
     }
 }

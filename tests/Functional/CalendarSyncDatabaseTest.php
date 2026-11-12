@@ -39,6 +39,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Support\FakeCalendarEventSource;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -470,6 +471,7 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertCount(2, $rules->rulesOf($this->user, 'org-a'));
     }
 
+    #[Group('shared-entity-manager')]
     public function testTheSyncCommandPrintsCountsOnly(): void
     {
         $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', 'v1');

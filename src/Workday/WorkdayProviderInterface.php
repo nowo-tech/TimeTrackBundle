@@ -11,6 +11,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 /**
  * Since 1.13 (host, `client_api.workday_provider`; R-GDPR §8): the clients' access to the host's working-time
  * register (Beacon spec 198). The register logic — segments, corrections, chain, export — stays entirely in the host.
+ *
+ * @deprecated since 1.23.0, implement {@see WorkdaySourceInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface WorkdayProviderInterface
 {
