@@ -24,6 +24,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
+use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinClientPorts;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinPortConfig;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\NowoUiKitBundle;
@@ -172,6 +173,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(RacingCachePool::class)->public();
         // Since 1.23.0 (REQ-ARCH-001 rule 3): the framework-free twins of the stub ports, sharing the stubs' state
         // (used where a test runs its scenarios through TwinPortConfig::twin()).
+        $container->services()->set(TwinClientPorts::class)->public();
         foreach (TwinPortConfig::TWINS as $stub => $twin) {
             $container->services()->set($twin)->args([service($stub)])->public();
         }
