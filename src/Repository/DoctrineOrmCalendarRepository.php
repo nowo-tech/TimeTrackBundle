@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus;
 use Nowo\TimeTrackBundle\Support\StorageTime;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
 use function array_fill_keys;
@@ -76,7 +77,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $connection;
+        return ExactUserIds::keepOne($this->entityManager, CalendarConnection::class, $connection, $userId);
     }
 
     /**
@@ -98,7 +99,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarConnection> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $result, [$userId]);
     }
 
     /**
@@ -134,7 +135,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarConnection> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return $userId === null ? $result : ExactUserIds::keep($this->entityManager, CalendarConnection::class, $result, [$userId]);
     }
 
     /**
@@ -224,7 +225,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarSuggestion> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
 
     /**
@@ -249,7 +250,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
 
     /**
@@ -270,7 +271,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
 
     /**
@@ -399,7 +400,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarRule::class, $result, [$userId]);
     }
 
     /**
@@ -418,6 +419,6 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, CalendarRule::class, $result, [$userId]);
     }
 }

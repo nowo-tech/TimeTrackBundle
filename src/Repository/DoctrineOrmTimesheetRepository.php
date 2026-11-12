@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
 use function array_chunk;
@@ -96,7 +97,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $timesheet;
+        return ExactUserIds::keepOne($this->entityManager, Timesheet::class, $timesheet, $ownerId);
     }
 
     /**
@@ -104,7 +105,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuarding(string $ownerId, ?string $scopeKey, string $fromDate, string $toDate): array
     {
-        return $this->guarding('IDENTITY(t.user) = :owner', $ownerId, $scopeKey, $fromDate, $toDate);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('IDENTITY(t.user) = :owner', $ownerId, $scopeKey, $fromDate, $toDate), [$ownerId]);
     }
 
     /**
@@ -112,7 +113,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuardingByOwnerRef(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
     {
-        return $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate), [$ownerRef], static fn (Timesheet $timesheet): string => $timesheet->getOwnerRef());
     }
 
     /**
@@ -122,7 +123,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function findGuardingForMove(string $ownerRef, ?string $scopeKey, string $fromDate, string $toDate): array
     {
-        return $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate, LockMode::PESSIMISTIC_READ);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('t.ownerRef = :owner', $ownerRef, $scopeKey, $fromDate, $toDate, LockMode::PESSIMISTIC_READ), [$ownerRef], static fn (Timesheet $timesheet): string => $timesheet->getOwnerRef());
     }
 
     /**
@@ -173,7 +174,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $result, [$ownerId]);
     }
 
     /**
@@ -201,7 +202,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         /** @var list<Timesheet> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $result, $ownerIds);
     }
 
     /**
@@ -225,7 +226,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $timesheet;
+        return ExactUserIds::keepOne($this->entityManager, Timesheet::class, $timesheet, $ownerId);
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\UserRef;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 
@@ -28,6 +29,10 @@ final readonly class HostUserRows
      */
     public function remove(string $userId): int
     {
+        // Audit OA-M1: an id that does not compare exactly is never used to delete (a look-alike's row could go).
+        if (!DoctrineUserReferenceResolver::isExactId($userId)) {
+            return 0;
+        }
         $deleted = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete(HostUser::class, 'h')
             ->where('h.id = :id')

@@ -121,7 +121,9 @@ implement the 1.23 twin instead and keep the same option (see the table in the C
 - `roles` are the role names the user object reports, without the role hierarchy. Compare users with
   `isSameUserAs()` (class and id), not with `===`: references are built per call.
 - Which interface is asked: a service implementing the deprecated interface is asked through it (also when it
-  implements the twin too); only-twin services through an internal gate. Symfony's DebugClassLoader reports, in debug
+  implements the twin too); only-twin services through an internal gate. So when you move to a twin, remove the
+  deprecated interface from the class (and any permissive stub implementation of it you kept "for compatibility"):
+  as long as the class implements it, the bundle asks that stub, not your twin. Symfony's DebugClassLoader reports, in debug
   mode, each of your classes that implements a deprecated interface.
 - If you inspect the container: the services that used a port configured by option only
   (`calendar.credential_provider`, `meetings.provider`, `client_api.workday_provider`, `client_api.idle_check.provider`,
@@ -156,6 +158,9 @@ Nothing changes unless you opt in. With `nowo_time_track.database.private_entity
 - `$yourManager->getRepository(TimeEntry::class)` (and the other bundle entities) still works on your manager.
 - With doctrine/dbal 3 the rollback middleware is not registered: after a rollback the private manager is only replaced
   at the next boundary.
+- Your SQL filters are mirrored on the private manager with their parameters (`SQLFilter::setParameter()` /
+  `setParameterList()`) only: a filter that reads other state (a service, a property set on the filter object) must take
+  it from its parameters, or it sees its defaults on the private manager.
 
 `private_entity_manager: false` (the default) is deprecated; in 2.0 the private manager is the only mode.
 
@@ -189,7 +194,12 @@ nowo_time_track:
    keeps its row.
 3. `TimeEntry::getUser()` and the other entities' `getUser()` return the bundle's `UserRef\Entity\HostUser` (its
    `getId()` is your id, `getUserClass()` your class) instead of your user object; `getUserId()` is unchanged.
-4. Ids compare byte for byte (`usera` is not `UserA`), also on MySQL / MariaDB.
+4. Ids compare byte for byte (`usera` is not `UserA`, `abc ` is not `abc`): the id columns and the person reference
+   columns (`owner_ref`, `person_ref`, `actor_ref`, `submitted_by_ref`, `decided_by_ref`) get a NO PAD binary collation
+   (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB; `utf8mb4_bin` on older MySQL and
+   `Latin1_General_100_BIN2` on SQL Server, which ignore trailing spaces), and the stores re-check the ids in PHP.
+5. Ids with a leading or trailing blank or a control, format, separator or invisible character are refused
+   (`LogicException`) before anything is written or released.
 
 ### Coming in 2.0
 

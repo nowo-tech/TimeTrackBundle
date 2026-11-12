@@ -134,13 +134,24 @@ change.
   The bundle rows then reference `UserRef\Entity\HostUser`, a bundle-owned row per user (`<table_prefix>host_users`:
   your user's id, at most 128 characters, and class), mapped only in this mode; `user_class` need not be a Doctrine entity
   of the bundle's entity manager. The id column (and so every `user_id` referencing it) gets a binary collation on MySQL /
-  MariaDB (`utf8mb4_bin`) and SQL Server, and the user-id lookups of the entry and timer stores re-check the owner id byte
+  MariaDB (NO PAD binary: `utf8mb4_0900_bin` / `utf8mb4_nopad_bin`, see audit OA below) and SQL Server, and the user-id lookups of the entry and timer stores re-check the owner id byte
   for byte in PHP (`UserRef\ExactUserIds`; audit LQ rule). `DoctrineUserReferenceResolver` creates the row on first use
   (a concurrent creation is tolerated) for a `user_class` or `accepted_user_classes` security user. Releasing a user
   (`FormerPersonTimeEntries::release()` or the former-person listener) deletes its row after settling its entries, so
   timers, tokens, device codes and calendar rows go with it and entries, timesheets and ledger lines lose their user, as
   with the relation mapping's foreign keys (`UserRef\HostUserRows`). The 1.23 twins receive your class and id
   (`TimeTrackUserRef`) for a stored owner.
+- Audit OA (before the tag), all with `user_mapping: id` only:
+  - **OA-M1**: ids with a leading or trailing blank or a control, format, separator or invisible character are refused
+    before any write or release (`DoctrineUserReferenceResolver::isExactId()`); after a concurrent creation the row is
+    re-read and must match byte for byte; NO PAD binary collations (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin`
+    on MariaDB); the timesheet and calendar stores and `countByUsersAndPeriod()` / `countLiveByUsersAndPeriod()` re-check
+    the owner ids in PHP too (OA-L2).
+  - **OA-M2**: `owner_ref`, `person_ref`, `actor_ref`, `submitted_by_ref` and `decided_by_ref` get the same collation
+    (new opt-in DDL; the relation mapping is unchanged and its known limit is in SECURITY).
+  - **OA-L1**: `TimeTrackManagerRegistry` treats the host user rows as bundle entities.
+  - Info: `TwinClientPortsTest` (twin-only task access policy and credential minter on the client API paths); UPGRADING
+    notes on classes that implement both interfaces and on the SQL filters the private manager mirrors.
 - Tests: `XmlMappingParityTest`, `MappingOptionsTest`, `DddIdHostTest` (a security user that is no entity, XML mapping,
   private entity manager, client API, byte-exact ids, release), and CI runs the functional suite on the XML mapping
   (SQLite; MySQL and PostgreSQL with the private entity manager).

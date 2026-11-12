@@ -6,7 +6,10 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\UserRef;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\Platforms\MariaDBPlatform;
 use Doctrine\DBAL\Platforms\MySQL80Platform;
+use Doctrine\DBAL\Platforms\MySQLPlatform;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\DBAL\Platforms\SQLServerPlatform;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
@@ -15,6 +18,7 @@ use Doctrine\ORM\Mapping\Driver\AttributeDriver;
 use Doctrine\Persistence\Mapping\RuntimeReflectionService;
 use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\SecurityUser;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
@@ -57,6 +61,7 @@ final class HostUserIdMappingTest extends TestCase
         $connection = $this->createMock(Connection::class);
         $connection->method('isTransactionActive')->willReturn(false);
         $connection->expects(self::once())->method('insert')->with('time_track_host_users', ['id' => 'ext-7', 'user_class' => SecurityUser::class])->willThrowException($this->createStub(UniqueConstraintViolationException::class));
+        $connection->method('fetchOne')->willReturn('ext-7');
         $metadata = new ClassMetadata(HostUser::class);
         $metadata->setPrimaryTable(['name' => 'time_track_host_users']);
         $reference = new HostUser('ext-7', SecurityUser::class);
@@ -69,6 +74,26 @@ final class HostUserIdMappingTest extends TestCase
         self::assertSame($reference, $this->resolver($em)->reference(new SecurityUser('ext-7')));
     }
 
+    public function testARowCreatedMeanwhileMustMatchByteForByte(): void
+    {
+        // Audit OA-M1: a database that compares loosely must never let this id stand for another user's row.
+        $connection = $this->createMock(Connection::class);
+        $connection->method('isTransactionActive')->willReturn(false);
+        $connection->method('insert')->willThrowException($this->createStub(UniqueConstraintViolationException::class));
+        $connection->method('fetchOne')->with('SELECT id FROM time_track_host_users WHERE id = ?', ['ABC'])->willReturn('abc');
+        $metadata = new ClassMetadata(HostUser::class);
+        $metadata->setPrimaryTable(['name' => 'time_track_host_users']);
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('find')->willReturn(null);
+        $em->method('getConnection')->willReturn($connection);
+        $em->method('getClassMetadata')->willReturn($metadata);
+        $em->expects(self::never())->method('getReference');
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('ids must compare exactly');
+        $this->resolver($em)->reference(new SecurityUser('ABC'));
+    }
+
     public function testTheResolverRefusesAnotherClassAndAnUnusableId(): void
     {
         $em = $this->createStub(EntityManagerInterface::class);
@@ -78,7 +103,7 @@ final class HostUserIdMappingTest extends TestCase
         } catch (AccessDeniedException) {
         }
 
-        foreach ([new SecurityUser(null), new SecurityUser('0'), new SecurityUser(str_repeat('a', HostUser::ID_LENGTH + 1))] as $user) {
+        foreach ([new SecurityUser(null), new SecurityUser('0'), new SecurityUser(str_repeat('a', HostUser::ID_LENGTH + 1)), new SecurityUser('abc '), new SecurityUser("a\u{200B}c"), new SecurityUser("\xC3\x28")] as $user) {
             try {
                 $this->resolver($em)->reference($user);
                 self::fail('an unusable id is refused');
@@ -90,12 +115,30 @@ final class HostUserIdMappingTest extends TestCase
 
     public function testTheIdColumnIsBinaryOnMySqlAndSqlServerAndAnUnknownPlatformFails(): void
     {
-        self::assertSame(['charset' => 'utf8mb4', 'collation' => 'utf8mb4_bin'], $this->idOptions(new MySQL80Platform()));
+        self::assertSame(['charset' => 'utf8mb4', 'collation' => 'utf8mb4_0900_bin'], $this->idOptions(new MySQL80Platform()));
+        self::assertSame(['charset' => 'utf8mb4', 'collation' => 'utf8mb4_nopad_bin'], $this->idOptions(new MariaDBPlatform()));
+        self::assertSame(['charset' => 'utf8mb4', 'collation' => 'utf8mb4_bin'], $this->idOptions(new MySQLPlatform()));
+        self::assertSame([], $this->idOptions(new SQLitePlatform()) ?? []);
         self::assertSame(['collation' => 'Latin1_General_100_BIN2'], $this->idOptions(new SQLServerPlatform()));
 
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage('needs the database platform');
         $this->idOptions(null);
+    }
+
+    public function testThePersonReferenceColumnsCompareExactlyWithTheIdMappingOnly(): void
+    {
+        // Audit OA-M2.
+        foreach (TimeTrackMetadataListener::REF_FIELDS as $class => $fields) {
+            foreach ([UserMapping::ID => ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_nopad_bin'], UserMapping::RELATION => null] as $mapping => $expected) {
+                $metadata = $this->metadata($class, dirname(__DIR__, 3) . '/src/Entity', $mapping, new MariaDBPlatform());
+                foreach ($fields as $field) {
+                    $options = $metadata->fieldMappings[$field]->options ?? [];
+                    self::assertSame($expected, $expected === null ? (isset($options['collation']) ? $options : null) : ['charset' => $options['charset'] ?? null, 'collation' => $options['collation'] ?? null], $class . '::' . $field . ' ' . $mapping);
+                }
+            }
+        }
+        self::assertTrue(TimeTrackManagerRegistry::isBundleEntity(HostUser::class), 'OA-L1');
     }
 
     private function resolver(EntityManagerInterface $em): DoctrineUserReferenceResolver
@@ -108,9 +151,19 @@ final class HostUserIdMappingTest extends TestCase
      */
     private function idOptions(?object $platform): ?array
     {
-        $metadata = new ClassMetadata(HostUser::class);
+        return $this->metadata(HostUser::class, dirname(__DIR__, 3) . '/src/UserRef/Entity', UserMapping::ID, $platform)->fieldMappings['id']->options;
+    }
+
+    /**
+     * @param class-string $class
+     *
+     * @return ClassMetadata<object>
+     */
+    private function metadata(string $class, string $dir, string $mapping, ?object $platform): ClassMetadata
+    {
+        $metadata = new ClassMetadata($class);
         $metadata->initializeReflection(new RuntimeReflectionService());
-        (new AttributeDriver([dirname(__DIR__, 3) . '/src/UserRef/Entity']))->loadMetadataForClass(HostUser::class, $metadata);
+        (new AttributeDriver([$dir]))->loadMetadataForClass($class, $metadata);
         $connection = $this->createStub(Connection::class);
         if ($platform === null) {
             $connection->method('getDatabasePlatform')->willThrowException(new RuntimeException('database down'));
@@ -120,9 +173,8 @@ final class HostUserIdMappingTest extends TestCase
         $em = $this->createStub(EntityManagerInterface::class);
         $em->method('getConnection')->willReturn($connection);
 
-        (new TimeTrackMetadataListener('e', 't', 'c', SecurityUser::class, userMapping: UserMapping::ID))->loadClassMetadata(new LoadClassMetadataEventArgs($metadata, $em));
-        self::assertSame('time_track_host_users', $metadata->getTableName());
+        (new TimeTrackMetadataListener('e', 't', 'c', SecurityUser::class, userMapping: $mapping))->loadClassMetadata(new LoadClassMetadataEventArgs($metadata, $em));
 
-        return $metadata->fieldMappings['id']->options;
+        return $metadata;
     }
 }

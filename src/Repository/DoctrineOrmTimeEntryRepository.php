@@ -17,7 +17,6 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
-use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Psr\Log\LoggerInterface;
 use SortDirection;
@@ -148,10 +147,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             return 0;
         }
 
-        return (int) $this->periodQuery($userIds, $from, $to)
-            ->select('COUNT(e.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
+        return $this->countOwned($this->periodQuery($userIds, $from, $to), $userIds);
     }
 
     /**
@@ -276,12 +272,9 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             return 0;
         }
 
-        return (int) $this->periodQuery($userIds, $from, $to)
-            ->select('COUNT(e.id)')
+        return $this->countOwned($this->periodQuery($userIds, $from, $to)
             ->andWhere('e.source <> :import')
-            ->setParameter('import', TimeEntrySource::Import->value)
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setParameter('import', TimeEntrySource::Import->value), $userIds);
     }
 
     /**
@@ -308,10 +301,6 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * The user's row lock: on the managed entity, else (a user from another manager or provider, delta GG-D-2) by id
-     * through the mapped user class; a warning when no row could be locked.
-     */
-    /**
      * Since 1.23.0: with the id user mapping, only the entries whose owner id equals one of the ids byte for byte
      * ({@see ExactUserIds}); the result as it is with the relation mapping.
      *
@@ -322,13 +311,35 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     private function exactOwners(array $entries, array $userIds): array
     {
-        if ($this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user') !== HostUser::class) {
-            return $entries;
-        }
-
-        return ExactUserIds::filter($entries, $userIds, static fn (TimeEntry $entry): ?string => $entry->getUserId());
+        return ExactUserIds::keep($this->entityManager, TimeEntry::class, $entries, $userIds);
     }
 
+    /**
+     * The number of entries of the query (one of the users): a SQL `COUNT` with the relation mapping (1.22), and with
+     * the id mapping (since 1.23.0, audit OA-L2) the owners counted in PHP, byte for byte.
+     *
+     * @param list<string> $userIds
+     */
+    private function countOwned(QueryBuilder $query, array $userIds): int
+    {
+        if (!ExactUserIds::applies($this->entityManager, TimeEntry::class)) {
+            return (int) $query->select('COUNT(e.id)')->getQuery()->getSingleScalarResult();
+        }
+
+        $count = 0;
+        /** @var list<array{owner: string|null}> $rows */
+        $rows = $query->select('IDENTITY(e.user) AS owner')->getQuery()->getArrayResult();
+        foreach ($rows as $row) {
+            $count += in_array($row['owner'], $userIds, true) ? 1 : 0;
+        }
+
+        return $count;
+    }
+
+    /**
+     * The user's row lock: on the managed entity, else (a user from another manager or provider, delta GG-D-2) by id
+     * through the mapped user class; a warning when no row could be locked.
+     */
     private function lockUser(object $user): void
     {
         if ($this->entityManager->contains($user)) {

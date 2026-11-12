@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Retention;
 use DateTimeImmutable;
 use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
@@ -99,6 +100,10 @@ final readonly class FormerPersonTimeEntries
     public function release(UserInterface $user, ?string $name = null): int
     {
         $store = $this->store();
+        // Since 1.23.0 (`user_mapping: id`, audit OA-M1): an id that does not compare exactly could reach a look-alike's rows.
+        if ($this->hostUsers instanceof HostUserRows && !DoctrineUserReferenceResolver::isExactId(UserIdResolver::getId($user))) {
+            throw new LogicException('This user id cannot be released with the TimeTrack id user mapping: it has a leading or trailing blank or an invisible character.');
+        }
         $this->timers?->stopForUserDeletion($user);
 
         $released = $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));

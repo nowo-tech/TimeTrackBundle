@@ -24,6 +24,9 @@ final readonly class TimeTrackManagerRegistry implements ManagerRegistry
 {
     public const ENTITY_NAMESPACE = 'Nowo\\TimeTrackBundle\\Entity';
 
+    /** Since 1.23.0 (audit OA-L1): the host user rows of `user_mapping: id` are bundle entities too. */
+    public const USER_REF_NAMESPACE = 'Nowo\\TimeTrackBundle\\UserRef\\Entity';
+
     /**
      * @param ManagerRegistry $registry The application's Doctrine registry
      * @param TimeTrackEntityManager $entityManager The bundle's private manager
@@ -149,11 +152,13 @@ final readonly class TimeTrackManagerRegistry implements ManagerRegistry
     }
 
     /**
-     * Whether a class (or a Doctrine proxy class of it, `…\__CG__\…`) is an TimeTrack entity.
+     * Whether a class (or a Doctrine proxy class of it, `…\__CG__\…`) is a TimeTrack entity (the host user rows included).
      */
     public static function isBundleEntity(string $class): bool
     {
-        return str_starts_with(self::realClass($class), self::ENTITY_NAMESPACE . '\\');
+        $real = self::realClass($class);
+
+        return str_starts_with($real, self::ENTITY_NAMESPACE . '\\') || str_starts_with($real, self::USER_REF_NAMESPACE . '\\');
     }
 
     /**
