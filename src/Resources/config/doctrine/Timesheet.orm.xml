@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\Timesheet (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\Timesheet" table="time_track_timesheets">
+        <indexes>
+            <index name="idx_time_track_timesheets_queue" columns="scope_key,status,period_start"/>
+            <index name="idx_time_track_timesheets_lock" columns="user_id,scope_key,locked_at,period_end"/>
+            <index name="idx_time_track_timesheets_owner_ref" columns="owner_ref,period_end"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_timesheets_period" columns="user_id,scope_key,period_kind,period_start"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="periodKind" type="string" column="period_kind" length="8" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind"/>
+        <field name="periodStart" type="date_immutable" column="period_start"/>
+        <field name="periodEnd" type="date_immutable" column="period_end"/>
+        <field name="status" type="string" column="status" length="16" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetStatus"/>
+        <field name="lockedAt" type="datetime_immutable" column="locked_at" nullable="true"/>
+        <field name="lockReason" type="string" column="lock_reason" length="16" nullable="true" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetLockReason"/>
+        <field name="submittedAt" type="datetime_immutable" column="submitted_at" nullable="true"/>
+        <field name="submittedByRef" type="string" column="submitted_by_ref" length="64" nullable="true"/>
+        <field name="decidedAt" type="datetime_immutable" column="decided_at" nullable="true"/>
+        <field name="decidedByRef" type="string" column="decided_by_ref" length="64" nullable="true"/>
+        <field name="decisionComment" type="string" column="decision_comment" length="1000" nullable="true"/>
+        <field name="totals" type="json" column="totals" nullable="true"/>
+        <field name="entriesHash" type="string" column="entries_hash" length="64" nullable="true">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="headHash" type="string" column="head_hash" length="64" nullable="true">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="version" type="integer" column="version" version="true">
+            <options>
+                <option name="default">1</option>
+            </options>
+        </field>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="updatedAt" type="datetime_immutable" column="updated_at"/>
+        <field name="ownerRef" type="string" column="owner_ref" length="64"/>
+        <field name="scopeKey" type="string" column="scope_key" length="64"/>
+        <field name="timezone" type="string" column="timezone" length="64"/>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="true" on-delete="SET NULL"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

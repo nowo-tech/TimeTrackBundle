@@ -37,6 +37,7 @@ opt-in private entity manager (`database.private_entity_manager: true`).
 | `Doctrine\UnitOfWorkBoundaries` | which units of work are running in the process | Describes the running units (deliberately not reset by `kernel.reset`); copied from AuthKitBundle 1.46.0 / PageBuilderKitBundle 1.15.1 |
 | `Doctrine\TimeTrackRepositoryFactory` | repositories memoised in a `WeakMap` keyed by the private manager | Gone with the manager at the next boundary |
 | `Doctrine\FormerPersonSnapshotListener` | unchanged per-flush state; in private mode it drops the private manager after settling a deleted user's entries | Cleared at the boundaries as in 1.19 |
+| `UserRef\HostUserRows`, `UserRef\ExactUserIds`, `DoctrineUserReferenceResolver` (`user_mapping: id`) | `final readonly` / static helpers; the host user row is read or created per call | Stateless; no user is memoised |
 
 - **Entity manager (rule 4 of REQ-RUNTIME-002)**: with the option on, the bundle clears its own manager at every boundary
   and recreates it when a failed write closed it; it never touches the application's managers (the host keeps rule 7 for

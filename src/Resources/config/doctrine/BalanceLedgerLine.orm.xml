@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\BalanceLedgerLine (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\BalanceLedgerLine" table="time_track_balance_ledger">
+        <indexes>
+            <index name="idx_time_track_balance_ledger_user" columns="user_id,scope_key,effective_date"/>
+            <index name="idx_time_track_balance_ledger_timesheet" columns="timesheet_id"/>
+            <index name="idx_time_track_balance_ledger_reverses" columns="reverses_id"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_balance_ledger_chain" columns="owner_ref,scope_key,prev_hash"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="effectiveDate" type="date_immutable" column="effective_date"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="hash" type="string" column="hash" length="64">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="purgedBefore" type="date_immutable" column="purged_before" nullable="true"/>
+        <field name="ownerRef" type="string" column="owner_ref" length="64"/>
+        <field name="scopeKey" type="string" column="scope_key" length="64"/>
+        <field name="kind" type="string" column="kind" length="24" enum-type="Nowo\TimeTrackBundle\Enum\LedgerKind"/>
+        <field name="seconds" type="integer" column="seconds"/>
+        <field name="prevHash" type="string" column="prev_hash" length="64" nullable="true">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="reason" type="string" column="reason" length="500" nullable="true"/>
+        <field name="reversesId" type="string" column="reverses_id" length="36" nullable="true"/>
+        <field name="actorRef" type="string" column="actor_ref" length="64" nullable="true"/>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="true" on-delete="SET NULL"/>
+        </many-to-one>
+        <many-to-one field="timesheet" target-entity="Nowo\TimeTrackBundle\Entity\Timesheet">
+            <join-column name="timesheet_id" referenced-column-name="id" nullable="true" on-delete="SET NULL"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Port;
 
 use LogicException;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -32,6 +33,10 @@ final class TimeTrackUserRefs
      */
     public static function fromUser(object $user): TimeTrackUserRef
     {
+        if ($user instanceof HostUser) {
+            // Since 1.23.0 (`user_mapping: id`): a stored owner is your user's class and id (no object of yours).
+            return new TimeTrackUserRef($user->getUserClass(), $user->getId(), '', [], $user);
+        }
         $id = UserIdResolver::idOf($user);
         if ($id !== null && trim($id) === '') {
             $id = null; // a blank id (e.g. getId() returning ' ') counts as none

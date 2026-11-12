@@ -232,7 +232,13 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
      */
     public static function privateEntityManager(): array
     {
-        return getenv('TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER') === '1' ? ['database' => ['private_entity_manager' => true]] : [];
+        $database = getenv('TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER') === '1' ? ['private_entity_manager' => true] : [];
+        // Since 1.23.0: `TIME_TRACK_TEST_MAPPING_TYPE=xml` runs the suite on the shipped XML mapping (REQ-ARCH-001 rule 2).
+        if (getenv('TIME_TRACK_TEST_MAPPING_TYPE') === 'xml') {
+            $database['mapping_type'] = 'xml';
+        }
+
+        return $database === [] ? [] : ['database' => $database];
     }
 
     /**

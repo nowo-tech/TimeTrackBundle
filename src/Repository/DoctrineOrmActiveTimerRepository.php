@@ -9,6 +9,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Throwable;
 
 use function array_column;
@@ -100,7 +101,8 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $timer;
+        // Since 1.23.0 (id user mapping): the owner id must match byte for byte (audit LQ).
+        return $timer instanceof ActiveTimer && ($timer->getUserId() === $userId || $this->entityManager->getClassMetadata(ActiveTimer::class)->getAssociationTargetClass('user') !== HostUser::class) ? $timer : null;
     }
 
     /**

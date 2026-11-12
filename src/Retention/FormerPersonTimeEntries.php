@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\TimeEntryCsv;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\UserRef\HostUserRows;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -51,6 +52,7 @@ final readonly class FormerPersonTimeEntries
      * @param ClientUserProfileProviderInterface|null $profiles The display name of a user, when the caller passes none
      * @param TimerService|null $timers Stops a running timer before a release or an anonymisation
      * @param bool $anonymiseOnUserDelete `retention.anonymise_on_user_delete`
+     * @param HostUserRows|null $hostUsers Since 1.23.0 (`user_mapping: id`): deletes the bundle's row of a released user
      */
     public function __construct(
         TimeEntryRepositoryInterface $repository,
@@ -59,6 +61,7 @@ final readonly class FormerPersonTimeEntries
         private LoggerInterface $logger = new NullLogger(),
         private ?TimerService $timers = null,
         private bool $anonymiseOnUserDelete = false,
+        private ?HostUserRows $hostUsers = null,
     ) {
         $this->repository = $repository instanceof FormerPersonTimeEntryRepositoryInterface ? $repository : null;
     }
@@ -98,7 +101,19 @@ final readonly class FormerPersonTimeEntries
         $store = $this->store();
         $this->timers?->stopForUserDeletion($user);
 
-        return $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
+        $released = $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
+        $this->forgetUser(UserIdResolver::getId($user));
+
+        return $released;
+    }
+
+    /**
+     * Since 1.23.0 (`user_mapping: id`): deletes the bundle's row of a deleted user (its timers, tokens and calendar rows go
+     * with it, as with the foreign keys of the relation mapping). Nothing with the relation mapping.
+     */
+    public function forgetUser(string $userId): void
+    {
+        $this->hostUsers?->remove($userId);
     }
 
     /**

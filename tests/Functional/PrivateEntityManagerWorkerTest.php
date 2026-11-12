@@ -28,6 +28,7 @@ final class PrivateEntityManagerWorkerTest extends WorkerModeNoResetTest
     {
         $other   = $this->createUser('other@example.com');
         $people  = ['person' => $this->login(), 'other' => $this->login('other@example.com')];
+        $ids     = ['person' => $this->user->getId(), 'other' => $other->getId()];
         $private = self::getContainer()->get(TimeTrackEntityManager::class);
         self::assertInstanceOf(TimeTrackEntityManager::class, $private);
         self::assertNotNull($other->getId());
@@ -37,7 +38,7 @@ final class PrivateEntityManagerWorkerTest extends WorkerModeNoResetTest
                 $this->call('POST', '/api/time-track/timer/start', $token, ['taskId' => 'task-1', 'note' => $name . '-' . $round, 'clientType' => 'desktop'], Response::HTTP_CREATED);
                 self::assertFalse($private->isCreated(), sprintf('round %d: dropped after the request of %s', $round, $name));
                 // Changed behind the bundle's back between two requests: the next request reads it fresh.
-                $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_active_timers SET metadata = '{\"note\":\"sql-" . $round . "\"}' WHERE task_title_snapshot IS NOT NULL AND metadata LIKE '%" . $name . '-' . $round . "%'");
+                $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_active_timers SET metadata = ? WHERE user_id = ?', ['{"note":"sql-' . $round . '"}', $ids[$name]]);
                 $timer = $this->call('GET', '/api/time-track/timer', $token)['timer'] ?? null;
                 self::assertIsArray($timer);
                 self::assertSame('sql-' . $round, $timer['metadata']['note'] ?? null, sprintf('round %d: %s reads the fresh row', $round, $name));

@@ -37,5 +37,7 @@ final class DefaultPortsWiringTest extends FunctionalTestCase
         ] as $port => $builtIn) {
             self::assertSame($builtIn, $container->get($port)::class, $port);
         }
+        // Strictly additive: the id user mapping's table exists only with `user_mapping: id`.
+        self::assertNotContains('time_track_host_users', $this->entityManager()->getConnection()->createSchemaManager()->listTableNames());
     }
 }

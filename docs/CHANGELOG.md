@@ -59,7 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Target **1.23.0** (minor; REQ-ARCH-001 XL track: framework-free ports and events, an opt-in private entity manager).
+Target **1.23.0** (minor; REQ-ARCH-001 XL track: framework-free ports and events, an opt-in private entity manager,
+XML mappings and an opt-in user reference by id).
 Additive: with the default configuration and every existing host service, the bundle asks the same interfaces with the
 same arguments, writes through the same entity manager and answers exactly as in 1.22.1. No schema, route or client API
 change.
@@ -125,6 +126,24 @@ change.
   `TimeTrackRepositoryFactoryTest`, `PrivateEntityManagerConfigTest`. CI runs the whole functional suite again on
   SQLite, MySQL, MariaDB and PostgreSQL with the option on (`TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER=1`, leaving out the
   tests of group `shared-entity-manager`, which assume one shared manager).
+- **XML mappings** of every bundle entity (`src/Resources/config/doctrine/*.orm.xml`, REQ-ARCH-001 rule 2), selected
+  with `database.mapping_type: xml` (default `attribute`). Generated from the attribute mapping and kept equal by
+  `XmlMappingParityTest` (columns, types, lengths, options, nullability, enums, version, identifiers, indexes, unique
+  constraints, associations and join columns of every entity).
+- **Opt-in user reference by id** `user_mapping: id` (default `relation`, the 1.22 foreign keys to your users table).
+  The bundle rows then reference `UserRef\Entity\HostUser`, a bundle-owned row per user (`<table_prefix>host_users`:
+  your user's id, at most 128 characters, and class), mapped only in this mode; `user_class` need not be a Doctrine entity
+  of the bundle's entity manager. The id column (and so every `user_id` referencing it) gets a binary collation on MySQL /
+  MariaDB (`utf8mb4_bin`) and SQL Server, and the user-id lookups of the entry and timer stores re-check the owner id byte
+  for byte in PHP (`UserRef\ExactUserIds`; audit LQ rule). `DoctrineUserReferenceResolver` creates the row on first use
+  (a concurrent creation is tolerated) for a `user_class` or `accepted_user_classes` security user. Releasing a user
+  (`FormerPersonTimeEntries::release()` or the former-person listener) deletes its row after settling its entries, so
+  timers, tokens, device codes and calendar rows go with it and entries, timesheets and ledger lines lose their user, as
+  with the relation mapping's foreign keys (`UserRef\HostUserRows`). The 1.23 twins receive your class and id
+  (`TimeTrackUserRef`) for a stored owner.
+- Tests: `XmlMappingParityTest`, `MappingOptionsTest`, `DddIdHostTest` (a security user that is no entity, XML mapping,
+  private entity manager, client API, byte-exact ids, release), and CI runs the functional suite on the XML mapping
+  (SQLite; MySQL and PostgreSQL with the private entity manager).
 - **Event accessors** `userRef()` (`TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`,
   `TaskEffortAccessCheckEvent`) and `viewerRef()` (`TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`) returning a
   `TimeTrackUserRef` (REQ-ARCH-001 rules 3 and 4).

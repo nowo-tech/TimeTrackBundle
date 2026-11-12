@@ -7,6 +7,8 @@
   - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
   - [Event accessors](#event-accessors)
   - [Private entity manager (`database.private_entity_manager`)](#private-entity-manager-databaseprivate_entity_manager)
+  - [XML mapping (`database.mapping_type`)](#xml-mapping-databasemapping_type)
+  - [User reference by id (`user_mapping: id`)](#user-reference-by-id-user_mapping-id)
   - [Coming in 2.0](#coming-in-20)
 - [To 1.22.1](#to-1221)
 - [To 1.22.0](#to-1220)
@@ -86,7 +88,7 @@ composer update nowo-tech/time-track-bundle
 ```
 
 Nothing to change: defaults and existing host services behave exactly as in 1.22.1. 1.23.0 adds the opt-in paths of
-REQ-ARCH-001 (DDD / hexagonal hosts: framework-free ports, a private entity manager) and deprecates the framework-typed members that 2.0 removes. Check one thing: the
+REQ-ARCH-001 (DDD / hexagonal hosts: framework-free ports, a private entity manager, XML mappings, a user reference by id) and deprecates the framework-typed members that 2.0 removes. Check one thing: the
 build now fails when a configured port service implements neither its interface nor the 1.23 twin (1.22 failed at the
 first call with a `TypeError`).
 
@@ -156,6 +158,38 @@ Nothing changes unless you opt in. With `nowo_time_track.database.private_entity
   at the next boundary.
 
 `private_entity_manager: false` (the default) is deprecated; in 2.0 the private manager is the only mode.
+
+### XML mapping (`database.mapping_type`)
+
+`nowo_time_track.database.mapping_type: xml` (default `attribute`) maps the bundle entities from
+`src/Resources/config/doctrine/` instead of their attributes: the same tables, columns and indexes (no migration). A host
+that maps them itself can point its own mapping at that directory (`type: xml`, `prefix: Nowo\TimeTrackBundle\Entity`).
+
+### User reference by id (`user_mapping: id`)
+
+Nothing changes by default (`user_mapping: relation`: foreign keys to your users table). To keep the bundle tables free of
+references to your users table (DDD hosts, users that are not Doctrine entities of the bundle's entity manager):
+
+```yaml
+nowo_time_track:
+    user_mapping: id
+```
+
+0. This is a schema change for an existing installation: the `user_id` columns become strings (at most 128 characters,
+   binary collation on MySQL / MariaDB) referencing the new table `<table_prefix>host_users` (`id`, `user_class`)
+   instead of your users table. Generate the migration (`doctrine:migrations:diff`), and fill `host_users` with the ids
+   already referenced before adding the foreign keys, e.g.
+   `INSERT INTO time_track_host_users (id, user_class) SELECT DISTINCT user_id, 'App\Entity\User' FROM time_track_entries WHERE user_id IS NOT NULL`
+   (and the same for the other tables), then convert the columns. New installations need nothing else.
+1. Your security user (`user_class` or a class in `accepted_user_classes`) needs a `getId()`; its string form is the
+   stored id. The bundle does not look the id up in your users table (there may be none).
+2. Deleting a user: call `FormerPersonTimeEntries::release($user)` (or keep the former-person listener for a Doctrine user
+   entity): it also deletes the user's row, so its timers, tokens, device codes and calendar rows go and its entries,
+   timesheets and ledger lines keep no user, as the foreign keys to your users table did. A user deleted without either
+   keeps its row.
+3. `TimeEntry::getUser()` and the other entities' `getUser()` return the bundle's `UserRef\Entity\HostUser` (its
+   `getId()` is your id, `getUserClass()` your class) instead of your user object; `getUserId()` is unchanged.
+4. Ids compare byte for byte (`usera` is not `UserA`), also on MySQL / MariaDB.
 
 ### Coming in 2.0
 

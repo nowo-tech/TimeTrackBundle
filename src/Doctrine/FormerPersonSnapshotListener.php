@@ -112,6 +112,8 @@ final class FormerPersonSnapshotListener implements ResetInterface
             } else {
                 $this->entries->settleDeleted($settle['ids'], $settle['personRef'], $settle['name']);
             }
+            // Since 1.23.0 (`user_mapping: id`): the bundle's row of the user goes, as your user's row did.
+            $this->entries->forgetUser($settle['userId']);
             // Since 1.23.0: the private manager's copies of the settled entries are stale; the next read loads them again.
             $this->privateEntityManager?->reset();
         }

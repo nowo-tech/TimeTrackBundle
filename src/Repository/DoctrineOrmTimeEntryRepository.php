@@ -17,6 +17,8 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Psr\Log\LoggerInterface;
 use SortDirection;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -106,7 +108,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, [$userId]);
     }
 
     /**
@@ -132,7 +134,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, $userIds);
     }
 
     /**
@@ -232,7 +234,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, [$userId]);
     }
 
     /**
@@ -260,7 +262,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, $userIds);
     }
 
     /**
@@ -309,6 +311,24 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      * The user's row lock: on the managed entity, else (a user from another manager or provider, delta GG-D-2) by id
      * through the mapped user class; a warning when no row could be locked.
      */
+    /**
+     * Since 1.23.0: with the id user mapping, only the entries whose owner id equals one of the ids byte for byte
+     * ({@see ExactUserIds}); the result as it is with the relation mapping.
+     *
+     * @param list<TimeEntry> $entries
+     * @param list<string> $userIds
+     *
+     * @return list<TimeEntry>
+     */
+    private function exactOwners(array $entries, array $userIds): array
+    {
+        if ($this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user') !== HostUser::class) {
+            return $entries;
+        }
+
+        return ExactUserIds::filter($entries, $userIds, static fn (TimeEntry $entry): ?string => $entry->getUserId());
+    }
+
     private function lockUser(object $user): void
     {
         if ($this->entityManager->contains($user)) {
@@ -345,7 +365,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->getQuery()
             ->getResult();
 
-        return $result;
+        return $this->exactOwners($result, [$userId]);
     }
 
     /**

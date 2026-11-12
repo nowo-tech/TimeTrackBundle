@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\TimesheetEvent (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\TimesheetEvent" table="time_track_timesheet_events">
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_timesheet_events_seq" columns="timesheet_id,seq"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="occurredAt" type="datetime_immutable" column="occurred_at"/>
+        <field name="hash" type="string" column="hash" length="64">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="seq" type="integer" column="seq"/>
+        <field name="action" type="string" column="action" length="24" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetAction"/>
+        <field name="fromStatus" type="string" column="from_status" length="16" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetStatus"/>
+        <field name="toStatus" type="string" column="to_status" length="16" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetStatus"/>
+        <field name="actorRef" type="string" column="actor_ref" length="64" nullable="true"/>
+        <field name="actorRole" type="string" column="actor_role" length="16" enum-type="Nowo\TimeTrackBundle\Enum\TimesheetActorRole"/>
+        <field name="client" type="string" column="client" length="16" enum-type="Nowo\TimeTrackBundle\Enum\AuditClient"/>
+        <field name="prevHash" type="string" column="prev_hash" length="64" nullable="true">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="comment" type="string" column="comment" length="1000" nullable="true"/>
+        <field name="entriesHash" type="string" column="entries_hash" length="64" nullable="true">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="totals" type="json" column="totals" nullable="true"/>
+        <many-to-one field="timesheet" target-entity="Nowo\TimeTrackBundle\Entity\Timesheet">
+            <join-column name="timesheet_id" referenced-column-name="id" nullable="false" on-delete="CASCADE"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

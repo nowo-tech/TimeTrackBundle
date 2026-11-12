@@ -133,6 +133,8 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use Nowo\TimeTrackBundle\Ui\TimesheetViewBuilder;
+use Nowo\TimeTrackBundle\UserRef\HostUserRows;
+use Nowo\TimeTrackBundle\UserRef\UserMapping;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
 use Nowo\TimeTrackBundle\WorkingTime\ConfigOvertimePolicy;
 use Nowo\TimeTrackBundle\WorkingTime\DerivedWorkingCalendar;
@@ -190,6 +192,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $security          = $config['security'];
 
         $container->setParameter('nowo_time_track.user_class', $config['user_class']);
+        $container->setParameter('nowo_time_track.user_mapping', $config['user_mapping']);
         $container->setParameter('nowo_time_track.entries_table', $entriesTable);
         $container->setParameter('nowo_time_track.active_timers_table', $activeTimersTable);
         $container->setParameter('nowo_time_track.client_tokens_table', $clientTokensTable);
@@ -287,6 +290,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$calendarConnectionsTableName', $prefix . '_calendar_connections')
             ->setArgument('$calendarSuggestionsTableName', $prefix . '_calendar_suggestions')
             ->setArgument('$calendarRulesTableName', $prefix . '_calendar_rules')
+            ->setArgument('$userMapping', $config['user_mapping'])
+            ->setArgument('$hostUsersTableName', $prefix . '_host_users')
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
         $loginRateLimit = $clients['login_rate_limit'];
@@ -339,7 +344,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerTimesheets($container, $config, $emRef, $registryRef);
         /** @var list<class-string> $acceptedUserClasses */
         $acceptedUserClasses = $config['accepted_user_classes'];
-        $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses);
+        $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses, (string) $config['user_mapping']);
         $this->registerBillable($container);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
@@ -387,13 +392,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      *
      * @param list<class-string> $acceptedUserClasses Since 1.19: `accepted_user_classes` (JV-T3)
      */
-    private function registerUserReferences(ContainerBuilder $container, string $userClass, Reference $emRef, array $acceptedUserClasses): void
+    private function registerUserReferences(ContainerBuilder $container, string $userClass, Reference $emRef, array $acceptedUserClasses, string $userMapping = UserMapping::RELATION): void
     {
         $container->setDefinition(DoctrineUserReferenceResolver::class, (new Definition(DoctrineUserReferenceResolver::class))
             ->setAutowired(false)
             ->setArgument('$entityManager', $emRef)
             ->setArgument('$userClass', $userClass)
-            ->setArgument('$acceptedUserClasses', $acceptedUserClasses));
+            ->setArgument('$acceptedUserClasses', $acceptedUserClasses)
+            ->setArgument('$userMapping', $userMapping));
         $container->setAlias(UserReferenceResolverInterface::class, DoctrineUserReferenceResolver::class);
 
         $reference = new Reference(UserReferenceResolverInterface::class);
@@ -459,6 +465,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
+        if ($config['user_mapping'] === UserMapping::ID) {
+            // Since 1.23.0: the bundle's host user rows (id mapping), through the bundle's entity manager.
+            $container->setDefinition(HostUserRows::class, new Definition(HostUserRows::class, [$container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArgument('$entityManager')]));
+        }
         // Since 1.15: release, anonymise and export of a person's entries; public for host erasers and offboarding.
         $container->setDefinition(FormerPersonTimeEntries::class, (new Definition(FormerPersonTimeEntries::class))
             ->setPublic(true)
@@ -469,6 +479,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$logger'                => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
                 '$timers'                => new Reference(TimerService::class),
                 '$anonymiseOnUserDelete' => $retention['anonymise_on_user_delete'],
+                '$hostUsers'             => $config['user_mapping'] === UserMapping::ID ? new Reference(HostUserRows::class) : null,
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         if (!$retention['former_person_listener']) {
@@ -1262,20 +1273,46 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     public function prepend(ContainerBuilder $container): void
     {
         if ($container->hasExtension('doctrine')) {
-            $container->prependExtensionConfig('doctrine', [
-                'orm' => [
-                    'mappings' => [
-                        'TimeTrackBundle' => [
-                            'type'      => 'attribute',
-                            'is_bundle' => true,
-                        ],
-                    ],
-                ],
-            ]);
+            // Since 1.23.0 (REQ-ARCH-001 rule 2): `database.mapping_type` (attribute or xml) and, with `user_mapping: id`,
+            // the bundle-owned host user rows (mapped only then).
+            [$mappingType, $userMapping] = $this->rawMappingOptions($container);
+            $mappings                    = ['TimeTrackBundle' => ['type' => $mappingType, 'is_bundle' => true]];
+            if ($userMapping === UserMapping::ID) {
+                $mappings['TimeTrackHostUsers'] = [
+                    'type'      => $mappingType,
+                    'is_bundle' => false,
+                    'dir'       => $mappingType === 'xml' ? __DIR__ . '/../Resources/config/doctrine-host-users' : __DIR__ . '/../UserRef/Entity',
+                    'prefix'    => 'Nowo\\TimeTrackBundle\\UserRef\\Entity',
+                ];
+            }
+            $container->prependExtensionConfig('doctrine', ['orm' => ['mappings' => $mappings]]);
         }
 
         $this->prependUiKitDefaults($container);
         $this->prependFormKitDefaults($container);
+    }
+
+    /**
+     * Since 1.23.0: `database.mapping_type` and `user_mapping` as configured (last value wins), read before the
+     * configuration is processed; the defaults otherwise.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function rawMappingOptions(ContainerBuilder $container): array
+    {
+        $mappingType = 'attribute';
+        $userMapping = UserMapping::RELATION;
+        foreach ($container->getExtensionConfig('nowo_time_track') as $config) {
+            $type = is_array($config['database'] ?? null) ? ($config['database']['mapping_type'] ?? null) : null;
+            if ($type === 'xml' || $type === 'attribute') {
+                $mappingType = $type;
+            }
+            if (in_array($config['user_mapping'] ?? null, UserMapping::values(), true)) {
+                $userMapping = (string) $config['user_mapping'];
+            }
+        }
+
+        return [$mappingType, $userMapping];
     }
 
     /**

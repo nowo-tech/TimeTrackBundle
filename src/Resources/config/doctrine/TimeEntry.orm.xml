@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\TimeEntry (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\TimeEntry" table="time_track_entries">
+        <indexes>
+            <index name="time_track_entries_user_idx" columns="user_id"/>
+            <index name="time_track_entries_task_idx" columns="task_id"/>
+            <index name="time_track_entries_started_idx" columns="started_at"/>
+            <index name="time_track_entries_ended_idx" columns="ended_at,id"/>
+            <index name="idx_time_track_entries_source" columns="source"/>
+            <index name="idx_time_track_entries_user_scope_started" columns="user_id,scope_key,started_at"/>
+            <index name="idx_time_track_entries_person_ref" columns="person_ref"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_entries_external" columns="external_source,external_id"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="externalSource" type="string" column="external_source" length="64" nullable="true"/>
+        <field name="externalId" type="string" column="external_id" length="128" nullable="true"/>
+        <field name="billable" type="boolean" column="billable" nullable="true"/>
+        <field name="description" type="text" column="description" nullable="true"/>
+        <field name="scopeKey" type="string" column="scope_key" length="64" nullable="true"/>
+        <field name="personNameSnapshot" type="string" column="person_name_snapshot" length="255" nullable="true"/>
+        <field name="personRef" type="string" column="person_ref" length="69" nullable="true"/>
+        <field name="anonymisedAt" type="datetime_immutable" column="anonymised_at" nullable="true"/>
+        <field name="taskId" type="string" column="task_id" length="36"/>
+        <field name="taskTitleSnapshot" type="string" column="task_title_snapshot" length="255"/>
+        <field name="boardIdSnapshot" type="string" column="board_id_snapshot" length="36" nullable="true"/>
+        <field name="startedAt" type="datetime_immutable" column="started_at"/>
+        <field name="endedAt" type="datetime_immutable" column="ended_at"/>
+        <field name="durationSeconds" type="integer" column="duration_seconds"/>
+        <field name="source" type="string" column="source" length="16" enum-type="Nowo\TimeTrackBundle\Enum\TimeEntrySource"/>
+        <field name="metadata" type="json" column="metadata" nullable="true"/>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="true" on-delete="SET NULL"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

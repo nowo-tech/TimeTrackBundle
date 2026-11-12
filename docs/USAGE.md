@@ -964,6 +964,10 @@ public function onTimerStop(TimerStopEvent $event): void
 
 ### The user
 
+- Since 1.23.0, with `user_mapping: id` and `database.mapping_type: xml` (and `database.private_entity_manager: true`),
+  `user_class` is just your security user class with a `getId()`: the bundle stores its class and id in its own
+  `<table_prefix>host_users` rows, with no relation to your users table (`DddIdHostTest`). The points below describe the
+  default `relation` mapping.
 - `user_class` (required) must be a Doctrine entity in the bundle's entity manager. The bundle rewrites its `user`
   associations to that class at `loadClassMetadata`; you do **not** configure `resolve_target_entities`.
 - Bundle tables have foreign keys to your users table (`SET NULL` for entries and timesheets, `CASCADE` for timers,
@@ -1029,12 +1033,14 @@ services:
 
 ### Known limitations
 
-Since 1.23.0 the host ports and events have framework-free twins (rules 1, 3, 4). Still open in this release:
+Since 1.23.0 REQ-ARCH-001 is met through opt-in paths (the defaults keep the 1.22 behaviour):
 
-- Rule 6 is met with `database.private_entity_manager: true` (opt-in until 2.0); by default the services flush
+- Rules 1, 3, 4: framework-free twins of every host port and user references on the events (the deprecated ones go in
+  2.0).
+- Rule 6: `database.private_entity_manager: true` (the only mode in 2.0); by default the services flush
   `database.entity_manager`, as in 1.22.
-- Rule 2: users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign
-  keys); the bundle ships attribute mappings only.
+- Rule 2: `database.mapping_type: xml` and `user_mapping: id` (your users need not be Doctrine entities of the bundle's
+  entity manager). The bundle never asks your entities to extend a class or use a trait.
 - Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.
 
 ## Worker mode (FrankenPHP, kernel reset false)

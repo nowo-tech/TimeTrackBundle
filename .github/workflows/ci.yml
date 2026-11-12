@@ -125,7 +125,7 @@ jobs:
     # Since 1.13: the whole functional suite (old and new tests) also runs on MySQL 8 and PostgreSQL 16.
     # Since 1.23.0: each database also with `database.private_entity_manager: true` (the tests that assume one shared
     # entity manager, group `shared-entity-manager`, are left out of those runs).
-    name: Functional suite - ${{ matrix.database }}${{ matrix.private == '1' && ' - private entity manager' || '' }}
+    name: Functional suite - ${{ matrix.database }}${{ matrix.private == '1' && ' - private entity manager' || '' }}${{ matrix.mapping == 'xml' && ' - XML mapping' || '' }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -168,6 +168,21 @@ jobs:
             port: 5432
             health: pg_isready -U postgres -d tt
             url: postgresql://postgres:pg@127.0.0.1:5432/tt?serverVersion=16&charset=utf8
+          # Since 1.23.0: the shipped XML mapping (REQ-ARCH-001 rule 2) with the private entity manager.
+          - database: MySQL 8.0
+            private: '1'
+            mapping: xml
+            image: mysql:8.0
+            port: 3306
+            health: mysqladmin ping -h 127.0.0.1 -uroot -proot
+            url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=8.0.32&charset=utf8mb4
+          - database: PostgreSQL 16
+            private: '1'
+            mapping: xml
+            image: postgres:16-alpine
+            port: 5432
+            health: pg_isready -U postgres -d tt
+            url: postgresql://postgres:pg@127.0.0.1:5432/tt?serverVersion=16&charset=utf8
 
     services:
       database:
@@ -205,12 +220,25 @@ jobs:
           SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
           TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
           TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: ${{ matrix.private }}
+          TIME_TRACK_TEST_MAPPING_TYPE: ${{ matrix.mapping }}
         run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage ${{ matrix.private == '1' && '--exclude-group shared-entity-manager' || '' }}
 
   functional-private-entity-manager:
-    # Since 1.23.0: the whole functional suite on SQLite with `database.private_entity_manager: true`.
-    name: Functional suite - SQLite - private entity manager
+    # Since 1.23.0: the whole functional suite on SQLite with `database.private_entity_manager: true`, and with the
+    # shipped XML mapping (REQ-ARCH-001 rules 2 and 6).
+    name: Functional suite - SQLite - ${{ matrix.variant }}
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: private entity manager
+            private: '1'
+            mapping: ''
+          - variant: XML mapping
+            private: '0'
+            mapping: xml
 
     steps:
       - name: Checkout code
@@ -230,8 +258,9 @@ jobs:
       - name: Run the functional suite
         env:
           SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
-          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: '1'
-        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage --exclude-group shared-entity-manager
+          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: ${{ matrix.private }}
+          TIME_TRACK_TEST_MAPPING_TYPE: ${{ matrix.mapping }}
+        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage ${{ matrix.private == '1' && '--exclude-group shared-entity-manager' || '' }}
 
   rollback-clients:
     # Since 1.15 (audit HA-H2): the reference SQL through sqlite3, mysql, mariadb and psql, with their default options.

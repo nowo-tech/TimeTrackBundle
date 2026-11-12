@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\DeviceAuthorization (1.23.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\DeviceAuthorization" table="time_track_device_codes">
+        <indexes>
+            <index name="time_track_device_codes_user_code_idx" columns="user_code_hash"/>
+            <index name="time_track_device_codes_expires_idx" columns="expires_at"/>
+        </indexes>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="status" type="string" column="status" length="16" enum-type="Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus"/>
+        <field name="credentialId" type="string" column="credential_id" length="191" nullable="true"/>
+        <field name="lastPolledAt" type="datetime_immutable" column="last_polled_at" nullable="true"/>
+        <field name="scopes" type="json" column="scopes"/>
+        <field name="deviceCodeHash" type="string" column="device_code_hash" length="64" unique="true"/>
+        <field name="userCodeHash" type="string" column="user_code_hash" length="64"/>
+        <field name="clientType" type="string" column="client_type" length="16" enum-type="Nowo\TimeTrackBundle\Enum\ClientType"/>
+        <field name="clientName" type="string" column="client_name" length="100"/>
+        <field name="expiresAt" type="datetime_immutable" column="expires_at"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="ipPrefix" type="string" column="ip_prefix" length="64" nullable="true"/>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="true" on-delete="CASCADE"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>
