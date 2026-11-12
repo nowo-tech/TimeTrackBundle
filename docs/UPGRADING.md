@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.23.1](#to-1231)
 - [To 1.23.0](#to-1230)
   - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
   - [Event accessors](#event-accessors)
@@ -78,6 +79,19 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.23.1
+
+Target **1.23.1** (patch), from **1.23.0**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+API change.
+
+- With `user_mapping: id`, `FormerPersonTimeEntries::anonymiseUser()`, `anonymisePerson()` and `export()` refuse
+  (`LogicException`) an id or person reference with a leading or trailing blank or an invisible character, as
+  `release()` and every write already did; the ledger reads and the timesheet / ledger personal-data export re-check
+  the owner reference in PHP (audit OA-R1). Nothing changes with the default `relation` mapping.
+- Role refreshes in worker mode (`ManagedEntityRefresher`) now find the entity manager that actually holds your user,
+  also when it lives in a dedicated, non-default entity manager (DoctrineBundle 3.4 can answer the default manager for
+  its class).
 
 ## To 1.23.0
 
@@ -197,9 +211,12 @@ nowo_time_track:
 4. Ids compare byte for byte (`usera` is not `UserA`, `abc ` is not `abc`): the id columns and the person reference
    columns (`owner_ref`, `person_ref`, `actor_ref`, `submitted_by_ref`, `decided_by_ref`) get a NO PAD binary collation
    (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB; `utf8mb4_bin` on older MySQL and
-   `Latin1_General_100_BIN2` on SQL Server, which ignore trailing spaces), and the stores re-check the ids in PHP.
+   `Latin1_General_100_BIN2` on SQL Server, which ignore trailing spaces). The user-id and owner-reference reads of
+   the entry, timer, timesheet, calendar and (since 1.23.1) ledger and personal-data export stores re-check the values in
+   PHP; the bulk erasure statements (`anonymiseUser()`, `anonymisePerson()`) rely on the collation and on point 5.
 5. Ids with a leading or trailing blank or a control, format, separator or invisible character are refused
-   (`LogicException`) before anything is written or released.
+   (`LogicException`) before anything is written, released, anonymised or exported (`anonymiseUser()`,
+   `anonymisePerson()` and `export()` since 1.23.1).
 
 ### Coming in 2.0
 
