@@ -4,7 +4,6 @@
 
 - [Unreleased](#unreleased)
 - [To 1.22.1](#to-1221)
-- [To 1.22.1](#to-1221-1)
 - [To 1.22.0](#to-1220)
 - [To 1.21.0](#to-1210)
 - [To 1.20.0](#to-1200)
@@ -72,14 +71,6 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
-
-## To 1.22.1
-
-From **1.22.0**:
-
-```bash
-composer update nowo-tech/time-track-bundle
-```
 
 ## To 1.22.1
 
