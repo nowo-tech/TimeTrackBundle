@@ -38,7 +38,7 @@ use const DATE_ATOM;
  * timesheets with submit / withdraw, `GET me` flags and summary, `locked` / `scopeKey` on entries and the CSV, 409
  * lock answers on timer routes, task effort, and the 1.13 scopes that old tokens do not have.
  */
-final class WorkingTimeClientApiTest extends FunctionalTestCase
+class WorkingTimeClientApiTest extends FunctionalTestCase
 {
     private AppUser $approver;
 
@@ -342,7 +342,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertSame($current->key, $sheets->view($this->user, (string) $this->user->getId(), 'org-a', $current)->getPeriod()->key);
     }
 
-    private function token(ClientScope ...$scopes): string
+    protected function token(ClientScope ...$scopes): string
     {
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);

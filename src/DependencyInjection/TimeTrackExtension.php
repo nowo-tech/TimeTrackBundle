@@ -59,6 +59,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
@@ -93,6 +94,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetEventRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryResolver;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
@@ -413,6 +415,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(ImportedTimeEntryRepositoryInterface::class, (new Definition(ImportedTimeEntryRepositoryInterface::class))
             ->setFactory([ImportedTimeEntryRepositoryResolver::class, 'resolve'])
             ->setArguments([new Reference(TimeEntryRepositoryInterface::class)]));
+        // Since 1.23.0: the framework-free store (REQ-ARCH-001 rule 3), resolved the same way.
+        $container->setDefinition(ImportedTimeEntryStoreInterface::class, (new Definition(ImportedTimeEntryStoreInterface::class))
+            ->setFactory([ImportedTimeEntryRepositoryResolver::class, 'resolveStore'])
+            ->setArguments([new Reference(TimeEntryRepositoryInterface::class)]));
         $container->setDefinition(ImportedTimeEntryWriter::class, (new Definition(ImportedTimeEntryWriter::class))
             ->setArguments([
                 '$repository'      => new Reference(TimeEntryRepositoryInterface::class),
@@ -573,10 +579,12 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ]));
         $resolverId   = $calendar['task_key_resolver'];
         $credentialId = $calendar['credential_provider'];
-        $resolverRef  = $enabled && is_string($resolverId) && $resolverId !== '' ? new Reference($resolverId) : null;
-        $credentials  = $enabled && is_string($credentialId) && $credentialId !== '' ? new Reference($credentialId) : null;
-        if ($resolverRef instanceof Reference) {
-            $container->setAlias(TaskKeyResolverInterface::class, (string) $resolverRef);
+        $resolverRef  = null;
+        $credentials  = $enabled && is_string($credentialId) && $credentialId !== '' ? $this->portSlot($container, 'credential_provider', $credentialId) : null;
+        if ($enabled && is_string($resolverId) && $resolverId !== '') {
+            // Since 1.23.0 the services reference the alias (the slot TimeTrackPortsPass points at a twin's gate).
+            $container->setAlias(TaskKeyResolverInterface::class, $resolverId);
+            $resolverRef = new Reference(TaskKeyResolverInterface::class);
         }
         $container->setDefinition(CalendarRefHasher::class, (new Definition(CalendarRefHasher::class))
             ->setArguments(['$secret' => '%kernel.secret%']));
@@ -778,7 +786,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(MeetingContext::class, (new Definition(MeetingContext::class))
             ->setArguments([
                 '$settings'     => new Reference(MeetingSettings::class),
-                '$provider'     => $meetings['enabled'] && is_string($provider) && $provider !== '' ? new Reference($provider) : null,
+                '$provider'     => $meetings['enabled'] && is_string($provider) && $provider !== '' ? $this->portSlot($container, 'meeting_provider', $provider) : null,
                 '$urlGenerator' => new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$logger'       => $loggerRef,
             ])
@@ -883,7 +891,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$balance'          => new Reference(WorkingTimeBalanceService::class),
                 '$accessGuard'      => new Reference(TimesheetAccessGuard::class),
                 '$lockGuard'        => new Reference(PeriodLockGuard::class),
-                '$workdayProvider'  => is_string($workday) && $workday !== '' ? new Reference($workday) : null,
+                '$workdayProvider'  => is_string($workday) && $workday !== '' ? $this->portSlot($container, 'workday_provider', $workday) : null,
                 '$timerService'     => new Reference(TimerService::class),
                 '$translator'       => new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$profileProvider'  => new Reference(ClientUserProfileProviderInterface::class),
@@ -996,7 +1004,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setPublic(true)
             ->setArguments([
                 '$scopeProvider'    => new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
-                '$approverProvider' => is_string($approverId) && $approverId !== '' ? new Reference($approverId) : null,
+                '$approverProvider' => is_string($approverId) && $approverId !== '' ? $this->portSlot($container, 'approver_provider', $approverId) : null,
                 '$eventDispatcher'  => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$adminRoles'       => $security['admin_roles'],
                 '$adminRolesView'   => $timesheets['admin_roles_view'],
@@ -1114,7 +1122,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(IdleCheckSettingsResolver::class, (new Definition(IdleCheckSettingsResolver::class))
             ->setArguments([
                 '$settingsProvider' => new Reference(ClientApiSettingsProviderInterface::class),
-                '$provider'         => is_string($idleProvider) && $idleProvider !== '' ? new Reference($idleProvider) : null,
+                '$provider'         => is_string($idleProvider) && $idleProvider !== '' ? $this->portSlot($container, 'idle_check_provider', $idleProvider) : null,
                 '$logger'           => $loggerRef,
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
@@ -1182,6 +1190,19 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $bundles = $container->getParameter('kernel.bundles');
 
         return isset($bundles['SecurityBundle']);
+    }
+
+    /**
+     * Since 1.23.0: the slot the bundle's services reference for a port configured by option only, an internal alias
+     * `nowo_time_track.port.<name>` of the configured service ({@see TimeTrackPortsPass} points it at the 1.23 twin's
+     * gate when the service implements only the twin).
+     */
+    private function portSlot(ContainerBuilder $container, string $name, string $serviceId): Reference
+    {
+        $slot = TimeTrackPortsPass::SLOT_PREFIX . $name;
+        $container->setAlias($slot, $serviceId)->setPublic(false);
+
+        return new Reference($slot);
     }
 
     /**

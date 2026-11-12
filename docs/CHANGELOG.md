@@ -59,6 +59,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.23.0** (minor; REQ-ARCH-001 XL track, part 1 of 3: framework-free ports and events). Additive: with the
+default configuration and every existing host service, the bundle asks the same interfaces with the same arguments and
+answers exactly as in 1.22.1. No schema, route, client API or configuration-key change.
+
+### Added
+
+- **Framework-free twins of every host port typed with Symfony's `UserInterface`** (REQ-ARCH-001 rule 3, strict
+  reading of 2026-11-11). Each twin takes and returns only bundle value objects: the user is a
+  `ValueObject\TimeTrackUserRef` (user class without proxy, id string, identifier, role names; the user object itself
+  hidden in a `WeakMap`, never in a dump or copy), entities become snapshots (`Dto\TimeEntryView`,
+  `ValueObject\CalendarConnectionRef`). Same configuration option as the deprecated port:
+
+  | Deprecated (removed in 2.0) | 1.23 twin |
+  |---|---|
+  | `Integration\TaskProviderInterface` / `BatchTaskProviderInterface` | `Integration\TaskDirectoryInterface` / `BatchTaskDirectoryInterface` |
+  | `Integration\TeamContextProviderInterface` | `Integration\TeamDirectoryInterface` |
+  | `Integration\UserReferenceResolverInterface` | `Integration\UserReferenceProviderInterface` (alias it) |
+  | `Security\TaskAccessCheckerInterface` | `Security\TaskAccessPolicyInterface` |
+  | `Timesheet\TimesheetScopeProviderInterface` | `Timesheet\TimesheetScopePolicyInterface` (`TimeEntryView` instead of `TimeEntry`) |
+  | `Timesheet\TimesheetApproverProviderInterface` | `Timesheet\TimesheetApproverPolicyInterface` |
+  | `WorkingTime\WorkingCalendarProviderInterface` | `WorkingTime\WorkingCalendarSourceInterface` |
+  | `WorkingTime\WorkedTimeSourceInterface` | `WorkingTime\WorkedTimeRecordInterface` |
+  | `Workday\WorkdayProviderInterface` | `Workday\WorkdaySourceInterface` |
+  | `Meeting\MeetingProviderInterface` | `Meeting\MeetingSourceInterface` |
+  | `Calendar\TaskKeyResolverInterface` | `Calendar\TaskKeyLookupInterface` |
+  | `Calendar\CalendarCredentialProviderInterface` | `Calendar\CalendarCredentialSourceInterface` (`CalendarConnectionRef` instead of the entity) |
+  | `Client\ClientCredentialIssuerInterface` | `Client\ClientCredentialMinterInterface` |
+  | `Client\ClientUserProfileProviderInterface` | `Client\ClientUserProfileSourceInterface` |
+  | `Client\ClientUserLocaleProviderInterface`, `…DaysOffProviderInterface`, `…PrivacyProviderInterface` | `Client\ClientUserLocaleSourceInterface`, `…DaysOffSourceInterface`, `…PrivacySourceInterface` (extras of the profile source) |
+  | `Client\IdleCheckSettingsProviderInterface` | `Client\IdleCheckSettingsPolicyInterface` |
+  | `Repository\EntryOwnersRepositoryInterface` | `Repository\EntryOwnerRefsRepositoryInterface` |
+  | `Repository\ImportedTimeEntryRepositoryInterface` / `FilteredImportedTimeEntryRepositoryInterface` | `Repository\ImportedTimeEntryStoreInterface` / `FilteredImportedTimeEntryStoreInterface` (the same methods without `attachUser(UserInterface)`; the deprecated interfaces extend them) |
+
+- **Which interface is asked**: a service implementing the deprecated interface is asked through it exactly as in 1.22
+  (also when it implements the twin too); a service implementing only the twin is asked through an internal gate
+  (`Port\*Gate`, stateless). The new compiler pass `TimeTrackPortsPass` points the port's slot at the gate, or at a
+  runtime decision when the class is not known before compilation, and **fails the build when a configured port
+  service implements neither interface** (1.22 failed with a `TypeError` at the first call). Ports configured by option
+  only (`calendar.credential_provider`, `meetings.provider`, `client_api.workday_provider`,
+  `client_api.idle_check.provider`, `timesheets.approver_provider`) are referenced through internal aliases
+  `nowo_time_track.port.<name>`; the bundle's services see the same instance.
+- **Event accessors** `userRef()` (`TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`,
+  `TaskEffortAccessCheckEvent`) and `viewerRef()` (`TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`) returning a
+  `TimeTrackUserRef` (REQ-ARCH-001 rules 3 and 4).
+- `Client\ClientAuthResult::successFor(TimeTrackUserRef …)` and `userRef()`; `Import\ImportedTimeEntryClaim::ofRef()` and
+  `userRef()`; the store service `ImportedTimeEntryStoreInterface` (`ImportedTimeEntryRepositoryResolver::resolveStore()`).
+- Tests: `GatesTest`, `PortsTest`, `TimeTrackPortsPassTest`, `TimeTrackUserRefTest`, `ProfileExtrasEquivalenceTest`
+  (`GET me` against the LITERAL 1.22.1 decisions for deprecated / twin / both / neither providers),
+  `DefaultPortsWiringTest` (built-in ports served as they are), and the twin re-runs `TwinWorkingTimeClientApiTest`,
+  `TwinCalendarClientApiTest`, `TwinMeetingsApiTest`, `TwinLeaveClientApiTest` (every scenario of those suites again with
+  each stub port replaced by its framework-free twin: same answers).
+
+### Deprecated
+
+- The framework-typed ports above, `getUser()` / `getViewer()` of the seven events, `ClientAuthResult::getUser()`; removed
+  in 2.0. `Client\ClientApiPrincipal` is marked `@internal` (built by the API guard for the bundle's own controllers).
+
 ## [1.22.1] - 2026-11-12
 
 Target **1.22.1** (patch; batch audit NL, Medium): the timesheet retention purge no longer touches the host's pending

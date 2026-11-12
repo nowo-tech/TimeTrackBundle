@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Command;
 use DateInterval;
 use DateTimeZone;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\StorageTime;
@@ -65,7 +66,9 @@ final class TimesheetsAutoLockCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        if (!$this->timesheets->isEnabled() || $this->afterDays === null || !$this->entries instanceof EntryOwnersRepositoryInterface) {
+        // Since 1.23.0 also a store implementing only the framework-free EntryOwnerRefsRepositoryInterface ({@see Ports}).
+        $owners = Ports::entryOwners($this->entries);
+        if (!$this->timesheets->isEnabled() || $this->afterDays === null || !$owners instanceof EntryOwnersRepositoryInterface) {
             $io->note('Auto-lock is off (timesheets.enabled / timesheets.auto_lock_after_days).');
 
             return Command::SUCCESS;
@@ -76,7 +79,7 @@ final class TimesheetsAutoLockCommand extends Command
         $to       = $now->sub(new DateInterval(sprintf('P%dD', $this->afterDays)));
         $from     = $to->sub(new DateInterval(sprintf('P%dD', $lookback)));
         $locked   = 0;
-        foreach ($this->entries->ownersWithEntries($from, $to) as ['user' => $owner, 'scopeKey' => $scopeKey]) {
+        foreach ($owners->ownersWithEntries($from, $to) as ['user' => $owner, 'scopeKey' => $scopeKey]) {
             $timezone = $this->timezoneResolver->resolve($owner, $scopeKey);
             // @igor-ignore - immutable local value of this run, not a shared service.
             $cutoff  = $to->setTimezone(new DateTimeZone($timezone))->format('Y-m-d');

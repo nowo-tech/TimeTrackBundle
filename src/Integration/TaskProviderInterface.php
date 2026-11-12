@@ -10,6 +10,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * Resolves tasks from an external source (e.g. nowo-tech/task-board-bundle).
+ *
+ * @deprecated since 1.23.0, implement {@see TaskDirectoryInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface TaskProviderInterface
 {

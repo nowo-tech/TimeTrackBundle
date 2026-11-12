@@ -50,7 +50,7 @@ use const DATE_ATOM;
  * entries` on the client API — scopes, owner-only access, grouping, per-occurrence accept with lock / overlap / track
  * checks, dismiss, `resolve-keys`, idempotency and the `GET me` flags.
  */
-final class CalendarClientApiTest extends FunctionalTestCase
+class CalendarClientApiTest extends FunctionalTestCase
 {
     use ClockSensitiveTrait;
 
@@ -366,7 +366,7 @@ final class CalendarClientApiTest extends FunctionalTestCase
         return (new DateTimeImmutable('today -' . $daysAgo . ' days'))->setTime($hour, 0);
     }
 
-    private function token(ClientScope ...$scopes): string
+    protected function token(ClientScope ...$scopes): string
     {
         return $this->tokenFor($this->managedUser(), ...$scopes);
     }

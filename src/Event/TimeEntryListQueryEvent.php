@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Event;
 
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -38,10 +40,21 @@ final class TimeEntryListQueryEvent extends Event
 
     /**
      * User asking for the entries.
+     *
+     * @deprecated since 1.23.0, use {@see self::viewerRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
      */
     public function getViewer(): UserInterface
     {
         return $this->viewer;
+    }
+
+    /**
+     * Since 1.23.0: framework-free reference of {@see self::getViewer()} (REQ-ARCH-001 rule 3): class, id, identifier and
+     * roles; the object itself through `viewerRef()->user()`. Built per call: compare with `isSameUserAs()`.
+     */
+    public function viewerRef(): TimeTrackUserRef
+    {
+        return TimeTrackUserRefs::fromUser($this->viewer);
     }
 
     /**

@@ -19,9 +19,10 @@ use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
-use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryOwnerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -102,7 +103,7 @@ final readonly class ImportedTimeEntryWriter
     /** Since 1.16: rows one read of a move handles. */
     private const MOVE_BATCH = 500;
 
-    private ImportedTimeEntryRepositoryInterface $repository;
+    private ImportedTimeEntryStoreInterface $repository;
 
     /**
      * Creates the object.
@@ -117,8 +118,8 @@ final readonly class ImportedTimeEntryWriter
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
         ?UserReferenceResolverInterface $userReferences = null,
     ) {
-        if (!$repository instanceof ImportedTimeEntryRepositoryInterface) {
-            throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryRepositoryInterface.');
+        if (!$repository instanceof ImportedTimeEntryStoreInterface) {
+            throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryStoreInterface (or the deprecated ImportedTimeEntryRepositoryInterface).');
         }
         $this->repository     = $repository;
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -194,11 +195,14 @@ final readonly class ImportedTimeEntryWriter
                 throw $exception;
             }
             $retry = [];
+            // Since 1.23.0 a store implementing only ImportedTimeEntryStoreInterface keeps the owners as they are.
+            $store = $this->repository instanceof ImportedTimeEntryRepositoryInterface ? $this->repository : null;
             foreach ($valid as [$owner, $data]) {
                 $retry[] = [match (true) {
-                    $owner instanceof UserInterface          => $this->repository->attachUser($owner),
-                    $owner instanceof ImportedTimeEntryClaim => new ImportedTimeEntryClaim($this->repository->attachUser($owner->user), $owner->personRef, $owner->scopeKey),
-                    default                                  => $owner,
+                    !$store instanceof ImportedTimeEntryRepositoryInterface => $owner,
+                    $owner instanceof UserInterface                         => $store->attachUser($owner),
+                    $owner instanceof ImportedTimeEntryClaim                => new ImportedTimeEntryClaim($store->attachUser($owner->user), $owner->personRef, $owner->scopeKey),
+                    default                                                 => $owner,
                 }, $data];
             }
 
@@ -607,8 +611,8 @@ final readonly class ImportedTimeEntryWriter
     {
         $guard = $this->periodLockGuard;
         if ($guard?->isEnabled() === true) {
-            if (!$this->repository instanceof FilteredImportedTimeEntryRepositoryInterface) {
-                throw new LogicException('With timesheets on, removing imported entries requires a repository implementing FilteredImportedTimeEntryRepositoryInterface.');
+            if (!$this->repository instanceof FilteredImportedTimeEntryStoreInterface) {
+                throw new LogicException('With timesheets on, removing imported entries requires a repository implementing FilteredImportedTimeEntryStoreInterface (or the deprecated FilteredImportedTimeEntryRepositoryInterface).');
             }
             // @igor-ignore - I/O delegate (repository / writer call); no worker state.
             $removal = $this->repository->removeImportedWhere(

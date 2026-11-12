@@ -15,6 +15,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * and turns any other security user (a wrapper or DTO of a hexagonal application) into
  * `EntityManager::getReference($userClass, $user->getId())`, so only `getId()` is required of the security user.
  * Alias this interface to your own service to resolve the reference differently.
+ *
+ * @deprecated since 1.23.0, implement {@see UserReferenceProviderInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface UserReferenceResolverInterface
 {

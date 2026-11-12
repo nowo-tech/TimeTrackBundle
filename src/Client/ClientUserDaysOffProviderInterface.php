@@ -19,6 +19,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Privacy: labels reach the user's devices and are stored there. Send public holiday names only, null for vacations,
  * never a leave reason. Since 1.22 the kind `leave` (approved leave of any type, Beacon spec 204) is accepted when
  * `client_api.leave_provider` is set (dropped otherwise, as in 1.21), and its label is always sent as null.
+ *
+ * @deprecated since 1.23.0, implement {@see ClientUserDaysOffSourceInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface ClientUserDaysOffProviderInterface
 {

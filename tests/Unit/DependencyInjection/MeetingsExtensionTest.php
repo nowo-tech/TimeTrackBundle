@@ -31,7 +31,8 @@ final class MeetingsExtensionTest extends TestCase
         $on       = $this->load(['meetings' => ['enabled' => true, 'provider' => 'app.meetings', 'max_past_days' => 7, 'jitsi_hosts' => ['jitsi.example.org'], 'links_calendars_route' => 'app_calendars', 'rate_limit' => ['per_minute' => 3]]]);
         $provider = $on->getDefinition(MeetingContext::class)->getArgument('$provider');
         self::assertInstanceOf(Reference::class, $provider);
-        self::assertSame('app.meetings', (string) $provider);
+        self::assertSame('nowo_time_track.port.meeting_provider', (string) $provider);
+        self::assertSame('app.meetings', (string) $on->getAlias('nowo_time_track.port.meeting_provider'));
         self::assertSame(['jitsi.example.org'], $on->getDefinition(MeetingLinkDetector::class)->getArgument('$jitsiHosts'));
         self::assertSame([7, 3, 60, 'app_calendars'], [
             $on->getDefinition(MeetingSettings::class)->getArgument('$maxPastDays'),

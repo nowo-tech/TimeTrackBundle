@@ -3,6 +3,10 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.23.0](#to-1230)
+  - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
+  - [Event accessors](#event-accessors)
+  - [Coming in 2.0](#coming-in-20)
 - [To 1.22.1](#to-1221)
 - [To 1.22.0](#to-1220)
 - [To 1.21.0](#to-1210)
@@ -71,6 +75,68 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.23.0
+
+Target **1.23.0** (minor), from **1.22.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Nothing to change: defaults and existing host services behave exactly as in 1.22.1. 1.23.0 adds the opt-in paths of
+REQ-ARCH-001 (DDD / hexagonal hosts) and deprecates the framework-typed members that 2.0 removes. Check one thing: the
+build now fails when a configured port service implements neither its interface nor the 1.23 twin (1.22 failed at the
+first call with a `TypeError`).
+
+### Framework-free host ports (optional until 2.0)
+
+Every deprecated interface keeps working exactly as in 1.22 until 2.0. To keep Symfony types out of your adapters,
+implement the 1.23 twin instead and keep the same option (see the table in the CHANGELOG):
+
+- `task_provider` → `TaskDirectoryInterface` (`BatchTaskDirectoryInterface`), `team_context_provider` →
+  `TeamDirectoryInterface`, `client_api.task_access_checker` → `TaskAccessPolicyInterface`,
+  `client_api.credential_issuer` → `ClientCredentialMinterInterface`, `client_api.profile_provider` →
+  `ClientUserProfileSourceInterface` (+ `ClientUserLocaleSourceInterface`, `ClientUserDaysOffSourceInterface`,
+  `ClientUserPrivacySourceInterface` on the same service), `client_api.idle_check.provider` →
+  `IdleCheckSettingsPolicyInterface`, `client_api.workday_provider` → `WorkdaySourceInterface`,
+  `timesheets.scope_provider` → `TimesheetScopePolicyInterface`, `timesheets.approver_provider` →
+  `TimesheetApproverPolicyInterface`, `working_time.calendar_provider` → `WorkingCalendarSourceInterface`,
+  `working_time.worked_time_source` → `WorkedTimeRecordInterface`, `meetings.provider` → `MeetingSourceInterface`,
+  `calendar.task_key_resolver` → `TaskKeyLookupInterface`, `calendar.credential_provider` →
+  `CalendarCredentialSourceInterface`.
+- `UserReferenceResolverInterface` (an alias): alias `Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface`
+  to your service instead. Aliasing both interfaces to different services fails the build (keep the 1.23 one).
+- A custom time entry store: `ImportedTimeEntryStoreInterface` / `FilteredImportedTimeEntryStoreInterface` are the
+  deprecated interfaces without `attachUser()`; a store implementing only them keeps the user objects as they are after
+  a failed save. `EntryOwnerRefsRepositoryInterface` replaces `EntryOwnersRepositoryInterface` for the auto-lock.
+- Users are `ValueObject\TimeTrackUserRef` (`userClass`, `id`, `identifier`, `roles`, `user()`). The bundle always
+  passes a reference that carries your security user (`user()`). A reference you **return** to the bundle where it
+  stores the user (`EntryOwnerRefsRepositoryInterface`, `ClientAuthResult::successFor()`,
+  `ImportedTimeEntryClaim::ofRef()`) must carry it too (`TimeTrackUserRef::of($user, …)`); one built by id alone is
+  refused with a `LogicException`.
+- `roles` are the role names the user object reports, without the role hierarchy. Compare users with
+  `isSameUserAs()` (class and id), not with `===`: references are built per call.
+- Which interface is asked: a service implementing the deprecated interface is asked through it (also when it
+  implements the twin too); only-twin services through an internal gate. Symfony's DebugClassLoader reports, in debug
+  mode, each of your classes that implements a deprecated interface.
+- If you inspect the container: the services that used a port configured by option only
+  (`calendar.credential_provider`, `meetings.provider`, `client_api.workday_provider`, `client_api.idle_check.provider`,
+  `timesheets.approver_provider`) now reference the internal alias `nowo_time_track.port.<name>` of your service.
+
+### Event accessors
+
+The deprecated members still work until 2.0. To keep listeners free of Symfony types, read the replacement instead:
+
+| Class | Deprecated | Replacement |
+|---|---|---|
+| `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`, `TaskEffortAccessCheckEvent` | `getUser()` | `userRef()` (or the 1.18 `getUserId()`) |
+| `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent` | `getViewer()` | `viewerRef()` (or the 1.18 `getViewerId()`) |
+| `Client\ClientAuthResult` | `getUser()` | `userRef()`; build it with `successFor(TimeTrackUserRef …)` |
+
+### Coming in 2.0
+
+The deprecated port interfaces and members are removed.
 
 ## To 1.22.1
 

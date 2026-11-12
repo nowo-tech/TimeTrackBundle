@@ -35,7 +35,7 @@ use const JSON_THROW_ON_ERROR;
  * scope, validation answers, privacy headers on every answer, schema of the payload, rate limit, provider failures, no
  * personal data in logs, the `GET me` keys and "track the meeting" on `timer/switch` (Q-B22).
  */
-final class MeetingsApiTest extends FunctionalTestCase
+class MeetingsApiTest extends FunctionalTestCase
 {
     private const URI = '/api/time-track/me/meetings';
 
@@ -232,7 +232,7 @@ final class MeetingsApiTest extends FunctionalTestCase
         return $logger;
     }
 
-    private function token(): string
+    protected function token(): string
     {
         return $this->scoped(ClientScope::MeetingsRead);
     }

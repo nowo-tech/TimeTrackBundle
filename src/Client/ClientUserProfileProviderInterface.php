@@ -10,6 +10,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Optional host data of `GET me` (contract v0.2 §3/§4): a display name and the working hours the clients use to
  * suppress reminders outside them (right to disconnect; the API never pushes). Default:
  * {@see NullClientUserProfileProvider} (both null).
+ *
+ * @deprecated since 1.23.0, implement {@see ClientUserProfileSourceInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface ClientUserProfileProviderInterface
 {

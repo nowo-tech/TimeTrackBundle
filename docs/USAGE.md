@@ -874,37 +874,52 @@ not extend anything from it (no traits, no mapped superclasses).
 ### What stays in your domain
 
 Tasks, teams, tenants, approvers, working calendars and meetings stay in your application. The bundle reaches them
-only through ports, using string ids and DTOs:
+only through ports. Since 1.23.0 every port has a **framework-free twin** (REQ-ARCH-001 rule 3): it takes and returns
+only bundle value objects — the user is a `ValueObject\TimeTrackUserRef` (class, id string, identifier, role names;
+the object itself through `user()`), entities become snapshots (`Dto\TimeEntryView`, `ValueObject\CalendarConnectionRef`).
+Implement the twin and set the same option; the deprecated port keeps working until 2.0.
 
-| Port | Config key | Notes |
+| Twin (1.23, implement this) | Deprecated port | Config key |
 |---|---|---|
-| `Nowo\TimeTrackBundle\Integration\TaskProviderInterface` (+ `BatchTaskProviderInterface`) | `task_provider` | returns `Dto\TaskReference` |
-| `Integration\TeamContextProviderInterface` | `team_context_provider` | user ids as strings |
-| `Security\TimeTrackAccessCheckerInterface` | `security.access_checker` | |
-| `Timesheet\TimesheetScopeProviderInterface`, `TimesheetApproverProviderInterface` | `timesheets.scope_provider`, `timesheets.approver_provider` | tenant scope keys as strings |
-| `WorkingTime\WorkingCalendarProviderInterface`, `WorkedTimeSourceInterface`, `OvertimePolicyInterface` | working time | |
-| `Meeting\MeetingProviderInterface`, `Calendar\CalendarCredentialProviderInterface`, `Calendar\TaskKeyResolverInterface` | `meetings.provider`, `calendar.*` | |
-| `Client\ClientUserLeaveProviderInterface` (1.22, spec 204) | `client_api.leave_provider` | framework-free: user id string and `DateTimeImmutable` in, bundle VO `Client\ClientUserLeave` out; tested with the XML host in `DddHostLeaveTest` |
+| `Integration\TaskDirectoryInterface` (+ `BatchTaskDirectoryInterface`) | `TaskProviderInterface` (+ `BatchTaskProviderInterface`) | `task_provider` |
+| `Integration\TeamDirectoryInterface` | `TeamContextProviderInterface` | `team_context_provider` |
+| `Integration\UserReferenceProviderInterface` | `UserReferenceResolverInterface` | alias the interface |
+| `Security\TaskAccessPolicyInterface` | `TaskAccessCheckerInterface` | `client_api.task_access_checker` |
+| `Timesheet\TimesheetScopePolicyInterface`, `TimesheetApproverPolicyInterface` | `TimesheetScopeProviderInterface`, `TimesheetApproverProviderInterface` | `timesheets.scope_provider`, `timesheets.approver_provider` |
+| `WorkingTime\WorkingCalendarSourceInterface`, `WorkedTimeRecordInterface` | `WorkingCalendarProviderInterface`, `WorkedTimeSourceInterface` | `working_time.calendar_provider`, `working_time.worked_time_source` |
+| `Workday\WorkdaySourceInterface` | `WorkdayProviderInterface` | `client_api.workday_provider` |
+| `Meeting\MeetingSourceInterface` | `MeetingProviderInterface` | `meetings.provider` |
+| `Calendar\TaskKeyLookupInterface`, `CalendarCredentialSourceInterface` | `TaskKeyResolverInterface`, `CalendarCredentialProviderInterface` | `calendar.task_key_resolver`, `calendar.credential_provider` |
+| `Client\ClientUserProfileSourceInterface` (+ `ClientUserLocaleSourceInterface`, `ClientUserDaysOffSourceInterface`, `ClientUserPrivacySourceInterface`) | `ClientUserProfileProviderInterface` (+ locale, days-off, privacy extras) | `client_api.profile_provider` |
+| `Client\IdleCheckSettingsPolicyInterface`, `ClientCredentialMinterInterface` | `IdleCheckSettingsProviderInterface`, `ClientCredentialIssuerInterface` | `client_api.idle_check.provider`, `client_api.credential_issuer` |
+| `Repository\ImportedTimeEntryStoreInterface`, `EntryOwnerRefsRepositoryInterface` | `ImportedTimeEntryRepositoryInterface`, `EntryOwnersRepositoryInterface` | your time entry store |
+| `Client\ClientUserLeaveProviderInterface` (1.22, spec 204) | — | `client_api.leave_provider` (framework-free since 1.22; tested in `DddHostLeaveTest`) |
+| `Security\TimeTrackAccessCheckerInterface`, `WorkingTime\OvertimePolicyInterface`, `Integration\TimeEntryBillableDefaultProviderInterface` | — | already framework-free |
 
-Implement them as infrastructure adapters that call your application services:
+A service implementing the deprecated interface is asked through it (also when it implements the twin too); one
+implementing only the twin is asked through an internal gate. A configured service implementing neither fails the
+build (`TimeTrackPortsPass`). Implement them as infrastructure adapters that call your application services:
 
 ```php
-final readonly class TaskProviderAdapter implements TaskProviderInterface
+final readonly class TaskDirectoryAdapter implements TaskDirectoryInterface
 {
     public function __construct(private TaskQueries $tasks) {} // your application port
 
-    public function findForUser(string $taskId, UserInterface $user): ?TaskReference
+    public function findTaskFor(string $taskId, TimeTrackUserRef $user): ?TaskReference
     {
-        $task = $this->tasks->trackableTask($taskId, (string) $user->getId());
+        $task = $user->id === null ? null : $this->tasks->trackableTask($taskId, $user->id);
 
         return $task === null ? null : new TaskReference($task->id, $task->title, $task->boardId);
     }
 
-    public function listTrackableForUser(UserInterface $user, TaskListQuery $query): array { /* … */ }
+    public function listTrackableFor(TimeTrackUserRef $user, TaskListQuery $query): array { /* … */ }
 
-    public function canUserTrack(UserInterface $user, string $taskId): bool { /* … */ }
+    public function canTrackTask(TimeTrackUserRef $user, string $taskId): bool { /* … */ }
 }
 ```
+
+The tested examples are `tests/Support/Ports/Twin*.php`: `TwinWorkingTimeClientApiTest`, `TwinCalendarClientApiTest`,
+`TwinMeetingsApiTest` and `TwinLeaveClientApiTest` run every scenario of their 1.22 suites through the twins.
 
 To drive the bundle, call `TimerService`, `ManualEntryService`, `TimesheetService`, `ImportedTimeEntryWriter`
 (with `ImportedTimeEntryData` / `ImportedTimeEntryPerson`) and `TaskTimeMover::moveTasks()` (task ids only) from your
@@ -924,6 +939,11 @@ security user or the `TimeEntry` entity also expose scalar accessors, so a liste
 | `IdleResolvedEvent`, `TaskEffortAccessCheckEvent` | `getUserId()` |
 | `TimeEntryBillableChangedEvent` (1.21) | public readonly `entryId`, `ownerId`, `actorId`, `oldBillable`, `newBillable`, `occurredAt`, `via` (no entity) |
 | `TimeEntryListQueryEvent`, `TimesheetAccessCheckEvent` | `getViewerId()` |
+
+Since 1.23.0 the events that carry the Symfony user also give its framework-free reference: `userRef()` on
+`TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent` and `TaskEffortAccessCheckEvent`,
+`viewerRef()` on `TimesheetAccessCheckEvent` and `TimeEntryListQueryEvent`. `getUser()` / `getViewer()` are deprecated
+and removed in 2.0.
 
 `getUserId()` is the **acting** user on the timer, idle and access-check events, and the entry **owner** on
 `TimeEntryCreatedEvent` / `TimeEntryImportedEvent` (`getEntryView()->userId` is always the owner): a listener that
@@ -1005,15 +1025,11 @@ services:
 
 ### Known limitations
 
-REQ-ARCH-001 is **partially met** in 1.19 – 1.21. Open (pre-existing), planned for 1.22 (additive) and 2.0 (removal):
+Since 1.23.0 the host ports and events have framework-free twins (rules 1, 3, 4). Still open in this release:
 
-- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it. 1.22 adds a
-  documented and tested bundle-owned entity manager, so no service flushes yours.
-- Rules 1 / 3: host ports take the Symfony `UserInterface`. 1.22 adds ports with a user id value object next to them;
-  the `UserInterface` ports are deprecated then and removed in 2.0.
-- Users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign keys).
-- Ports that hand a user back to you (`TeamContextProviderInterface::isManagerOf()`, the timesheet scope / approver
-  providers) may receive the stored user entity instead of your security user; read its id.
+- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it.
+- Rule 2: users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign
+  keys); the bundle ships attribute mappings only.
 - Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.
 
 ## Worker mode (FrankenPHP, kernel reset false)

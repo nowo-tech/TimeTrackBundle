@@ -12,6 +12,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * UUIDs only), so the host says what a key looks like and which task it means. Beacon: `#<first 8 hex of the task
  * UUID>` (unique per organization) and Beacon task URLs. Configured with `calendar.task_key_resolver`; without it the
  * calendar suggestions and `resolve-keys` are off.
+ *
+ * @deprecated since 1.23.0, implement {@see TaskKeyLookupInterface} instead (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
  */
 interface TaskKeyResolverInterface
 {
