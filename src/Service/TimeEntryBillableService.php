@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\BillableChangeRefusedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\LockingFindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\StorageTime;
@@ -35,8 +36,10 @@ use Throwable;
  * refuses an entry of a locked or submitted (approval pending) period with {@see PeriodWriteRefusedException} (409); no
  * role or listener overrides it. With a store that has {@see UserSerialisedTimeEntryRepositoryInterface} (the Doctrine
  * one) the lock check and the write run in one transaction holding the owner's write lock, and with
- * {@see FindableTimeEntryRepositoryInterface} the entry is re-read there with a row lock and checked again (audit
- * MV-T-L1: anonymised, imported or moved to another owner meanwhile); a store with neither runs them one after the other.
+ * {@see FindableTimeEntryRepositoryInterface} the entry is re-read there and checked again (audit MV-T-L1: anonymised,
+ * imported or moved to another owner meanwhile), with a row lock when the store also has
+ * {@see LockingFindableTimeEntryRepositoryInterface} (only re-read otherwise); a store with neither runs them one after
+ * the other.
  * `read_only` and `anonymised` are answered before the grant: a host controller that serves other people's entries maps
  * both to 404 for a caller who is not the owner. Each real change dispatches {@see TimeEntryBillableChangedEvent} after the
  * commit (who, when, old and new value); a listener that throws is logged and does not undo the change. Logs carry the
@@ -145,7 +148,8 @@ final readonly class TimeEntryBillableService
     }
 
     /**
-     * Audit MV-T-L1: the entry as the store has it now, under a row lock, checked again (it may have been anonymised,
+     * Audit MV-T-L1: the entry as the store has it now (under a row lock with {@see LockingFindableTimeEntryRepositoryInterface};
+     * with {@see FindableTimeEntryRepositoryInterface} alone it is only re-read, without a row lock), checked again (it may have been anonymised,
      * replaced by an import or moved to another owner since it was loaded). Stores that cannot re-read keep the entry.
      *
      * @throws BillableChangeRefusedException
@@ -155,7 +159,9 @@ final readonly class TimeEntryBillableService
         if (!$this->entries instanceof FindableTimeEntryRepositoryInterface) {
             return $entry;
         }
-        $current = $this->entries->findForUpdate($entry->getId()) ?? throw new BillableChangeRefusedException(BillableChangeRefusedException::NOT_FOUND);
+        // With a locking store the row is locked as well; otherwise it is only re-read (inside the owner's transaction).
+        $current = ($this->entries instanceof LockingFindableTimeEntryRepositoryInterface ? $this->entries->findForUpdate($entry->getId()) : $this->entries->findById($entry->getId()))
+            ?? throw new BillableChangeRefusedException(BillableChangeRefusedException::NOT_FOUND);
         if ($current->isReadOnly()) {
             throw new BillableChangeRefusedException(BillableChangeRefusedException::READ_ONLY);
         }

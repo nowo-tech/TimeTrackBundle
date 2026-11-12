@@ -7,14 +7,14 @@ namespace Nowo\TimeTrackBundle\Tests\Support;
 use Closure;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
-use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\LockingFindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 
 /**
  * Since 1.21: an in-memory store that finds entries by id and runs user transactions (counted).
  */
-final class FindableInMemoryTimeEntryRepository implements TimeEntryRepositoryInterface, FindableTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface
+final class FindableInMemoryTimeEntryRepository implements TimeEntryRepositoryInterface, LockingFindableTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface
 {
     /** @var array<string, TimeEntry> */
     private array $entries = [];

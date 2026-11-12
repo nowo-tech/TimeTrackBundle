@@ -84,7 +84,10 @@ that wrote the column themselves (Beacon override D23) can call the service inst
   `billable` was already read on every entry object. The TimeTrack Extension and TimeTrack Desktop pick the field up in
   their own releases (their repositories are not changed here).
 - `TimeEntry::markBillable()` (`@internal`) and the optional store capability
-  `Repository\FindableTimeEntryRepositoryInterface` (`findById()`, `findForUpdate()`; the Doctrine store implements it).
+  `Repository\FindableTimeEntryRepositoryInterface` (`findById()`), and on top of it the optional
+  `Repository\LockingFindableTimeEntryRepositoryInterface` (`findForUpdate()`, a row-locked re-read; REQ-BC-001: a
+  separate interface, so a store that implements only `findById()` keeps working and is re-read without a row lock). The
+  Doctrine store implements both.
 - **Audit MV (before the tag):** the entry is re-read under a row lock inside the owner's transaction and checked again
   (anonymised, imported or moved meanwhile: refused, MV-T-L1); `PATCH entries/{id}` answers 404 while
   `manual_entries.enabled` is false (MV-T-L2); a dedicated access-check action `edit_billable`

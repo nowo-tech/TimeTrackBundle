@@ -87,7 +87,10 @@ provider new entries keep `billable: null` as before, and the new route only ans
   that answers the `edit` action now also decides who may change `billable`, unless it answers the new `edit_billable`
   action (`TeamAccessGuard::ACTION_EDIT_BILLABLE`), which comes after it and wins. An explicit `billable` on `POST
   entries` asks `edit_billable` too.
-- **A store of your own** that implements `FindableTimeEntryRepositoryInterface` also implements `findForUpdate()`.
+- **A store of your own** may implement `FindableTimeEntryRepositoryInterface` (`findById()`): the billable change then
+  re-reads the entry inside the owner's transaction and checks it again. Implement the optional
+  `LockingFindableTimeEntryRepositoryInterface` (`findForUpdate()`, a `SELECT … FOR UPDATE` re-read) to row-lock it as
+  well; without it the entry is only re-read. Nothing breaks if you implement neither.
 - **Client API**: `PATCH entries/{id}` exists (`clients.routes.entries_update`, default
   `/api/time-track/entries/{id}`). If a reverse proxy or firewall lists allowed methods, allow `PATCH` on that path.
 - If you construct `TimeTrackCalendarApiController` by hand, pass the new `TimeEntryBillableService` argument.

@@ -15,6 +15,9 @@ use Nowo\TimeTrackBundle\Exception\BillableChangeRefusedException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
+use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTeamContextProvider;
@@ -193,6 +196,51 @@ final class TimeEntryBillableServiceTest extends TestCase
         $this->entries->meanwhile = static fn (): TimeEntry => $fresh;
         self::assertSame($fresh, $this->service()->change($this->owner, $loaded, true));
         self::assertSame([true, null], [$fresh->getBillable(), $loaded->getBillable()]);
+    }
+
+    /** REQ-BC-001: a store with only FindableTimeEntryRepositoryInterface is re-read with findById() (no row lock). */
+    public function testAStoreWithoutTheLockingReadIsReReadByIdAndStillChecked(): void
+    {
+        $store = new class implements TimeEntryRepositoryInterface, FindableTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface {
+            /** @var array<string, TimeEntry> */
+            public array $rows = [];
+
+            public int $finds = 0;
+
+            public function save(TimeEntry $entry): void
+            {
+                $this->rows[$entry->getId()] = $entry;
+            }
+
+            public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return [];
+            }
+
+            public function findById(string $id): ?TimeEntry
+            {
+                ++$this->finds;
+
+                return $this->rows[$id] ?? null;
+            }
+
+            public function inUserTransaction(object $user, callable $operation): mixed
+            {
+                return $operation();
+            }
+        };
+        $service = new TimeEntryBillableService($store, $this->guard(), new PeriodLockGuard($this->timesheets), $this->dispatcher);
+        $entry   = new TimeEntry($this->owner, 'task-1', 'T', null, new DateTimeImmutable('2026-11-10 09:00:00Z'), new DateTimeImmutable('2026-11-10 10:00:00Z'), 3600, TimeEntrySource::Web);
+        $store->save($entry);
+
+        self::assertTrue($service->changeById($this->owner, $entry->getId(), true)->getBillable());
+        self::assertSame(2, $store->finds, 'the lookup, then the re-read inside the transaction');
+        self::assertCount(1, $this->audit);
+
+        $entry->anonymiseInPlace(new DateTimeImmutable());
+        $loaded                        = new TimeEntry($this->owner, 'task-1', 'T', null, new DateTimeImmutable('2026-11-10 09:00:00Z'), new DateTimeImmutable('2026-11-10 10:00:00Z'), 3600, TimeEntrySource::Web);
+        $store->rows[$loaded->getId()] = $entry;
+        $this->expectRefusal(BillableChangeRefusedException::ANONYMISED, static fn (): TimeEntry => $service->change(new TestUser('7', 'ana@example.com'), $loaded, false));
     }
 
     public function testTheEditBillableActionDecidesOnItsOwn(): void

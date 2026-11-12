@@ -746,9 +746,11 @@ $entry = $this->billable->changeById($this->getUser(), $entryId, true);   // or 
 | `PeriodLockedException` / `PeriodSubmittedException` (409) | the entry's period is locked (approved) or submitted, checked with `WriteKind::Edit` after the grant; no role or listener overrides it, only an audited reopen |
 
 With the Doctrine store the lock check and the write run in one transaction holding the owner's write lock, and the
-entry is re-read there with a row lock (`FindableTimeEntryRepositoryInterface::findForUpdate()`) and checked again, so an
-entry anonymised, replaced or moved to another owner after you loaded it is refused. A replacement store without
-`UserSerialisedTimeEntryRepositoryInterface` / `FindableTimeEntryRepositoryInterface` runs the steps one after the other.
+entry is re-read there with a row lock (`LockingFindableTimeEntryRepositoryInterface::findForUpdate()`) and checked again,
+so an entry anonymised, replaced or moved to another owner after you loaded it is refused. A replacement store with only
+`FindableTimeEntryRepositoryInterface` is re-read with `findById()` in the same transaction, without a row lock; one
+without `UserSerialisedTimeEntryRepositoryInterface` / `FindableTimeEntryRepositoryInterface` runs the steps one after
+the other.
 Setting the value an entry already has writes nothing.
 
 - **`security.admin_roles` are not tenant-aware:** a user with one of those roles passes the edit grant for every

@@ -17,10 +17,4 @@ interface FindableTimeEntryRepositoryInterface
      * The entry with this id, or null.
      */
     public function findById(string $id): ?TimeEntry;
-
-    /**
-     * The entry with this id re-read from the store with a write lock (`SELECT … FOR UPDATE`), inside the caller's
-     * transaction; null when it is gone. Audit MV-T-L1: the checks of a change run on what this returns.
-     */
-    public function findForUpdate(string $id): ?TimeEntry;
 }
