@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.22.0](#to-1220)
 - [To 1.21.0](#to-1210)
 - [To 1.20.0](#to-1200)
   - [To 1.20.0](#to-1200-1)
@@ -69,6 +70,33 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.22.0
+
+Target **1.22.0** (minor), from **1.21.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+No migration, no schema change, no new scope. **Nothing to change**: without `client_api.leave_provider` every client
+API body is the 1.21 one.
+
+To let the clients show *On leave until …* (Beacon spec 204 FR-029):
+
+- **Standard host**: write a service implementing `Nowo\TimeTrackBundle\Client\ClientUserLeaveProviderInterface`
+  (`getCurrentLeave(string $userId, DateTimeImmutable $day): ?ClientUserLeave`) that reads your leave entity by
+  `$userId`, and set it as `client_api.leave_provider`.
+- **DDD host**: the same port is an infrastructure adapter over your application's leave query; it takes the id string
+  and returns the bundle's `ClientUserLeave` value object, nothing from Symfony or Doctrine.
+- In both: return `ClientUserLeave::absent($until)` for medical / sick leave and for any type the devices must not
+  show, `ClientUserLeave::typed($publicLabel, $until)` otherwise. Never put a reason, a comment or an attachment in a
+  label. `GET workday` must answer, so a `workday_provider` is needed for the `leave` key.
+- Optional: `client_api.links_leave_route` (your Leave page, https) for `GET me` `links.leave`.
+- **Days off**: your `ClientUserDaysOffProviderInterface` may now return `kind: 'leave'` for approved leave days; the
+  label is always sent as null. Until 1.21 such an entry was dropped.
+- If you construct `ClientWorkingTimeContext` by hand, the new arguments are trailing and optional.
+- If your clients validate `daysOff[].kind`, accept `leave` (treat it like `vacation`).
 
 ## To 1.21.0
 

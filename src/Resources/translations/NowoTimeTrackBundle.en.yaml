@@ -181,3 +181,5 @@ ledger:
   dialog:
     add_title: "Add a balance movement"
     reversal_title: "Reverse this movement"
+client_api:
+  leave_absent: "Absent"

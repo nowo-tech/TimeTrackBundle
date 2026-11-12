@@ -261,7 +261,8 @@ final readonly class TimeTrackClientApiController
      * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null), and (1.12)
      * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
      * shape ({@see ClientWorkingHoursNormalizer}), and (1.15) `privacy` when the profile provider implements
-     * {@see ClientUserPrivacyProviderInterface} (no key otherwise).
+     * {@see ClientUserPrivacyProviderInterface} (no key otherwise), and (1.22, spec 204) `features.leave` and
+     * `links.leave` only with a `client_api.leave_provider` (no keys otherwise) and `leave` days in `daysOff`.
      */
     public function me(Request $request): Response
     {
@@ -316,6 +317,11 @@ final readonly class TimeTrackClientApiController
         // Since 1.14 (contract §22.8, spec 210).
         $meetings             = $this->meetings?->summary($user);
         $features['meetings'] = $meetings !== null;
+        // Since 1.22 (spec 204 FR-029): only with a leave provider (no key otherwise, as in 1.21); `GET workday` carries it.
+        $reportsLeave = $this->workingTime?->reportsLeave() ?? false;
+        if ($reportsLeave) {
+            $features['leave'] = $features['workday'];
+        }
         foreach (self::RESERVED_FEATURES as $reserved) {
             $features[$reserved] = false;
         }
@@ -334,6 +340,10 @@ final readonly class TimeTrackClientApiController
             // Since 1.19 (spec 198): the host's working-time page, only while the workday API is on for the user.
             'workingTime' => $features['workday'] ? $this->workingTime?->workingTimeLink() : null,
         ];
+        if ($reportsLeave) {
+            // Since 1.22 (spec 204): the host's Leave page (requests, approvals, team calendar stay on the web).
+            $body['links']['leave'] = $this->workingTime?->leaveLink();
+        }
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
     }

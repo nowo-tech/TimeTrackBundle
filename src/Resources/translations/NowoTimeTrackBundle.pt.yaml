@@ -181,3 +181,5 @@ ledger:
   dialog:
     add_title: "Adicionar um movimento ao saldo"
     reversal_title: "Anular este movimento"
+client_api:
+  leave_absent: "Ausente"

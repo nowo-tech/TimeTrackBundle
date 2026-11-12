@@ -40,11 +40,15 @@ use const SORT_STRING;
  * not valid UTF-8 becomes null (the day off is kept). Entries outside the requested range are dropped, a date listed
  * twice keeps its first entry, and the result is sorted by date. Nothing is HTML-escaped: the value is JSON, the
  * clients render it as text.
+ *
+ * Since 1.22 a `leave` day (approved leave of any type, spec 204) is accepted too, and its label is **always** null:
+ * whatever label the provider gives is dropped (reason `leave label dropped`), so no leave type or reason reaches the
+ * user's devices through `daysOff`.
  */
 final class ClientDaysOffNormalizer
 {
-    /** Kinds of a day off. */
-    public const KINDS = ['holiday', 'vacation'];
+    /** Kinds of a day off (`leave` since 1.22, Beacon spec 204: its label is always sent as null). */
+    public const KINDS = ['holiday', 'vacation', 'leave'];
 
     /** Most entries read from the provider (the rest is dropped and logged). */
     public const MAX_ENTRIES = 400;
@@ -156,14 +160,21 @@ final class ClientDaysOffNormalizer
             $label     = null;
         }
 
+        if ($kind === 'leave' && $label !== null) {
+            // Since 1.22: a leave day never carries a label (no type, no reason; spec 204 privacy).
+            $reasons[] = 'leave label dropped';
+            $label     = null;
+        }
+
         return ['date' => $date, 'kind' => $kind, 'label' => self::label($label)];
     }
 
     /**
      * Plain-text label: control characters become spaces, bidi / zero-width characters are removed (ZWJ is kept for
      * emoji sequences), Unicode blanks trimmed, cut to {@see self::LABEL_MAX_LENGTH} grapheme clusters; null when empty.
+     * Public since 1.22 (also cleans the `GET workday.leave` type); the caller makes sure the text is valid UTF-8.
      */
-    private static function label(?string $label): ?string
+    public static function label(?string $label): ?string
     {
         $label = (string) preg_replace('/\p{Cc}+/u', ' ', (string) $label);
         $label = (string) preg_replace('/[\x{200B}\x{200C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{061C}\x{FEFF}\x{00AD}]/u', '', $label);

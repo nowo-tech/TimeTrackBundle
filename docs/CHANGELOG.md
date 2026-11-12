@@ -57,6 +57,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.22.0** (minor; Beacon spec 204 FR-029, Block 2 bundle side): the clients learn that the user is on leave.
+Additive: without the new host port every client API body is byte for byte the 1.21 one; no schema change, no new scope.
+The TimeTrack Desktop and Extension pick the fields up in their own releases (their repositories are not changed here).
+
+### Added
+
+- **Host port `Client\ClientUserLeaveProviderInterface::getCurrentLeave(string $userId, DateTimeImmutable $day):
+  ?ClientUserLeave`** (`client_api.leave_provider`, default null). Framework-free (REQ-ARCH-001 rule 3): the user id
+  string in, the bundle-owned value object `Client\ClientUserLeave` out. A new optional interface: no method is added to
+  the profile, days-off or workday ports.
+- **`Client\ClientUserLeave`** (`final readonly`, private constructor): `typed(string $publicType, string $until)` and
+  `absent(string $until)` (medical leave, or any type the devices must not learn), `isAbsent()`. It holds only a public
+  type (or none) and the last day; an invalid `until` throws `InvalidArgumentException`.
+- **Client API, only with a leave provider**: `GET workday` gains `leave: {type, until}` or `null` (`type` is the cleaned
+  public label, else the bundle's *Absent* in the user's language; `reminder` is null while on leave); `GET me` gains
+  `features.leave` (= `features.workday`) and `links.leave` (`client_api.links_leave_route`, https only, else null).
+  Workday action answers are unchanged (no leave in the idempotency store). A provider that throws, a leave that ended
+  before the workday date or an unreadable workday date give `leave: null` and a warning without user data.
+- **`daysOff` kind `leave`** (every host): accepted from `ClientUserDaysOffProviderInterface`; its label is always sent
+  as null (a host label is dropped and logged as `leave label dropped`).
+- Config `client_api.leave_provider`, `client_api.links_leave_route`; translation key `client_api.leave_absent` in the
+  seven shipped languages.
+- `ClientDaysOffNormalizer::label()` is public (the leave type is cleaned with it);
+  `ClientWorkingTimeContext::reportsLeave()`, `leaveLink()`, `leave()` and its trailing optional constructor arguments
+  `$leaveProvider`, `$leaveRoute`, `$logger`.
+- Tests: `LeaveClientApiTest` (with the provider, medical as *Absent*, no comment / attachment / type in the bodies or
+  the logs), `WorkingTimeClientApiTest` (without it: the exact 1.21 body), `LeaveWorkerModeNoResetTest` (1,800
+  requests, three people, no services resetter), `DddHostLeaveTest` (XML host user, wrapper security user, the port
+  gets the id string; `lint:container`), `ClientApiV122LeaveTest`.
+
+### Changed
+
+- Docs: CLIENT-API *Changes in 1.22*, USAGE *Leave on the clients* plus the standard and DDD host sections,
+  CONFIGURATION, WORKING-TIME, FRANKENPHP-WORKER-AUDIT (re-audit 1.22), ROADMAP.
+
 ## [1.21.0] - 2026-11-12
 
 Target **1.21.0** (minor; Beacon D-20261111-12, request 2026-11-11 *billable time entries*): the `billable` flag of an

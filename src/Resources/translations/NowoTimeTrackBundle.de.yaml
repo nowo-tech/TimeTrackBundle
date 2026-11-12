@@ -181,3 +181,5 @@ ledger:
   dialog:
     add_title: "Saldobuchung hinzufügen"
     reversal_title: "Diese Buchung stornieren"
+client_api:
+  leave_absent: "Abwesend"
