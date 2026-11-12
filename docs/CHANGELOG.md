@@ -56,6 +56,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.21.0** (minor; Beacon D-20261111-12, request 2026-11-11 *billable time entries*): the `billable` flag of an
+entry is editable under the edit and period-lock rules and audited, and new live entries take a host default. No schema
+change (the column exists since 1.11), no new scope; the client API change is additive in the current version. Hosts
+that wrote the column themselves (Beacon override D23) can call the service instead.
+
+### Added
+
+- **`Service\TimeEntryBillableService`** (public): `change(UserInterface $actor, TimeEntry $entry, ?bool $billable)`,
+  `changeById()`, `find()`. Refused with `Exception\BillableChangeRefusedException` (`not_found`, `read_only` for an
+  imported entry, `anonymised` for an anonymised or ownerless one, `forbidden` when the edit grant says no) and with
+  `PeriodLockedException` / `PeriodSubmittedException` (`WriteKind::Edit`) when the entry's period is locked (approved)
+  or submitted; no role or listener overrides the lock. The lock check and the write run in one transaction holding the
+  owner's write lock.
+- **Audit**: `Event\TimeEntryBillableChangedEvent` (`TimeTrackEvents::TIME_ENTRY_BILLABLE_CHANGED`) after the commit of
+  each real change: entry, owner and actor ids, old and new value, time and `via` (`api` / `host`). Ids and scalars only;
+  a throwing listener is logged and does not undo the change.
+- **Host port `Integration\TimeEntryBillableDefaultProviderInterface::defaultFor(string $scopeKey, ?string $taskRef):
+  ?bool`** (scalars only, REQ-ARCH-001 rule 3), default `NullTimeEntryBillableDefaultProvider`. Asked for every new live
+  entry stored without a value: timer stop / switch, idle reassign, `POST entries`, accepted calendar suggestions. A
+  null answer keeps the flag unset, as before. Imported entries keep their source's value.
+- **`TeamAccessGuard::isEditGranted()`**: the edit grant of `canEditEntry()` without the period lock (owner, manager with
+  `security.manager_can_edit_entries`, admin roles, then the `edit` access-check event), so a caller can tell 403 from
+  409. `canEditEntry()` is unchanged.
+- **Client API**: `PATCH entries/{id}` `{"billable": true|false|null}` (scope `entries:write`, own entries only, 120 / h
+  per token; route `clients.routes.entries_update`), and an optional `billable` on `POST entries`. CORS allows `PATCH`.
+  `billable` was already read on every entry object. The TimeTrack Extension and TimeTrack Desktop pick the field up in
+  their own releases (their repositories are not changed here).
+- `TimeEntry::markBillable()` (`@internal`) and the optional store capability
+  `Repository\FindableTimeEntryRepositoryInterface::findById()` (the Doctrine store implements it).
+- `ManualEntryService::create()` gains a trailing `?bool $billable = null`; `ManualEntryService`, `TimerService` gain a
+  trailing optional `$billableDefaults` constructor argument (wired by the extension).
+
+### Changed
+
+- `TimeTrackCalendarApiController` takes `TimeEntryBillableService` (autowired).
+- ROADMAP: the planned "Block 2" (leave, the REQ-ARCH-001 additive ports and the bundle-owned entity manager) moves from
+  1.21 to **1.22**, the monitoring API from 1.22 to 1.23; the deprecations announced for 1.21 now land in 1.22.
+
 ## [1.20.0] - 2026-11-11
 
 Target **1.20.0** (minor; Beacon request 2026-11-11): the calendar OAuth apps can be read at runtime from the host, for

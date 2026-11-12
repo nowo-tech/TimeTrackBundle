@@ -79,4 +79,7 @@ final class TimeTrackEvents
 
     /** Since 1.14: {@see CalendarSuggestionDecidedEvent} — calendar suggestions were accepted or dismissed (ids only). */
     public const CALENDAR_SUGGESTION_DECIDED = 'nowo_time_track.calendar.suggestion_decided';
+
+    /** Since 1.21: {@see TimeEntryBillableChangedEvent} — the `billable` flag of an entry changed (audit record, ids only). */
+    public const TIME_ENTRY_BILLABLE_CHANGED = 'nowo_time_track.time_entry.billable_changed';
 }

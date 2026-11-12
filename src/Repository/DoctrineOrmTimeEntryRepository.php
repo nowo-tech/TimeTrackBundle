@@ -33,7 +33,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, FindableTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -59,6 +59,14 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     {
         $this->entityManager->persist($entry);
         RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+    }
+
+    /**
+     * Since 1.21: one entry by id.
+     */
+    public function findById(string $id): ?TimeEntry
+    {
+        return $this->entityManager->find(TimeEntry::class, $id);
     }
 
     /**

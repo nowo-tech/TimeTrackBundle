@@ -35,6 +35,7 @@ use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
@@ -113,6 +114,8 @@ final readonly class TimerService
         private ?PeriodLockGuard $periodLockGuard = null,
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
         ?UserReferenceResolverInterface $userReferences = null,
+        // Since 1.21: the default `billable` of the entries a timer records (null = none, the flag stays unset).
+        private ?TimeEntryBillableDefaultProviderInterface $billableDefaults = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -729,6 +732,7 @@ final readonly class TimerService
             $endedAt,
         );
         $entry->assignScopeKey($this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()));
+        $this->applyBillableDefault($entry);
         $entries = $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries;
 
         if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
@@ -760,6 +764,14 @@ final readonly class TimerService
         $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
 
         return $entry;
+    }
+
+    /**
+     * Since 1.21: the host default `billable` of a new entry ({@see TimeEntryBillableDefaultProviderInterface}).
+     */
+    private function applyBillableDefault(TimeEntry $entry): void
+    {
+        $entry->markBillable($this->billableDefaults?->defaultFor($entry->getScopeKey() ?? '', $entry->getTaskId()));
     }
 
     /**
@@ -846,6 +858,7 @@ final readonly class TimerService
             $this->clock->now(),
         );
         $reassigned->assignScopeKey($this->scopeKeyFor($user, $target->id, $target->boardId));
+        $this->applyBillableDefault($reassigned);
         $hasOwnEntry = $from > $timer->getStartedAt();
 
         $entry = $this->closeTimer($user, $timer, $from, null, null, [$reassigned], $hasOwnEntry);

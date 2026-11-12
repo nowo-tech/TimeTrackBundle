@@ -16,13 +16,16 @@ use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Exception\BillableChangeRefusedException;
 use Nowo\TimeTrackBundle\Exception\IdempotentReplayException;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
+use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Support\Rfc3339;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -34,12 +37,15 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 use function array_is_list;
+use function array_key_exists;
+use function array_keys;
 use function array_map;
 use function array_sum;
 use function count;
 use function hash;
 use function in_array;
 use function is_array;
+use function is_bool;
 use function is_string;
 use function json_decode;
 use function max;
@@ -86,6 +92,8 @@ final readonly class TimeTrackCalendarApiController
         private CalendarSyncService $sync,
         private ManualEntryService $entries,
         private CalendarSettings $settings,
+        // Since 1.21: `PATCH entries/{id}` (`billable`).
+        private TimeEntryBillableService $billable,
         ?ClockInterface $clock = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
@@ -293,8 +301,9 @@ final readonly class TimeTrackCalendarApiController
     }
 
     /**
-     * POST entries `{taskId, startedAt, endedAt, source: manual|calendar, note?}` with `Idempotency-Key`: 201 entry;
-     * 409 `period_locked` / `period_submitted` / `overlap`; 422 for the times; 403 `task_forbidden`.
+     * POST entries `{taskId, startedAt, endedAt, source: manual|calendar, note?, billable?}` with `Idempotency-Key`: 201
+     * entry; 409 `period_locked` / `period_submitted` / `overlap`; 422 for the times; 403 `task_forbidden`. Since 1.21 an
+     * absent or null `billable` takes the host default.
      */
     public function createEntry(Request $request): Response
     {
@@ -332,8 +341,10 @@ final readonly class TimeTrackCalendarApiController
         $end    = Rfc3339::parse($payload['endedAt'] ?? null);
         $source = TimeEntrySource::tryFrom(is_string($payload['source'] ?? null) ? $payload['source'] : '');
         $note   = $payload['note'] ?? null;
+        // Since 1.21: an optional `billable` (true / false; null or absent = the host default).
+        $billable = $payload['billable'] ?? null;
         if (!is_string($taskId) || $taskId === '' || strlen($taskId) > 36 || !$start instanceof DateTimeImmutable || !$end instanceof DateTimeImmutable
-            || !in_array($source, [TimeEntrySource::Manual, TimeEntrySource::Calendar], true) || ($note !== null && !is_string($note))) {
+            || !in_array($source, [TimeEntrySource::Manual, TimeEntrySource::Calendar], true) || ($note !== null && !is_string($note)) || ($billable !== null && !is_bool($billable))) {
             return $this->responseFactory->error('invalid_request', 'taskId, startedAt and endedAt (RFC 3339) and source (manual or calendar) are required.', Response::HTTP_BAD_REQUEST, $request);
         }
         $retry = $this->rateLimiter->hit('entries_create', $principal->token->getTokenHash(), self::ENTRIES_PER_HOUR, 3600);
@@ -355,7 +366,7 @@ final readonly class TimeTrackCalendarApiController
                     throw new IdempotentReplayException($again['status'], $again['body']);
                 }
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-            });
+            }, null, $billable);
 
             // Delta GG-D-3: stored after the commit (a failed commit never leaves a 201 to replay).
             $body = ['entry' => $entry->toArray() + ['locked' => false]];
@@ -380,6 +391,54 @@ final readonly class TimeTrackCalendarApiController
         $this->idempotency->save($userId, $idempotencyKey, $bodyHash, $status, $body);
 
         return $this->responseFactory->json($body, $status, $request);
+    }
+
+    /**
+     * Since 1.21: PATCH entries/{id} `{billable: true|false|null}` — changes the `billable` flag of one of the caller's own
+     * live entries (scope `entries:write`): 200 entry; 400 `invalid_request` (no `billable`, not a boolean or null, or
+     * another field); 404 `not_found` (no such entry, or another user's); 409 `read_only` (imported), `period_locked` /
+     * `period_submitted`; 403 `forbidden` (a host `edit` access-check listener said no). Audited by
+     * {@see TimeEntryBillableService}.
+     */
+    public function updateEntry(Request $request, string $id): Response
+    {
+        return $this->noStore($this->doUpdateEntry($request, $id));
+    }
+
+    /**
+     * Answer of {@see self::updateEntry()}.
+     */
+    private function doUpdateEntry(Request $request, string $id): Response
+    {
+        $principal = $this->authorize($request, ClientScope::EntriesWrite);
+        if ($principal instanceof Response) {
+            return $principal;
+        }
+        $payload = $this->payload($request);
+        if (!array_key_exists('billable', $payload) || array_keys($payload) !== ['billable'] || ($payload['billable'] !== null && !is_bool($payload['billable']))) {
+            return $this->responseFactory->error('invalid_request', 'Send {"billable": true, false or null}; no other field can be changed.', Response::HTTP_BAD_REQUEST, $request);
+        }
+        $retry = $this->rateLimiter->hit('entries_update', $principal->token->getTokenHash(), self::ENTRIES_PER_HOUR, 3600);
+        if ($retry > 0) {
+            return $this->tooManyRequests($request, $retry);
+        }
+        $entry = $this->billable->find($id);
+        // Own entries only: another user's entry looks like an unknown one.
+        if (!$entry instanceof TimeEntry || $entry->getUserId() !== UserIdResolver::getId($principal->user)) {
+            return $this->notFound($request);
+        }
+
+        try {
+            $entry = $this->billable->change($principal->user, $entry, $payload['billable'], 'api');
+        } catch (BillableChangeRefusedException $e) {
+            return $this->responseFactory->error($e->errorCode, 'The billable flag of this entry cannot be changed.', $e->httpStatus(), $request);
+        } catch (PeriodWriteRefusedException $e) {
+            $extra = $e instanceof PeriodLockedException ? ['lockedThrough' => $e->getLockedThrough()] : [];
+
+            return $this->responseFactory->json(['error' => $e->errorCode(), 'message' => 'The period is locked or submitted.'] + $extra, Response::HTTP_CONFLICT, $request);
+        }
+
+        return $this->responseFactory->json(['entry' => $entry->toArray() + ['locked' => false]], Response::HTTP_OK, $request);
     }
 
     /**

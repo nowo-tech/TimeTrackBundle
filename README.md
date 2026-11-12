@@ -30,6 +30,8 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
   week, suggestions accepted into `calendar` entries (lock and overlap aware), `POST entries`, `resolve-keys` for the
   desktop's local mode, and `GET me/meetings` over a host meeting read model with strict privacy filters
   ([CLIENT-API](docs/CLIENT-API.md#changes-in-114-calendar-suggestions-manual-entries), [MEETINGS.md](docs/MEETINGS.md)).
+- **Billable entries (1.21)**: an audited `billable` setter under the edit and period-lock rules, a host default for
+  new entries and `PATCH entries/{id}` on the client API ([USAGE](docs/USAGE.md#billable-entries-121)).
 
 ## Installation
 

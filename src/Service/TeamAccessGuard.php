@@ -69,6 +69,17 @@ final readonly class TeamAccessGuard
      */
     public function canEditEntry(UserInterface $editor, TimeEntry $entry): bool
     {
+        return $this->isEditGranted($editor, $entry) && $this->isWritable($entry);
+    }
+
+    /**
+     * Since 1.21: {@see self::canEditEntry()} without the period lock — the edit grant alone (owner, manager when
+     * `security.manager_can_edit_entries`, admin roles, then the `edit` access-check event). Callers that tell a refusal
+     * (403) from a lock (409) ask this first and then the period lock themselves. Imported entries and entries without a
+     * user owner (ownerless or anonymised) are never granted.
+     */
+    public function isEditGranted(UserInterface $editor, TimeEntry $entry): bool
+    {
         if ($entry->isReadOnly()) {
             return false;
         }
@@ -89,7 +100,7 @@ final readonly class TeamAccessGuard
         $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
-        return $event->isGranted() && $this->isWritable($entry);
+        return $event->isGranted();
     }
 
     /**

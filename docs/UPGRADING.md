@@ -69,6 +69,26 @@
 
 ## Unreleased
 
+Target **1.21.0** (minor), from **1.20.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+No migration and no schema change (`time_track_entries.billable` exists since 1.11). **Nothing to change**: without a
+provider new entries keep `billable: null` as before, and the new route only answers clients that call it.
+
+- **If you write `billable` yourself** (a DBAL statement, a Doctrine listener that sets it on `prePersist`), replace it:
+  - the default for new entries → alias `Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface`
+    to a service of yours (`defaultFor(string $scopeKey, ?string $taskRef): ?bool`; null = no default);
+  - a change → `TimeEntryBillableService::change()` / `changeById()`, which checks the edit grant and the period lock and
+    dispatches `TimeEntryBillableChangedEvent` for your audit store.
+- **Edit rules** are those of `TeamAccessGuard::canEditEntry()`: a `nowo_time_track.time_entry.access_check` listener
+  that answers the `edit` action now also decides who may change `billable`.
+- **Client API**: `PATCH entries/{id}` exists (`clients.routes.entries_update`, default
+  `/api/time-track/entries/{id}`). If a reverse proxy or firewall lists allowed methods, allow `PATCH` on that path.
+- If you construct `TimeTrackCalendarApiController` by hand, pass the new `TimeEntryBillableService` argument.
+
 ## To 1.20.0
 
 From **1.19.1**:

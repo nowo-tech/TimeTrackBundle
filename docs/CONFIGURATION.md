@@ -396,7 +396,8 @@ nowo_time_track:
 - Client routes (`clients.routes.*`): `calendar_connections`, `calendar_connection_revoke`
   (`/api/time-track/calendar/connections/{id}`, DELETE), `suggestions`, `suggestions_accept`, `suggestions_dismiss`,
   `suggestions_resolve_keys`, `entries_create` (`POST /api/time-track/entries`); they answer 404 while their feature is
-  off.
+  off. Since 1.21 also `entries_update` (`PATCH /api/time-track/entries/{id}`, name
+  `nowo_time_track_api_entries_update`: the `billable` flag of an own entry; always on with the client API).
 
 ## Meetings API (1.14)
 
