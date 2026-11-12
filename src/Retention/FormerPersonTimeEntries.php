@@ -100,16 +100,27 @@ final readonly class FormerPersonTimeEntries
     public function release(UserInterface $user, ?string $name = null): int
     {
         $store = $this->store();
-        // Since 1.23.0 (`user_mapping: id`, audit OA-M1): an id that does not compare exactly could reach a look-alike's rows.
-        if ($this->hostUsers instanceof HostUserRows && !DoctrineUserReferenceResolver::isExactId(UserIdResolver::getId($user))) {
-            throw new LogicException('This user id cannot be released with the TimeTrack id user mapping: it has a leading or trailing blank or an invisible character.');
-        }
+        $this->assertExact(UserIdResolver::getId($user));
         $this->timers?->stopForUserDeletion($user);
 
         $released = $this->logged('release', $store->releaseOwner(UserIdResolver::getId($user), self::personRefOf($user), $this->nameOf($user, $name)));
         $this->forgetUser(UserIdResolver::getId($user));
 
         return $released;
+    }
+
+    /**
+     * Since 1.23.0 (`user_mapping: id`, audits OA-M1 and OA-R1): an id or person reference that does not compare exactly
+     * could reach a look-alike's rows on a database that ignores trailing blanks (MySQL < 8.0, SQL Server): it is refused
+     * before anything is read or written. Nothing with the relation mapping.
+     *
+     * @throws LogicException When the id user mapping is on and the value is not exact
+     */
+    private function assertExact(string $value): void
+    {
+        if ($this->hostUsers instanceof HostUserRows && !DoctrineUserReferenceResolver::isExactId($value)) {
+            throw new LogicException('This user id or person reference cannot be used with the TimeTrack id user mapping: it has a leading or trailing blank or an invisible character.');
+        }
     }
 
     /**
@@ -175,6 +186,7 @@ final readonly class FormerPersonTimeEntries
     public function anonymiseUser(UserInterface $user): int
     {
         $store = $this->store();
+        $this->assertExact(UserIdResolver::getId($user));
         $this->timers?->stopForUserDeletion($user);
 
         return $this->logged('anonymise_user', $store->anonymiseOwner(UserIdResolver::getId($user), $this->now()) + $store->anonymisePerson(self::personRefOf($user), $this->now()));
@@ -186,6 +198,8 @@ final readonly class FormerPersonTimeEntries
      */
     public function anonymisePerson(string $personRef): int
     {
+        $this->assertExact($personRef);
+
         return $this->logged('anonymise_person', $this->store()->anonymisePerson($personRef, $this->now()));
     }
 
@@ -215,6 +229,7 @@ final readonly class FormerPersonTimeEntries
      */
     public function export(string $personRef): array
     {
+        $this->assertExact($personRef);
         $rows  = [];
         $after = '';
         do {

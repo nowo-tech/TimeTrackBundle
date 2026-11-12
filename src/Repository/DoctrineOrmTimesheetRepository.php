@@ -23,7 +23,9 @@ use Throwable;
 
 use function array_chunk;
 use function array_column;
+use function array_filter;
 use function array_map;
+use function array_values;
 use function count;
 use function max;
 use function spl_object_id;
@@ -444,6 +446,10 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function timesheetIds(?string $scopeKey, ?string $ownerRef, string $afterId, int $limit): array
     {
+        if ($ownerRef !== null && ExactUserIds::applies($this->entityManager, Timesheet::class)) {
+            return $this->exactTimesheetIds($scopeKey, $ownerRef, $afterId, max(1, $limit));
+        }
+
         $query = $this->entityManager->createQueryBuilder()
             ->select('t.id AS id')
             ->from(Timesheet::class, 't')
@@ -462,6 +468,44 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         $rows = $query->getQuery()->getArrayResult();
 
         return array_column($rows, 'id');
+    }
+
+    /**
+     * Since 1.23.1 (id user mapping, audit OA-R1): {@see self::timesheetIds()} with the owner reference re-checked byte for
+     * byte; it reads on until it has `$limit` ids or no row is left, so a look-alike row never ends a caller's paging early.
+     *
+     * @return list<string>
+     */
+    private function exactTimesheetIds(?string $scopeKey, string $ownerRef, string $afterId, int $limit): array
+    {
+        $kept = [];
+        do {
+            $query = $this->entityManager->createQueryBuilder()
+                ->select('t.id AS id', 't.ownerRef AS ownerRef')
+                ->from(Timesheet::class, 't')
+                ->where('t.id > :after')
+                ->andWhere('t.ownerRef = :owner')
+                ->setParameter('after', $afterId)
+                ->setParameter('owner', $ownerRef)
+                ->orderBy('t.id', SortDirection::Ascending->value)
+                ->setMaxResults($limit);
+            if ($scopeKey !== null) {
+                $query->andWhere('t.scopeKey = :scope')->setParameter('scope', $scopeKey);
+            }
+            /** @var list<array{id: string, ownerRef: string}> $rows */
+            $rows = $query->getQuery()->getArrayResult();
+            foreach ($rows as $row) {
+                $afterId = $row['id'];
+                if ($row['ownerRef'] === $ownerRef) {
+                    $kept[] = $row['id'];
+                    if (count($kept) === $limit) {
+                        return $kept;
+                    }
+                }
+            }
+        } while (count($rows) === $limit);
+
+        return $kept;
     }
 
     /**
@@ -484,7 +528,11 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
 
         /** @var list<array{ownerRef: string, scopeKey: string}> $rows */
         $rows = $query->getQuery()->getArrayResult();
+        if ($ownerRef === null || !ExactUserIds::applies($this->entityManager, BalanceLedgerLine::class)) {
+            return $rows;
+        }
 
-        return $rows;
+        // Since 1.23.1 (id user mapping, audit OA-R1): only the chains of this owner reference, byte for byte.
+        return array_values(array_filter($rows, static fn (array $row): bool => $row['ownerRef'] === $ownerRef));
     }
 }
