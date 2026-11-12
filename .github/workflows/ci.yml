@@ -123,7 +123,9 @@ jobs:
 
   functional-databases:
     # Since 1.13: the whole functional suite (old and new tests) also runs on MySQL 8 and PostgreSQL 16.
-    name: Functional suite - ${{ matrix.database }}
+    # Since 1.23.0: each database also with `database.private_entity_manager: true` (the tests that assume one shared
+    # entity manager, group `shared-entity-manager`, are left out of those runs).
+    name: Functional suite - ${{ matrix.database }}${{ matrix.private == '1' && ' - private entity manager' || '' }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -131,16 +133,37 @@ jobs:
       matrix:
         include:
           - database: MySQL 8.0
+            private: '0'
             image: mysql:8.0
             port: 3306
             health: mysqladmin ping -h 127.0.0.1 -uroot -proot
             url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=8.0.32&charset=utf8mb4
           - database: MariaDB 10.6
+            private: '0'
             image: mariadb:10.6
             port: 3306
             health: healthcheck.sh --connect --innodb_initialized
             url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=10.6.0-MariaDB&charset=utf8mb4
           - database: PostgreSQL 16
+            private: '0'
+            image: postgres:16-alpine
+            port: 5432
+            health: pg_isready -U postgres -d tt
+            url: postgresql://postgres:pg@127.0.0.1:5432/tt?serverVersion=16&charset=utf8
+          - database: MySQL 8.0
+            private: '1'
+            image: mysql:8.0
+            port: 3306
+            health: mysqladmin ping -h 127.0.0.1 -uroot -proot
+            url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=8.0.32&charset=utf8mb4
+          - database: MariaDB 10.6
+            private: '1'
+            image: mariadb:10.6
+            port: 3306
+            health: healthcheck.sh --connect --innodb_initialized
+            url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=10.6.0-MariaDB&charset=utf8mb4
+          - database: PostgreSQL 16
+            private: '1'
             image: postgres:16-alpine
             port: 5432
             health: pg_isready -U postgres -d tt
@@ -181,7 +204,34 @@ jobs:
         env:
           SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
           TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
-        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage
+          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: ${{ matrix.private }}
+        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage ${{ matrix.private == '1' && '--exclude-group shared-entity-manager' || '' }}
+
+  functional-private-entity-manager:
+    # Since 1.23.0: the whole functional suite on SQLite with `database.private_entity_manager: true`.
+    name: Functional suite - SQLite - private entity manager
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: json, pdo_sqlite, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Run the functional suite
+        env:
+          SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
+          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: '1'
+        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage --exclude-group shared-entity-manager
 
   rollback-clients:
     # Since 1.15 (audit HA-H2): the reference SQL through sqlite3, mysql, mariadb and psql, with their default options.

@@ -9,6 +9,7 @@ use Doctrine\Common\Collections\Order as SortDirection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
 use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
@@ -285,7 +286,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             $query->andWhere('s.connection = :connection')->setParameter('connection', $connectionId);
         }
         /** @var int $deleted */
-        $deleted = $query->getQuery()->execute();
+        $deleted = TimeTrackSavepoint::execute($query->getQuery(), $this->entityManager);
 
         return $deleted;
     }
@@ -321,14 +322,13 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         }
         // GG-D-5: the status is in the DELETE predicate, so a row a concurrent accept decided meanwhile is kept.
         /** @var int $deleted */
-        $deleted = $this->entityManager->createQueryBuilder()
+        $deleted = TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete(CalendarSuggestion::class, 's')
             ->where('s.id IN (:ids)')
             ->andWhere('s.status = :pending')
             ->setParameter('ids', array_map(static fn (CalendarSuggestion $s): string => $s->getId(), $unseen))
             ->setParameter('pending', CalendarSuggestionStatus::Pending->value)
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
         // The DQL delete bypasses the identity map: forget the rows it may have removed.
         foreach ($unseen as $suggestion) {
             $this->entityManager->detach($suggestion);

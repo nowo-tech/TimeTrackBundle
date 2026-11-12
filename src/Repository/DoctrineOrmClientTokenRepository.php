@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
@@ -79,12 +80,11 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
      */
     public function purgeExpired(): int
     {
-        return $this->entityManager->createQueryBuilder()
+        return TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete(ClientToken::class, 't')
             ->where('t.expiresAt <= :now')
             ->setParameter('now', $this->clock->now())
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
     }
 
     /**
@@ -92,11 +92,10 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
      */
     public function removeByCredentialId(string $credentialId): int
     {
-        return $this->entityManager->createQueryBuilder()
+        return TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete(ClientToken::class, 't')
             ->where('t.credentialId = :credential')
             ->setParameter('credential', $credentialId)
-            ->getQuery()
-            ->execute();
+            ->getQuery(), $this->entityManager);
     }
 }

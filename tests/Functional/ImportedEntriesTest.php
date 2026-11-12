@@ -39,6 +39,7 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryStore;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use stdClass;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -328,6 +329,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
         self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
     }
 
+    #[Group('shared-entity-manager')]
     public function testAttachUserReturnsAManagedUser(): void
     {
         $repository = $this->repository();

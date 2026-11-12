@@ -1017,9 +1017,13 @@ services:
 
 ### Units of work and events
 
-- The bundle's services write through `database.entity_manager` (default: your `default` entity manager), one flush
-  per call. Call them from an application handler **outside** your own unit of work (or after your own flush): a
-  service call flushes whatever else is pending in that entity manager.
+- By default the bundle's services write through `database.entity_manager` (default: your `default` entity manager),
+  one flush per call: call them **outside** your own unit of work (or after your own flush), since a service call
+  flushes whatever else is pending in that entity manager.
+- Since 1.23.0, `database.private_entity_manager: true` (recommended for DDD hosts; the only mode in 2.0) makes the
+  bundle write and read its rows through a private entity manager on the same connection and mapping: it never flushes,
+  clears or closes yours, your transaction includes its rows (savepoints), and it is dropped at every request, message
+  and command boundary. See [CONFIGURATION](CONFIGURATION.md) and [UPGRADING](UPGRADING.md#private-entity-manager-databaseprivate_entity_manager).
 - `TimeTrackEvents` fire after the bundle's own flush or transaction. When you wrap a call in an outer transaction of
   your own, "after the bundle's flush" is not "after your commit": dispatch your domain events after your commit.
 
@@ -1027,7 +1031,8 @@ services:
 
 Since 1.23.0 the host ports and events have framework-free twins (rules 1, 3, 4). Still open in this release:
 
-- Rule 6: the services flush `database.entity_manager`, which is your `default` one unless you change it.
+- Rule 6 is met with `database.private_entity_manager: true` (opt-in until 2.0); by default the services flush
+  `database.entity_manager`, as in 1.22.
 - Rule 2: users must live in a Doctrine entity (`user_class`) in the same entity manager as the bundle tables (foreign
   keys); the bundle ships attribute mappings only.
 - Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.

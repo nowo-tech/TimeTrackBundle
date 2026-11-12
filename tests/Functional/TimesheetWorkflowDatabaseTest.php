@@ -54,6 +54,7 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetPersonalDataExporter;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -123,6 +124,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         }
     }
 
+    #[Group('shared-entity-manager')]
     public function testApprovalHardLocksTheWeekAndReopenRestoresItWithAVerifiableTrail(): void
     {
         $monday = $this->week->startsAt('UTC');
@@ -200,6 +202,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertStringContainsString($reopened->getId(), $verify->getDisplay());
     }
 
+    #[Group('shared-entity-manager')]
     public function testStaleAndConcurrentApprovalsAndNoSelfApproval(): void
     {
         $monday = $this->week->startsAt('UTC');
@@ -328,6 +331,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertNull($this->entityManager()->find(Timesheet::class, $locked->getId()));
     }
 
+    #[Group('shared-entity-manager')]
     public function testAPurgedLedgerChainStillVerifiesAndATruncatedOneDoesNot(): void
     {
         $owner  = (string) $this->user->getId();

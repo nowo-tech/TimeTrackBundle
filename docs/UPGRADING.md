@@ -6,6 +6,7 @@
 - [To 1.23.0](#to-1230)
   - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
   - [Event accessors](#event-accessors)
+  - [Private entity manager (`database.private_entity_manager`)](#private-entity-manager-databaseprivate_entity_manager)
   - [Coming in 2.0](#coming-in-20)
 - [To 1.22.1](#to-1221)
 - [To 1.22.0](#to-1220)
@@ -85,7 +86,7 @@ composer update nowo-tech/time-track-bundle
 ```
 
 Nothing to change: defaults and existing host services behave exactly as in 1.22.1. 1.23.0 adds the opt-in paths of
-REQ-ARCH-001 (DDD / hexagonal hosts) and deprecates the framework-typed members that 2.0 removes. Check one thing: the
+REQ-ARCH-001 (DDD / hexagonal hosts: framework-free ports, a private entity manager) and deprecates the framework-typed members that 2.0 removes. Check one thing: the
 build now fails when a configured port service implements neither its interface nor the 1.23 twin (1.22 failed at the
 first call with a `TypeError`).
 
@@ -134,9 +135,31 @@ The deprecated members still work until 2.0. To keep listeners free of Symfony t
 | `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent` | `getViewer()` | `viewerRef()` (or the 1.18 `getViewerId()`) |
 | `Client\ClientAuthResult` | `getUser()` | `userRef()`; build it with `successFor(TimeTrackUserRef …)` |
 
+### Private entity manager (`database.private_entity_manager`)
+
+Nothing changes unless you opt in. With `nowo_time_track.database.private_entity_manager: true`:
+
+- The bundle stops flushing, clearing or closing `database.entity_manager` (your `default` one unless you changed it).
+  Your pending changes are stored only when **you** flush. If your code relied on a TimeTrack call (starting a timer,
+  saving an entry, approving a timesheet, …) to flush your own pending changes, flush them yourself.
+- The tables, connection and mapping do not move; the private manager shares that manager's connection, so a
+  transaction you open around a TimeTrack call includes its rows (its statements then run in savepoints) and your
+  rollback undoes them.
+- TimeTrack rows the bundle returns (entries, timers, timesheets, ledger lines, tokens, calendar rows) belong to the
+  private manager: change them through the bundle's services, not with your manager's `persist()` / `remove()` /
+  `flush()`. Entities you change in memory but never save through the bundle are dropped at the next boundary and logged
+  as a warning (entity classes and counts only). Rows you write yourself with SQL or your manager are seen by the bundle
+  from the next request, message or command on (its manager is dropped at every boundary).
+- Your user objects stay yours: the bundle writes its rows with its own reference to the same user row.
+- `$yourManager->getRepository(TimeEntry::class)` (and the other bundle entities) still works on your manager.
+- With doctrine/dbal 3 the rollback middleware is not registered: after a rollback the private manager is only replaced
+  at the next boundary.
+
+`private_entity_manager: false` (the default) is deprecated; in 2.0 the private manager is the only mode.
+
 ### Coming in 2.0
 
-The deprecated port interfaces and members are removed.
+The deprecated port interfaces and members are removed; the private entity manager becomes the only mode.
 
 ## To 1.22.1
 

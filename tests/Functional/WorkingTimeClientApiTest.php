@@ -22,6 +22,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_column;
@@ -301,6 +302,7 @@ class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertNull($managed['tasks'][1]['loggedSecondsScope'] ?? null, 'no scope without a figure');
     }
 
+    #[Group('shared-entity-manager')]
     public function testRunningTimersAndLockedSwitches(): void
     {
         $token  = $this->token(ClientScope::TimerWrite, ClientScope::TimerRead, ClientScope::TimesheetWrite);

@@ -110,7 +110,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -221,7 +221,18 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
                 'login_rate_limit'     => ['max_attempts' => 2, 'cache_pool' => 'cache.time_track_test'],
             ],
             'client_api' => ['rate_limit' => ['cache_pool' => 'cache.time_track_test']],
-        ], $this->timeTrackConfig));
+        ], self::privateEntityManager(), $this->timeTrackConfig));
+    }
+
+    /**
+     * Since 1.23.0: `TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER=1` runs the suite with `database.private_entity_manager: true`
+     * (CI job "Functional suite - private entity manager"); a test's own configuration still wins.
+     *
+     * @return array<string, mixed>
+     */
+    public static function privateEntityManager(): array
+    {
+        return getenv('TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER') === '1' ? ['database' => ['private_entity_manager' => true]] : [];
     }
 
     /**

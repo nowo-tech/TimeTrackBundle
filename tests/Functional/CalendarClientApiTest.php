@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
+use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -132,6 +133,7 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
+    #[Group('shared-entity-manager')]
     public function testSuggestionsAreGroupedAndAcceptedPerOccurrence(): void
     {
         $connection = $this->connect();
@@ -193,6 +195,7 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['groupKey' => 'series:aaaaaaaaaaaaaaaa:W'], $token)['dismissed'] ?? null, 'already accepted');
     }
 
+    #[Group('shared-entity-manager')]
     public function testAcceptIsSerialisedAndAtomicPerOccurrence(): void
     {
         $connection = $this->connect();
@@ -236,6 +239,7 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['ids' => [$dismissed->getId()]], $token)['dismissed'] ?? null, 'a decided row is not dismissed');
     }
 
+    #[Group('shared-entity-manager')]
     public function testAGroupCanBeDismissedAndRefreshIsRateLimited(): void
     {
         $connection = $this->connect();

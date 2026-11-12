@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
+use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -276,6 +277,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertNull($this->reload('12')->getUser());
     }
 
+    #[Group('shared-entity-manager')]
     public function testSettlingNeverOverwritesAnOwnerFoundMeanwhile(): void
     {
         $other  = $this->createUser('other@example.com');
@@ -359,6 +361,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertSame('user:' . $userId, $this->reload('e-1')->getPersonRef());
     }
 
+    #[Group('shared-entity-manager')]
     public function testARemoveInsideAnOnFlushWithNothingElseToFlushSettlesNothing(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));

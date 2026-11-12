@@ -19,6 +19,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
+use PHPUnit\Framework\Attributes\Group;
 use ReflectionObject;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
@@ -195,6 +196,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         self::assertCount(3, $this->store()->findByOwner((string) $this->user->getId(), 'org-a'));
     }
 
+    #[Group('shared-entity-manager')]
     public function testAPurgeTakesAChainPrefixInChainOrderAndMarksTheLineKept(): void
     {
         $first  = $this->line('2020-02-01', new DateTimeImmutable('2026-11-07 10:00:10'), null);
@@ -207,6 +209,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         self::assertSame('2021-01-01', $this->store()->find($third->getId())?->getPurgedBefore());
     }
 
+    #[Group('shared-entity-manager')]
     public function testAPurgeTakesLinesNoStartReachesInSortOrderAsBefore(): void
     {
         $first  = $this->line('2020-01-01', new DateTimeImmutable('2026-11-07 10:00:01'), null);

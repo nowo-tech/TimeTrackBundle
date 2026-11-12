@@ -3,13 +3,14 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/time-track-bundle` (`symfony-bundle`) |
-| Current audit | **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
+| Current audit | **1.23.0** (`feat/arch-001`), 2026-11-12, framework-free ports and the private entity manager — see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager); **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
 | First audit | `v1.3.3` / `d90eed2`, 2026-09-23 (findings W-01 … W-03 below) |
 | Method | Manual review of every service, listener, command and controller under `src/` (grep for `static`, mutable properties, `ResetInterface`, `exit` / `die`), Igor (`composer igor`), PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic` + `ruleset-worker`, and the many-request worker test |
 | **Verdict** | ✅ **Works with `FRANKENPHP_RESET_KERNEL=false`** — no service keeps request, user or tenant data; the one per-flush state is cleared by the bundle at every request, message and command boundary; the worker test passes with one kernel and two people in turn |
 
 ## Table of contents
 
+- [Re-audit 1.23 (REQ-ARCH-001 ports and private entity manager)](#re-audit-123-req-arch-001-ports-and-private-entity-manager)
 - [Re-audit 1.22 (client leave, spec 204)](#re-audit-122-client-leave-spec-204)
 - [Re-audit 1.20 (runtime calendar OAuth apps)](#re-audit-120-runtime-calendar-oauth-apps)
 - [Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)](#re-audit-119-req-runtime-002-kernel-reset-false)
@@ -22,6 +23,30 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.23 (REQ-ARCH-001 ports and private entity manager)
+
+Scope: the 1.23 port twins and gates (`src/Port/`), `TimeTrackUserRef` and `HiddenValues`, the compiler passes, and the
+opt-in private entity manager (`database.private_entity_manager: true`).
+
+| Service | State | Verdict |
+|---------|-------|---------|
+| `Port\*Gate`, `Port\Ports`, `Port\TimeTrackUserRefs` | `final readonly` gates over the host service; static helpers without static properties | Stateless; a reference is built per call |
+| `ValueObject\TimeTrackUserRef` + `Internal\HiddenValues` | the user object kept in a `WeakMap` keyed by the VO | The entry dies with its per-call VO: nothing outlives the request |
+| `Doctrine\TimeTrackEntityManager` (private mode) | the current private manager, a stale flag and the uncommitted transaction levels | Bundle-owned unit of work, dropped by the bundle itself at every outermost boundary (`PrivateEntityManagerSubscriber`: main `kernel.request` start, `kernel.terminate`, Messenger received / handled / failed, outermost `console.command` / `console.terminate`) and at `kernel.reset`; replaced when closed, on another connection or stale after a rollback; pending changes at a boundary are logged (classes and counts) and dropped. Its first private manager is created lazily, the subscriber never builds it |
+| `Doctrine\UnitOfWorkBoundaries` | which units of work are running in the process | Describes the running units (deliberately not reset by `kernel.reset`); copied from AuthKitBundle 1.46.0 / PageBuilderKitBundle 1.15.1 |
+| `Doctrine\TimeTrackRepositoryFactory` | repositories memoised in a `WeakMap` keyed by the private manager | Gone with the manager at the next boundary |
+| `Doctrine\FormerPersonSnapshotListener` | unchanged per-flush state; in private mode it drops the private manager after settling a deleted user's entries | Cleared at the boundaries as in 1.19 |
+
+- **Entity manager (rule 4 of REQ-RUNTIME-002)**: with the option on, the bundle clears its own manager at every boundary
+  and recreates it when a failed write closed it; it never touches the application's managers (the host keeps rule 7 for
+  its own). Without the option, 1.22 applies (see *Entity manager* below).
+- **Worker test**: `PrivateEntityManagerWorkerTest` runs every `WorkerModeNoResetTest` scenario with the option on (1,300
+  requests across two people and the 1,000-step memory check, growth under 64 KB) plus 100 rounds × 2 people of
+  start / read / stop, all through the container's `http_kernel->handle()` and `terminate()` (never `Kernel::handle()`,
+  whose `boot()` would run the services resetter): after every request the private manager is gone, and a row changed
+  between two requests is read fresh.
+- **Static checks**: Igor clean, PHPStan with the `phpstan-frankenphp` classic and worker rulesets clean.
 
 ## Re-audit 1.22 (client leave, spec 204)
 
@@ -106,10 +131,11 @@ the timesheets, audit rows and ledger lines it deleted or marked (`TimesheetPurg
 (for example `EntityManager::clear()` on `kernel.terminate`), or keep the services resetter. Otherwise a user loaded in
 an earlier request and deleted out of band since then still counts as known to the resolver until the manager is
 cleared; databases that enforce the foreign keys still refuse the write at flush. Memory is not the issue: the worker
-test below shows the hot path keeps no growth with the same people. 1.22.0 still writes through the host's `default`
-manager. A bundle-owned entity manager (REQ-ARCH-001 rule 6), which would let the bundle clear its own manager itself,
-is part of the XL REQ-ARCH-001 track (with the `UserInterface` ports and the XML mappings) and has no target release
-yet; until then this host duty applies (REQ-RUNTIME-002 rule 7).
+test below shows the hot path keeps no growth with the same people. By default the bundle writes through
+`database.entity_manager` (the host's `default` manager unless configured otherwise), so this host duty applies
+(REQ-RUNTIME-002 rule 7). Since 1.23.0, `database.private_entity_manager: true` makes the bundle use its own private
+manager, which it drops itself at every boundary (see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager)):
+the host duty then covers only the host's own managers.
 
 ### Locks, handles, HTTP
 

@@ -35,6 +35,8 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | `task_provider` | `StubTaskProvider` | `TaskProviderInterface` service id |
 | `team_context_provider` | `NullTeamContextProvider` | `TeamContextProviderInterface` service id |
 | `table_prefix` | `time_track_` | DB table prefix |
+| `database.entity_manager` | `default` | Doctrine entity manager the bundle tables are mapped on and written through |
+| `database.private_entity_manager` | `false` | Since 1.23.0 (REQ-ARCH-001 rule 6): `true` writes and reads the bundle rows through a **private** entity manager created on the connection and mapping of `database.entity_manager`, so the bundle never flushes, clears or closes that manager (yours). Same tables and connection: a transaction you open includes the bundle's rows (savepoints). Dropped and recreated at every request, Messenger message and outermost console command, and when a failed write closed it; with doctrine/dbal 4 also after a rollback undid its rows. `false` keeps the 1.22 behaviour (deprecated: the only mode in 2.0). See [UPGRADING](UPGRADING.md#private-entity-manager-databaseprivate_entity_manager) |
 
 ## Routes (REQ-SF-004 exemption)
 

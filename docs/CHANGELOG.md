@@ -59,9 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Target **1.23.0** (minor; REQ-ARCH-001 XL track, part 1 of 3: framework-free ports and events). Additive: with the
-default configuration and every existing host service, the bundle asks the same interfaces with the same arguments and
-answers exactly as in 1.22.1. No schema, route, client API or configuration-key change.
+Target **1.23.0** (minor; REQ-ARCH-001 XL track: framework-free ports and events, an opt-in private entity manager).
+Additive: with the default configuration and every existing host service, the bundle asks the same interfaces with the
+same arguments, writes through the same entity manager and answers exactly as in 1.22.1. No schema, route or client API
+change.
 
 ### Added
 
@@ -100,6 +101,30 @@ answers exactly as in 1.22.1. No schema, route, client API or configuration-key 
   only (`calendar.credential_provider`, `meetings.provider`, `client_api.workday_provider`,
   `client_api.idle_check.provider`, `timesheets.approver_provider`) are referenced through internal aliases
   `nowo_time_track.port.<name>`; the bundle's services see the same instance.
+- **Opt-in private entity manager** `database.private_entity_manager: true` (REQ-ARCH-001 rule 6, REQ-RUNTIME-002
+  rule 4; default `false`, the 1.22 behaviour). The stores and the user reference resolver use
+  `Doctrine\TimeTrackEntityManager`, a private manager created on the connection, mapping and event manager of
+  `database.entity_manager`: a bundle write never flushes, clears or closes your manager, and a failed one closes only the
+  private manager (recreated at the next call). Same tables and connection, so your transaction includes the bundle rows;
+  its flush and bulk statements then run in savepoints (`Doctrine\TimeTrackSavepoint`; when rolling back to the savepoint
+  fails too, the original exception is rethrown). Dropped at every outermost boundary (`UnitOfWorkBoundaries`,
+  `PrivateEntityManagerSubscriber`: main request start and end, Messenger message, outermost console command) and at
+  `kernel.reset`; with doctrine/dbal 4 a rollback that undid its rows replaces it (`PrivateEntityManagerMiddleware`, only
+  on the source manager's connection, `PrivateEntityManagerPass`). The host's SQL filters are mirrored (a filter class
+  registered later too). Its own repository factory (`Doctrine\TimeTrackRepositoryFactory`, audit NZ-M1 pattern)
+  delegates DoctrineBundle `ServiceEntityRepository` classes to your factory and builds the others per private manager
+  (`WeakMap`). A bundle row pointing at an object of another unit of work (your user as your manager or firewall loaded
+  it) is written with the private manager's reference to the same row. Deleting a user through your manager drops the
+  private copies of that user's settled entries. Adapted from AuthKitBundle 1.46.0.
+- Tests: `PrivateEntityManagerPartsTest` (middleware, staleness, closed manager, boundary drop that cannot be poisoned,
+  filters, factory, registry, savepoints, foreign references, build pass), `PrivateEntityManagerHostTest` (your pending
+  work is never flushed, a failed bundle write leaves your manager open, your transaction decides, user deletion),
+  `PrivateEntityManagerWorkerTest` (every `WorkerModeNoResetTest` scenario again plus 100 rounds × 2 people through
+  `http_kernel->handle()` / `terminate()`: the private manager is dropped after every request and a row changed between
+  requests is read fresh), `UnitOfWorkBoundariesTest`, `PrivateEntityManagerSubscriberTest`,
+  `TimeTrackRepositoryFactoryTest`, `PrivateEntityManagerConfigTest`. CI runs the whole functional suite again on
+  SQLite, MySQL, MariaDB and PostgreSQL with the option on (`TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER=1`, leaving out the
+  tests of group `shared-entity-manager`, which assume one shared manager).
 - **Event accessors** `userRef()` (`TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`,
   `TaskEffortAccessCheckEvent`) and `viewerRef()` (`TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`) returning a
   `TimeTrackUserRef` (REQ-ARCH-001 rules 3 and 4).
@@ -113,6 +138,7 @@ answers exactly as in 1.22.1. No schema, route, client API or configuration-key 
 
 ### Deprecated
 
+- `database.private_entity_manager: false` (the default): in 2.0 the private entity manager is the only mode.
 - The framework-typed ports above, `getUser()` / `getViewer()` of the seven events, `ClientAuthResult::getUser()`; removed
   in 2.0. `Client\ClientApiPrincipal` is marked `@internal` (built by the API guard for the bundle's own controllers).
 

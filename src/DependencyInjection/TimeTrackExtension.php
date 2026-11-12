@@ -59,10 +59,16 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
+use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerMiddleware;
+use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerSubscriber;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
+use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
@@ -162,6 +168,9 @@ use function sprintf;
  */
 final class TimeTrackExtension extends Extension implements PrependExtensionInterface
 {
+    /** Since 1.23.0: the source manager of the private entity manager (set only with the option on). */
+    public const PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER = 'nowo_time_track.private_entity_manager.source';
+
     /**
      * Registers the parameters, repositories, access checker, client services and Twig globals from the configuration.
      */
@@ -231,7 +240,13 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         }
         $container->setAlias(TeamContextProviderInterface::class, $teamProviderId);
 
-        $emRef = new Reference(sprintf('doctrine.orm.%s_entity_manager', $emName));
+        // Since 1.23.0 (REQ-ARCH-001 rule 6): opt-in private entity manager for the bundle rows.
+        $private = (bool) $config['database']['private_entity_manager'];
+        if ($private) {
+            $this->registerPrivateEntityManager($container, $emName);
+        }
+        $emRef       = new Reference($private ? TimeTrackEntityManager::class : sprintf('doctrine.orm.%s_entity_manager', $emName));
+        $registryRef = $private ? new Reference(TimeTrackManagerRegistry::class) : new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE);
 
         foreach ([
             DoctrineOrmTimeEntryRepository::class           => TimeEntryRepositoryInterface::class,
@@ -242,13 +257,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             $repoDefinition = (new Definition($repoClass))
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
-                ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+                ->setArgument('$managerRegistry', $private ? new Reference(TimeTrackManagerRegistry::class) : new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
             if ($repoClass === DoctrineOrmTimeEntryRepository::class) {
                 // Since the delta GG-D-2 fix: warns when a user row cannot be locked.
+                // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
                 $repoDefinition->setArgument('$logger', new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+                // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
                 $repoDefinition->addTag('monolog.logger', ['channel' => 'time_track']);
             }
             if (in_array($repoClass, [DoctrineOrmClientTokenRepository::class, DoctrineOrmDeviceAuthorizationRepository::class], true)) {
+                // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
                 $repoDefinition->setArgument('$clock', new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE));
             }
             $container->setDefinition($repoClass, $repoDefinition);
@@ -318,7 +336,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $this->registerClientApi($container, $config);
         $this->registerImports($container, $config);
-        $this->registerTimesheets($container, $config, $emRef);
+        $this->registerTimesheets($container, $config, $emRef, $registryRef);
         /** @var list<class-string> $acceptedUserClasses */
         $acceptedUserClasses = $config['accepted_user_classes'];
         $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses);
@@ -461,6 +479,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$entries', new Reference(FormerPersonTimeEntries::class))
             ->setArgument('$userClass', $config['user_class'])
             ->setArgument('$timers', new Reference(TimerService::class))
+            ->setArgument('$privateEntityManager', $container->hasDefinition(TimeTrackEntityManager::class) ? new Reference(TimeTrackEntityManager::class) : null)
             ->addTag('doctrine.event_listener', ['event' => 'preRemove'])
             ->addTag('doctrine.event_listener', ['event' => 'onFlush'])
             // Since 1.16 (HA-L18): first, so a host's postFlush listener that flushes cannot cancel the settling.
@@ -479,12 +498,12 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      *
      * @param array<string, mixed> $config Processed configuration
      */
-    private function registerTimesheets(ContainerBuilder $container, array $config, Reference $emRef): void
+    private function registerTimesheets(ContainerBuilder $container, array $config, Reference $emRef, ?Reference $registryRef = null): void
     {
         /** @var array{enabled: bool, scope_mode: string, scope_provider: string|null, approver_provider: string|null, period: string, default_timezone: string, submit_requires_period_end: bool, auto_lock_after_days: int|null, allow_self_approval: bool, admin_roles_view: bool, reopen_roles: list<string>, approver_sees_notes: bool, audit_blocked_edits: bool, retention_years: int} $timesheets */
-        $timesheets  = $config['timesheets'];
-        $enabled     = $timesheets['enabled'];
-        $registryRef = new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $timesheets = $config['timesheets'];
+        $enabled    = $timesheets['enabled'];
+        $registryRef ??= new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE);
         $container->setParameter('nowo_time_track.timesheets', $timesheets);
         $container->setParameter('nowo_time_track.timesheets.enabled', $enabled);
 
@@ -539,7 +558,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $this->registerWorkingTime($container, $config, $scopeRef, $guardRef);
         $this->registerTimesheetWorkflow($container, $config, $scopeRef);
-        $this->registerCalendar($container, $config, $emRef, $scopeRef);
+        $this->registerCalendar($container, $config, $emRef, $scopeRef, $registryRef);
     }
 
     /**
@@ -549,7 +568,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      *
      * @param array<string, mixed> $config Processed configuration
      */
-    private function registerCalendar(ContainerBuilder $container, array $config, Reference $emRef, Reference $scopeRef): void
+    private function registerCalendar(ContainerBuilder $container, array $config, Reference $emRef, Reference $scopeRef, ?Reference $registryRef = null): void
     {
         /** @var array{enabled: bool, credential_provider: string|null, task_key_resolver: string|null, providers: list<string>, modes: list<string>, lookback_days: int, suggestion_ttl_days: int, sync_interval_minutes: int, max_event_seconds: int, max_rules_per_user: int, max_pages: int} $calendar */
         $calendar    = $config['calendar'];
@@ -562,7 +581,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.calendar.enabled', $enabled);
 
         $container->setDefinition(DoctrineOrmCalendarRepository::class, (new Definition(DoctrineOrmCalendarRepository::class))
-            ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)]));
+            ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => $registryRef ?? new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)]));
         foreach ([CalendarConnectionRepositoryInterface::class, CalendarSuggestionRepositoryInterface::class, CalendarRuleRepositoryInterface::class] as $interface) {
             $container->setAlias($interface, DoctrineOrmCalendarRepository::class);
         }
@@ -1190,6 +1209,38 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $bundles = $container->getParameter('kernel.bundles');
 
         return isset($bundles['SecurityBundle']);
+    }
+
+    /**
+     * Since 1.23.0 (`database.private_entity_manager: true`, REQ-ARCH-001 rule 6): the bundle's private entity manager
+     * on the source manager `database.entity_manager`, its registry, the unit-of-work boundary subscriber and (doctrine/dbal
+     * 4) the rollback middleware on the source's connection ({@see PrivateEntityManagerPass}). The repositories and the
+     * user reference resolver then get {@see TimeTrackEntityManager} instead of the source manager.
+     */
+    private function registerPrivateEntityManager(ContainerBuilder $container, string $emName): void
+    {
+        $container->setParameter(self::PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER, $emName);
+        $container->register(TimeTrackEntityManager::class, TimeTrackEntityManager::class)
+            ->setArguments([new Reference('doctrine'), $emName, new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE)])
+            ->addTag('kernel.reset', ['method' => 'reset'])
+            ->addTag('monolog.logger', ['channel' => 'time_track'])
+            // Audit NJV-1: loads of the private manager inside a transaction are tracked like its writes.
+            ->addTag('doctrine.event_listener', ['event' => 'postLoad', 'method' => 'postLoad', 'lazy' => true]);
+        $container->register(TimeTrackManagerRegistry::class, TimeTrackManagerRegistry::class)
+            ->setArguments([new Reference('doctrine'), new Reference(TimeTrackEntityManager::class), $emName]);
+        $container->register(UnitOfWorkBoundaries::class, UnitOfWorkBoundaries::class)
+            ->addTag('kernel.event_subscriber');
+        $container->register(PrivateEntityManagerSubscriber::class, PrivateEntityManagerSubscriber::class)
+            ->setArguments([
+                new Reference(UnitOfWorkBoundaries::class),
+                new IteratorArgument([new Reference(TimeTrackEntityManager::class, ContainerInterface::IGNORE_ON_UNINITIALIZED_REFERENCE)]),
+            ])
+            ->addTag('kernel.event_subscriber');
+        if (PrivateEntityManagerPass::supportsRollbackMiddleware()) {
+            $container->register(PrivateEntityManagerMiddleware::class, PrivateEntityManagerMiddleware::class)
+                ->setArguments([new Reference(TimeTrackEntityManager::class)])
+                ->addTag('doctrine.middleware');
+        }
     }
 
     /**
