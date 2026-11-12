@@ -38,6 +38,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 use function array_map;
 use function hash;
+use function implode;
 use function is_array;
 use function is_string;
 use function json_decode;
@@ -84,7 +85,9 @@ final readonly class TimeTrackWorkingTimeApiController
     }
 
     /**
-     * GET workday: today's working day (404 when the register is off for the user).
+     * GET workday: today's working day (404 when the register is off for the user). Since 1.22 (spec 204 FR-029), with a
+     * `client_api.leave_provider`, also `leave` (`{type, until}` or null; medical leave as *Absent*) and no `reminder`
+     * while the user is on leave; without that provider the body is the 1.21 one.
      */
     public function workday(Request $request): Response
     {
@@ -93,8 +96,27 @@ final readonly class TimeTrackWorkingTimeApiController
             return $principal;
         }
         $state = $this->context->workdayProvider()?->today($principal->user);
+        if (!$state instanceof WorkdayState) {
+            return $this->notFound($request);
+        }
+        $body = $state->toArray();
+        if ($this->context->reportsLeave()) {
+            $leave         = $this->context->leave($principal->user, $state);
+            $body['leave'] = $leave;
+            if ($leave !== null) {
+                // FR-029: no clock reminders on a leave day, whatever the register says.
+                $body['reminder'] = null;
+            }
+        }
 
-        return $state instanceof WorkdayState ? $this->responseFactory->json($state->toArray(), Response::HTTP_OK, $request) : $this->notFound($request);
+        $response = $this->responseFactory->json($body, Response::HTTP_OK, $request);
+        // Since 1.22 (audit NG-3): personal data (leave) — never stored by a shared cache, keyed per token.
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->set('Cache-Control', 'no-store, private');
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->set('Vary', implode(', ', [...$response->headers->all('vary'), 'Authorization']));
+
+        return $response;
     }
 
     /**

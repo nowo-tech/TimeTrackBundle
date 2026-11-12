@@ -43,7 +43,7 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
   `PATCH entries/{id}`, `billable` on `POST entries`) and new entries take a host default
   (`TimeEntryBillableDefaultProviderInterface`).
 - **1.22** (spec 204, Block 2; was 1.21, before that 1.20): `leave` on the workday, the `daysOff` leave kind and
-  `links.leave`; budget versus actual with TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user
+  `links.leave` (done on `feat/leave-spec-204`, `ClientUserLeaveProviderInterface`); budget versus actual with TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user
   id value object next to the `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager
   so no service flushes the host's (rule 6).
 - **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.22 are removed.

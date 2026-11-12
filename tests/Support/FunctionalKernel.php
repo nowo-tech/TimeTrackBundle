@@ -13,11 +13,13 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
+use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\PsrOnlyClock;
 use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -153,6 +155,9 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(FixedScopeProvider::class)->public();
         $container->services()->set(FixedWorkingCalendar::class)->args(['UTC'])->public();
         $container->services()->set(StubWorkdayProvider::class)->public();
+        // Since 1.22 (spec 204): the host's leave adapter (used only where a test sets `client_api.leave_provider`).
+        $container->services()->set(StubLeaveProvider::class)->public();
+        $container->services()->set(LeaveDaysOffProfileProvider::class)->public();
         // Since 1.14: calendar fakes (no real calendar, token or event ever).
         $container->services()->set(StubTaskKeyResolver::class)->public();
         $container->services()->set(StubCalendarCredentialProvider::class)->public();

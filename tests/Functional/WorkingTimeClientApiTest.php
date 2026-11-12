@@ -83,7 +83,12 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         $register = self::getContainer()->get(StubWorkdayProvider::class);
         self::assertInstanceOf(StubWorkdayProvider::class, $register);
 
-        self::assertSame('idle', $this->api('GET', '/api/time-track/workday', null, $token)['status'] ?? null);
+        // Since 1.22 (spec 204): without a leave provider the body is exactly the 1.21 one (no `leave` key).
+        self::assertSame(
+            ['status' => 'idle', 'date' => '2026-11-05', 'timezone' => 'Europe/Madrid', 'segments' => [], 'workedSeconds' => 0, 'breakSeconds' => 0, 'flags' => [], 'reminder' => null, 'allowedActions' => ['clock-in']],
+            $this->api('GET', '/api/time-track/workday', null, $token),
+        );
+        self::assertSame('no-store, private', $this->client->getResponse()->headers->get('Cache-Control'), 'since 1.22 (audit NG-3), with or without a leave provider');
         $this->api('POST', '/api/time-track/workday/clock-in', [], $token);
         self::assertResponseStatusCodeSame(400, 'Idempotency-Key is required');
 
@@ -218,6 +223,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertTrue($me['features']['workday'] ?? false);
         self::assertTrue($me['features']['task_effort'] ?? false);
         self::assertSame(['calendars' => null, 'workingTime' => null], $me['links'] ?? [], 'the test host is http: no link');
+        self::assertArrayNotHasKey('leave', $me['features'] ?? [], 'since 1.22: no leave flag without a leave provider');
         // Since 1.19 (spec 198): over https the host's working-time page is linked while the workday API is on.
         $secure = $this->api('GET', '/api/time-track/me', null, $token, ['HTTPS' => 'on']);
         self::assertIsArray($secure);

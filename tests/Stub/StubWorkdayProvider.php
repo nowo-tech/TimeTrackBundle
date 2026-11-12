@@ -25,6 +25,9 @@ final class StubWorkdayProvider implements WorkdayProviderInterface
 {
     public string $status = 'idle';
 
+    /** Since 1.22: the register's reminder (the bundle drops it on a leave day). */
+    public ?string $reminder = null;
+
     /** @var list<array{string, string|null, string, string}> */
     public array $calls = [];
 
@@ -61,6 +64,6 @@ final class StubWorkdayProvider implements WorkdayProviderInterface
 
     private function state(): WorkdayState
     {
-        return new WorkdayState($this->status, '2026-11-05', 'Europe/Madrid', [], 0, 0, [], null, $this->status === 'idle' ? ['clock-in'] : []);
+        return new WorkdayState($this->status, '2026-11-05', 'Europe/Madrid', [], 0, 0, [], $this->reminder, $this->status === 'idle' ? ['clock-in'] : []);
     }
 }

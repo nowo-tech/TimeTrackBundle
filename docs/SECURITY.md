@@ -88,6 +88,15 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   Raise `max_pending`, lower `max_pending_per_prefix` or `code_ttl`, or set `max_pending: 0` and rely on the per-prefix
   cap and a proxy limit.
 - IPv4-mapped IPv6 client addresses (`::ffff:a.b.c.d`) are keyed and shown as their IPv4 address.
+- **Leave (1.22, spec 204; GDPR art. 9).** `GET workday.leave` comes from `ClientUserLeaveProviderInterface` as a
+  `ClientUserLeave` value object that has no field for a reason, comment, attachment or health detail; medical leave is
+  `ClientUserLeave::absent()` (no type at all, the client sees the translated *Absent*). A `typed()` label is the host's
+  responsibility: it reaches and is stored on the user's devices, so it must be a public type name. Labels of `leave`
+  days in `daysOff` are always dropped. Only the token user's own leave is ever asked for (the port receives the
+  token user's id, there is no user parameter), it is never cached by the bundle nor kept in the idempotency store,
+  and the leave warnings log the reason only (no user id, date, label or exception message). `GET workday` answers
+  carry `Cache-Control: no-store, private` and `Vary: Authorization`. The bundle's reminder suppression fails open when
+  the provider throws: the host register must suppress reminders on leave days itself (FR-025).
 
 ## Reports
 

@@ -184,6 +184,8 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.credential_issuer` | `null` | `ClientCredentialIssuerInterface`, called on device approval (default: opaque `device:<uuid>`) |
 | `client_api.task_access_checker` | `null` | `TaskAccessCheckerInterface` for `timer/start` / `timer/switch` (default: the task provider decides) |
 | `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`; since 1.11 also `locale` when it implements `ClientUserLocaleProviderInterface`; since 1.12 also `daysOff` when it implements `ClientUserDaysOffProviderInterface`). `workingHours` may use the `slots` or the 1.9 `days` shape: `GET me` always sends `slots`; a malformed value fails closed as `{timezone, slots: []}` (no notifications limited to working hours) with a warning log, `null` only when the provider returns `null` ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)). Days-off labels reach the user's devices and are stored there: public holiday names only, `null` for vacations, never a leave reason. Cache `getDaysOff()` if it calls a calendar service (it runs on every `GET me`) |
+| `client_api.leave_provider` | `null` | Since 1.22 (spec 204): `ClientUserLeaveProviderInterface` (`getCurrentLeave(string $userId, DateTimeImmutable $day): ?ClientUserLeave`). Adds `leave` to `GET workday`, `features.leave` and `links.leave` to `GET me`, and lets `daysOff` carry `leave` days; without it none of these is sent. Return `ClientUserLeave::absent()` for medical leave ([CLIENT-API](CLIENT-API.md#changes-in-122-leave-spec-204)) |
+| `client_api.links_leave_route` | `null` | Since 1.22: host route name of the Leave page (`GET me` `links.leave`, sent only with a `leave_provider` and only while `features.workday` is true; https URLs only, else `null`) |
 | `client_api.rate_limit.cache_pool` | `cache.app` | PSR-6 pool of the API counters, shared by all workers (Redis in production) |
 | `client_api.rate_limit.per_token` | `60` | Requests per token per window (`0` = off) |
 | `client_api.rate_limit.per_ip` | `300` | Requests per client IP per window, every API route (`0` = off) |
@@ -319,6 +321,8 @@ nowo_time_track:
   client_api:
     workday_provider: ~             # Workday\WorkdayProviderInterface (R-GDPR §8); null = no workday API
     links_working_time_route: ~     # since 1.19 (spec 198): host route of the working-time page, GET me links.workingTime
+    leave_provider: ~               # since 1.22 (spec 204): Client\ClientUserLeaveProviderInterface; GET workday leave
+    links_leave_route: ~            # since 1.22 (spec 204): host route of the Leave page, GET me links.leave (with leave_provider)
 ```
 
 - Refused at compile time: `timesheets.enabled` without `approver_provider`, `scope_mode: provider` without

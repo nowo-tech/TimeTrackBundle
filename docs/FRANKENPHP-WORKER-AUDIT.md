@@ -3,13 +3,14 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/time-track-bundle` (`symfony-bundle`) |
-| Current audit | **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
+| Current audit | **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
 | First audit | `v1.3.3` / `d90eed2`, 2026-09-23 (findings W-01 … W-03 below) |
 | Method | Manual review of every service, listener, command and controller under `src/` (grep for `static`, mutable properties, `ResetInterface`, `exit` / `die`), Igor (`composer igor`), PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic` + `ruleset-worker`, and the many-request worker test |
 | **Verdict** | ✅ **Works with `FRANKENPHP_RESET_KERNEL=false`** — no service keeps request, user or tenant data; the one per-flush state is cleared by the bundle at every request, message and command boundary; the worker test passes with one kernel and two people in turn |
 
 ## Table of contents
 
+- [Re-audit 1.22 (client leave, spec 204)](#re-audit-122-client-leave-spec-204)
 - [Re-audit 1.20 (runtime calendar OAuth apps)](#re-audit-120-runtime-calendar-oauth-apps)
 - [Re-audit 1.19 (REQ-RUNTIME-002, kernel reset false)](#re-audit-119-req-runtime-002-kernel-reset-false)
 - [Execution model assumed](#execution-model-assumed)
@@ -21,6 +22,26 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.22 (client leave, spec 204)
+
+Scope: `client_api.leave_provider` — `ClientUserLeaveProviderInterface`, `ClientUserLeave`, the leave methods of
+`ClientWorkingTimeContext`, `GET workday` / `GET me` in the two client controllers, and the `leave` kind of
+`ClientDaysOffNormalizer`.
+
+| Service | State | Verdict |
+|---------|-------|---------|
+| `ClientWorkingTimeContext` | `final readonly`: services, the host leave provider reference, two route names, the logger | Asks the provider on every `GET workday` with the caller's id; the answer lives in local variables only |
+| `ClientUserLeave` | `final readonly` value object, one per call | Never stored by the bundle |
+| `ClientDaysOffNormalizer` | static helpers, no static properties | Pure |
+
+- **Never memoised**: the leave of one user is never answered to another, and a leave approved or cancelled meanwhile
+  applies to the next request. The host adapter must not memoise per user across requests either.
+- **Not in the idempotency store**: workday action answers carry no `leave`, so no leave data is cached for 24 h.
+- Test: `tests/Functional/LeaveWorkerModeNoResetTest.php` — one kernel (debug off), services resetter never run, 300
+  rounds × three people (medical leave, vacation, at work) × `GET workday` + `GET me` = 1,800 requests through
+  `http_kernel`; every answer holds only the caller's leave (the medical one always *Absent*), the reminder is dropped
+  only for the two on leave, and the port is asked on every request with the caller's id. Igor clean.
 
 ## Re-audit 1.20 (runtime calendar OAuth apps)
 

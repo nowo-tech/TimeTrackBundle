@@ -28,6 +28,7 @@
 | Timesheets (submit / approve / lock), `GET timesheets` | `timesheets.enabled` | off |
 | Workday client API (R-GDPR §8) | `client_api.workday_provider` | none |
 | `GET me` `links.workingTime` (your working-time page, spec 198) | `client_api.links_working_time_route` (1.19) | none |
+| `GET workday` `leave`, `GET me` `features.leave` / `links.leave` (spec 204) | `client_api.leave_provider`, `client_api.links_leave_route` (1.22) | none |
 | Calendar suggestions, `POST entries` | 1.14 | — |
 | Budget versus actual | planned (1.22 or its own minor, with TaskBoard) | — |
 

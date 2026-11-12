@@ -871,9 +871,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$clock', $clockRef)
             ->setArgument('$logger', $loggerRef);
         // Since 1.13: client API working-time routes.
-        /** @var array{workday_provider: string|null, links_working_time_route: string|null, rate_limit: array{cache_pool: string}} $api */
+        /** @var array{workday_provider: string|null, links_working_time_route: string|null, leave_provider: string|null, links_leave_route: string|null, rate_limit: array{cache_pool: string}} $api */
         $api     = $config['client_api'];
         $workday = $api['workday_provider'];
+        $leave   = $api['leave_provider'];
         $container->setDefinition(ClientIdempotencyStore::class, (new Definition(ClientIdempotencyStore::class))
             ->setArguments(['$cache' => new Reference($api['rate_limit']['cache_pool'])]));
         $container->setDefinition(ClientWorkingTimeContext::class, (new Definition(ClientWorkingTimeContext::class))
@@ -888,6 +889,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$profileProvider'  => new Reference(ClientUserProfileProviderInterface::class),
                 '$urlGenerator'     => new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$workingTimeRoute' => $api['links_working_time_route'],
+                // Since 1.22 (spec 204 FR-029).
+                '$leaveProvider' => is_string($leave) && $leave !== '' ? new Reference($leave) : null,
+                '$leaveRoute'    => $api['links_leave_route'],
+                '$logger'        => $loggerRef,
             ]));
         $container->getDefinition(TimeTrackWorkingTimeApiController::class)
             ->setArgument('$clock', $clockRef);

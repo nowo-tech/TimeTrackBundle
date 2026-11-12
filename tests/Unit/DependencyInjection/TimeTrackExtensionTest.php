@@ -529,6 +529,25 @@ final class TimeTrackExtensionTest extends TestCase
         $context = $container->getDefinition(ClientWorkingTimeContext::class);
         self::assertSame('app_working_time', $context->getArgument('$workingTimeRoute'));
         self::assertSame('router', (string) $context->getArgument('$urlGenerator'));
+        self::assertNull($context->getArgument('$leaveProvider'), 'since 1.22: no leave port by default');
+        self::assertNull($context->getArgument('$leaveRoute'));
+    }
+
+    public function testTheLeaveProviderAndRoute(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([[
+            'user_class' => User::class,
+            'client_api' => ['leave_provider' => 'app.leave_adapter', 'links_leave_route' => 'app_leave'],
+        ]], $container);
+
+        $context = $container->getDefinition(ClientWorkingTimeContext::class);
+        self::assertSame('app.leave_adapter', (string) $context->getArgument('$leaveProvider'));
+        self::assertSame('app_leave', $context->getArgument('$leaveRoute'));
+        self::assertSame('logger', (string) $context->getArgument('$logger'));
     }
 
     public function testTheFormerPersonListenerCanBeLeftOffTheHostEntityManager(): void

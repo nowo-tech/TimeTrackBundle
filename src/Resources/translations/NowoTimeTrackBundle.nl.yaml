@@ -181,3 +181,5 @@ ledger:
   dialog:
     add_title: "Saldomutatie toevoegen"
     reversal_title: "Deze mutatie terugdraaien"
+client_api:
+  leave_absent: "Afwezig"

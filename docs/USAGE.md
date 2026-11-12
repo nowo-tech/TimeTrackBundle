@@ -14,6 +14,7 @@
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Calendar OAuth apps at runtime (1.20)](#calendar-oauth-apps-at-runtime-120)
 - [Billable entries (1.21)](#billable-entries-121)
+- [Leave on the clients (1.22, spec 204)](#leave-on-the-clients-122-spec-204)
 - [Standard Symfony host](#standard-symfony-host)
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
 - [Worker mode (FrankenPHP, kernel reset false)](#worker-mode-frankenphp-kernel-reset-false)
@@ -784,6 +785,72 @@ A listener that throws is logged and does not undo the change. A refusal by the 
 null for the host default) and changed with `PATCH entries/{id}` `{"billable": true|false|null}` (scope
 `entries:write`, own entries only, same rules as above). See [CLIENT-API.md](CLIENT-API.md#patch-entriesid-121).
 
+## Leave on the clients (1.22, spec 204)
+
+The clients show *On leave until …* and send no reminders on leave days (Beacon spec 204 FR-029). Leave itself —
+requests, approvals, balances, the team calendar — stays in your application and on the web. Two optional pieces:
+
+**1. Today's leave** (`GET workday.leave`, `GET me` `features.leave` / `links.leave`). Implement
+`Client\ClientUserLeaveProviderInterface` and set `client_api.leave_provider`. It is framework-free (REQ-ARCH-001 rule
+3): it receives the user's **id string** (the same as `GET me.userId`) and the start of the workday's date in the
+workday time zone, and returns a `Client\ClientUserLeave` or null. Return a leave only for an approved full-day leave
+that covers that day (half days and hours reduce the expected time in your register instead).
+
+```php
+namespace App\Leave\Infrastructure;
+
+use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Client\ClientUserLeave;
+use Nowo\TimeTrackBundle\Client\ClientUserLeaveProviderInterface;
+
+final readonly class TimeTrackLeaveAdapter implements ClientUserLeaveProviderInterface
+{
+    public function __construct(private LeaveQueries $leaves) {} // your application port
+
+    public function getCurrentLeave(string $userId, DateTimeImmutable $day): ?ClientUserLeave
+    {
+        $leave = $this->leaves->approvedFullDayLeaveOn($userId, $day); // your read model
+        if ($leave === null) {
+            return null;
+        }
+        $until = $leave->lastDay->format('Y-m-d');
+
+        // Medical leave (and any type the devices must not learn): no type at all, the clients show "Absent".
+        return $leave->type->isMedical() || !$leave->type->isPublic()
+            ? ClientUserLeave::absent($until)
+            : ClientUserLeave::typed($leave->type->label($leave->locale), $until);
+    }
+}
+```
+
+```yaml
+nowo_time_track:
+  client_api:
+    workday_provider: App\WorkingTime\Infrastructure\TimeTrackWorkdayAdapter   # GET workday must answer
+    leave_provider: App\Leave\Infrastructure\TimeTrackLeaveAdapter
+    links_leave_route: app_leave_index                                         # optional: your Leave page (https)
+```
+
+- `ClientUserLeave` has no field for a reason, a comment, an attachment or a health detail. A `typed()` label reaches
+  the user's devices and is stored there: a public type name only (*Vacation*, *Paid leave*), never a reason.
+- The bundle sends the label cleaned (control, format and invisible characters removed, at most 80 grapheme clusters
+  and 320 bytes), the translated *Absent* for `absent()` and for an empty label, and `reminder: null` while the user is
+  on leave.
+- **Your register must suppress reminders itself.** The workday provider's `reminder` (and your own notifications) must
+  already be off on leave days (spec 204 FR-025). The bundle's `reminder: null` is only a second layer: it **fails
+  open** — when the leave provider throws, `leave` is null and the register's reminder is sent as it is.
+- It runs on every `GET workday` (clients poll it): keep it fast, read-only and free of request state (worker mode; the
+  bundle asks it again on every request and keeps nothing). If it throws, `leave` is null for that request and a
+  warning without user data is logged; the workday API keeps answering.
+- Without a `workday_provider` (or with the register off for the user) `GET workday` answers 404, `features.leave` is
+  false and `links.leave` is null: the clients then rely on `daysOff`.
+
+**2. Leave days in `daysOff`** (`GET me`, the next 60 days; only with `client_api.leave_provider` set, otherwise a
+`leave` entry is dropped as in 1.21). Your days-off provider (`ClientUserDaysOffProviderInterface`, unchanged) may
+return `['date' => 'YYYY-MM-DD', 'kind' => 'leave']` for every
+approved leave day. The bundle always sends its label as null, so a leave day never carries a type or a reason; keep
+labels for public holiday names.
+
 ## Standard Symfony host
 
 The zero-config path (REQ-ARCH-001): `user_class` is your attribute-mapped `App\Entity\User`, the same object your
@@ -791,6 +858,11 @@ firewall returns. Inject `TimerService`, `TimesheetService`, `ManualEntryService
 listen to `TimeTrackEvents`, override the Twig templates. The bundle maps its own entities (attribute mapping prepended
 for its namespace) with foreign keys to your users table; you configure no `resolve_target_entities`, no extra mapping
 and no `accepted_user_classes`. Everything below is opt-in.
+
+Since 1.22 the client leave (spec 204) is opt-in too: implement `ClientUserLeaveProviderInterface` as a service of your
+application that reads your leave entity and set `client_api.leave_provider` (see
+[Leave on the clients](#leave-on-the-clients-122-spec-204)). The port takes the user's id string, so a standard host
+looks the user up by `(string) $user->getId()`.
 
 ## Using it from a DDD / hexagonal application
 
@@ -812,6 +884,7 @@ only through ports, using string ids and DTOs:
 | `Timesheet\TimesheetScopeProviderInterface`, `TimesheetApproverProviderInterface` | `timesheets.scope_provider`, `timesheets.approver_provider` | tenant scope keys as strings |
 | `WorkingTime\WorkingCalendarProviderInterface`, `WorkedTimeSourceInterface`, `OvertimePolicyInterface` | working time | |
 | `Meeting\MeetingProviderInterface`, `Calendar\CalendarCredentialProviderInterface`, `Calendar\TaskKeyResolverInterface` | `meetings.provider`, `calendar.*` | |
+| `Client\ClientUserLeaveProviderInterface` (1.22, spec 204) | `client_api.leave_provider` | framework-free: user id string and `DateTimeImmutable` in, bundle VO `Client\ClientUserLeave` out; tested with the XML host in `DddHostLeaveTest` |
 
 Implement them as infrastructure adapters that call your application services:
 

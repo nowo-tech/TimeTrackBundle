@@ -1,4 +1,4 @@
-# Client API reference (1.21, contract v0.3.1 + timetrack-next v1.1)
+# Client API reference (1.22, contract v0.3.1 + timetrack-next v1.1)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in 1.22 (leave, spec 204)](#changes-in-122-leave-spec-204)
 - [Changes in 1.21 (billable)](#changes-in-121-billable)
   - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
 - [Changes in 1.19 (links.workingTime)](#changes-in-119-linksworkingtime)
@@ -42,6 +43,58 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in 1.22 (leave, spec 204)
+
+Additive, in the current contract version (no new path segment, no new scope; old clients ignore it). Beacon spec 204
+FR-029: the clients show *On leave until …* and send no timer or clock reminders on leave days. Requests, approvals,
+balances, the team calendar, iCal feeds and notifications stay on the web.
+
+**Only with a host leave provider** (`client_api.leave_provider`). Without it no key below is sent and every body is
+byte for byte the 1.21 one. With it the keys are **always present**, so a client can tell "not on leave" (`null`) from
+"this server does not report leave" (no key).
+
+- **`GET workday`** gains **`leave`**: `{"type": "<public label>", "until": "YYYY-MM-DD"}`, or `null` when the user is
+  not on leave on the workday's `date`. `until` is the last day of the leave (inclusive, local date in the workday
+  `timezone`). `type` is plain text of at most 80 grapheme clusters, cleaned like the `daysOff` labels; for medical /
+  sick leave, for any type the host keeps private, and for a label that is empty or not valid UTF-8 it is the bundle's
+  **`Absent`**, in the user's language (`de` *Abwesend*, `es` / `pt` *Ausente*, `fr` *Absent*, `it` *Assente*, `nl`
+  *Afwezig*). While `leave` is not null, **`reminder` is `null`** whatever the register says (FR-029). Since the audit
+  NG fixes every `GET workday` answer (with or without a leave provider) carries `Cache-Control: no-store, private` and
+  `Vary: Authorization`.
+- **`POST workday/{action}`** answers (and the `state` of a 409) **do not** carry `leave`: they are stored for the 24 h
+  `Idempotency-Key` replay, and leave data is never kept there. Clients keep the `leave` of their last `GET workday`.
+- **`GET me`** gains **`features.leave`** (true while the server reports leave **and** `features.workday` is true, i.e.
+  `GET workday` answers) and **`links.leave`**: the absolute https URL of the host's Leave page
+  (`client_api.links_leave_route`), sent only while `features.workday` is true (like `links.workingTime`), else `null`
+  (also with no route, or not https).
+- **`daysOff`** accepts a third kind, **`leave`** (an approved leave day of any type), **only with the leave
+  provider**; without it a `leave` entry is dropped as an unknown kind, exactly as in 1.21. Its `label` is **always
+  `null`**: a label the host sends is dropped (and logged as `leave label dropped`, without the label). Clients treat
+  `leave` like `vacation` (no schedule reminders) and any unknown kind as a day off as well.
+- **Errors**: a leave provider that throws, a leave that ended before the workday date and a workday `date` that is not
+  a real date give `leave: null` (the workday API keeps answering) and a `warning` log with the reason only (no user
+  id, date, label or exception message).
+
+```json
+GET /api/time-track/workday
+{"status": "idle", "date": "2026-08-03", "timezone": "Europe/Madrid", "segments": [], "workedSeconds": 0,
+ "breakSeconds": 0, "flags": [], "reminder": null, "allowedActions": ["clock-in"],
+ "leave": {"type": "Vacaciones", "until": "2026-08-14"}}
+
+GET /api/time-track/workday (medical leave, user locale es)
+{"status": "idle", …, "reminder": null, "allowedActions": ["clock-in"], "leave": {"type": "Ausente", "until": "2026-11-07"}}
+
+GET /api/time-track/me
+"features": {…, "meetings": false, "leave": true, "monitoring": false},
+"links": {"calendars": null, "workingTime": "https://beacon.example/working-time", "leave": "https://beacon.example/leave"},
+"daysOff": [{"date": "2026-12-08", "kind": "holiday", "label": "Inmaculada Concepción"},
+            {"date": "2026-12-09", "kind": "leave", "label": null}]
+```
+
+**Privacy.** The bundle receives only `ClientUserLeave` (a public type or none, and the end date): there is no field for
+a reason, a comment, an attachment or a health detail, so none can reach a client. Medical leave is
+`ClientUserLeave::absent()`, which has no type at all. Everything sent here is stored on the user's devices.
 
 ## Changes in 1.21 (billable)
 
@@ -188,7 +241,7 @@ Additive; with the features off every existing route answers as in 1.12 apart fr
 
 | Method and path | Scope | Answers |
 | --- | --- | --- |
-| `GET /api/time-track/workday` | `workday:read` | 200 `{status: idle\|working\|on_break\|closed, date, timezone, segments[{type, start, end, source}], workedSeconds, breakSeconds, flags[], reminder, allowedActions[]}`; 404 when the register is off for the user |
+| `GET /api/time-track/workday` | `workday:read` | 200 `{status: idle\|working\|on_break\|closed, date, timezone, segments[{type, start, end, source}], workedSeconds, breakSeconds, flags[], reminder, allowedActions[]}` (+ `leave: {type, until}\|null` since 1.22 with a leave provider, see [Changes in 1.22](#changes-in-122-leave-spec-204)); 404 when the register is off for the user |
 | `POST /api/time-track/workday/{clock-in\|break-start\|break-end\|clock-out}` | `workday:write` | body `{occurredAt?}` (ISO 8601 with offset; not in the future, ≤ 72 h old), header `Idempotency-Key` (required, 1–64 visible characters). 200 state; 400 `invalid_request` (no key); 403 `forbidden`; 404 off; 409 `{error: "invalid_transition", state}`; 422 `invalid_occurred_at`, `idempotency_mismatch` (same key, other body) |
 
 The same key and body from the same user get the same answer (200 or 409) for 24 h without reaching the register again.
@@ -425,7 +478,8 @@ TimeTrack Desktop 0.5.0+ (unreleased; desktop PRs #14 / #15) reads it, merges it
 sends no schedule reminders on those days; the browser extension ignores it.
 
 - `date`: `YYYY-MM-DD` local date in the working-hours `timezone` (the server's PHP time zone when there is none).
-- `kind`: `holiday` or `vacation`.
+- `kind`: `holiday`, `vacation` or (since 1.22, only with `client_api.leave_provider`) `leave`; the label of a `leave`
+  day is always `null`.
 - `label`: plain text or `null`, at most 80 characters (grapheme clusters). It is JSON, not HTML: the server escapes
   nothing and the clients render it as text.
 - Range: today → today + 60 days in that time zone; entries outside it are dropped, one entry per date (the first the
@@ -436,8 +490,9 @@ DateTimeImmutable $from, DateTimeImmutable $to): ?array` (`$from` = start of tod
 that time zone). Validation, entry by entry:
 
 - The value must be a list (else `null`); only its first 400 entries are read.
-- An entry without a real `YYYY-MM-DD` `date` or with a `kind` other than `holiday` / `vacation` (any case: `Holiday`
-  is accepted) is **dropped alone**; the other entries are still sent.
+- An entry without a real `YYYY-MM-DD` `date` or with a `kind` other than `holiday` / `vacation` (/ `leave` with the
+  leave provider; any case: `Holiday` is accepted) is **dropped alone**; the other entries are still sent. A `leave`
+  label is dropped (logged).
 - `label`: control characters (line breaks, tabs, DEL, C1) become one space; bidi controls, zero-width characters,
   BOM and soft hyphens are removed (ZWJ is kept for emoji); Unicode blanks (NBSP included) are trimmed; empty = `null`;
   cut to 80 grapheme clusters. A label that is not a string or not valid UTF-8 becomes `null` (the day off is kept).
@@ -449,7 +504,11 @@ example per user and day).
 
 **Privacy.** Labels reach the user's devices and are stored there (the desktop keeps them for its reminders). Send
 public holiday names only (`"Inmaculada Concepción"`), `null` for vacations, and never a leave reason (illness, family
-or any personal detail) in a label.
+or any personal detail) in a label. Since 1.22, with a leave provider, send approved leave as kind `leave` (its label
+is never sent). Since 1.22 labels (and the `GET workday.leave` type) also lose every Unicode format character except
+ZWJ (tag characters included), line / paragraph separators (made spaces) and the invisible fillers U+3164, U+115F,
+U+034F, U+FFF9–FFFB, and are cut to 320 bytes after the 80-cluster cut (at a cluster boundary with ext-intl, else at a
+UTF-8 boundary). A label left empty is `null`.
 
 ### GET tasks
 

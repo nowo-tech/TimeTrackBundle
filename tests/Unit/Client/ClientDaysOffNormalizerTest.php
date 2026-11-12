@@ -75,8 +75,11 @@ final class ClientDaysOffNormalizerTest extends TestCase
         self::assertSame($composed, $cut($composed . 'overflow'));
         self::assertSame(str_repeat('a', 79), $cut(str_repeat('a', 79) . ' tail'));
 
-        $family = str_repeat("👨\u{200D}👩\u{200D}👧", ClientDaysOffNormalizer::LABEL_MAX_LENGTH);
-        self::assertSame($family, $cut($family . '👨'));
+        // Since 1.22 (audit NG-2) the 320-byte cap follows the 80-cluster cut: 80 family emoji (18 bytes each) are 1,440
+        // bytes, so 17 whole families (306 bytes) are sent.
+        $family = "👨\u{200D}👩\u{200D}👧";
+        self::assertSame(str_repeat($family, 17), $cut(str_repeat($family, ClientDaysOffNormalizer::LABEL_MAX_LENGTH) . '👨'));
+        self::assertSame(str_repeat($family, 17), $cut(str_repeat($family, 17)), 'under the cap: unchanged');
     }
 
     /**
