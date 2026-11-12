@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.22.1] - 2026-11-12](#1221---2026-11-12)
 - [[1.22.0] - 2026-11-12](#1220---2026-11-12)
 - [[1.21.0] - 2026-11-12](#1210---2026-11-12)
 - [[1.20.0] - 2026-11-11](#1200---2026-11-11)
@@ -57,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.22.1] - 2026-11-12
 
 Target **1.22.1** (patch; batch audit NL, Medium): the timesheet retention purge no longer touches the host's pending
 work on a shared entity manager. No schema, configuration or public API change; the same rows are purged and
@@ -1474,7 +1477,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.1...HEAD
+[1.22.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.0...v1.22.1
 [1.22.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.19.1...v1.20.0
