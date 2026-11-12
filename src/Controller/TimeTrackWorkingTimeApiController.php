@@ -38,6 +38,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 use function array_map;
 use function hash;
+use function implode;
 use function is_array;
 use function is_string;
 use function json_decode;
@@ -108,7 +109,14 @@ final readonly class TimeTrackWorkingTimeApiController
             }
         }
 
-        return $this->responseFactory->json($body, Response::HTTP_OK, $request);
+        $response = $this->responseFactory->json($body, Response::HTTP_OK, $request);
+        // Since 1.22 (audit NG-3): personal data (leave) — never stored by a shared cache, keyed per token.
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->set('Cache-Control', 'no-store, private');
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->set('Vary', implode(', ', [...$response->headers->all('vary'), 'Authorization']));
+
+        return $response;
     }
 
     /**

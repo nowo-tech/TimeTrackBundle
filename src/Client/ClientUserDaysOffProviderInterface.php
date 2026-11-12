@@ -17,8 +17,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * that is not a list makes `daysOff` null. It runs on every `GET me`: cache it when it reads a calendar service.
  *
  * Privacy: labels reach the user's devices and are stored there. Send public holiday names only, null for vacations,
- * never a leave reason. Since 1.22 the kind `leave` (approved leave of any type, Beacon spec 204) is accepted, and its
- * label is always sent as null whatever the provider gives.
+ * never a leave reason. Since 1.22 the kind `leave` (approved leave of any type, Beacon spec 204) is accepted when
+ * `client_api.leave_provider` is set (dropped otherwise, as in 1.21), and its label is always sent as null.
  */
 interface ClientUserDaysOffProviderInterface
 {

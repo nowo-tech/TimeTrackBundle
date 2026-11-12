@@ -833,16 +833,21 @@ nowo_time_track:
 
 - `ClientUserLeave` has no field for a reason, a comment, an attachment or a health detail. A `typed()` label reaches
   the user's devices and is stored there: a public type name only (*Vacation*, *Paid leave*), never a reason.
-- The bundle sends the label cleaned (control and bidi characters removed, at most 80 grapheme clusters), the
-  translated *Absent* for `absent()` and for an empty label, and `reminder: null` while the user is on leave.
+- The bundle sends the label cleaned (control, format and invisible characters removed, at most 80 grapheme clusters
+  and 320 bytes), the translated *Absent* for `absent()` and for an empty label, and `reminder: null` while the user is
+  on leave.
+- **Your register must suppress reminders itself.** The workday provider's `reminder` (and your own notifications) must
+  already be off on leave days (spec 204 FR-025). The bundle's `reminder: null` is only a second layer: it **fails
+  open** — when the leave provider throws, `leave` is null and the register's reminder is sent as it is.
 - It runs on every `GET workday` (clients poll it): keep it fast, read-only and free of request state (worker mode; the
   bundle asks it again on every request and keeps nothing). If it throws, `leave` is null for that request and a
   warning without user data is logged; the workday API keeps answering.
-- Without a `workday_provider` (or with the register off for the user) `GET workday` answers 404 and
-  `features.leave` is false: the clients then rely on `daysOff`.
+- Without a `workday_provider` (or with the register off for the user) `GET workday` answers 404, `features.leave` is
+  false and `links.leave` is null: the clients then rely on `daysOff`.
 
-**2. Leave days in `daysOff`** (`GET me`, the next 60 days). Your days-off provider
-(`ClientUserDaysOffProviderInterface`, unchanged) may return `['date' => 'YYYY-MM-DD', 'kind' => 'leave']` for every
+**2. Leave days in `daysOff`** (`GET me`, the next 60 days; only with `client_api.leave_provider` set, otherwise a
+`leave` entry is dropped as in 1.21). Your days-off provider (`ClientUserDaysOffProviderInterface`, unchanged) may
+return `['date' => 'YYYY-MM-DD', 'kind' => 'leave']` for every
 approved leave day. The bundle always sends its label as null, so a leave day never carries a type or a reason; keep
 labels for public holiday names.
 

@@ -262,7 +262,7 @@ final readonly class TimeTrackClientApiController
      * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
      * shape ({@see ClientWorkingHoursNormalizer}), and (1.15) `privacy` when the profile provider implements
      * {@see ClientUserPrivacyProviderInterface} (no key otherwise), and (1.22, spec 204) `features.leave` and
-     * `links.leave` only with a `client_api.leave_provider` (no keys otherwise) and `leave` days in `daysOff`.
+     * `links.leave` and `leave` days in `daysOff` only with a `client_api.leave_provider` (no keys otherwise).
      */
     public function me(Request $request): Response
     {
@@ -341,8 +341,8 @@ final readonly class TimeTrackClientApiController
             'workingTime' => $features['workday'] ? $this->workingTime?->workingTimeLink() : null,
         ];
         if ($reportsLeave) {
-            // Since 1.22 (spec 204): the host's Leave page (requests, approvals, team calendar stay on the web).
-            $body['links']['leave'] = $this->workingTime?->leaveLink();
+            // Since 1.22 (spec 204): the host's Leave page, only while the workday API is on for the user (audit NG-4).
+            $body['links']['leave'] = $features['workday'] ? $this->workingTime?->leaveLink() : null;
         }
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
@@ -743,7 +743,8 @@ final readonly class TimeTrackClientApiController
 
         [$from, $to] = ClientDaysOffNormalizer::range($this->clock->now(), $timezone ?? date_default_timezone_get());
 
-        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'), $this->logger);
+        // Since 1.22: the `leave` kind only when the host reports leave (audit NG-1; without it the 1.21 output).
+        return ClientDaysOffNormalizer::normalize($this->profileProvider->getDaysOff($user, $from, $to), $from->format('Y-m-d'), $to->format('Y-m-d'), $this->logger, $this->workingTime?->reportsLeave() ?? false);
     }
 
     /**

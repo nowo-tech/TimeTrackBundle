@@ -94,7 +94,9 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   responsibility: it reaches and is stored on the user's devices, so it must be a public type name. Labels of `leave`
   days in `daysOff` are always dropped. Only the token user's own leave is ever asked for (the port receives the
   token user's id, there is no user parameter), it is never cached by the bundle nor kept in the idempotency store,
-  and the leave warnings log the reason only (no user id, date, label or exception message).
+  and the leave warnings log the reason only (no user id, date, label or exception message). `GET workday` answers
+  carry `Cache-Control: no-store, private` and `Vary: Authorization`. The bundle's reminder suppression fails open when
+  the provider throws: the host register must suppress reminders on leave days itself (FR-025).
 
 ## Reports
 

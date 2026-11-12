@@ -88,6 +88,7 @@ final class WorkingTimeClientApiTest extends FunctionalTestCase
             ['status' => 'idle', 'date' => '2026-11-05', 'timezone' => 'Europe/Madrid', 'segments' => [], 'workedSeconds' => 0, 'breakSeconds' => 0, 'flags' => [], 'reminder' => null, 'allowedActions' => ['clock-in']],
             $this->api('GET', '/api/time-track/workday', null, $token),
         );
+        self::assertSame('no-store, private', $this->client->getResponse()->headers->get('Cache-Control'), 'since 1.22 (audit NG-3), with or without a leave provider');
         $this->api('POST', '/api/time-track/workday/clock-in', [], $token);
         self::assertResponseStatusCodeSame(400, 'Idempotency-Key is required');
 

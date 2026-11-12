@@ -47,7 +47,9 @@ use function date_default_timezone_get;
 use function end;
 use function file_get_contents;
 use function implode;
+use function preg_match;
 use function str_repeat;
+use function strlen;
 
 use const DATE_ATOM;
 
@@ -88,26 +90,52 @@ final class ClientApiV122LeaveTest extends TestCase
         }
     }
 
-    public function testLeaveDaysOffNeverCarryALabel(): void
+    public function testLeaveDaysOffNeverCarryALabelAndNeedTheLeaveProvider(): void
     {
-        $logger = new RecordingLogger();
-        $days   = ClientDaysOffNormalizer::normalize([
+        $days = [
             ['date' => '2026-12-08', 'kind' => 'holiday', 'label' => 'Inmaculada Concepción'],
             ['date' => '2026-12-09', 'kind' => 'leave', 'label' => 'Baja médica: gripe'],
             ['date' => '2026-12-10', 'kind' => 'Leave'],
             ['date' => '2026-12-11', 'kind' => 'vacation', 'label' => null],
             ['date' => '2026-12-12', 'kind' => 'sick', 'label' => 'Gripe'],
-        ], '2026-12-01', '2027-01-30', $logger);
+        ];
 
+        $logger = new RecordingLogger();
         self::assertSame([
             ['date' => '2026-12-08', 'kind' => 'holiday', 'label' => 'Inmaculada Concepción'],
             ['date' => '2026-12-09', 'kind' => 'leave', 'label' => null],
             ['date' => '2026-12-10', 'kind' => 'leave', 'label' => null],
             ['date' => '2026-12-11', 'kind' => 'vacation', 'label' => null],
-        ], $days, 'an unknown kind is still dropped alone');
+        ], ClientDaysOffNormalizer::normalize($days, '2026-12-01', '2027-01-30', $logger, true), 'an unknown kind is still dropped alone');
         self::assertCount(1, $logger->records);
         self::assertSame(['leave label dropped', 'invalid kind'], $logger->records[0]['context']['reasons'] ?? null);
         self::assertStringNotContainsString('Gripe', implode("\n", $logger->contextValues()));
+
+        // Audit NG-1: without the leave provider, a leave day is an unknown kind, as in 1.21.
+        $without = ClientDaysOffNormalizer::normalize($days, '2026-12-01', '2027-01-30');
+        self::assertSame([
+            ['date' => '2026-12-08', 'kind' => 'holiday', 'label' => 'Inmaculada Concepción'],
+            ['date' => '2026-12-11', 'kind' => 'vacation', 'label' => null],
+        ], $without);
+    }
+
+    public function testLabelsLoseEveryInvisibleCharacterAndAreCappedInBytes(): void
+    {
+        // Audit NG-2: format characters (except ZWJ), tags, separators and invisible fillers.
+        self::assertSame('Día festivo', ClientDaysOffNormalizer::label("D\u{034F}ía\u{2028}fes\u{E0041}tivo\u{2029}\u{3164}\u{115F}\u{FFF9}\u{FFFB}\u{2061}"));
+        self::assertSame("A\u{200D}B", ClientDaysOffNormalizer::label("\u{00AD}A\u{200D}B\u{200B}"), 'ZWJ is kept');
+        // Audit NG-5: nothing left is null, never ''.
+        foreach (["\u{3164}", "\u{2028}\u{115F}", "\u{E0001}\u{E0020}", "\u{034F} \u{FFFA}", '', null] as $empty) {
+            self::assertNull(ClientDaysOffNormalizer::label($empty));
+        }
+        // 80 grapheme clusters of a letter with 20 combining marks are ~3.3 KB: cut at a cluster boundary.
+        $cluster = 'a' . str_repeat("\u{0301}", 20);
+        $label   = ClientDaysOffNormalizer::label(str_repeat($cluster, 80));
+        self::assertIsString($label);
+        self::assertLessThanOrEqual(ClientDaysOffNormalizer::LABEL_MAX_BYTES, strlen($label));
+        self::assertSame(0, strlen($label) % strlen($cluster), 'whole clusters only');
+        self::assertSame(1, preg_match('//u', $label), 'valid UTF-8');
+        self::assertSame(str_repeat('é', 80), ClientDaysOffNormalizer::label(str_repeat('é', 90)), 'short labels: only the grapheme cut');
     }
 
     public function testTheContextBuildsTheWorkdayLeave(): void

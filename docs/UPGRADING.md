@@ -93,8 +93,12 @@ To let the clients show *On leave until …* (Beacon spec 204 FR-029):
   show, `ClientUserLeave::typed($publicLabel, $until)` otherwise. Never put a reason, a comment or an attachment in a
   label. `GET workday` must answer, so a `workday_provider` is needed for the `leave` key.
 - Optional: `client_api.links_leave_route` (your Leave page, https) for `GET me` `links.leave`.
-- **Days off**: your `ClientUserDaysOffProviderInterface` may now return `kind: 'leave'` for approved leave days; the
-  label is always sent as null. Until 1.21 such an entry was dropped.
+- **Days off**: with `client_api.leave_provider` set, your `ClientUserDaysOffProviderInterface` may return
+  `kind: 'leave'` for approved leave days; the label is always sent as null. Without the leave provider such an entry is
+  still dropped, as in 1.21.
+- **Reminders**: your workday provider / register must still suppress reminders on leave days itself (spec 204
+  FR-025). The bundle's `reminder: null` is a second layer that fails open when the leave provider throws.
+- `GET workday` now always sends `Cache-Control: no-store, private` and `Vary: Authorization`.
 - If you construct `ClientWorkingTimeContext` by hand, the new arguments are trailing and optional.
 - If your clients validate `daysOff[].kind`, accept `leave` (treat it like `vacation`).
 

@@ -59,15 +59,19 @@ byte for byte the 1.21 one. With it the keys are **always present**, so a client
   `timezone`). `type` is plain text of at most 80 grapheme clusters, cleaned like the `daysOff` labels; for medical /
   sick leave, for any type the host keeps private, and for a label that is empty or not valid UTF-8 it is the bundle's
   **`Absent`**, in the user's language (`de` *Abwesend*, `es` / `pt` *Ausente*, `fr` *Absent*, `it` *Assente*, `nl`
-  *Afwezig*). While `leave` is not null, **`reminder` is `null`** whatever the register says (FR-029).
+  *Afwezig*). While `leave` is not null, **`reminder` is `null`** whatever the register says (FR-029). Since the audit
+  NG fixes every `GET workday` answer (with or without a leave provider) carries `Cache-Control: no-store, private` and
+  `Vary: Authorization`.
 - **`POST workday/{action}`** answers (and the `state` of a 409) **do not** carry `leave`: they are stored for the 24 h
   `Idempotency-Key` replay, and leave data is never kept there. Clients keep the `leave` of their last `GET workday`.
 - **`GET me`** gains **`features.leave`** (true while the server reports leave **and** `features.workday` is true, i.e.
   `GET workday` answers) and **`links.leave`**: the absolute https URL of the host's Leave page
-  (`client_api.links_leave_route`), or `null` (no route, or not https).
-- **`daysOff`** (every host, provider or not) accepts a third kind, **`leave`**: an approved leave day of any type. Its
-  `label` is **always `null`**: a label the host sends is dropped (and logged as `leave label dropped`, without the
-  label). Clients treat `leave` like `vacation` (no schedule reminders) and any unknown kind as a day off as well.
+  (`client_api.links_leave_route`), sent only while `features.workday` is true (like `links.workingTime`), else `null`
+  (also with no route, or not https).
+- **`daysOff`** accepts a third kind, **`leave`** (an approved leave day of any type), **only with the leave
+  provider**; without it a `leave` entry is dropped as an unknown kind, exactly as in 1.21. Its `label` is **always
+  `null`**: a label the host sends is dropped (and logged as `leave label dropped`, without the label). Clients treat
+  `leave` like `vacation` (no schedule reminders) and any unknown kind as a day off as well.
 - **Errors**: a leave provider that throws, a leave that ended before the workday date and a workday `date` that is not
   a real date give `leave: null` (the workday API keeps answering) and a `warning` log with the reason only (no user
   id, date, label or exception message).
@@ -474,7 +478,8 @@ TimeTrack Desktop 0.5.0+ (unreleased; desktop PRs #14 / #15) reads it, merges it
 sends no schedule reminders on those days; the browser extension ignores it.
 
 - `date`: `YYYY-MM-DD` local date in the working-hours `timezone` (the server's PHP time zone when there is none).
-- `kind`: `holiday`, `vacation` or (since 1.22) `leave`; the label of a `leave` day is always `null`.
+- `kind`: `holiday`, `vacation` or (since 1.22, only with `client_api.leave_provider`) `leave`; the label of a `leave`
+  day is always `null`.
 - `label`: plain text or `null`, at most 80 characters (grapheme clusters). It is JSON, not HTML: the server escapes
   nothing and the clients render it as text.
 - Range: today → today + 60 days in that time zone; entries outside it are dropped, one entry per date (the first the
@@ -485,8 +490,9 @@ DateTimeImmutable $from, DateTimeImmutable $to): ?array` (`$from` = start of tod
 that time zone). Validation, entry by entry:
 
 - The value must be a list (else `null`); only its first 400 entries are read.
-- An entry without a real `YYYY-MM-DD` `date` or with a `kind` other than `holiday` / `vacation` / `leave` (any case:
-  `Holiday` is accepted) is **dropped alone**; the other entries are still sent. A `leave` label is dropped (logged).
+- An entry without a real `YYYY-MM-DD` `date` or with a `kind` other than `holiday` / `vacation` (/ `leave` with the
+  leave provider; any case: `Holiday` is accepted) is **dropped alone**; the other entries are still sent. A `leave`
+  label is dropped (logged).
 - `label`: control characters (line breaks, tabs, DEL, C1) become one space; bidi controls, zero-width characters,
   BOM and soft hyphens are removed (ZWJ is kept for emoji); Unicode blanks (NBSP included) are trimmed; empty = `null`;
   cut to 80 grapheme clusters. A label that is not a string or not valid UTF-8 becomes `null` (the day off is kept).
@@ -498,7 +504,11 @@ example per user and day).
 
 **Privacy.** Labels reach the user's devices and are stored there (the desktop keeps them for its reminders). Send
 public holiday names only (`"Inmaculada Concepción"`), `null` for vacations, and never a leave reason (illness, family
-or any personal detail) in a label. Since 1.22 send approved leave as kind `leave` (its label is never sent).
+or any personal detail) in a label. Since 1.22, with a leave provider, send approved leave as kind `leave` (its label
+is never sent). Since 1.22 labels (and the `GET workday.leave` type) also lose every Unicode format character except
+ZWJ (tag characters included), line / paragraph separators (made spaces) and the invisible fillers U+3164, U+115F,
+U+034F, U+FFF9–FFFB, and are cut to 320 bytes after the 80-cluster cut (at a cluster boundary with ext-intl, else at a
+UTF-8 boundary). A label left empty is `null`.
 
 ### GET tasks
 

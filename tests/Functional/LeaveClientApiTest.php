@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
@@ -14,6 +17,7 @@ use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use function array_key_exists;
 use function array_keys;
 use function array_values;
+use function date_default_timezone_get;
 use function implode;
 use function json_encode;
 
@@ -36,6 +40,7 @@ final class LeaveClientApiTest extends FunctionalTestCase
             'leave_provider'           => StubLeaveProvider::class,
             'links_working_time_route' => 'nowo_time_track_index',
             'links_leave_route'        => 'nowo_time_track_index',
+            'profile_provider'         => LeaveDaysOffProfileProvider::class,
         ]];
     }
 
@@ -51,6 +56,10 @@ final class LeaveClientApiTest extends FunctionalTestCase
         self::assertResponseIsSuccessful();
         self::assertSame(['status', 'date', 'timezone', 'segments', 'workedSeconds', 'breakSeconds', 'flags', 'reminder', 'allowedActions', 'leave'], array_keys($body ?? []));
         self::assertSame(['type' => 'Vacaciones', 'until' => '2026-11-14'], $body['leave'] ?? null);
+        // Audit NG-3: personal data, never in a shared cache.
+        $headers = $this->client->getResponse()->headers;
+        self::assertSame('no-store, private', $headers->get('Cache-Control'));
+        self::assertStringContainsString('Authorization', (string) $headers->get('Vary'));
         self::assertNull(array_key_exists('reminder', $body ?? []) ? $body['reminder'] : 'missing', 'FR-029: no clock reminder on a leave day');
         self::assertStringNotContainsString('Lisboa', json_encode($body, JSON_THROW_ON_ERROR), 'the host comment never reaches the client');
         self::assertSame([[$id, '2026-11-05T00:00:00+01:00']], $leaves->calls, 'asked once, by id, for the workday date in its time zone');
@@ -130,11 +139,23 @@ final class LeaveClientApiTest extends FunctionalTestCase
         $secure = $this->api('GET', '/api/time-track/me', null, $token, ['HTTPS' => 'on']);
         self::assertStringStartsWith('https://localhost/', (string) ($secure['links']['leave'] ?? ''));
 
-        // With the register off for the user, GET workday answers 404: features.leave follows features.workday.
+        // With the provider a `leave` day is kept, always without its label (audit NG-1).
+        $today = new DateTimeImmutable('today', new DateTimeZone(date_default_timezone_get()));
+        self::assertSame([
+            ['date' => $today->format('Y-m-d'), 'kind' => 'holiday', 'label' => 'Inmaculada Concepción'],
+            ['date' => $today->modify('+1 day')->format('Y-m-d'), 'kind' => 'leave', 'label' => null],
+            ['date' => $today->modify('+2 days')->format('Y-m-d'), 'kind' => 'vacation', 'label' => null],
+        ], $me['daysOff'] ?? null);
+        self::assertStringNotContainsString('gripe', json_encode($me, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+
+        // With the register off for the user, GET workday answers 404: features.leave and links.leave follow
+        // features.workday (audit NG-4), the keys stay.
         $this->register()->off = ['person@example.com'];
-        $off                   = $this->api('GET', '/api/time-track/me', null, $token);
+        $off                   = $this->api('GET', '/api/time-track/me', null, $token, ['HTTPS' => 'on']);
         self::assertFalse($off['features']['leave'] ?? null);
         self::assertFalse($off['features']['workday'] ?? null);
+        self::assertArrayHasKey('leave', $off['links'] ?? []);
+        self::assertNull($off['links']['leave']);
     }
 
     public function testWorkdayActionsKeepTheir121Body(): void
