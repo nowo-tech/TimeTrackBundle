@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception as DbalException;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
@@ -95,6 +96,31 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
         $connection->commit();
         self::assertFalse($connection->isTransactionActive());
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_timesheets WHERE id = ?', [$old->getId()]));
+    }
+
+    public function testAFailedStatementInsideAnOpenHostTransactionOnlyRollsBackThePurge(): void
+    {
+        $em         = $this->entityManager();
+        $connection = $em->getConnection();
+        $repository = new DoctrineOrmTimesheetRepository($em);
+        // Outside any transaction (MySQL commits implicitly on DDL): the first statement of the purge will fail.
+        $connection->createSchemaManager()->dropTable('time_track_balance_ledger');
+
+        $connection->beginTransaction();
+        $connection->insert('app_user', ['email' => 'host@example.com', 'password' => 'secret', 'roles' => '[]']);
+        try {
+            $repository->purgeBefore('2021-01-01');
+            self::fail('The purge must fail without its ledger table.');
+        } catch (DbalException) {
+        }
+
+        self::assertSame(1, $connection->getTransactionNestingLevel(), 'the host transaction stays open');
+        self::assertFalse($connection->isRollbackOnly(), 'only the purge savepoint was rolled back');
+        self::assertTrue($em->isOpen());
+        self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM app_user WHERE email = ?', ['host@example.com']), 'the host row is still there and the transaction still answers');
+        $connection->commit();
+        self::assertFalse($connection->isTransactionActive());
+        self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM app_user WHERE email = ?', ['host@example.com']));
     }
 
     /**

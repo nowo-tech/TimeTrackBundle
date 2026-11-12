@@ -23,8 +23,8 @@ use function array_chunk;
 use function array_column;
 use function array_map;
 use function count;
-use function in_array;
 use function max;
+use function spl_object_id;
 
 /**
  * Since 1.13: Doctrine ORM timesheet store (timesheets, plus the retention purge and the verify listing).
@@ -238,7 +238,8 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      * host already has one open), never through `wrapInTransaction()` (which flushes the manager, the host's by default)
      * and without `clear()` (which detached every host entity and dropped its pending changes). Only the managed
      * timesheets, audit rows and ledger lines this purge deleted or marked are detached afterwards, so a later `find()`
-     * reads the database.
+     * reads the database. Inside a host transaction the purge is a savepoint only on DBAL 4 (or DBAL 3 with savepoints
+     * enabled); otherwise a failure marks the caller's transaction rollback-only.
      */
     public function purgeBefore(string $beforeDate, int $batchSize = 500): array
     {
@@ -304,12 +305,12 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         foreach ($timesheetIds as $id) {
             $managed = $unitOfWork->tryGetById($id, Timesheet::class);
             if ($managed !== false) {
-                $timesheets[] = $managed;
+                $timesheets[spl_object_id($managed)] = $managed;
             }
         }
         if ($timesheets !== []) {
             foreach ($unitOfWork->getIdentityMap()[TimesheetEvent::class] ?? [] as $event) {
-                if ($event instanceof TimesheetEvent && in_array($event->getTimesheet(), $timesheets, true)) {
+                if ($event instanceof TimesheetEvent && isset($timesheets[spl_object_id($event->getTimesheet())])) {
                     $this->entityManager->detach($event);
                 }
             }

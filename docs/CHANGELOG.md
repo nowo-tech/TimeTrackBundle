@@ -67,12 +67,16 @@ work on a shared entity manager. No schema, configuration or public API change; 
 - **NL** — `DoctrineOrmTimesheetRepository::purgeBefore()` (the `nowo:time-track:timesheets:purge` command) ran inside
   `EntityManager::wrapInTransaction()` and called `EntityManager::clear()`. On the configured `database.entity_manager`
   (default `default`, the host's) that cleared every host entity and dropped the host's pending changes (the flush of
-  `wrapInTransaction()` then wrote whatever was scheduled after the clear), against REQ-ARCH-001 rules 6/7. The purge now
+  `wrapInTransaction()` then wrote whatever was scheduled after the clear), against REQ-ARCH-001 rules 6/7. On failure,
+  `wrapInTransaction()` also closed that entity manager and rolled back, which left an open host transaction
+  rollback-only when DBAL did not use a savepoint. Affected: 1.13.0 (the purge's first release) to 1.22.0. The purge now
   runs its statements in a DBAL transaction on the manager's connection (a savepoint when the host already has a
   transaction open), never flushes nor clears, and detaches only the managed timesheets, audit rows and ledger lines it
-  deleted or marked. Tests: `tests/Functional/TimesheetPurgeHostManagerTest.php` (host insert/update not flushed, host
+  deleted or marked. Caveat: the savepoint needs DBAL 4 (or DBAL 3 with savepoints enabled); otherwise a failed purge
+  inside a host transaction still marks that transaction rollback-only. Tests: `tests/Functional/TimesheetPurgeHostManagerTest.php` (host insert/update not flushed, host
   entities managed, nested in a host transaction with rollback and commit, second purge on the same repository and
-  manager as in a kept-alive worker), `tests/Unit/Repository/DoctrineOrmTimesheetRepositoryPurgeTest.php` (rollback
+  manager as in a kept-alive worker, a failing statement inside an open host transaction that leaves it usable and
+  committable), `tests/Unit/Repository/DoctrineOrmTimesheetRepositoryPurgeTest.php` (rollback
   on failure, no flush, clear or ORM transaction).
 
 ### Documentation

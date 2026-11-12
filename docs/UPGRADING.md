@@ -86,7 +86,10 @@ counts, but no longer flushes or clears the entity manager configured in `databa
 
 - Entities your application has pending on that manager stay pending (they are no longer dropped), and your entities
   stay managed after the purge. Flush them yourself as before.
-- Called inside a transaction you opened, the purge runs in a savepoint: your rollback undoes it, your commit keeps it.
+- Called inside a transaction you opened, the purge runs in a savepoint: your rollback undoes it, your commit keeps it,
+  and a failed purge only rolls back its savepoint (your transaction stays usable and the entity manager stays open).
+  The savepoint needs DBAL 4, or DBAL 3 with savepoints enabled (`setNestTransactionsWithSavepoints(true)`);
+  otherwise a failure marks your transaction rollback-only.
 - Managed timesheets, audit rows and ledger lines the purge deleted or marked `purged_before` are detached; load them
   again (`find()`) if you need the fresh state.
 
