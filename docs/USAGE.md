@@ -742,11 +742,24 @@ $entry = $this->billable->changeById($this->getUser(), $entryId, true);   // or 
 | `BillableChangeRefusedException` `not_found` | no entry with that id (or the store cannot look one up) |
 | `BillableChangeRefusedException` `read_only` | an imported entry |
 | `BillableChangeRefusedException` `anonymised` | an anonymised or ownerless entry: it never changes |
-| `BillableChangeRefusedException` `forbidden` | the edit grant says no: `TeamAccessGuard::isEditGranted()` — the owner, a manager with `security.manager_can_edit_entries`, an admin role (`security.admin_roles`), then your `nowo_time_track.time_entry.access_check` listener (action `edit`, `deny()` / `grant()`) |
+| `BillableChangeRefusedException` `forbidden` | the grant says no: `TeamAccessGuard::isBillableEditGranted()` — by default the edit grant (the owner, a manager with `security.manager_can_edit_entries`, an admin role in `security.admin_roles`, then your `nowo_time_track.time_entry.access_check` listener for action `edit`), then the same listener for action `edit_billable` (`TeamAccessGuard::ACTION_EDIT_BILLABLE`, `deny()` / `grant()`), so you can decide billable apart from editing |
 | `PeriodLockedException` / `PeriodSubmittedException` (409) | the entry's period is locked (approved) or submitted, checked with `WriteKind::Edit` after the grant; no role or listener overrides it, only an audited reopen |
 
-The lock check and the write run in one transaction holding the owner's write lock. Setting the value an entry already
-has writes nothing.
+With the Doctrine store the lock check and the write run in one transaction holding the owner's write lock, and the
+entry is re-read there with a row lock (`FindableTimeEntryRepositoryInterface::findForUpdate()`) and checked again, so an
+entry anonymised, replaced or moved to another owner after you loaded it is refused. A replacement store without
+`UserSerialisedTimeEntryRepositoryInterface` / `FindableTimeEntryRepositoryInterface` runs the steps one after the other.
+Setting the value an entry already has writes nothing.
+
+- **`security.admin_roles` are not tenant-aware:** a user with one of those roles passes the edit grant for every
+  entry, in every tenant scope. In a multi-tenant host, keep those roles for platform staff or deny the `edit` /
+  `edit_billable` actions of other tenants in your access-check listener.
+- **Errors for other people's entries:** `read_only` and `anonymised` are answered before the grant. A host controller
+  that takes an entry id from someone who is not its owner should answer both (and `forbidden`) as 404, as the client
+  API does, so the caller learns nothing about entries it cannot see.
+- **An explicit value on `POST entries`** (or `ManualEntryService::create(..., billable: …)`) asks the `edit_billable`
+  check for the new entry too; a refusal is `ManualEntryException` `billable_forbidden` (403) and nothing is stored.
+  Without a value the host default applies and nothing is asked.
 
 **Audit.** Each real change dispatches `TimeEntryBillableChangedEvent` (`TimeTrackEvents::TIME_ENTRY_BILLABLE_CHANGED`)
 after the commit: `entryId`, `ownerId`, `actorId`, `oldBillable`, `newBillable`, `occurredAt` and `via` (`api` or

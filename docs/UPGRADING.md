@@ -84,7 +84,10 @@ provider new entries keep `billable: null` as before, and the new route only ans
   - a change → `TimeEntryBillableService::change()` / `changeById()`, which checks the edit grant and the period lock and
     dispatches `TimeEntryBillableChangedEvent` for your audit store.
 - **Edit rules** are those of `TeamAccessGuard::canEditEntry()`: a `nowo_time_track.time_entry.access_check` listener
-  that answers the `edit` action now also decides who may change `billable`.
+  that answers the `edit` action now also decides who may change `billable`, unless it answers the new `edit_billable`
+  action (`TeamAccessGuard::ACTION_EDIT_BILLABLE`), which comes after it and wins. An explicit `billable` on `POST
+  entries` asks `edit_billable` too.
+- **A store of your own** that implements `FindableTimeEntryRepositoryInterface` also implements `findForUpdate()`.
 - **Client API**: `PATCH entries/{id}` exists (`clients.routes.entries_update`, default
   `/api/time-track/entries/{id}`). If a reverse proxy or firewall lists allowed methods, allow `PATCH` on that path.
 - If you construct `TimeTrackCalendarApiController` by hand, pass the new `TimeEntryBillableService` argument.

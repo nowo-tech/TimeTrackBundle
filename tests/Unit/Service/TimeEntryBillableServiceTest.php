@@ -166,6 +166,50 @@ final class TimeEntryBillableServiceTest extends TestCase
         self::assertTrue($service->change($this->owner, $entry, true)->getBillable());
     }
 
+    public function testTheEntryIsCheckedAgainUnderTheLock(): void
+    {
+        // Audit MV-T-L1: anonymised, replaced by an import, moved to another owner or deleted after it was loaded.
+        $cases = [
+            BillableChangeRefusedException::ANONYMISED => static function (TimeEntry $entry): TimeEntry {
+                $entry->anonymiseInPlace(new DateTimeImmutable());
+
+                return $entry;
+            },
+            BillableChangeRefusedException::READ_ONLY => fn (TimeEntry $entry): TimeEntry => TimeEntry::imported($this->owner, new ImportedTimeEntryData('clickup:1', 'e-9', 'task-1', 'T', null, $entry->getStartedAt(), $entry->getEndedAt(), 3600)),
+            BillableChangeRefusedException::FORBIDDEN => static fn (TimeEntry $entry): TimeEntry => new TimeEntry(new TestUser('9', 'zoe@example.com'), 'task-1', 'T', null, $entry->getStartedAt(), $entry->getEndedAt(), 3600, TimeEntrySource::Web),
+            BillableChangeRefusedException::NOT_FOUND => static fn (TimeEntry $entry): ?TimeEntry => null,
+        ];
+        foreach ($cases as $code => $meanwhile) {
+            $entry                    = $this->entry('2026-11-10 09:00:00Z');
+            $this->entries->meanwhile = $meanwhile;
+            $this->expectRefusal($code, fn (): TimeEntry => $this->service()->change($this->owner, $entry, true));
+        }
+        self::assertSame([], $this->audit);
+        self::assertSame(4, $this->entries->saves, 'only the fixtures');
+
+        // A fresh copy of the row is what gets written.
+        $loaded                   = $this->entry('2026-11-10 09:00:00Z');
+        $fresh                    = clone $loaded;
+        $this->entries->meanwhile = static fn (): TimeEntry => $fresh;
+        self::assertSame($fresh, $this->service()->change($this->owner, $loaded, true));
+        self::assertSame([true, null], [$fresh->getBillable(), $loaded->getBillable()]);
+    }
+
+    public function testTheEditBillableActionDecidesOnItsOwn(): void
+    {
+        $entry    = $this->entry('2026-11-10 09:00:00Z');
+        $stranger = new TestUser('8', 'bob@example.com');
+        $this->dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK, static function (TimeEntryAccessCheckEvent $event) use ($stranger): void {
+            if ($event->getAction() === TeamAccessGuard::ACTION_EDIT_BILLABLE) {
+                $event->getUserId() === $stranger->getId() ? $event->grant() : $event->deny();
+            }
+        });
+
+        $this->expectRefusal(BillableChangeRefusedException::FORBIDDEN, fn (): TimeEntry => $this->service()->change($this->owner, $entry, true));
+        self::assertTrue($this->service()->change($stranger, $entry, true)->getBillable(), 'a host grants it without the edit right');
+        self::assertFalse($this->guard()->isBillableEditGranted($this->owner, TimeEntry::imported($this->owner, new ImportedTimeEntryData('clickup:1', 'e-8', 'task-1', 'T', null, $entry->getStartedAt(), $entry->getEndedAt(), 3600))));
+    }
+
     public function testAFailingAuditListenerIsLoggedAndDoesNotUndoTheChange(): void
     {
         $this->dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_BILLABLE_CHANGED, static function (): never {

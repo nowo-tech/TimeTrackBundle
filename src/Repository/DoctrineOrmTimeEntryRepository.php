@@ -70,6 +70,20 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
+     * Since 1.21: the entry re-read with a pessimistic write lock (the caller holds a transaction).
+     */
+    public function findForUpdate(string $id): ?TimeEntry
+    {
+        $entry = $this->entityManager->find(TimeEntry::class, $id);
+        if (!$entry instanceof TimeEntry) {
+            return null;
+        }
+        $this->entityManager->refresh($entry, LockMode::PESSIMISTIC_WRITE);
+
+        return $entry;
+    }
+
+    /**
      * Entries of one user started within the period, newest first.
      *
      * @return list<TimeEntry>

@@ -396,7 +396,7 @@ final readonly class TimeTrackCalendarApiController
     /**
      * Since 1.21: PATCH entries/{id} `{billable: true|false|null}` — changes the `billable` flag of one of the caller's own
      * live entries (scope `entries:write`): 200 entry; 400 `invalid_request` (no `billable`, not a boolean or null, or
-     * another field); 404 `not_found` (no such entry, or another user's); 409 `read_only` (imported), `period_locked` /
+     * another field); 404 `not_found` (no such entry, or another user's, or `manual_entries.enabled` is false); 409 `read_only` (imported), `period_locked` /
      * `period_submitted`; 403 `forbidden` (a host `edit` access-check listener said no). Audited by
      * {@see TimeEntryBillableService}.
      */
@@ -413,6 +413,10 @@ final readonly class TimeTrackCalendarApiController
         $principal = $this->authorize($request, ClientScope::EntriesWrite);
         if ($principal instanceof Response) {
             return $principal;
+        }
+        // Audit MV-T-L2: like POST entries, off while `manual_entries.enabled` is false.
+        if (!$this->entries->isEnabled()) {
+            return $this->notFound($request);
         }
         $payload = $this->payload($request);
         if (!array_key_exists('billable', $payload) || array_keys($payload) !== ['billable'] || ($payload['billable'] !== null && !is_bool($payload['billable']))) {

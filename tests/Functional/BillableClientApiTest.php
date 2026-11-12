@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Event\TimeEntryBillableChangedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
@@ -158,6 +159,20 @@ final class BillableClientApiTest extends FunctionalTestCase
         self::assertSame('forbidden', $this->api('PATCH', '/api/time-track/entries/' . $id, ['billable' => true], $token)['error'] ?? null);
         self::assertResponseStatusCodeSame(403);
         $dispatcher->removeListener(TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK, $deny);
+
+        // Audit MV-T-L3: `edit_billable` alone, on PATCH and on an explicit value of POST entries.
+        $denyBillable = static function (TimeEntryAccessCheckEvent $event): void {
+            if ($event->getAction() === TeamAccessGuard::ACTION_EDIT_BILLABLE) {
+                $event->deny();
+            }
+        };
+        $dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK, $denyBillable);
+        self::assertSame('forbidden', $this->api('PATCH', '/api/time-track/entries/' . $id, ['billable' => true], $token)['error'] ?? null);
+        $refused = $this->api('POST', '/api/time-track/entries', ['billable' => true] + $this->body(8), $token, ['HTTP_IDEMPOTENCY_KEY' => 'o-3']);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('billable_forbidden', $refused['error'] ?? null);
+        self::assertNull($this->create($token, 9, 'o-4')['billable'], 'without a value nothing is asked');
+        $dispatcher->removeListener(TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK, $denyBillable);
 
         $old    = (new DateTimeImmutable('today -10 days'))->setTime(9, 0);
         $locked = $this->create($token, 10, 'o-2');

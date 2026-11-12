@@ -77,6 +77,8 @@ final readonly class ManualEntryService
         ?UserReferenceResolverInterface $userReferences = null,
         // Since 1.21: the default `billable` of an entry created without one (null = none, the flag stays unset).
         private ?TimeEntryBillableDefaultProviderInterface $billableDefaults = null,
+        // Since 1.21 (audit MV-T-L3): asks `edit_billable` for an explicit `billable` (null = the caller's value is trusted).
+        private ?TeamAccessGuard $accessGuard = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -105,7 +107,8 @@ final readonly class ManualEntryService
      * @param (callable(): void)|null $prepare Runs first inside the transaction (may throw to refuse)
      * @param (callable(TimeEntry): void)|null $finish Runs after the insert inside the transaction
      * @param bool|null $billable Since 1.21: the entry's `billable` flag; null = the host default
-     *                            ({@see TimeEntryBillableDefaultProviderInterface}), unset when it has none
+     *                            ({@see TimeEntryBillableDefaultProviderInterface}), unset when it has none. An explicit
+     *                            value needs {@see TeamAccessGuard::isBillableEditGranted()} (`billable_forbidden`)
      *
      * @throws ManualEntryException
      * @throws PeriodWriteRefusedException When the period is locked or submitted
@@ -152,6 +155,9 @@ final readonly class ManualEntryService
             }
             $entry = new TimeEntry($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
             $entry->assignScopeKey($scopeKey);
+            if ($billable !== null && $this->accessGuard instanceof TeamAccessGuard && !$this->accessGuard->isBillableEditGranted($user, $entry)) {
+                throw new ManualEntryException(ManualEntryException::BILLABLE_FORBIDDEN);
+            }
             $entry->markBillable($billable ?? $this->billableDefaults?->defaultFor($scopeKey ?? '', $task->id));
             $this->entries->save($entry);
             if ($finish !== null) {

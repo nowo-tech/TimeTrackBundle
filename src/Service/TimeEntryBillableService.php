@@ -29,11 +29,16 @@ use Throwable;
  * and the client API (`PATCH entries/{id}`) use instead of writing the column.
  *
  * Refused ({@see BillableChangeRefusedException}) for an imported entry (`read_only`), an anonymised or ownerless entry
- * (`anonymised`) and when the edit grant says no (`forbidden`: {@see TeamAccessGuard::isEditGranted()} — the owner, a
- * manager with `security.manager_can_edit_entries`, an admin role, then the `edit` access-check event). Then the period
- * lock ({@see PeriodLockGuard}, {@see WriteKind::Edit}) refuses an entry of a locked or submitted (approval pending) period
- * with {@see PeriodWriteRefusedException} (409); no role or listener overrides it. The lock check and the write run in one
- * transaction holding the owner's write lock. Each real change dispatches {@see TimeEntryBillableChangedEvent} after the
+ * (`anonymised`) and when the grant says no (`forbidden`: {@see TeamAccessGuard::isBillableEditGranted()} — the edit grant
+ * of the owner, a manager with `security.manager_can_edit_entries` or an admin role and the `edit` access-check event,
+ * then the `edit_billable` access-check event). Then the period lock ({@see PeriodLockGuard}, {@see WriteKind::Edit})
+ * refuses an entry of a locked or submitted (approval pending) period with {@see PeriodWriteRefusedException} (409); no
+ * role or listener overrides it. With a store that has {@see UserSerialisedTimeEntryRepositoryInterface} (the Doctrine
+ * one) the lock check and the write run in one transaction holding the owner's write lock, and with
+ * {@see FindableTimeEntryRepositoryInterface} the entry is re-read there with a row lock and checked again (audit
+ * MV-T-L1: anonymised, imported or moved to another owner meanwhile); a store with neither runs them one after the other.
+ * `read_only` and `anonymised` are answered before the grant: a host controller that serves other people's entries maps
+ * both to 404 for a caller who is not the owner. Each real change dispatches {@see TimeEntryBillableChangedEvent} after the
  * commit (who, when, old and new value); a listener that throws is logged and does not undo the change. Logs carry the
  * action only (REQ-OBS-001).
  */
@@ -102,23 +107,26 @@ final readonly class TimeEntryBillableService
         if ($entry->isAnonymised() || !$owner instanceof UserInterface) {
             throw new BillableChangeRefusedException(BillableChangeRefusedException::ANONYMISED);
         }
-        if (!$this->accessGuard->isEditGranted($actor, $entry)) {
+        if (!$this->accessGuard->isBillableEditGranted($actor, $entry)) {
             $this->logger->info('TimeTrack billable change refused.', ['bundle' => 'time_track', 'action' => 'entry_billable', 'reason' => BillableChangeRefusedException::FORBIDDEN]);
 
             throw new BillableChangeRefusedException(BillableChangeRefusedException::FORBIDDEN);
         }
 
-        $old = $entry->getBillable();
+        $ownerId = UserIdResolver::getId($owner);
         // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-        $changed = $this->serialised($owner, function () use ($owner, $entry, $billable): bool {
+        $result = $this->serialised($owner, function () use ($owner, $ownerId, $entry, $billable): array {
+            $entry = $this->reread($entry, $ownerId);
             $this->periodLockGuard?->assertWritable($owner, $entry->getScopeKey(), $entry->getStartedAt(), WriteKind::Edit);
+            $old = $entry->getBillable();
             if (!$entry->markBillable($billable)) {
-                return false;
+                return [$entry, false, $old];
             }
             $this->entries->save($entry);
 
-            return true;
+            return [$entry, true, $old];
         });
+        [$entry, $changed, $old] = $result;
         if (!$changed) {
             return $entry;
         }
@@ -134,6 +142,31 @@ final readonly class TimeEntryBillableService
         $this->logger->info('TimeTrack entry billable flag changed.', ['bundle' => 'time_track', 'action' => 'entry_billable', 'via' => $via]);
 
         return $entry;
+    }
+
+    /**
+     * Audit MV-T-L1: the entry as the store has it now, under a row lock, checked again (it may have been anonymised,
+     * replaced by an import or moved to another owner since it was loaded). Stores that cannot re-read keep the entry.
+     *
+     * @throws BillableChangeRefusedException
+     */
+    private function reread(TimeEntry $entry, string $ownerId): TimeEntry
+    {
+        if (!$this->entries instanceof FindableTimeEntryRepositoryInterface) {
+            return $entry;
+        }
+        $current = $this->entries->findForUpdate($entry->getId()) ?? throw new BillableChangeRefusedException(BillableChangeRefusedException::NOT_FOUND);
+        if ($current->isReadOnly()) {
+            throw new BillableChangeRefusedException(BillableChangeRefusedException::READ_ONLY);
+        }
+        if ($current->isAnonymised() || $current->getUserId() === null) {
+            throw new BillableChangeRefusedException(BillableChangeRefusedException::ANONYMISED);
+        }
+        if ($current->getUserId() !== $ownerId) {
+            throw new BillableChangeRefusedException(BillableChangeRefusedException::FORBIDDEN);
+        }
+
+        return $current;
     }
 
     /**

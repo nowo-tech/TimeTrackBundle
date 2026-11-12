@@ -58,6 +58,27 @@ final readonly class TeamAccessGuard
         return in_array($targetUserId, $this->teamContext->getManagedUserIds($viewer), true);
     }
 
+    /** Since 1.21: the access-check action of {@see self::isBillableEditGranted()} (audit MV-T-L3). */
+    public const ACTION_EDIT_BILLABLE = 'edit_billable';
+
+    /**
+     * Since 1.21 (audit MV-T-L3): whether the editor may set the entry's `billable` flag. The default is the edit grant
+     * ({@see self::isEditGranted()}, which dispatches the `edit` check); then {@see TimeEntryAccessCheckEvent} with action
+     * `edit_billable` lets a host grant or deny it on its own (e.g. only project managers decide what is billable).
+     * Imported entries and entries without a user owner are never granted, and no event is dispatched for them. The
+     * period lock is not part of it: callers check it themselves.
+     */
+    public function isBillableEditGranted(UserInterface $editor, TimeEntry $entry): bool
+    {
+        if ($entry->isReadOnly() || !$entry->getUser() instanceof UserInterface) {
+            return false;
+        }
+        $event = new TimeEntryAccessCheckEvent($editor, $entry, self::ACTION_EDIT_BILLABLE, $this->isEditGranted($editor, $entry));
+        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
+
+        return $event->isGranted();
+    }
+
     /** Since 1.11: the access-check action of {@see self::canDeleteImportedEntry()}. */
     public const ACTION_DELETE_IMPORTED = 'delete_imported';
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Closure;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
@@ -22,6 +23,9 @@ final class FindableInMemoryTimeEntryRepository implements TimeEntryRepositoryIn
 
     public int $transactions = 0;
 
+    /** @var (Closure(TimeEntry): ?TimeEntry)|null what happened to the row meanwhile (a replacement, null = deleted) */
+    public ?Closure $meanwhile = null;
+
     public function save(TimeEntry $entry): void
     {
         ++$this->saves;
@@ -36,6 +40,16 @@ final class FindableInMemoryTimeEntryRepository implements TimeEntryRepositoryIn
     public function findById(string $id): ?TimeEntry
     {
         return $this->entries[$id] ?? null;
+    }
+
+    public function findForUpdate(string $id): ?TimeEntry
+    {
+        $entry = $this->entries[$id] ?? null;
+        if ($entry instanceof TimeEntry && $this->meanwhile instanceof Closure) {
+            $entry = ($this->meanwhile)($entry);
+        }
+
+        return $entry;
     }
 
     public function inUserTransaction(object $user, callable $operation): mixed

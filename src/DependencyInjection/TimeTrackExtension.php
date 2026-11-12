@@ -345,6 +345,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 $container->getDefinition($serviceId)->setArgument('$billableDefaults', $defaults);
             }
         }
+        if ($container->hasDefinition(ManualEntryService::class)) {
+            $container->getDefinition(ManualEntryService::class)->setArgument('$accessGuard', new Reference(TeamAccessGuard::class));
+        }
         $container->setDefinition(TimeEntryBillableService::class, (new Definition(TimeEntryBillableService::class))
             ->setPublic(true)
             ->setArguments([

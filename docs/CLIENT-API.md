@@ -52,7 +52,8 @@ D-20261111-12. The TimeTrack Extension and TimeTrack Desktop pick the field up i
   entries`) has had **`billable`** (`true`, `false` or `null` = unset) since 1.11. New live entries now take the host's
   default (`TimeEntryBillableDefaultProviderInterface`) when the client sends none; without one it stays `null`.
 - **Create**: `POST entries` accepts an optional **`billable`** (`true` / `false`; absent or `null` = the host default).
-  Any other type answers `400 invalid_request`. It is part of the body the `Idempotency-Key` replay compares.
+  Any other type answers `400 invalid_request`; an explicit value the host's `edit_billable` check refuses answers
+  `403 billable_forbidden`. It is part of the body the `Idempotency-Key` replay compares.
 - **Change**: `PATCH entries/{id}` (below).
 - **CORS**: `Access-Control-Allow-Methods` now lists `PATCH`.
 
@@ -67,8 +68,8 @@ version can accept more without ambiguity). No `Idempotency-Key`: the request is
 | `200 {"entry": {...}}` | changed, or already that value (the entry object, `locked: false`) |
 | `400 invalid_request` | no `billable`, not a boolean or null, or another field |
 | `403 insufficient_scope` | the token lacks `entries:write` |
-| `403 forbidden` | the host's `edit` access check refused it |
-| `404 not_found` | no such entry, or another user's (they look alike) |
+| `403 forbidden` | the host's `edit` or `edit_billable` access check refused it |
+| `404 not_found` | no such entry, or another user's (they look alike); every request while `manual_entries.enabled` is false |
 | `409 read_only` | an imported entry |
 | `409 anonymised` | an anonymised or ownerless entry |
 | `409 period_locked` (+ `lockedThrough`) / `period_submitted` | the entry's period is locked (approved) or waiting for approval |
