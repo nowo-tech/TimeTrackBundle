@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.23.1] - 2026-11-12](#1231---2026-11-12)
 - [[1.23.0] - 2026-11-12](#1230---2026-11-12)
 - [[1.22.1] - 2026-11-12](#1221---2026-11-12)
 - [[1.22.0] - 2026-11-12](#1220---2026-11-12)
@@ -59,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.23.1] - 2026-11-12
 
 Target **1.23.1** (patch): the follow-up of audit OA and a role-refresh fix for DoctrineBundle 3.4. No configuration,
 schema or API change.
@@ -1614,7 +1617,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.1...HEAD
+[1.23.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.1...v1.23.0
 [1.22.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.0...v1.22.1
 [1.22.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.21.0...v1.22.0
