@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.22.0] - 2026-11-12](#1220---2026-11-12)
 - [[1.21.0] - 2026-11-12](#1210---2026-11-12)
 - [[1.20.0] - 2026-11-11](#1200---2026-11-11)
 - [[1.19.1] - 2026-11-11](#1191---2026-11-11)
@@ -56,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.22.0] - 2026-11-12
 
 Target **1.22.0** (minor; Beacon spec 204 FR-029, Block 2 bundle side): the clients learn that the user is on leave.
 Additive: without the new host port every client API body is byte for byte the 1.21 one; no schema change, no new scope.
@@ -1445,7 +1448,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.21.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.0...HEAD
+[1.22.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.19.1...v1.20.0
 [1.19.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.19.0...v1.19.1
