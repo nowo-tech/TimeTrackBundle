@@ -24,6 +24,7 @@ use function array_column;
 use function array_map;
 use function count;
 use function max;
+use function spl_object_id;
 
 /**
  * Since 1.13: Doctrine ORM timesheet store (timesheets, plus the retention purge and the verify listing).
@@ -232,14 +233,22 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      * (a line in the middle of a chain is never deleted, so the chain stays verifiable). Then up to `$batchSize`
      * timesheets ended before the date with their audit rows, except those a kept ledger line still points to (they go
      * with that line: the timesheet id is part of the line's hash).
+     *
+     * Since 1.22.1 (audit NL): the statements run in a DBAL transaction on the manager's connection (a savepoint when the
+     * host already has one open), never through `wrapInTransaction()` (which flushes the manager, the host's by default)
+     * and without `clear()` (which detached every host entity and dropped its pending changes). Only the managed
+     * timesheets, audit rows and ledger lines this purge deleted or marked are detached afterwards, so a later `find()`
+     * reads the database. Inside a host transaction the purge is a savepoint only on DBAL 4 (or DBAL 3 with savepoints
+     * enabled); otherwise a failure marks the caller's transaction rollback-only.
      */
     public function purgeBefore(string $beforeDate, int $batchSize = 500): array
     {
-        $before = Period::date($beforeDate);
-
-        // @igor-ignore - the closure runs once inside this call (transaction body), it is not stored.
-        return $this->entityManager->wrapInTransaction(function () use ($before, $batchSize): array {
-            $ledger = $this->purgeLedgerPrefixes($before);
+        $before     = Period::date($beforeDate);
+        $connection = $this->entityManager->getConnection();
+        $ledgerIds  = [];
+        $connection->beginTransaction();
+        try {
+            $ledger = $this->purgeLedgerPrefixes($before, $ledgerIds);
 
             /** @var list<array{id: string}> $rows */
             $rows = $this->entityManager->createQueryBuilder()
@@ -268,17 +277,65 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
                     ->getQuery()
                     ->execute();
             }
-            $this->entityManager->clear();
+            $connection->commit();
+        } catch (Throwable $exception) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
 
-            return ['timesheets' => count($ids), 'events' => $events, 'ledger' => $ledger];
-        });
+            throw $exception;
+        }
+        $this->detachPurged($ids, $ledgerIds);
+
+        return ['timesheets' => count($ids), 'events' => $events, 'ledger' => $ledger];
+    }
+
+    /**
+     * Since 1.22.1 (audit NL): detaches the managed timesheets with these ids, the managed audit rows of those timesheets
+     * and the managed ledger lines with these ids (deleted or marked `purged_before`); every other managed entity, the
+     * host's included, stays managed with its pending changes.
+     *
+     * @param list<string> $timesheetIds
+     * @param list<string> $ledgerIds
+     */
+    private function detachPurged(array $timesheetIds, array $ledgerIds): void
+    {
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        $timesheets = [];
+        foreach ($timesheetIds as $id) {
+            $managed = $unitOfWork->tryGetById($id, Timesheet::class);
+            if ($managed !== false) {
+                $timesheets[spl_object_id($managed)] = $managed;
+            }
+        }
+        if ($timesheets !== []) {
+            foreach ($unitOfWork->getIdentityMap()[TimesheetEvent::class] ?? [] as $event) {
+                if ($event instanceof TimesheetEvent && isset($timesheets[spl_object_id($event->getTimesheet())])) {
+                    $this->entityManager->detach($event);
+                }
+            }
+            foreach ($timesheets as $timesheet) {
+                $this->entityManager->detach($timesheet);
+            }
+        }
+        foreach ($ledgerIds as $id) {
+            $managed = $unitOfWork->tryGetById($id, BalanceLedgerLine::class);
+            if ($managed !== false) {
+                $this->entityManager->detach($managed);
+            }
+        }
     }
 
     /**
      * Deletes, per chain with lines effective before the date, the longest chain-order prefix of such lines and marks
-     * the first line kept; returns the lines deleted. Chain order follows the links ({@see self::chainOrder()}).
+     * the first line kept; returns the lines deleted and adds the ids of the lines deleted or marked to `$touched`. Chain
+     * order follows the links ({@see self::chainOrder()}).
+     *
+     * @param list<string> $touched
+     *
+     * @param-out list<string> $touched
      */
-    private function purgeLedgerPrefixes(DateTimeImmutable $before): int
+    private function purgeLedgerPrefixes(DateTimeImmutable $before, array &$touched): int
     {
         /** @var list<array{ownerRef: string, scopeKey: string}> $chains */
         $chains = $this->entityManager->createQueryBuilder()
@@ -314,6 +371,10 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             }
             if ($prefix === []) {
                 continue;
+            }
+            $touched = [...$touched, ...$prefix];
+            if ($keep !== null) {
+                $touched[] = $keep;
             }
             foreach (array_chunk($prefix, self::IDS_PER_QUERY) as $chunk) {
                 $deleted += (int) $this->entityManager->createQueryBuilder()
