@@ -58,6 +58,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.22.1** (patch; batch audit NL, Medium): the timesheet retention purge no longer touches the host's pending
+work on a shared entity manager. No schema, configuration or public API change; the same rows are purged and
+`purgeBefore()` returns the same counts.
+
+### Fixed
+
+- **NL** — `DoctrineOrmTimesheetRepository::purgeBefore()` (the `nowo:time-track:timesheets:purge` command) ran inside
+  `EntityManager::wrapInTransaction()` and called `EntityManager::clear()`. On the configured `database.entity_manager`
+  (default `default`, the host's) that cleared every host entity and dropped the host's pending changes (the flush of
+  `wrapInTransaction()` then wrote whatever was scheduled after the clear), against REQ-ARCH-001 rules 6/7. The purge now
+  runs its statements in a DBAL transaction on the manager's connection (a savepoint when the host already has a
+  transaction open), never flushes nor clears, and detaches only the managed timesheets, audit rows and ledger lines it
+  deleted or marked. Tests: `tests/Functional/TimesheetPurgeHostManagerTest.php` (host insert/update not flushed, host
+  entities managed, nested in a host transaction with rollback and commit, second purge on the same repository and
+  manager as in a kept-alive worker), `tests/Unit/Repository/DoctrineOrmTimesheetRepositoryPurgeTest.php` (rollback
+  on failure, no flush, clear or ORM transaction).
+
+### Documentation
+
+- `docs/FRANKENPHP-WORKER-AUDIT.md`: the entity manager section names the configured `database.entity_manager`
+  (default `default`) and records that the purge neither flushes nor clears it.
+
 ## [1.22.0] - 2026-11-12
 
 Target **1.22.0** (minor; Beacon spec 204 FR-029, Block 2 bundle side): the clients learn that the user is on leave.

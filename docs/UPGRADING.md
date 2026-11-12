@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.22.1](#to-1221)
 - [To 1.22.0](#to-1220)
 - [To 1.21.0](#to-1210)
 - [To 1.20.0](#to-1200)
@@ -70,6 +71,24 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.22.1
+
+Target **1.22.1** (patch), from **1.22.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+No configuration, schema or API change. `nowo:time-track:timesheets:purge` (and
+`TimesheetRetentionRepositoryInterface::purgeBefore()` on the Doctrine store) purges the same rows and returns the same
+counts, but no longer flushes or clears the entity manager configured in `database.entity_manager` (default `default`):
+
+- Entities your application has pending on that manager stay pending (they are no longer dropped), and your entities
+  stay managed after the purge. Flush them yourself as before.
+- Called inside a transaction you opened, the purge runs in a savepoint: your rollback undoes it, your commit keeps it.
+- Managed timesheets, audit rows and ledger lines the purge deleted or marked `purged_before` are detached; load them
+  again (`find()`) if you need the fresh state.
 
 ## To 1.22.0
 
