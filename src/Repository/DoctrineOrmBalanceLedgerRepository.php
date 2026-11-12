@@ -12,6 +12,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 
 /**
  * Since 1.13: Doctrine ORM balance ledger (append and read only). Chain order is creation order, then id (UUID v7).
@@ -68,7 +69,8 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
             ->getQuery()
             ->getOneOrNullResult();
 
-        return $line;
+        // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte.
+        return ExactUserIds::keepOne($this->entityManager, BalanceLedgerLine::class, $line, $ownerRef, $this->ownerRef(...));
     }
 
     /**
@@ -91,7 +93,16 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
         /** @var list<BalanceLedgerLine> $result */
         $result = $query->getQuery()->getResult();
 
-        return $result;
+        // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte.
+        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, $result, [$ownerRef], $this->ownerRef(...));
+    }
+
+    /**
+     * The owner reference of a line (the re-checks of the id user mapping).
+     */
+    private function ownerRef(BalanceLedgerLine $line): string
+    {
+        return $line->getOwnerRef();
     }
 
     /**

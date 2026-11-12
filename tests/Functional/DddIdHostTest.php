@@ -12,18 +12,22 @@ use Doctrine\DBAL\Schema\ForeignKeyConstraint;
 use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionMode;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmBalanceLedgerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmCalendarRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
@@ -200,6 +204,59 @@ final class DddIdHostTest extends FunctionalTestCase
             self::assertSame([], $calendar->findRulesByOwner($lookAlike), $lookAlike);
             self::assertSame(0, $this->entries()->countByUsersAndPeriod([$lookAlike], ...$day), $lookAlike);
             self::assertSame([], $this->entries()->findByUserAndPeriod($lookAlike, ...$day), $lookAlike);
+        }
+    }
+
+    public function testErasureExportAndLedgerReadsNeverReachALookAlike(): void
+    {
+        // Audit OA-R1 (1.23.1): these paths used to rely on the collation alone, which still pads trailing blanks on
+        // MySQL < 8.0 and SQL Server.
+        $people = self::getContainer()->get(FormerPersonTimeEntries::class);
+        self::assertInstanceOf(FormerPersonTimeEntries::class, $people);
+        foreach ([
+            static fn (): int => $people->anonymiseUser(new SecurityUser('abc ', 'look-alike')),
+            static fn (): int => $people->anonymisePerson('user:abc '),
+            static fn (): array => $people->export("user:abc\u{200B}"),
+        ] as $i => $call) {
+            try {
+                $call();
+                self::fail('call ' . $i . ' is refused');
+            } catch (LogicException $exception) {
+                self::assertStringContainsString('id user mapping', $exception->getMessage());
+            }
+        }
+        self::assertSame([], $people->export('user:abc'));
+
+        $ledger = self::getContainer()->get(BalanceLedgerRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmBalanceLedgerRepository::class, $ledger);
+        $now   = new DateTimeImmutable();
+        $first = new BalanceLedgerLine(null, 'abc', 'org-a', '2026-11-02', LedgerKind::Opening, 60, $now, null, 'x');
+        $ledger->append($first);
+        $ledger->append(new BalanceLedgerLine(null, 'abc', 'org-a', '2026-11-03', LedgerKind::Adjustment, 30, $now, $first->getHash(), 'y'));
+        $ledger->flush();
+        self::assertCount(2, $ledger->findByOwner('abc', 'org-a'));
+        self::assertInstanceOf(BalanceLedgerLine::class, $ledger->findLast('abc', 'org-a'));
+
+        $resolver = self::getContainer()->get(UserReferenceResolverInterface::class);
+        self::assertInstanceOf(UserReferenceResolverInterface::class, $resolver);
+        $owner  = $resolver->reference(new SecurityUser('abc', 'abc'));
+        $sheets = self::getContainer()->get(TimesheetRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimesheetRepository::class, $sheets);
+        foreach (['2026-W44', '2026-W45'] as $week) {
+            $sheets->save(new Timesheet($owner, 'abc', 'org-a', Period::fromKey(TimesheetPeriodKind::Week, $week), 'UTC', $now));
+        }
+        $first = $sheets->timesheetIds(null, 'abc', '', 1);
+        self::assertCount(1, $first);
+        self::assertCount(1, $sheets->timesheetIds(null, 'abc', $first[0], 1));
+        self::assertCount(2, $sheets->timesheetIds('org-a', 'abc', '', 5));
+        self::assertSame([['ownerRef' => 'abc', 'scopeKey' => 'org-a']], $sheets->ledgerChains(null, 'abc'));
+        self::assertCount(1, $sheets->ledgerChains(null, null));
+
+        foreach (['ABC', 'àbc', 'abc '] as $lookAlike) {
+            self::assertSame([], $ledger->findByOwner($lookAlike, 'org-a'), $lookAlike);
+            self::assertNull($ledger->findLast($lookAlike, 'org-a'), $lookAlike);
+            self::assertSame([], $sheets->timesheetIds(null, $lookAlike, '', 5), $lookAlike);
+            self::assertSame([], $sheets->ledgerChains(null, $lookAlike), $lookAlike);
         }
     }
 

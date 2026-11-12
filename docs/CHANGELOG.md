@@ -60,6 +60,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.23.1** (patch): the follow-up of audit OA and a role-refresh fix for DoctrineBundle 3.4. No configuration,
+schema or API change.
+
+### Fixed
+
+- **OA-R1 (Low, `user_mapping: id` only)**: paths that relied on the column collation alone, which still ignores
+  trailing blanks on MySQL < 8.0 and SQL Server: `FormerPersonTimeEntries::anonymiseUser()`, `anonymisePerson()` and
+  `export()` now refuse an id or person reference that is not exact (leading or trailing blank, control, format,
+  separator or invisible character; `LogicException`, as `release()`), and `DoctrineOrmBalanceLedgerRepository::findByOwner()`
+  / `findLast()` and the export / verify reads `timesheetIds()` / `ledgerChains()` re-check the owner reference byte
+  for byte in PHP (`timesheetIds()` reads on, so a look-alike row never ends a caller's paging early). UPGRADING no longer
+  claims every store re-checks the ids. Relation mapping unchanged.
+- **Role refresh with a dedicated user entity manager (worker mode)**: `ManagedEntityRefresher::refresh()` (used by
+  `ClientAuthService`, `TimesheetAccessGuard` and `TeamAccessGuard` before role checks) asked only
+  `getManagerForClass()`. DoctrineBundle 3.4 can answer the default manager for a class mapped only on another one, so
+  the user was not refreshed and revoked roles stayed in a kept-alive worker. It now refreshes through the manager that
+  actually contains the user (the class's manager first, then every manager). Test: `ManagedEntityRefresherTest`
+  (DoctrineBundle's own `Registry` with the user on a non-default manager; CI runs it with DoctrineBundle 3.x on
+  Symfony 8.1).
+- Tests: `DddIdHostTest::testErasureExportAndLedgerReadsNeverReachALookAlike`.
+
 ## [1.23.0] - 2026-11-12
 
 Target **1.23.0** (minor; REQ-ARCH-001 XL track: framework-free ports and events, an opt-in private entity manager,
