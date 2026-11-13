@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- `docs/SECURITY.md`: replace the outdated "Pass (conditional) recorded" checklist cell with the latest audits (Appendices OA, NP, NG) and their dates (REQ-SEC-001 / REQ-SEC-004).
+
 ## [1.24.0] - 2026-11-13
 
 Target **1.24.0** (minor, new public API).
