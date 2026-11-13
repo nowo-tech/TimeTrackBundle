@@ -8,6 +8,7 @@ use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Support\StorageTime;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use const DATE_ATOM;
@@ -48,6 +49,8 @@ class CalendarRule
         private bool $groupMatches,
         DateTimeImmutable $now,
     ) {
+        // Since 1.24.1 (REQ-SEC-006): a scope key a look-alike could stand for is refused, never trimmed.
+        ScopeKeys::assertUsable($this->scopeKey);
         $this->id        = Uuid::generateV7()->toString();
         $this->createdAt = StorageTime::normalize($now);
     }

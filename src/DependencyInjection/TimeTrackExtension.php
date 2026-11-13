@@ -292,6 +292,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$calendarRulesTableName', $prefix . '_calendar_rules')
             ->setArgument('$userMapping', $config['user_mapping'])
             ->setArgument('$hostUsersTableName', $prefix . '_host_users')
+            ->setArgument('$logger', new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE))
+            ->addTag('monolog.logger', ['channel' => 'time_track'])
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
         $loginRateLimit = $clients['login_rate_limit'];
@@ -648,7 +650,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$credentials'     => $credentials,
                 '$eventDispatcher' => $dispatchRef,
                 '$clock'           => $clockRef,
-            ]));
+                '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(CalendarRuleService::class, (new Definition(CalendarRuleService::class))
             ->setPublic(true)
             ->setArguments([
@@ -1040,7 +1044,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$adminRolesView'   => $timesheets['admin_roles_view'],
                 '$reopenRoles'      => $timesheets['reopen_roles'],
                 '$managerRegistry'  => new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE),
-            ]));
+                '$logger'           => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(BalanceLedger::class, (new Definition(BalanceLedger::class))
             ->setPublic(true)
             ->setArguments([

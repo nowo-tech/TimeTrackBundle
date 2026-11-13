@@ -39,6 +39,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Support\FakeCalendarEventSource;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
+use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -538,6 +539,8 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertSame([], $platform->getAlterSchemaSQL($diff), 'the down script restores the 1.13 schema');
 
         $this->runSql($name . '-up.sql');
+        // Since 1.24.1 the scope_key columns compare exactly (UPGRADING "To 1.24.1").
+        ScopeKeyCollation::apply($conn);
         self::assertSame([], $tool->getUpdateSchemaSql($metadata), 'the up script is exactly the 1.14 mapping');
     }
 

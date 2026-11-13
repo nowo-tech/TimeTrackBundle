@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus;
 use Nowo\TimeTrackBundle\Support\StorageTime;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
@@ -63,8 +64,9 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
      */
     public function findConnectionFor(string $userId, string $scopeKey, CalendarProvider $provider): ?CalendarConnection
     {
-        /** @var CalendarConnection|null $connection */
-        $connection = $this->entityManager->createQueryBuilder()
+        // Since 1.24.1 (REQ-SEC-006): every row is re-checked (user and scope) before one is taken; no LIMIT before.
+        /** @var list<CalendarConnection> $rows */
+        $rows = $this->entityManager->createQueryBuilder()
             ->select('c')
             ->from(CalendarConnection::class, 'c')
             ->where('IDENTITY(c.user) = :user')
@@ -73,11 +75,11 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->setParameter('user', $userId)
             ->setParameter('scope', $scopeKey)
             ->setParameter('provider', $provider->value)
-            ->setMaxResults(1)
+            ->orderBy('c.id', SortDirection::Ascending->value)
             ->getQuery()
-            ->getOneOrNullResult();
+            ->getResult();
 
-        return ExactUserIds::keepOne($this->entityManager, CalendarConnection::class, $connection, $userId);
+        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, self::connectionsIn($rows, $scopeKey), [$userId])[0] ?? null;
     }
 
     /**
@@ -99,7 +101,19 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarConnection> $result */
         $result = $query->getQuery()->getResult();
 
-        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $result, [$userId]);
+        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $scopeKey === null ? $result : self::connectionsIn($result, $scopeKey), [$userId]);
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006): the connections whose scope key is the key byte for byte.
+     *
+     * @param list<CalendarConnection> $connections
+     *
+     * @return list<CalendarConnection>
+     */
+    private static function connectionsIn(array $connections, string $scopeKey): array
+    {
+        return ScopeKeys::keep($connections, $scopeKey, static fn (CalendarConnection $connection): string => $connection->getScopeKey());
     }
 
     /**
@@ -148,7 +162,8 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             $this->entityManager->wrapInTransaction(function () use ($connection): void {
                 // ORM removals (not DQL deletes), so the identity map of a worker never keeps a deleted row.
                 $suggestions = $this->entityManager->getRepository(CalendarSuggestion::class)->findBy(['connection' => $connection]);
-                $rules       = $this->entityManager->getRepository(CalendarRule::class)->findBy(['user' => $connection->getUser(), 'scopeKey' => $connection->getScopeKey()]);
+                // Since 1.24.1 (REQ-SEC-006): only the rules of this scope key byte for byte (never a look-alike scope's).
+                $rules = ScopeKeys::keep($this->entityManager->getRepository(CalendarRule::class)->findBy(['user' => $connection->getUser(), 'scopeKey' => $connection->getScopeKey()]), $connection->getScopeKey(), static fn (CalendarRule $rule): string => $rule->getScopeKey());
                 foreach ([...$suggestions, ...$rules, $connection] as $row) {
                     $this->entityManager->remove($row);
                 }
@@ -224,6 +239,10 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
 
         /** @var list<CalendarSuggestion> $result */
         $result = $query->getQuery()->getResult();
+        if ($scopeKey !== null) {
+            // Since 1.24.1 (REQ-SEC-006): the connection's scope key byte for byte.
+            $result = ScopeKeys::keep($result, $scopeKey, static fn (CalendarSuggestion $suggestion): string => $suggestion->getConnection()->getScopeKey());
+        }
 
         return ExactUserIds::keep($this->entityManager, CalendarSuggestion::class, $result, [$userId]);
     }
@@ -400,7 +419,8 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return ExactUserIds::keep($this->entityManager, CalendarRule::class, $result, [$userId]);
+        // Since 1.24.1 (REQ-SEC-006): the scope key byte for byte.
+        return ExactUserIds::keep($this->entityManager, CalendarRule::class, ScopeKeys::keep($result, $scopeKey, static fn (CalendarRule $rule): string => $rule->getScopeKey()), [$userId]);
     }
 
     /**

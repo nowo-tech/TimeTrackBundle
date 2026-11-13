@@ -62,6 +62,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.24.1** (patch). See [UPGRADING](UPGRADING.md#to-1241) for the detection queries and the `ALTER`.
+
+### Security
+
+- REQ-SEC-006 (audit OA-R2 / F4, Low, conditional): tenant scope keys are matched byte for byte. On the default
+  MySQL / MariaDB collations the approver of scope `acme` could see and act on `Acme`, `àcme` or `acme ` timesheets of
+  a person who works in both scopes (`DoctrineOrmTimesheetRepository::findQueue()` re-checked the owners but not the
+  scope), and the other scope lookups relied on SQL alone. Affected: v1.13.0 to v1.24.0, only hosts whose scope keys
+  differ by case, accent or trailing space.
+  - The `scope_key` columns of the timesheet, ledger, calendar connection, calendar rule and entry tables get a binary
+    NO PAD collation with every `user_mapping` (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB).
+  - The timesheet (`findForPeriod`, `findGuarding*`, `findByOwner`, `findQueue`, `findLatestLockedBefore`,
+    `timesheetIds`, `ledgerChains`, retention purge), ledger (`findLast`, `findByOwner`), calendar
+    (`findConnectionFor`, `findConnectionsByUser`, `findSuggestionsByUser`, `findRulesByUser`, `deleteConnection`) and
+    entry (`findPageWithOwnerless`, `countWithOwnerless`, `ownersWithEntries`) stores re-check the scope key with
+    `===`; the exact match happens before `LIMIT`, and chains / (owner, scope) pairs are told apart in PHP instead of
+    with a folding SQL `DISTINCT`.
+  - Scope keys with a leading or trailing space, another blank, a control, format or invisible character or invalid
+    UTF-8 are never stored: the entities and the import writer refuse them; from the host scope provider such a key
+    counts as no scope (`scopeKeyForTask()`: the timer stop or manual entry is still saved) or its scope is left out
+    (`scopesFor()`), with a warning, as in the back-fill command. Private-use, unassigned and surrogate code points are
+    refused too.
+  - The `ALTER` of UPGRADING "To 1.24.1" is required: until it runs, the folding unique keys block look-alike scopes.
+
+### Fixed
+
+- REQ-SEC-006 item 8: the metadata listener logs a warning when it falls back to the PAD SPACE `utf8mb4_bin`
+  collation (MySQL before 8.0.17, now also detected on the MySQL 8.0 platform, or a `server_version` without the patch
+  number).
+- `time-track:timesheets:auto-lock` no longer stops at the first period it cannot lock: it logs it, goes on and exits
+  with a failure.
+- The (owner, scope) pairs of the auto-lock, the ledger chains of the purge and `verify`, and the rows
+  `countWithOwnerless()` counts in PHP are read in keyset batches, so only one batch is held in memory.
+- Ownerless entry pages (`findPageWithOwnerless`, `countWithOwnerless`) re-check the owner ids byte for byte with
+  `user_mapping: id`, like the other entry listings.
+- CI: the functional suite also runs on MySQL 8.4 and MariaDB 11.4.
+
 ### Documentation
 
 - `docs/SECURITY.md`: replace the outdated "Pass (conditional) recorded" checklist cell with the latest audits (Appendices OA, NP, NG) and their dates (REQ-SEC-001 / REQ-SEC-004).

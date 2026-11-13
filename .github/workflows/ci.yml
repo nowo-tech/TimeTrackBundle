@@ -144,6 +144,19 @@ jobs:
             port: 3306
             health: healthcheck.sh --connect --innodb_initialized
             url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=10.6.0-MariaDB&charset=utf8mb4
+          # Since 1.24.1 (REQ-SEC-006): the look-alike id tests also on the current LTS servers.
+          - database: MySQL 8.4
+            private: '0'
+            image: mysql:8.4
+            port: 3306
+            health: mysqladmin ping -h 127.0.0.1 -uroot -proot
+            url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=8.4.0&charset=utf8mb4
+          - database: MariaDB 11.4
+            private: '0'
+            image: mariadb:11.4
+            port: 3306
+            health: healthcheck.sh --connect --innodb_initialized
+            url: mysql://root:root@127.0.0.1:3306/tt?serverVersion=11.4.0-MariaDB&charset=utf8mb4
           - database: PostgreSQL 16
             private: '0'
             image: postgres:16-alpine
