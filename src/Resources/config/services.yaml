@@ -125,3 +125,7 @@ services:
     # 1.9 host entry point: revoke every session token of a deleted credential (public for host controllers/listeners).
     Nowo\TimeTrackBundle\Client\ClientTokenRevoker:
         public: true
+
+    # 1.24 host entry point: build a TimeTrackUserRef from a Symfony user (autowire it by class; stateless).
+    Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory:
+        public: true

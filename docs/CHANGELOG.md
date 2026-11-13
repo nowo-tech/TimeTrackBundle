@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.24.0** (minor, new public API).
+
+### Added
+
+- `Port\TimeTrackUserRefFactory`: public, stable, stateless service (autowirable by its class) with
+  `fromUser(UserInterface): TimeTrackUserRef` and the static twin `build()`, so a host no longer builds the ref by hand.
+  It shares the id derivation with the internal `TimeTrackUserRefs::fromUser()` (equal refs). `TimeTrackUserRef` stays
+  free of Symfony (REQ-ARCH-001 rule 3), hence no `TimeTrackUserRef::fromUser()`.
+
 ## [1.23.1] - 2026-11-12
 
 Target **1.23.1** (patch): the follow-up of audit OA and a role-refresh fix for DoctrineBundle 3.4. No configuration,

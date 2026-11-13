@@ -31,7 +31,7 @@ opt-in private entity manager (`database.private_entity_manager: true`).
 
 | Service | State | Verdict |
 |---------|-------|---------|
-| `Port\*Gate`, `Port\Ports`, `Port\TimeTrackUserRefs` | `final readonly` gates over the host service; static helpers without static properties | Stateless; a reference is built per call |
+| `Port\*Gate`, `Port\Ports`, `Port\TimeTrackUserRefs`, `Port\TimeTrackUserRefFactory` | `final readonly` gates over the host service; static helpers without static properties | Stateless; a reference is built per call |
 | `ValueObject\TimeTrackUserRef` + `Internal\HiddenValues` | the user object kept in a `WeakMap` keyed by the VO | The entry dies with its per-call VO: nothing outlives the request |
 | `Doctrine\TimeTrackEntityManager` (private mode) | the current private manager, a stale flag and the uncommitted transaction levels | Bundle-owned unit of work, dropped by the bundle itself at every outermost boundary (`PrivateEntityManagerSubscriber`: main `kernel.request` start, `kernel.terminate`, Messenger received / handled / failed, outermost `console.command` / `console.terminate`) and at `kernel.reset`; replaced when closed, on another connection or stale after a rollback; pending changes at a boundary are logged (classes and counts) and dropped. Its first private manager is created lazily, the subscriber never builds it |
 | `Doctrine\UnitOfWorkBoundaries` | which units of work are running in the process | Describes the running units (deliberately not reset by `kernel.reset`); copied from AuthKitBundle 1.46.0 / PageBuilderKitBundle 1.15.1 |

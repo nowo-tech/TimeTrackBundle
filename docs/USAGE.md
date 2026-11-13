@@ -879,6 +879,26 @@ only bundle value objects — the user is a `ValueObject\TimeTrackUserRef` (clas
 the object itself through `user()`), entities become snapshots (`Dto\TimeEntryView`, `ValueObject\CalendarConnectionRef`).
 Implement the twin and set the same option; the deprecated port keeps working until 2.0.
 
+#### Building a `TimeTrackUserRef` from a Symfony user (since 1.24.0)
+
+Use the public `Port\TimeTrackUserRefFactory` (autowire it by class, stateless) instead of calling `new TimeTrackUserRef()`
+by hand; it applies the bundle's own id derivation (class without Doctrine proxy, id string or null when blank,
+identifier, roles), so your ref equals the one the bundle passes to your ports.
+
+```php
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
+
+final readonly class MyTaskDirectory
+{
+    public function __construct(private TimeTrackUserRefFactory $userRefs) {}
+
+    public function forCurrent(UserInterface $user): TimeTrackUserRef
+    {
+        return $this->userRefs->fromUser($user); // or TimeTrackUserRefFactory::build($user) without the container
+    }
+}
+```
+
 | Twin (1.23, implement this) | Deprecated port | Config key |
 |---|---|---|
 | `Integration\TaskDirectoryInterface` (+ `BatchTaskDirectoryInterface`) | `TaskProviderInterface` (+ `BatchTaskProviderInterface`) | `task_provider` |
