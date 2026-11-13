@@ -4,7 +4,6 @@
 
 - [Unreleased](#unreleased)
 - [To 1.24.0](#to-1240)
-- [To 1.24.0](#to-1240-1)
 - [To 1.23.1](#to-1231)
 - [To 1.23.0](#to-1230)
   - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
@@ -81,14 +80,6 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
-
-## To 1.24.0
-
-From **1.23.1**:
-
-```bash
-composer update nowo-tech/time-track-bundle
-```
 
 ## To 1.24.0
 
