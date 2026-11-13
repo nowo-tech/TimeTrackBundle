@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.25.0](#to-1250)
 - [To 1.24.2](#to-1242)
 - [To 1.24.1](#to-1241)
 - [To 1.24.0](#to-1240)
@@ -82,6 +83,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.25.0
+
+From **1.24.2**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 <!-- Release checklist (audit PA-5): the chore(release) commit renames this heading to `## To 1.25.0` and adds its TOC
      entry; USAGE already links to `UPGRADING.md#to-1250`, which only resolves once that rename happened. -->
