@@ -33,7 +33,8 @@ final class EntryOriginSchemaTest extends FunctionalTestCase
 
         self::assertSame(16, $metadata->getFieldMapping('channel')->length);
         self::assertTrue($metadata->getFieldMapping('channel')->nullable);
-        self::assertFalse($metadata->getFieldMapping('serviceAccount')->options['default'] ?? null);
+        // false from the attributes, '0' from the XML mapping: both a false default.
+        self::assertFalse((bool) ($metadata->getFieldMapping('serviceAccount')->options['default'] ?? true));
         self::assertSame(['service_account', 'channel', 'started_at'], $metadata->table['indexes']['idx_time_track_entries_origin']['columns'] ?? null);
     }
 
