@@ -78,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - `HostTimerApiTest` (start / stop / current, replace and report, agent versus person, two concurrent starts and the exhausted retries, the account lock, refusals leave the timer untouched, no personal data in the replace log), `ServiceAccountEntriesTest` (overlaps per account and across accounts, people's rules unchanged, backdate clamp, idle reassign, accessors, CSV, filter look-alikes), `HostTimerApiDatabaseTest` (columns, origin filter on SQLite / MySQL / PostgreSQL, a start that loses the unique index on the real Doctrine stack) and `HostTimerWorkerModeTest` (REQ-RUNTIME-002: a person and two agents through one kernel kept alive without the services resetter, `http_kernel` handle / terminate). Audit PA: `HostTimerAccessCheckerTest` (the host checker refuses a task the provider resolves, on the host timer, the client API and `POST entries` alike), the host-timer case of `TwinClientPortsTest` (the same through the 1.23 `TaskAccessPolicyInterface` gate), a denying checker and a throwing policy in `HostTimerApiTest`, and the stopped-entry ids on an exhausted conflict.
+- CI: the `Code Coverage` job runs `composer test-coverage-100`, so a pull request that drops statement coverage below 100 %
+  fails the build; before, the threshold was only checked by hand in `make release-check` before a tag.
 
 ## [1.24.2] - 2026-11-13
 
