@@ -60,6 +60,7 @@ use Psr\Log\NullLogger;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Throwable;
 
 use function array_diff;
 use function array_filter;
@@ -356,7 +357,10 @@ final readonly class TimerService
      * @throws PeriodLockedException When the current period is locked
      * @throws PeriodSubmittedException When the current period is submitted
      * @throws InvalidArgumentException When the channel is not a valid label
-     * @throws ActiveTimerConflictException When concurrent starts took the slot on every attempt
+     * @throws ActiveTimerConflictException When concurrent starts took the slot on every attempt; the entries this call
+     *                                      already recorded are on {@see ActiveTimerConflictException::$stoppedEntryIds}
+     *                                      (they are written: a refused start leaves the running timer untouched for a
+     *                                      task, period-lock or channel refusal, not for an exhausted conflict)
      *
      * @return array{timer: ActiveTimer, task: TaskReference, stopped: list<TimeEntry>} The new timer, its task and the entries of the timers it stopped (oldest first)
      */
@@ -397,7 +401,7 @@ final readonly class TimerService
                 // A start that does not take the account lock (client API) inserted its timer first.
                 $this->logger->warning('TimeTrack timer start rejected: concurrent start.', $this->context('timer_replace', $clientType) + ['attempt' => $attempt]);
                 if ($attempt >= self::REPLACE_ATTEMPTS) {
-                    throw ActiveTimerConflictException::concurrentStart($e);
+                    throw ActiveTimerConflictException::concurrentStart($e, $this->entryIds($stopped));
                 }
 
                 continue;
@@ -406,7 +410,7 @@ final readonly class TimerService
                 break;
             }
             if ($attempt >= self::REPLACE_ATTEMPTS) {
-                throw ActiveTimerConflictException::concurrentStart();
+                throw ActiveTimerConflictException::concurrentStart(null, $this->entryIds($stopped));
             }
         }
 
@@ -873,11 +877,38 @@ final readonly class TimerService
     }
 
     /**
+     * Since 1.25.0 (audit PA-2): the ids of the entries recorded so far.
+     *
+     * @param list<TimeEntry> $entries
+     *
+     * @return list<string>
+     */
+    private function entryIds(array $entries): array
+    {
+        return array_map(static fn (TimeEntry $entry): string => $entry->getId(), $entries);
+    }
+
+    /**
      * Since 1.25.0: the policy's answer for the user, asked per call (never memoised: worker mode).
+     *
+     * A policy that throws is treated as "a person" and logged (audit PA-3): this runs inside every timer stop, also
+     * {@see self::stopForUserDeletion()}, where a policy that reads the account from the database may fail for a user
+     * being deleted — and losing the running time there is exactly what that stop exists to prevent.
      */
     private function isServiceAccount(UserInterface $user): bool
     {
-        return $this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false;
+        if (!$this->serviceAccounts instanceof ServiceAccountPolicyInterface) {
+            return false;
+        }
+
+        try {
+            return $this->serviceAccounts->isServiceAccount(TimeTrackUserRefs::fromUser($user));
+        } catch (Throwable $exception) {
+            // REQ-OBS-001: the exception class only, never the account or the task.
+            $this->logger->warning('TimeTrack service-account policy failed; the entry is recorded as a person\'s.', ['bundle' => 'time_track', 'action' => 'service_account_policy', 'exception' => $exception::class]);
+
+            return false;
+        }
     }
 
     /**

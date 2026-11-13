@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
@@ -124,6 +125,8 @@ final class TimeTrackExtensionTest extends TestCase
             $api = $container->getDefinition(HostTimerApi::class);
             self::assertTrue($api->isPublic());
             self::assertSame(TimerService::class, (string) $api->getArgument('$timers'));
+            // Audit PA-1: the host timer asks the same access checker as the client API.
+            self::assertSame(TaskAccessCheckerInterface::class, (string) $api->getArgument('$taskAccess'));
         }
     }
 

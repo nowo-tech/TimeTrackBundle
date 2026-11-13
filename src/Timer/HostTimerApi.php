@@ -16,6 +16,7 @@ use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
+use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -28,8 +29,9 @@ use function array_map;
  *
  * The host authenticates the principal and decides whether it may use the timer at all; it passes the account as a
  * {@see TimeTrackUserRef} carrying its security user object ({@see TimeTrackUserRefFactory}).
- * The bundle then checks the task through the configured task provider / task access checker and the period lock, as
- * for every timer. The app-password client API is unchanged.
+ * The bundle then checks the task through the configured {@see TaskAccessCheckerInterface} (`client_api.task_access_checker`,
+ * or its framework-free twin `TaskAccessPolicyInterface`) **and** the task provider, and then the period lock, exactly as
+ * the client API does for `POST timer/start`. The app-password client API is unchanged.
  *
  * - One running timer per account. {@see self::start()} on an account whose timer runs stops that timer first and
  *   reports its entry ({@see HostTimerStart::$stopped}); concurrent starts: the last call wins
@@ -43,9 +45,9 @@ use function array_map;
 final readonly class HostTimerApi
 {
     /**
-     * Receives the timer use cases.
+     * Receives the timer use cases and the task access checker of the API (the same service the client API asks).
      */
-    public function __construct(private TimerService $timers)
+    public function __construct(private TimerService $timers, private TaskAccessCheckerInterface $taskAccess)
     {
     }
 
@@ -59,14 +61,22 @@ final readonly class HostTimerApi
      *
      * @throws LogicException When the reference carries no security user object
      * @throws InvalidArgumentException When the channel is not a valid label
-     * @throws TaskNotTrackableException When the task is unknown or not trackable by the actor (nothing is stopped)
+     * @throws TaskNotTrackableException When the access checker refuses the task, or it is unknown or not trackable by
+     *                                   the actor (nothing is stopped)
      * @throws PeriodLockedException When the current period is locked (nothing is stopped)
      * @throws PeriodSubmittedException When the current period is submitted (nothing is stopped)
      * @throws ActiveTimerConflictException When concurrent starts took the slot on every attempt
      */
     public function start(TimeTrackUserRef $actor, string $taskId, ?string $note = null, string $channel = 'api'): HostTimerStart
     {
-        $result = $this->timers->startReplacing($this->user($actor), $taskId, ClientType::Web, $channel, $note === null ? [] : ['note' => $note]);
+        $user = $this->user($actor);
+        // Audit PA-1: the host's access policy decides first, before the task provider is asked and before anything is
+        // stopped; one answer for "refused" and "unknown", so the actor learns nothing about a task it may not see.
+        if (!$this->taskAccess->canTrack($user, $taskId)) {
+            throw TaskNotTrackableException::forTask($taskId);
+        }
+
+        $result = $this->timers->startReplacing($user, $taskId, ClientType::Web, $channel, $note === null ? [] : ['note' => $note]);
 
         return new HostTimerStart(
             TimerSnapshot::fromTimer($result['timer']),

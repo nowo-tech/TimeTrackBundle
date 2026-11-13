@@ -1231,7 +1231,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.25.0: number of the users' entries of the period that pass the origin filter.
+     * Since 1.25.0: number of the users' entries of the period that pass the origin filter (a SQL `COUNT`; audit PA-4:
+     * the page's PHP re-check of the channel is not repeated here, see the interface).
      */
     public function countByUsersPeriodAndOrigin(array $userIds, DateTimeImmutable $from, DateTimeImmutable $to, TimeEntryOriginFilter $filter): int
     {

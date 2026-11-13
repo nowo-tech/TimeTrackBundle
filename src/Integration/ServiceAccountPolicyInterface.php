@@ -23,6 +23,12 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
  *
  * The bundle asks it on every write and never memoises the answer (FrankenPHP worker mode, kernel reset false). An
  * implementation must not keep per-request state either.
+ *
+ * **It must not throw, and it must tolerate an account that is being deleted** (audit PA-3): it is asked inside every
+ * timer stop, including the stop that saves the running time of a user the host is deleting, where the account row may
+ * already be gone. An implementation that reads a repository must answer false instead of failing for an unknown
+ * account. The bundle does not rely on that: an exception is caught, logged (the class only) and read as "a person",
+ * so the entry is still written — but then an agent's entry is recorded as a person's.
  */
 interface ServiceAccountPolicyInterface
 {

@@ -82,6 +82,9 @@
 
 ## Unreleased
 
+<!-- Release checklist (audit PA-5): the chore(release) commit renames this heading to `## To 1.25.0` and adds its TOC
+     entry; USAGE already links to `UPGRADING.md#to-1250`, which only resolves once that rename happened. -->
+
 Target **1.25.0** (minor), from **1.24.1**: `composer update nowo-tech/time-track-bundle`.
 
 **Schema migration required (every host).** `time_track_entries` gets `channel` (`VARCHAR(16)`, null) and
@@ -111,6 +114,10 @@ Nothing else to change: without a policy everyone is a person and every rule is 
   export gains the columns `channel` and `service_account` at the end, and the personal-data export rows gain `channel`
   and `serviceAccount`. A consumer that requires an exact set of keys or columns must accept them.
 - **Timer metadata**: the key `channel` is reserved; a client-supplied value is dropped at start, like `closed_by`.
+- **Your access checker decides the host timer too**: `HostTimerApi::start()` asks `client_api.task_access_checker` (or
+  its 1.23 twin `TaskAccessPolicyInterface`) before the task provider, as `POST timer/start` does. If your checker is
+  stricter than your provider, a token principal now gets `TaskNotTrackableException` where 1.25.0's first draft would
+  have started the timer.
   `closed_by` is now also dropped from the metadata of `ManualEntryService::create()`; a timer replaced by a
   `HostTimerApi` start gets `closed_by: replaced` (`TimeEntry::closedBy()`).
 - If you construct `TimerService` or `ManualEntryService` by hand, they take an optional trailing `$serviceAccounts`

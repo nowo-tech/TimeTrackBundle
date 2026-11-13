@@ -889,19 +889,24 @@ The rules:
 
 - **Authorisation stays in your application.** Pass the account as a `TimeTrackUserRef` that carries its security user
   object (`TimeTrackUserRefFactory::fromUser()`); a reference by id alone is refused with a `LogicException`. The bundle
-  then checks the task through your task provider or task access checker (`TaskNotTrackableException`) and the period
-  lock (`PeriodLockedException`, `PeriodSubmittedException`), as for every timer.
+  then asks your `client_api.task_access_checker` (or its 1.23 twin `TaskAccessPolicyInterface`) **and** your task
+  provider — the same two checks as `POST timer/start` — and then the period lock. A refusal of either is one
+  `TaskNotTrackableException`, so the caller cannot tell "not allowed" from "does not exist"; the period lock throws
+  `PeriodLockedException` / `PeriodSubmittedException`.
 - **One running timer per account.** `start()` on an account whose timer runs stops that timer first and returns its
   entry in `stopped` (ClickUp behaviour). That entry is marked `closed_by: replaced` in its metadata
-  (`TimeEntry::closedBy()`, `TimerEntrySnapshot::$closedBy`; reserved, a client or a manual entry cannot set it). The task and the period lock are checked before anything is stopped, so a
-  refused start leaves the running timer untouched. Only the actor's own timer is ever read, started or stopped, so an
+  (`TimeEntry::closedBy()`, `TimerEntrySnapshot::$closedBy`; reserved, a client or a manual entry cannot set it). The
+  access check, the task and the period lock all run before anything is stopped, so a start refused for one of those
+  reasons leaves the running timer untouched. Only the actor's own timer is ever read, started or stopped, so an
   agent's call never stops a person's timer.
 - **Concurrent starts: the last call wins.** Each attempt checks and inserts under the account's row lock, so two calls of
   `start()` for one account run one after the other and the second stops the first. A start that does not take the lock
   (the client API) may still win the unique index in between: the start is retried, up to 3 attempts
   (`TimerService::REPLACE_ATTEMPTS`), and every stopped timer is recorded exactly once. After the last attempt it throws
-  `ActiveTimerConflictException` (answer 409). The replaced timer is logged at `info` (`action: timer_replace`) with the
-  entry id and the account id only.
+  `ActiveTimerConflictException` (answer 409). That is the one refusal that is not untouched-on-refusal: entries stopped
+  on the earlier attempts are already written and committed, and their ids are on the exception
+  (`$stoppedEntryIds`), so your 409 can name them. The replaced timer is logged at `info` (`action: timer_replace`) with
+  the entry id and the account id only.
 - **The channel** (`api`, `mcp`, …: 1 to 16 characters of `a-z`, `0-9` and `_`, otherwise `InvalidArgumentException`) is
   stored on the entry. It is a label for reports and audit, never an authorisation input. The entry's source stays `web`:
   a dedicated source is planned for 2.0 (a new enum case would break an exhaustive `match` in your code). A client of the
@@ -945,6 +950,12 @@ Nothing else changes: one running timer per account, the period lock (also for l
 task checks, the time that follows a moved task (spec 217 FR-008) and the timer of a deleted account (closed and saved;
 the HA-M6 exception for deletes that run no bundle code still applies). People keep every overlap rule. The policy is
 asked on every write and its answer is never kept: keep it fast and free of request state (worker mode).
+
+**The policy must not throw, and must tolerate an account being deleted.** It is asked inside every timer stop, the stop
+that saves the running time of a user you are deleting included, where your account row may already be gone: answer
+false rather than failing for an unknown account. The bundle does not depend on that — an exception is caught, logged
+with its class only and read as "a person", so the entry is still written — but then an agent's entry is recorded as a
+person's.
 
 `ManualEntryService::create()` takes an optional `channel` too, for a finished entry logged through your API.
 

@@ -19,6 +19,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\PsrOnlyClock;
+use Nowo\TimeTrackBundle\Tests\Stub\RecordingTaskAccessChecker;
 use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
@@ -186,6 +187,9 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         // Since 1.25.0 (spec 234): the host's service-account policy (identifiers starting with `agent-`) and a host
         // controller over HostTimerApi for a token principal.
         $container->services()->set(StubServiceAccountPolicy::class)->public();
+        // Audit PA-1: a host access checker stricter than the task provider (used where a test sets
+        // `client_api.task_access_checker`): it refuses `task-2`, which StubTaskProvider happily resolves.
+        $container->services()->set(RecordingTaskAccessChecker::class)->args([['task-2']])->public();
         $container->services()->alias(ServiceAccountPolicyInterface::class, StubServiceAccountPolicy::class);
         $container->services()->set(HostTimerTestController::class)->autowire()->public()->tag('controller.service_arguments');
         if ($this->psrOnlyClock) {

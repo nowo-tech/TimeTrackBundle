@@ -17,10 +17,13 @@ use Nowo\TimeTrackBundle\Event\TimerStopEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
@@ -34,10 +37,13 @@ use Nowo\TimeTrackBundle\Timer\TimerEntrySnapshot;
 use Nowo\TimeTrackBundle\Timer\TimerSnapshot;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_map;
+use function sort;
 
 /**
  * Since 1.25.0 (Beacon spec 234 FR-023 / FR-024, SC-005): the host timer API for token principals.
@@ -202,6 +208,74 @@ final class HostTimerApiTest extends TestCase
         }
     }
 
+    public function testTheHostAccessCheckerDecidesBeforeTheTaskProviderAndBeforeAnythingIsStopped(): void
+    {
+        // Audit PA-1: a permissive catalogue provider plus a strict host policy (Beacon's per-token board scope): the
+        // policy must win, as it does on POST timer/start.
+        $deny = new class implements TaskAccessCheckerInterface {
+            /** @var list<string> */
+            public array $asked = [];
+
+            public bool $answer = false;
+
+            public function canTrack(UserInterface $user, string $taskId): bool
+            {
+                $this->asked[] = $taskId;
+
+                return $this->answer;
+            }
+        };
+        $timers = new InMemoryActiveTimerRepository();
+        $api    = $this->api($timers, $deny);
+
+        $deny->answer = true;
+        $api->start($this->ref($this->agent), 'task-1', null, 'mcp');
+        $deny->answer = false;
+
+        try {
+            $api->start($this->ref($this->agent), 'task-2', null, 'mcp');
+            self::fail('the access checker refuses the task');
+        } catch (TaskNotTrackableException) {
+            // The same exception as an unknown task: the caller cannot tell "not allowed" from "does not exist".
+        }
+        self::assertSame(['task-1', 'task-2'], $deny->asked, 'asked on every start');
+        self::assertSame('task-1', $api->current($this->ref($this->agent))?->taskId, 'the running timer is untouched');
+        self::assertCount(0, $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14')), 'nothing was stopped or recorded');
+
+        // The refusal is the same exception as an unknown task, so the caller learns nothing about what it may not see.
+        $this->expectException(TaskNotTrackableException::class);
+        $this->api(new InMemoryActiveTimerRepository(), $deny)->start($this->ref($this->agent), 'missing-task', null, 'mcp');
+    }
+
+    public function testAPolicyThatThrowsIsReadAsAPersonAndIsLogged(): void
+    {
+        // Audit PA-3: the policy reads a repository and fails for an account being deleted; the stop must still record.
+        $failing = new class implements ServiceAccountPolicyInterface {
+            public function isServiceAccount(TimeTrackUserRef $account): bool
+            {
+                throw new RuntimeException('account row is gone');
+            }
+        };
+        $timers  = new InMemoryActiveTimerRepository();
+        $service = new TimerService(new StubTaskProvider(), $timers, $this->entries, $this->dispatcher, $this->clock, $this->logger, serviceAccounts: $failing);
+        $api     = new HostTimerApi($service, new TaskProviderTaskAccessChecker(new StubTaskProvider()));
+
+        $api->start($this->ref($this->agent), 'task-1', null, 'mcp');
+        $entry = $api->stop($this->ref($this->agent));
+        self::assertNotNull($entry);
+        self::assertFalse($entry->serviceAccount, 'read as a person rather than losing the entry');
+
+        $failed = $this->records('service_account_policy', 'warning');
+        self::assertCount(1, $failed);
+        self::assertSame(['bundle' => 'time_track', 'action' => 'service_account_policy', 'exception' => RuntimeException::class], $failed[0]['context']);
+        self::assertNotContains('agent-executor@example.com', $this->logger->contextValues());
+
+        // The stop that saves a deleted user's running time (HA-M6) is the reason this must not throw.
+        $service->start($this->agent, 'task-2', ClientType::Web);
+        self::assertNotNull($service->stopForUserDeletion($this->agent));
+        self::assertNull($service->getActive($this->agent));
+    }
+
     public function testAReferenceWithoutTheSecurityUserIsRefused(): void
     {
         $this->expectException(LogicException::class);
@@ -217,7 +291,7 @@ final class HostTimerApiTest extends TestCase
         self::assertSame(['note' => 'n'], $service->getActive($this->person)?->getMetadata());
         $entry = $service->stop($this->person);
         self::assertSame([null, false], [$entry?->channel(), $entry?->isServiceAccount()]);
-        self::assertNull((new HostTimerApi($service))->current($this->ref($this->person)));
+        self::assertNull((new HostTimerApi($service, new TaskProviderTaskAccessChecker(new StubTaskProvider())))->current($this->ref($this->person)));
     }
 
     public function testAStoredChannelThatIsNotALabelIsIgnored(): void
@@ -261,10 +335,18 @@ final class HostTimerApiTest extends TestCase
             self::fail('conflict expected');
         } catch (ActiveTimerConflictException $e) {
             self::assertNotNull($e->getPrevious());
+            // Audit PA-2: the entries this call already committed are named on the exception, so a 409 can report them.
+            $conflict = $e;
         }
         self::assertSame(TimerService::REPLACE_ATTEMPTS, $timers->saves);
         self::assertSame('task-3', $api->current($this->ref($this->agent))?->taskId, 'the last racer\'s timer runs');
-        self::assertCount(TimerService::REPLACE_ATTEMPTS - 1, $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14')));
+        $recorded = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14'));
+        self::assertCount(TimerService::REPLACE_ATTEMPTS - 1, $recorded);
+        $ids   = array_map(static fn (TimeEntry $entry): string => $entry->getId(), $recorded);
+        $named = $conflict->stoppedEntryIds;
+        sort($ids);
+        sort($named);
+        self::assertSame($ids, $named, 'every committed entry is named on the conflict');
     }
 
     public function testUnderTheAccountLockALaterStartIsSeenAndStopped(): void
@@ -300,7 +382,7 @@ final class HostTimerApiTest extends TestCase
                 return $operation();
             }
         };
-        $api   = new HostTimerApi(new TimerService(new StubTaskProvider(), $timers, $entries, $this->dispatcher, $this->clock, $this->logger, serviceAccounts: $this->policy));
+        $api   = new HostTimerApi(new TimerService(new StubTaskProvider(), $timers, $entries, $this->dispatcher, $this->clock, $this->logger, serviceAccounts: $this->policy), new TaskProviderTaskAccessChecker(new StubTaskProvider()));
         $start = $api->start($this->ref($this->agent), 'task-1', null, 'mcp');
         self::assertSame(['task-3'], array_map(static fn (TimerEntrySnapshot $entry): string => $entry->taskId, $start->stoppedEntries));
         self::assertSame(2, $entries->locked);
@@ -342,9 +424,11 @@ final class HostTimerApiTest extends TestCase
         self::assertSame(['1', '1'], $this->policy->asked);
     }
 
-    private function api(?ActiveTimerRepositoryInterface $timers = null): HostTimerApi
+    private function api(?ActiveTimerRepositoryInterface $timers = null, ?TaskAccessCheckerInterface $taskAccess = null): HostTimerApi
     {
-        return new HostTimerApi($this->service($timers ?? new InMemoryActiveTimerRepository()));
+        $tasks = new StubTaskProvider();
+
+        return new HostTimerApi($this->service($timers ?? new InMemoryActiveTimerRepository()), $taskAccess ?? new TaskProviderTaskAccessChecker($tasks));
     }
 
     private function service(ActiveTimerRepositoryInterface $timers): TimerService

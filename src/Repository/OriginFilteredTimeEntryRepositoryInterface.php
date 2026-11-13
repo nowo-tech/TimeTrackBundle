@@ -27,6 +27,11 @@ interface OriginFilteredTimeEntryRepositoryInterface
     /**
      * Number of the users' entries started within the period that pass the filter.
      *
+     * Audit PA-4: the count is a SQL `COUNT` on the same conditions, so it does **not** repeat the page's PHP re-check of
+     * the channel. For every value the bundle writes the two agree (a channel is `[a-z0-9_]{1,16}`, which no collation
+     * folds). They can differ only for rows written by hand outside the bundle, whose channel differs from the filter's
+     * by case, accent or trailing space on a folding collation: the count may then include a row the page leaves out.
+     *
      * @param list<string> $userIds User ids (none: 0)
      */
     public function countByUsersPeriodAndOrigin(array $userIds, DateTimeImmutable $from, DateTimeImmutable $to, TimeEntryOriginFilter $filter): int;

@@ -409,7 +409,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         }
         $container->setDefinition(HostTimerApi::class, (new Definition(HostTimerApi::class))
             ->setPublic(true)
-            ->setArgument('$timers', new Reference(TimerService::class)));
+            ->setArgument('$timers', new Reference(TimerService::class))
+            // Audit PA-1: the same access checker the client API asks (`client_api.task_access_checker`, or the 1.23 twin).
+            ->setArgument('$taskAccess', new Reference(TaskAccessCheckerInterface::class)));
     }
 
     /**
