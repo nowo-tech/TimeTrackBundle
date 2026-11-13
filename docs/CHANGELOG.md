@@ -91,6 +91,10 @@ Target **1.24.1** (patch). See [UPGRADING](UPGRADING.md#to-1241) for the detecti
   `user_mapping: id`, like the other entry listings.
 - CI: the functional suite also runs on MySQL 8.4 and MariaDB 11.4.
 
+### Documentation
+
+- `docs/SECURITY.md`: replace the outdated "Pass (conditional) recorded" checklist cell with the latest audits (Appendices OA, NP, NG) and their dates (REQ-SEC-001 / REQ-SEC-004).
+
 ## [1.24.0] - 2026-11-13
 
 Target **1.24.0** (minor, new public API).
