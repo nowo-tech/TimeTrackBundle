@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.24.2](#to-1242)
 - [To 1.24.1](#to-1241)
 - [To 1.24.0](#to-1240)
 - [To 1.23.1](#to-1231)
@@ -85,7 +86,7 @@
 <!-- Release checklist (audit PA-5): the chore(release) commit renames this heading to `## To 1.25.0` and adds its TOC
      entry; USAGE already links to `UPGRADING.md#to-1250`, which only resolves once that rename happened. -->
 
-Target **1.25.0** (minor), from **1.24.1**: `composer update nowo-tech/time-track-bundle`.
+Target **1.25.0** (minor), from **1.24.2**: `composer update nowo-tech/time-track-bundle`.
 
 **Schema migration required (every host).** `time_track_entries` gets `channel` (`VARCHAR(16)`, null) and
 `service_account` (boolean, not null, default false), and the index `idx_time_track_entries_origin` on
@@ -114,15 +115,29 @@ Nothing else to change: without a policy everyone is a person and every rule is 
   export gains the columns `channel` and `service_account` at the end, and the personal-data export rows gain `channel`
   and `serviceAccount`. A consumer that requires an exact set of keys or columns must accept them.
 - **Timer metadata**: the key `channel` is reserved; a client-supplied value is dropped at start, like `closed_by`.
+  `closed_by` is now also dropped from the metadata of `ManualEntryService::create()`; a timer replaced by a
+  `HostTimerApi` start gets `closed_by: replaced` (`TimeEntry::closedBy()`).
 - **Your access checker decides the host timer too**: `HostTimerApi::start()` asks `client_api.task_access_checker` (or
   its 1.23 twin `TaskAccessPolicyInterface`) before the task provider, as `POST timer/start` does. If your checker is
   stricter than your provider, a token principal now gets `TaskNotTrackableException` where 1.25.0's first draft would
   have started the timer.
-  `closed_by` is now also dropped from the metadata of `ManualEntryService::create()`; a timer replaced by a
-  `HostTimerApi` start gets `closed_by: replaced` (`TimeEntry::closedBy()`).
 - If you construct `TimerService` or `ManualEntryService` by hand, they take an optional trailing `$serviceAccounts`
   argument.
 - Coming in 2.0: a dedicated entry source for `HostTimerApi` entries (they are `web` in 1.x).
+
+## To 1.24.2
+
+From **1.24.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Target **1.24.2** (patch), from **1.24.1**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+API change, and nothing to do.
+
+- If your tenant scope keys are **numeric** (`42`, `100`), re-run `nowo:time-track:entries:backfill-scope` on
+  PostgreSQL: before 1.24.2 the command could fail there, because such a key reached the query as an integer.
 
 ## To 1.24.1
 

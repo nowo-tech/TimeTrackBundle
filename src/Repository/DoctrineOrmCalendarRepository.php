@@ -79,7 +79,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
             ->getQuery()
             ->getResult();
 
-        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, self::connectionsIn($rows, $scopeKey), [$userId])[0] ?? null;
+        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $this->connectionsIn($rows, $scopeKey), [$userId])[0] ?? null;
     }
 
     /**
@@ -101,7 +101,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
         /** @var list<CalendarConnection> $result */
         $result = $query->getQuery()->getResult();
 
-        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $scopeKey === null ? $result : self::connectionsIn($result, $scopeKey), [$userId]);
+        return ExactUserIds::keep($this->entityManager, CalendarConnection::class, $scopeKey === null ? $result : $this->connectionsIn($result, $scopeKey), [$userId]);
     }
 
     /**
@@ -111,7 +111,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
      *
      * @return list<CalendarConnection>
      */
-    private static function connectionsIn(array $connections, string $scopeKey): array
+    private function connectionsIn(array $connections, string $scopeKey): array
     {
         return ScopeKeys::keep($connections, $scopeKey, static fn (CalendarConnection $connection): string => $connection->getScopeKey());
     }

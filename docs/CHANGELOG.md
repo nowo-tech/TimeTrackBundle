@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.24.2] - 2026-11-13](#1242---2026-11-13)
 - [[1.24.1] - 2026-11-13](#1241---2026-11-13)
 - [[1.24.0] - 2026-11-13](#1240---2026-11-13)
 - [[1.23.1] - 2026-11-12](#1231---2026-11-12)
@@ -65,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Timer for token principals** (Beacon spec 234 FR-023 / FR-024, AI Flow on Beacon tasks). `Timer\HostTimerApi` (public service) gives your own controllers `start()`, `stop()` and `current()` for a principal without an app password (an API token, an MCP session), taking the account as a `TimeTrackUserRef` with its security user object. Authorisation stays in the host; the task is checked through the configured task provider / access checker and the period lock as for every timer. One running timer per account: a start while one runs stops it first and reports its entry (`HostTimerStart::$stopped`); only the actor's own timer is ever touched, so an agent never stops a person's timer. The replaced timer's entry is marked `closed_by: replaced` (reserved metadata key, stripped from client timer metadata and manual entries), exposed typed as `TimeEntry::closedBy()` (`replaced`, `user_deletion` or null) and `TimerEntrySnapshot::$closedBy`. Concurrent starts: each attempt checks and inserts under the account's row lock; a start that does not take it (client API) and wins the unique index in between is answered by a retry, up to 3 attempts (`TimerService::REPLACE_ATTEMPTS`), the last call wins and every stopped timer is recorded once; the replaced timer is logged at `info` (`timer_replace`) with the entry id and the account id only. Framework-free results: `TimerSnapshot`, `TimerEntrySnapshot`, `HostTimerStart`. The app-password client API is unchanged. The task is checked through `client_api.task_access_checker` (or its 1.23 twin `TaskAccessPolicyInterface`) **and** the task provider, the same two checks as `POST timer/start` (audit PA-1), before anything is stopped. When concurrent starts exhaust the attempts, the ids of the entries the call already recorded are on `ActiveTimerConflictException::$stoppedEntryIds` (audit PA-2).
+- **Timer for token principals** (Beacon spec 234 FR-023 / FR-024, AI Flow on Beacon tasks). `Timer\HostTimerApi` (public service) gives your own controllers `start()`, `stop()` and `current()` for a principal without an app password (an API token, an MCP session), taking the account as a `TimeTrackUserRef` with its security user object. Authorisation stays in the host; the period lock applies as for every timer. One running timer per account: a start while one runs stops it first and reports its entry (`HostTimerStart::$stopped`); only the actor's own timer is ever touched, so an agent never stops a person's timer. The replaced timer's entry is marked `closed_by: replaced` (reserved metadata key, stripped from client timer metadata and manual entries), exposed typed as `TimeEntry::closedBy()` (`replaced`, `user_deletion` or null) and `TimerEntrySnapshot::$closedBy`. Concurrent starts: each attempt checks and inserts under the account's row lock; a start that does not take it (client API) and wins the unique index in between is answered by a retry, up to 3 attempts (`TimerService::REPLACE_ATTEMPTS`), the last call wins and every stopped timer is recorded once; the replaced timer is logged at `info` (`timer_replace`) with the entry id and the account id only. Framework-free results: `TimerSnapshot`, `TimerEntrySnapshot`, `HostTimerStart`. The app-password client API is unchanged. The task is checked through `client_api.task_access_checker` (or its 1.23 twin `TaskAccessPolicyInterface`) **and** the task provider, the same two checks as `POST timer/start` (audit PA-1), before anything is stopped. When concurrent starts exhaust the attempts, the ids of the entries the call already recorded are on `ActiveTimerConflictException::$stoppedEntryIds` (audit PA-2).
 - **Service accounts** (spec 234 FR-023). Host port `Integration\ServiceAccountPolicyInterface::isServiceAccount(TimeTrackUserRef): bool` (framework-free, REQ-ARCH-001 rule 3), configured with `service_account_policy` or an alias; default `NoServiceAccountPolicy` (everyone is a person). A service account's entries may overlap, its own and other accounts': `ManualEntryService` does not refuse `overlap` for it and a backdated start is not clamped to its latest entry. People keep every overlap rule; the period lock, the task-move rules (spec 217 FR-008) and the deleted-account timer (HA-M6 exception) are unchanged. The policy is asked on every write and never memoised (worker mode); it must not throw and must tolerate an account being deleted — an exception is caught, logged (the class only) and read as "a person", so the stop that saves a deleted user's running time is never lost (audit PA-3).
 - **Entry channel and service-account mark** (Beacon review of the 1.25 API). `time_track_entries.channel` (`VARCHAR(16)`, null) and `service_account` (boolean, default false), index `idx_time_track_entries_origin (service_account, channel, started_at)`. Typed accessors `TimeEntry::channel()` / `isServiceAccount()`, also on `TimeEntryView`, `TimerEntrySnapshot`, the client API entry shape (`channel`, `serviceAccount`), the personal-data export rows and the CSV export (`channel`, `service_account`). Channel labels are 1 to 16 characters of `a-z`, `0-9` and `_` (`Timer\TimerChannel`), refused otherwise (REQ-SEC-006); a client of the client API cannot forge it through timer metadata. `ManualEntryService::create()` takes an optional `channel`.
 - **Origin filter** for the entries store: `Repository\OriginFilteredTimeEntryRepositoryInterface` (`findPageByUsersPeriodAndOrigin()`, `countByUsersPeriodAndOrigin()`) with `TimeEntryOriginFilter` (channel, service account, no channel), implemented by the Doctrine store with SQL conditions and PHP re-checks.
@@ -77,6 +78,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - `HostTimerApiTest` (start / stop / current, replace and report, agent versus person, two concurrent starts and the exhausted retries, the account lock, refusals leave the timer untouched, no personal data in the replace log), `ServiceAccountEntriesTest` (overlaps per account and across accounts, people's rules unchanged, backdate clamp, idle reassign, accessors, CSV, filter look-alikes), `HostTimerApiDatabaseTest` (columns, origin filter on SQLite / MySQL / PostgreSQL, a start that loses the unique index on the real Doctrine stack) and `HostTimerWorkerModeTest` (REQ-RUNTIME-002: a person and two agents through one kernel kept alive without the services resetter, `http_kernel` handle / terminate). Audit PA: `HostTimerAccessCheckerTest` (the host checker refuses a task the provider resolves, on the host timer, the client API and `POST entries` alike), the host-timer case of `TwinClientPortsTest` (the same through the 1.23 `TaskAccessPolicyInterface` gate), a denying checker and a throwing policy in `HostTimerApiTest`, and the stopped-entry ids on an exhausted conflict.
+
+## [1.24.2] - 2026-11-13
+
+Target **1.24.2** (patch): test and code hygiene of the 1.24.1 security fix, no behaviour change for a host whose scope
+keys are not numeric.
+
+### Fixed
+
+- `DoctrineOrmTimeEntryRepository::assignScopeKeys()` (`nowo:time-track:entries:backfill-scope`) bound a **numeric**
+  scope key such as `42` as an integer: PHP array keys made it an `int`, and the `(string)` cast that hid it was
+  redundant only by appearance. PostgreSQL refuses an integer parameter for a `varchar` column, so the back-fill of a
+  host with numeric scope keys could fail. The scope now travels in the value, as a string.
+
+### Tests
+
+- 100 % statement coverage again (the release gate): the 1.24.1 paths that had none are covered now — the import
+  writer's two `ScopeKeys::isUsable()` refusals (a scope key from the host provider, and the target scope of an owner
+  move) and the metadata listener's fatal scope-column check with `user_mapping: id` for an entity that has a scope but
+  no person reference, plus a server-version query that fails.
+
+### Changed
+
+- Rector hygiene on the 1.24.1 code: four private scope helpers in the timesheet, ledger, calendar and entry stores are
+  called on the instance instead of `self::`, and two redundant casts are gone. No behaviour change.
 
 ## [1.24.1] - 2026-11-13
 
@@ -1688,7 +1713,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.2...HEAD
+[1.24.2]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.1...v1.24.2
 [1.24.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.0...v1.24.1
 [1.24.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.1...v1.24.0
 [1.23.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.0...v1.23.1

@@ -363,6 +363,19 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         self::assertStringContainsString('Placed 0 entries', $tester->getDisplay());
     }
 
+    public function testANumericScopeKeyIsAssignedAsAString(): void
+    {
+        // Since 1.24.2: a scope key like "42" is a numeric array key in PHP, so it must not reach the parameter as an
+        // int (PostgreSQL refuses an integer for a varchar column).
+        $repository = new DoctrineOrmTimeEntryRepository($this->entityManager());
+        $entry      = new TimeEntry($this->user, 'task-1', 'T', null, new DateTimeImmutable('2026-11-03 09:00:00'), new DateTimeImmutable('2026-11-03 10:00:00'), 3600, TimeEntrySource::Web);
+        $repository->save($entry);
+
+        self::assertSame(1, $repository->assignScopeKeys([$entry->getId() => '42']));
+        $this->entityManager()->clear();
+        self::assertSame('42', (string) $this->entityManager()->getConnection()->fetchOne('SELECT scope_key FROM time_track_entries WHERE id = ?', [$entry->getId()]));
+    }
+
     /**
      * @param list<string> $ids
      *

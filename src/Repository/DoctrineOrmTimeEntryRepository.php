@@ -561,8 +561,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             /** @var list<array{id: string, userId: int|string, scopeKey: string}> $batch */
             $batch = $query->setParameter('after', $after)->getQuery()->getArrayResult();
             foreach ($batch as $row) {
-                $after                                                   = $row['id'];
-                $rows[(string) $row['userId'] . "\0" . $row['scopeKey']] = $row;
+                $after                                          = $row['id'];
+                $rows[$row['userId'] . "\0" . $row['scopeKey']] = $row;
             }
         } while (count($batch) === self::EXACT_BATCH);
         $userClass = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
@@ -607,18 +607,23 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function assignScopeKeys(array $scopeKeys): int
     {
+        // Since 1.24.2: the scope key travels in the value, not in the array key: a numeric key such as "42" would be an
+        // int there and would be bound as an integer (refused by PostgreSQL on a varchar column).
+        /** @var array<string, array{scope: string, ids: list<string>}> $byScope */
         $byScope = [];
         foreach ($scopeKeys as $entryId => $scopeKey) {
-            $byScope[ScopeKeys::assertUsable((string) $scopeKey)][] = (string) $entryId;
+            $scope                    = ScopeKeys::assertUsable((string) $scopeKey);
+            $byScope[$scope]['scope'] = $scope;
+            $byScope[$scope]['ids'][] = (string) $entryId;
         }
         $changed = 0;
-        foreach ($byScope as $scopeKey => $ids) {
+        foreach ($byScope as ['scope' => $scope, 'ids' => $ids]) {
             $changed += (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                 ->update(TimeEntry::class, 'e')
                 ->set('e.scopeKey', ':scope')
                 ->where('e.id IN (:ids)')
                 ->andWhere('e.scopeKey IS NULL')
-                ->setParameter('scope', (string) $scopeKey)
+                ->setParameter('scope', $scope)
                 ->setParameter('ids', $ids)
                 ->getQuery(), $this->entityManager);
             $this->detachRemoved($ids);
