@@ -373,13 +373,13 @@ jobs:
           composer require symfony/config:^7.4 symfony/dependency-injection:^7.4 symfony/form:^7.4 symfony/framework-bundle:^7.4 symfony/http-foundation:^7.4 symfony/http-kernel:^7.4 symfony/routing:^7.4 symfony/twig-bundle:^7.4 symfony/web-profiler-bundle:^7.4 doctrine/doctrine-bundle:^2.10 --no-interaction --no-update
           composer update symfony/* doctrine/* --with-all-dependencies --no-interaction --prefer-dist --no-progress
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (fails below 100%, REQ-TEST-003)
         env:
           SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
         run: |
           echo "🧪 Running tests with coverage..."
           rm -rf .phpunit.cache
-          composer test-coverage
+          composer test-coverage-100
           if [ $? -ne 0 ]; then
             echo "❌ ERROR: Tests failed"
             exit 1
