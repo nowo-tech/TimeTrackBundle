@@ -80,13 +80,20 @@ Target **1.24.1** (patch). See [UPGRADING](UPGRADING.md#to-1241) for the detecti
     `===`; the exact match happens before `LIMIT`, and chains / (owner, scope) pairs are told apart in PHP instead of
     with a folding SQL `DISTINCT`.
   - Scope keys with a leading or trailing space, another blank, a control, format or invisible character or invalid
-    UTF-8 are refused before anything is written (`TimesheetScope`, the entities, the import writer, the back-fill
-    command).
+    UTF-8 are never stored: the entities and the import writer refuse them; from the host scope provider such a key
+    counts as no scope (`scopeKeyForTask()`: the timer stop or manual entry is still saved) or its scope is left out
+    (`scopesFor()`), with a warning, as in the back-fill command. Private-use, unassigned and surrogate code points are
+    refused too.
+  - The `ALTER` of UPGRADING "To 1.24.1" is required: until it runs, the folding unique keys block look-alike scopes.
 
 ### Fixed
 
 - REQ-SEC-006 item 8: the metadata listener logs a warning when it falls back to the PAD SPACE `utf8mb4_bin`
-  collation (MySQL before 8.0.17, or a `server_version` without the patch number).
+  collation (MySQL before 8.0.17, now also detected on the MySQL 8.0 platform, or a `server_version` without the patch
+  number).
+- `time-track:timesheets:auto-lock` no longer stops at the first period it cannot lock: it logs it, goes on and exits
+  with a failure.
+- The (owner, scope) pairs of the auto-lock and the ledger chains of the purge and `verify` are read in keyset batches.
 - Ownerless entry pages (`findPageWithOwnerless`, `countWithOwnerless`) re-check the owner ids byte for byte with
   `user_mapping: id`, like the other entry listings.
 - CI: the functional suite also runs on MySQL 8.4 and MariaDB 11.4.

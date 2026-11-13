@@ -36,13 +36,16 @@ final class FixedScopeProvider implements TimesheetScopeProviderInterface
     /** @var list<string> task ids whose scope lookup throws (host failure inside a write transaction) */
     public array $failForTasks = [];
 
+    /** @var array<string, string> task id => scope key answered as it is (e.g. an unusable legacy key) */
+    public array $taskScopes = [];
+
     public function scopeKeyForTask(UserInterface $user, string $taskId, ?string $boardId): string
     {
         if (in_array($taskId, $this->failForTasks, true)) {
             throw new RuntimeException('scope store down');
         }
 
-        return $boardId === 'board-2' ? 'org-b' : 'org-a';
+        return $this->taskScopes[$taskId] ?? ($boardId === 'board-2' ? 'org-b' : 'org-a');
     }
 
     public function scopeKeysForEntries(array $entries): array

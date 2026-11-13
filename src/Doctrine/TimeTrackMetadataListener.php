@@ -29,8 +29,11 @@ use Throwable;
 
 use function array_replace_recursive;
 use function in_array;
+use function is_string;
 use function ltrim;
+use function preg_match;
 use function sprintf;
+use function version_compare;
 
 /**
  * Applies configurable table prefix and user entity mapping to time track entities. Since 1.23.0 with
@@ -183,11 +186,36 @@ final readonly class TimeTrackMetadataListener
 
         return match (true) {
             $platform instanceof MariaDBPlatform       => ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_nopad_bin'],
-            $platform instanceof MySQL80Platform       => ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_0900_bin'],
+            $platform instanceof MySQL80Platform       => $this->mysql8Options($args),
             $platform instanceof AbstractMySQLPlatform => $this->padFallback($args),
             $platform instanceof SQLServerPlatform     => ['collation' => 'Latin1_General_100_BIN2'],
             default                                    => [],
         };
+    }
+
+    /**
+     * Since 1.24.1 (audit OM TT-I2): `utf8mb4_0900_bin` exists from MySQL 8.0.17 only, so an older 8.0 server (by the
+     * configured `server_version`, else the server's own version) falls back to `utf8mb4_bin` with a warning.
+     *
+     * @return array<string, string>
+     */
+    private function mysql8Options(LoadClassMetadataEventArgs $args): array
+    {
+        $connection = $args->getEntityManager()->getConnection();
+        $params     = $connection->getParams();
+        $version    = $params['serverVersion'] ?? $params['primary']['serverVersion'] ?? null;
+        if (!is_string($version)) {
+            try {
+                $version = $connection->getServerVersion();
+            } catch (Throwable) {
+                $version = null;
+            }
+        }
+        if (is_string($version) && preg_match('/^\d+\.\d+\.\d+/', $version, $match) === 1 && version_compare($match[0], '8.0.17', '<')) {
+            return $this->padFallback($args);
+        }
+
+        return ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_0900_bin'];
     }
 
     /**

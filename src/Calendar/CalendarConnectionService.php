@@ -14,9 +14,12 @@ use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -55,6 +58,7 @@ final readonly class CalendarConnectionService
         private ?EventDispatcherInterface $eventDispatcher = null,
         ?ClockInterface $clock = null,
         ?UserReferenceResolverInterface $userReferences = null,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -77,7 +81,8 @@ final readonly class CalendarConnectionService
         if (!$this->isEnabled()) {
             return null;
         }
-        $scopes = $this->scopeProvider?->scopesFor($user) ?? [];
+        // Since 1.24.1 (audit OM TT-L2): a scope whose key is not usable is left out with a warning.
+        $scopes = ScopeKeys::usableScopes($this->scopeProvider?->scopesFor($user) ?? [], $this->logger);
         if ($requested === null) {
             return $scopes[0] ?? null;
         }

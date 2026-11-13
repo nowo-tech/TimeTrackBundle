@@ -97,14 +97,21 @@ Only hosts whose scope keys differ by case, accent or trailing space are affecte
   older MySQL. PostgreSQL and SQLite already compare exactly; no change there.
 - The timesheet, ledger, calendar and entry stores re-check the scope key of every row with `===`, and the exact match
   happens before `LIMIT` (approval queue, latest locked timesheet, ledger head, verify ids, ownerless entry pages), so
-  they are safe before you run the `ALTER` too.
-- Scope keys with a leading or trailing space, another blank (NBSP, ideographic space…), a control, format or invisible
-  character (ZWSP, BOM, bidi marks) or invalid UTF-8 are refused: `TimesheetScope` and the entities throw
-  `InvalidArgumentException`, the import writer throws `InvalidImportedTimeEntryException` (`scopeKey` /
-  `person.scopeKey`, rule `pattern`), and `time-track:entries:backfill-scope` leaves such entries without a scope. An
-  inner ASCII space stays allowed. Your scope provider must return keys as they are stored, never trimmed.
-- REQ-SEC-006 item 8: when the bundle falls back to `utf8mb4_bin` it logs a warning. A `doctrine.dbal.server_version`
-  without the patch number (`8`, `8.0`) selects that fallback on MySQL 8: set the full version (e.g. `8.0.32`,
+  they never return another scope's row, also before you run the `ALTER` (which is still required, see 2.).
+- Scope keys with a leading or trailing space, another blank (NBSP, ideographic space…), a control, format,
+  private-use, unassigned or invisible character (ZWSP, BOM, bidi marks) or invalid UTF-8 are never stored or used:
+  - from your scope provider: a scope in `scopesFor()` with such a key is left out, and such a key from
+    `scopeKeyForTask()` counts as no scope (the timer stop or the manual entry is still saved, without a scope); both
+    log a warning, as `time-track:entries:backfill-scope` does when it leaves such entries without a scope;
+  - the entities throw `InvalidArgumentException`, and the import writer throws `InvalidImportedTimeEntryException`
+    (`scopeKey` / `person.scopeKey`, rule `pattern`).
+
+  An inner ASCII space stays allowed. Your scope provider must return keys as they are stored, never trimmed.
+- `time-track:timesheets:auto-lock` logs a period it cannot lock (e.g. `conflict`), goes on with the others and exits
+  with a failure at the end, instead of stopping at the first error.
+- REQ-SEC-006 item 8: when the bundle falls back to `utf8mb4_bin` it logs a warning. This happens on MySQL before
+  8.0.17 (no `utf8mb4_0900_bin`), and a `doctrine.dbal.server_version` without the patch number (`8`, `8.0`) selects it
+  on MySQL 8 too: set the full version (e.g. `8.0.32`,
   `8.4.3`, `10.11.6-MariaDB`) and clear the cache.
 
 **1. Detection: run these queries BEFORE the `ALTER`** (MySQL / MariaDB; adjust the table names to your
@@ -144,11 +151,13 @@ What to do with the results:
 - b) Such rows stay readable only through a lookup with the exact same bytes, which the bundle no longer accepts: fix
   them to the key your provider returns (by `id`), or leave them unreachable.
 
-**2. The `ALTER`** (or generate it with `doctrine:migrations:diff` once `server_version` is the full version). Binary
-collations distinguish more values than folding ones, so it never fails on a unique key. It is recommended rather than
-required for safety: the stores re-check in PHP, but until you run it the folding unique keys
+**2. The `ALTER` is required** (or generate it with `doctrine:migrations:diff` once `server_version` is the full
+version). Binary collations distinguish more values than folding ones, so it never fails on a unique key. The stores
+re-check in PHP and never return another scope's row, but until you run it the three folding unique keys
 (`uniq_time_track_timesheets_period`, `uniq_time_track_balance_ledger_chain`, `uniq_time_track_calendar_connections`)
-refuse a second look-alike scope's row (a `conflict`, never the other scope's row) and the indexes match look-alikes.
+block look-alike scopes: a person in both `acme` and `Acme` cannot get a timesheet, a ledger chain or a calendar
+connection in the second one (`conflict`), and `time-track:timesheets:auto-lock` reports those periods and exits with a
+failure.
 
 ```sql
 -- MySQL >= 8.0.17 (use utf8mb4_nopad_bin on MariaDB, utf8mb4_bin on MySQL 5.7)

@@ -37,6 +37,7 @@ use Psr\Log\AbstractLogger;
 use RuntimeException;
 use Stringable;
 
+use function array_map;
 use function dirname;
 use function str_repeat;
 
@@ -63,6 +64,9 @@ final class ScopeKeysTest extends TestCase
         yield 'too long' => [str_repeat('b', 65)];
         yield 'only blanks' => ['   '];
         yield 'inner NBSP-like ideographic space' => ["b\u{3000}b"];
+        yield 'private use (audit OM TT-I2)' => ["bob\u{E000}"];
+        yield 'unassigned (audit OM TT-I2)' => ["bob\u{0378}"];
+        yield 'encoded surrogate (audit OM TT-I2)' => ["bob\xED\xA0\x80"];
     }
 
     #[DataProvider('unusableKeys')]
@@ -70,7 +74,6 @@ final class ScopeKeysTest extends TestCase
     {
         self::assertFalse(ScopeKeys::isUsable($key));
         foreach ([
-            'scope'     => static fn (): object => new TimesheetScope($key, 'Label'),
             'timesheet' => static fn (): object => new Timesheet(null, 'u-1', $key, Period::fromKey(TimesheetPeriodKind::Week, '2026-W45'), 'UTC', new DateTimeImmutable()),
             'ledger'    => static fn (): object => new BalanceLedgerLine(null, 'u-1', $key, '2026-11-02', LedgerKind::Opening, 60, new DateTimeImmutable(), null, 'x'),
             'rule'      => static fn (): object => new CalendarRule(new TestUser('u-1', 'u-1'), $key, 'standup', 'task-1', true, new DateTimeImmutable()),
@@ -83,6 +86,20 @@ final class ScopeKeysTest extends TestCase
                 self::addToAssertionCount(1);
             }
         }
+    }
+
+    public function testUnusableHostKeysAreNoScopeAndUnusableHostScopesAreLeftOut(): void
+    {
+        // Audit OM TT-L2: a legacy host key never fails a request; it is dropped with a warning.
+        $logger = $this->logger();
+        self::assertNull(ScopeKeys::fromHost('bob ', $logger, 'timer_entry_scope'));
+        self::assertSame('bob', ScopeKeys::fromHost('bob', $logger, 'timer_entry_scope'));
+        self::assertNull(ScopeKeys::fromHost(null, $logger, 'timer_entry_scope'));
+        self::assertCount(1, $logger->messages);
+
+        $scopes = [new TimesheetScope('bob', 'Bob'), new TimesheetScope("bob\u{200B}", 'Look-alike'), new TimesheetScope('Bob', 'Other')];
+        self::assertSame(['bob', 'Bob'], array_map(static fn (TimesheetScope $scope): string => $scope->key, ScopeKeys::usableScopes($scopes, $logger)));
+        self::assertCount(2, $logger->messages);
     }
 
     public function testLookAlikeKeysAreDistinctUsableKeys(): void
@@ -125,6 +142,14 @@ final class ScopeKeysTest extends TestCase
         self::assertArrayNotHasKey('collation', $options);
         self::assertStringContainsString('could not read the database platform', $logger->messages[0] ?? '');
 
+        // Audit OM TT-I2: MySQL 8.0 before 8.0.17 has no utf8mb4_0900_bin.
+        foreach (['8.0.16' => 'utf8mb4_bin', '8.0.17' => 'utf8mb4_0900_bin', '8.4.3' => 'utf8mb4_0900_bin'] as $version => $collation) {
+            $logger  = $this->logger();
+            $options = $this->metadata(Timesheet::class, UserMapping::RELATION, new MySQL80Platform(), $logger, $version)->fieldMappings['scopeKey']->options ?? [];
+            self::assertSame($collation, $options['collation'] ?? null, $version);
+            self::assertCount($collation === 'utf8mb4_bin' ? 1 : 0, $logger->messages, $version);
+        }
+
         // The id mapping keeps failing loudly.
         $this->expectException(LogicException::class);
         $this->metadata(Timesheet::class, UserMapping::ID, null);
@@ -151,7 +176,7 @@ final class ScopeKeysTest extends TestCase
      *
      * @return ClassMetadata<object>
      */
-    private function metadata(string $class, string $mapping, ?object $platform, ?AbstractLogger $logger = null): ClassMetadata
+    private function metadata(string $class, string $mapping, ?object $platform, ?AbstractLogger $logger = null, ?string $serverVersion = null): ClassMetadata
     {
         $metadata = new ClassMetadata($class);
         $metadata->initializeReflection(new RuntimeReflectionService());
@@ -162,6 +187,7 @@ final class ScopeKeysTest extends TestCase
         } else {
             $connection->method('getDatabasePlatform')->willReturn($platform);
         }
+        $connection->method('getParams')->willReturn($serverVersion === null ? [] : ['serverVersion' => $serverVersion]);
         $em = $this->createStub(EntityManagerInterface::class);
         $em->method('getConnection')->willReturn($connection);
         $listener = $logger === null

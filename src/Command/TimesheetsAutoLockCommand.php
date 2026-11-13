@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Command;
 use DateInterval;
 use DateTimeZone;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Exception\TimesheetException;
 use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -79,6 +80,7 @@ final class TimesheetsAutoLockCommand extends Command
         $to       = $now->sub(new DateInterval(sprintf('P%dD', $this->afterDays)));
         $from     = $to->sub(new DateInterval(sprintf('P%dD', $lookback)));
         $locked   = 0;
+        $failed   = 0;
         foreach ($owners->ownersWithEntries($from, $to) as ['user' => $owner, 'scopeKey' => $scopeKey]) {
             $timezone = $this->timezoneResolver->resolve($owner, $scopeKey);
             // @igor-ignore - immutable local value of this run, not a shared service.
@@ -94,13 +96,25 @@ final class TimesheetsAutoLockCommand extends Command
                 }
             }
             foreach ($periods as $period) {
-                if ($this->timesheets->autoLock($owner, $scopeKey, $period) instanceof Timesheet) {
-                    ++$locked;
+                // Since 1.24.1 (audit OM TT-M1): a period that cannot be locked (e.g. `conflict` on a still-folding unique
+                // key of a look-alike scope, see UPGRADING "To 1.24.1") is logged and skipped; the run goes on and fails.
+                try {
+                    if ($this->timesheets->autoLock($owner, $scopeKey, $period) instanceof Timesheet) {
+                        ++$locked;
+                    }
+                } catch (TimesheetException $exception) {
+                    ++$failed;
+                    $this->logger->warning('TimeTrack timesheet auto-lock skipped a period.', ['bundle' => 'time_track', 'action' => 'timesheets_auto_lock', 'reason' => $exception->errorCode(), 'period' => $period->key]);
                 }
             }
         }
 
-        $this->logger->info('TimeTrack timesheet auto-lock finished.', ['bundle' => 'time_track', 'action' => 'timesheets_auto_lock', 'locked' => $locked]);
+        $this->logger->info('TimeTrack timesheet auto-lock finished.', ['bundle' => 'time_track', 'action' => 'timesheets_auto_lock', 'locked' => $locked, 'failed' => $failed]);
+        if ($failed > 0) {
+            $io->error(sprintf('Locked %d period(s); %d period(s) could not be locked (see the log).', $locked, $failed));
+
+            return Command::FAILURE;
+        }
         $io->success(sprintf('Locked %d period(s).', $locked));
 
         return Command::SUCCESS;

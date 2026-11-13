@@ -539,24 +539,32 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     public function ownersWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
     {
         // Since 1.24.1 (REQ-SEC-006): the pairs are told apart byte for byte in PHP (a SQL DISTINCT on a still-folding
-        // column merged `acme` and `Acme`, so one of them never had its timesheet locked).
-        /** @var list<array{userId: int|string, scopeKey: string}> $all */
-        $all = $this->entityManager->createQueryBuilder()
-            ->select('IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey')
+        // column merged `acme` and `Acme`, so one of them never had its timesheet locked), reading the entries in keyset
+        // batches (audit OM TT-I1): only the distinct pairs stay in memory.
+        $query = $this->entityManager->createQueryBuilder()
+            ->select('e.id AS id', 'IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey')
             ->from(TimeEntry::class, 'e')
             ->where('e.scopeKey IS NOT NULL')
             // Since 1.15: ownerless entries have no timesheet to create.
             ->andWhere('e.user IS NOT NULL')
             ->andWhere('e.startedAt >= :from')
             ->andWhere('e.startedAt <= :to')
+            ->andWhere('e.id > :after')
             ->setParameter('from', $from)
             ->setParameter('to', $to)
-            ->getQuery()
-            ->getArrayResult();
-        $rows = [];
-        foreach ($all as $row) {
-            $rows[(string) $row['userId'] . "\0" . $row['scopeKey']] = $row;
-        }
+            ->orderBy('e.id', SortDirection::Ascending)
+            ->setMaxResults(self::EXACT_BATCH);
+        $rows  = [];
+        $after = '';
+        do {
+            // @igor-ignore - query builder created for this call, not a shared service.
+            /** @var list<array{id: string, userId: int|string, scopeKey: string}> $batch */
+            $batch = $query->setParameter('after', $after)->getQuery()->getArrayResult();
+            foreach ($batch as $row) {
+                $after                                                   = $row['id'];
+                $rows[(string) $row['userId'] . "\0" . $row['scopeKey']] = $row;
+            }
+        } while (count($batch) === self::EXACT_BATCH);
         $userClass = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
         $owners    = [];
         foreach ($rows as $row) {

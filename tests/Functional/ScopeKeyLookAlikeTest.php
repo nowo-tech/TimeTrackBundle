@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\MariaDBPlatform;
-use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
@@ -32,10 +30,10 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
+use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 
 use function array_map;
-use function preg_replace;
 use function sort;
 use function sprintf;
 
@@ -189,46 +187,11 @@ final class ScopeKeyLookAlikeTest extends FunctionalTestCase
      */
     private function foldedOwner(): array
     {
-        $this->foldScopeColumns();
+        ScopeKeyCollation::fold($this->entityManager()->getConnection());
         $resolver = self::getContainer()->get(UserReferenceResolverInterface::class);
         self::assertInstanceOf(UserReferenceResolverInterface::class, $resolver);
 
         return [$resolver->reference($this->user), (string) $this->user->getId(), new DateTimeImmutable()];
-    }
-
-    /**
-     * Gives the scope_key columns a folding collation, as on a database without the 1.24.1 ALTER.
-     */
-    private function foldScopeColumns(): void
-    {
-        $connection = $this->entityManager()->getConnection();
-        $platform   = $connection->getDatabasePlatform();
-        foreach (self::TABLES as $table => $nullable) {
-            if ($platform instanceof AbstractMySQLPlatform) {
-                $connection->executeStatement(sprintf('ALTER TABLE %s MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci %s', $table, $nullable ? 'NULL' : 'NOT NULL'));
-            } elseif ($platform instanceof SQLitePlatform) {
-                $this->sqliteNoCase($connection, $table);
-            }
-        }
-    }
-
-    private function sqliteNoCase(Connection $connection, string $table): void
-    {
-        $create  = (string) $connection->fetchOne("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [$table]);
-        $indexes = $connection->fetchFirstColumn("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL", [$table]);
-        $folded  = (string) preg_replace('/(scope_key VARCHAR\(64\))/', '$1 COLLATE NOCASE', $create);
-        self::assertNotSame($create, $folded, $table);
-        $connection->executeStatement('PRAGMA foreign_keys = OFF');
-        $connection->executeStatement('PRAGMA legacy_alter_table = ON');
-        $connection->executeStatement(sprintf('ALTER TABLE %1$s RENAME TO %1$s_old', $table));
-        $connection->executeStatement($folded);
-        $connection->executeStatement(sprintf('INSERT INTO %1$s SELECT * FROM %1$s_old', $table));
-        $connection->executeStatement(sprintf('DROP TABLE %s_old', $table));
-        foreach ($indexes as $index) {
-            $connection->executeStatement((string) $index);
-        }
-        $connection->executeStatement('PRAGMA legacy_alter_table = OFF');
-        $connection->executeStatement('PRAGMA foreign_keys = ON');
     }
 
     /**

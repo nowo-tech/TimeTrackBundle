@@ -9,6 +9,7 @@ use Doctrine\Common\Collections\Order as SortDirection;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
@@ -31,6 +32,7 @@ use function count;
 use function implode;
 use function max;
 use function spl_object_id;
+use function usort;
 
 /**
  * Since 1.13: Doctrine ORM timesheet store (timesheets, plus the retention purge and the verify listing).
@@ -379,18 +381,14 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     private function purgeLedgerPrefixes(DateTimeImmutable $before, array &$touched): int
     {
-        /** @var list<array{ownerRef: string, scopeKey: string}> $rows */
-        $rows = $this->entityManager->createQueryBuilder()
-            ->select('l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey')
+        $chains = $this->exactChains($this->entityManager->createQueryBuilder()
             ->from(BalanceLedgerLine::class, 'l')
             ->where('l.effectiveDate < :before')
-            ->setParameter('before', $before, Types::DATE_IMMUTABLE)
-            ->getQuery()
-            ->getArrayResult();
+            ->setParameter('before', $before, Types::DATE_IMMUTABLE));
         $deleted = 0;
         // Since 1.24.1 (REQ-SEC-006): chains are told apart byte for byte in PHP (a SQL DISTINCT on a still-folding
         // column merged `acme` and `Acme`), and each chain keeps only its own lines.
-        foreach (self::exactChains($rows) as $chain) {
+        foreach ($chains as $chain) {
             /** @var list<array{id: string, ownerRef: string, scopeKey: string, effectiveDate: DateTimeImmutable, hash: string, prevHash: ?string, purgedBefore: ?DateTimeImmutable}> $all */
             $all = $this->entityManager->createQueryBuilder()
                 ->select('l.id AS id', 'l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey', 'l.effectiveDate AS effectiveDate', 'l.hash AS hash', 'l.prevHash AS prevHash', 'l.purgedBefore AS purgedBefore')
@@ -556,10 +554,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     public function ledgerChains(?string $scopeKey, ?string $ownerRef): array
     {
         $query = $this->entityManager->createQueryBuilder()
-            ->select('l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey')
-            ->from(BalanceLedgerLine::class, 'l')
-            ->orderBy('l.ownerRef', SortDirection::Ascending->value)
-            ->addOrderBy('l.scopeKey', SortDirection::Ascending->value);
+            ->from(BalanceLedgerLine::class, 'l');
         if ($scopeKey !== null) {
             $query->andWhere('l.scopeKey = :scope')->setParameter('scope', $scopeKey);
         }
@@ -567,8 +562,8 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             $query->andWhere('l.ownerRef = :owner')->setParameter('owner', $ownerRef);
         }
 
-        /** @var list<array{ownerRef: string, scopeKey: string}> $rows */
-        $rows = self::exactChains($query->getQuery()->getArrayResult());
+        $rows = $this->exactChains($query);
+        usort($rows, static fn (array $a, array $b): int => [$a['ownerRef'], $a['scopeKey']] <=> [$b['ownerRef'], $b['scopeKey']]);
         if ($scopeKey !== null) {
             // Since 1.24.1 (REQ-SEC-006): only the chains of this scope key, byte for byte.
             $rows = array_values(array_filter($rows, static fn (array $row): bool => $row['scopeKey'] === $scopeKey));
@@ -582,19 +577,28 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
-     * Since 1.24.1 (REQ-SEC-006): the distinct (owner reference, scope key) pairs of the rows, byte for byte, in their
-     * order (a SQL `DISTINCT` on a folding collation would merge look-alike chains).
-     *
-     * @param array<array-key, array{ownerRef: string, scopeKey: string}> $rows
+     * Since 1.24.1 (REQ-SEC-006): the distinct (owner reference, scope key) pairs of the ledger lines the query (alias
+     * `l`) matches, byte for byte (a SQL `DISTINCT` on a folding collation would merge look-alike chains). Since audit OM
+     * TT-I1 the lines are read in keyset batches of {@see self::IDS_PER_QUERY}; only the distinct pairs stay in memory.
      *
      * @return list<array{ownerRef: string, scopeKey: string}>
      */
-    private static function exactChains(array $rows): array
+    private function exactChains(QueryBuilder $query): array
     {
+        $query->select('l.id AS id', 'l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey')
+            ->andWhere('l.id > :afterLine')
+            ->orderBy('l.id', SortDirection::Ascending->value)
+            ->setMaxResults(self::IDS_PER_QUERY);
         $chains = [];
-        foreach ($rows as $row) {
-            $chains[implode("\0", [$row['ownerRef'], $row['scopeKey']])] = ['ownerRef' => $row['ownerRef'], 'scopeKey' => $row['scopeKey']];
-        }
+        $after  = '';
+        do {
+            /** @var list<array{id: string, ownerRef: string, scopeKey: string}> $rows */
+            $rows = $query->setParameter('afterLine', $after)->getQuery()->getArrayResult();
+            foreach ($rows as $row) {
+                $after                                                       = $row['id'];
+                $chains[implode("\0", [$row['ownerRef'], $row['scopeKey']])] = ['ownerRef' => $row['ownerRef'], 'scopeKey' => $row['scopeKey']];
+            }
+        } while (count($rows) === self::IDS_PER_QUERY);
 
         return array_values($chains);
     }
