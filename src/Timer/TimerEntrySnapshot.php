@@ -28,6 +28,8 @@ final readonly class TimerEntrySnapshot
         public TimeEntrySource $source,
         public ?string $channel,
         public bool $serviceAccount,
+        // Why the bundle closed the timer (`replaced`, `user_deletion`) or null ({@see TimeEntry::closedBy()}).
+        public ?string $closedBy = null,
     ) {
     }
 
@@ -47,6 +49,7 @@ final readonly class TimerEntrySnapshot
             $entry->getSource(),
             $entry->channel(),
             $entry->isServiceAccount(),
+            $entry->closedBy(),
         );
     }
 }

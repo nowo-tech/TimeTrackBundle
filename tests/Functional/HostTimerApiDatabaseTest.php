@@ -54,7 +54,7 @@ final class HostTimerApiDatabaseTest extends FunctionalTestCase
 
         $this->entityManager()->clear();
         $rows = $this->entityManager()->getRepository(TimeEntry::class)->findBy([], ['taskId' => 'ASC']);
-        self::assertSame([['task-1', 'mcp', true, ['note' => 'C-12']], ['task-2', 'api', true, null]], array_map(static fn (TimeEntry $entry): array => [$entry->getTaskId(), $entry->channel(), $entry->isServiceAccount(), $entry->getMetadata()], $rows));
+        self::assertSame([['task-1', 'mcp', true, ['note' => 'C-12', 'closed_by' => 'replaced']], ['task-2', 'api', true, null]], array_map(static fn (TimeEntry $entry): array => [$entry->getTaskId(), $entry->channel(), $entry->isServiceAccount(), $entry->getMetadata()], $rows));
     }
 
     public function testTheOriginFilterOfTheDoctrineStore(): void

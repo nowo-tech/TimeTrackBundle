@@ -373,7 +373,7 @@ final readonly class TimerService
             $running = $this->getActive($user);
             if ($running instanceof ActiveTimer) {
                 // Recorded once even when a concurrent call stops the same timer (conditional removal, CL-05).
-                $replaced = $this->closeTimer($user, $running, $this->clock->now(), $stopNote);
+                $replaced = $this->closeTimer($user, $running, $this->clock->now(), $stopNote, extraMetadata: ['closed_by' => TimeEntry::CLOSED_BY_REPLACED]);
                 if ($replaced instanceof TimeEntry) {
                     $stopped[] = $replaced;
                     // Spec 234 (Beacon review): the replaced timer is logged with the entry id and the account id only.
@@ -962,8 +962,8 @@ final readonly class TimerService
      */
     private function startMetadata(array $metadata): array
     {
-        // Since 1.15: reserved for {@see self::stopForUserDeletion()}; a caller cannot forge the mark. Since 1.25.0 the
-        // channel too: only {@see self::startReplacing()} sets it.
+        // Since 1.15: reserved for {@see self::stopForUserDeletion()} (and since 1.25.0 {@see self::startReplacing()}); a
+        // caller cannot forge the mark. Since 1.25.0 the channel too: only {@see self::startReplacing()} sets it.
         unset($metadata['closed_by'], $metadata[self::CHANNEL_KEY]);
         if (!isset($metadata['note'])) {
             return $metadata;

@@ -122,6 +122,33 @@ final class HostTimerApiTest extends TestCase
         self::assertNotContains('Implement login API', $this->logger->contextValues());
     }
 
+    public function testTheReplacedEntryIsMarkedAndTheMarkCannotBeForged(): void
+    {
+        $timers = new InMemoryActiveTimerRepository();
+        $api    = $this->api($timers);
+        $api->start($this->ref($this->agent), 'task-1', 'first', 'mcp');
+        $second = $api->start($this->ref($this->agent), 'task-2', null, 'mcp');
+        self::assertSame(TimeEntry::CLOSED_BY_REPLACED, $second->stopped?->closedBy);
+        self::assertSame([TimeEntry::CLOSED_BY_REPLACED], array_map(static fn (TimerEntrySnapshot $entry): ?string => $entry->closedBy, $second->stoppedEntries));
+        $stopped = $api->stop($this->ref($this->agent));
+        self::assertNotNull($stopped);
+        self::assertNull($stopped->closedBy, 'a plain stop has no mark');
+
+        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14'));
+        $marks  = array_map(static fn (TimeEntry $entry): array => [$entry->getTaskId(), $entry->closedBy(), $entry->getMetadata()], $stored);
+        self::assertContains(['task-1', 'replaced', ['note' => 'first', 'closed_by' => 'replaced']], $marks);
+        self::assertContains(['task-2', null, null], $marks);
+
+        // A client cannot forge it through the timer metadata (client API start), nor can an unknown value pass as a mark.
+        $service = $this->service($timers);
+        $service->start($this->person, 'task-1', ClientType::Desktop, ['closed_by' => 'replaced']);
+        self::assertNull($service->stop($this->person)?->closedBy());
+        $odd = new TimeEntry($this->person, 'task-1', 'T', null, new DateTimeImmutable(), new DateTimeImmutable(), 0, TimeEntrySource::Web, ['closed_by' => 'something']);
+        self::assertNull($odd->closedBy());
+        $deleted = new TimeEntry($this->person, 'task-1', 'T', null, new DateTimeImmutable(), new DateTimeImmutable(), 0, TimeEntrySource::Web, ['closed_by' => TimeEntry::CLOSED_BY_USER_DELETION]);
+        self::assertSame(TimeEntry::CLOSED_BY_USER_DELETION, $deleted->closedBy());
+    }
+
     public function testAnAgentNeverStopsAPersonsTimer(): void
     {
         $timers = new InMemoryActiveTimerRepository();

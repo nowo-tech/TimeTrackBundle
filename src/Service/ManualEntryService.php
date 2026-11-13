@@ -150,6 +150,8 @@ final readonly class ManualEntryService
         if (!$task instanceof TaskReference) {
             throw new ManualEntryException(ManualEntryException::NOT_TRACKABLE);
         }
+        // Since 1.25.0: `closed_by` is reserved for the timer marks ({@see TimeEntry::closedBy()}); a caller cannot forge it.
+        unset($metadata['closed_by']);
         $note = $note !== null ? NoteSanitizer::cleanAndCut($note) : null;
         if ($note !== null) {
             $metadata['note'] = $note;

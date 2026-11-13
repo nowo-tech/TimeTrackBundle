@@ -110,6 +110,8 @@ Nothing else to change: without a policy everyone is a person and every rule is 
   export gains the columns `channel` and `service_account` at the end, and the personal-data export rows gain `channel`
   and `serviceAccount`. A consumer that requires an exact set of keys or columns must accept them.
 - **Timer metadata**: the key `channel` is reserved; a client-supplied value is dropped at start, like `closed_by`.
+  `closed_by` is now also dropped from the metadata of `ManualEntryService::create()`; a timer replaced by a
+  `HostTimerApi` start gets `closed_by: replaced` (`TimeEntry::closedBy()`).
 - If you construct `TimerService` or `ManualEntryService` by hand, they take an optional trailing `$serviceAccounts`
   argument.
 - Coming in 2.0: a dedicated entry source for `HostTimerApi` entries (they are `web` in 1.x).

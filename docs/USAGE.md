@@ -892,7 +892,8 @@ The rules:
   then checks the task through your task provider or task access checker (`TaskNotTrackableException`) and the period
   lock (`PeriodLockedException`, `PeriodSubmittedException`), as for every timer.
 - **One running timer per account.** `start()` on an account whose timer runs stops that timer first and returns its
-  entry in `stopped` (ClickUp behaviour). The task and the period lock are checked before anything is stopped, so a
+  entry in `stopped` (ClickUp behaviour). That entry is marked `closed_by: replaced` in its metadata
+  (`TimeEntry::closedBy()`, `TimerEntrySnapshot::$closedBy`; reserved, a client or a manual entry cannot set it). The task and the period lock are checked before anything is stopped, so a
   refused start leaves the running timer untouched. Only the actor's own timer is ever read, started or stopped, so an
   agent's call never stops a person's timer.
 - **Concurrent starts: the last call wins.** Each attempt checks and inserts under the account's row lock, so two calls of

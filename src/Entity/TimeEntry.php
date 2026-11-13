@@ -65,6 +65,12 @@ class TimeEntry
     /** Since 1.15: `metadata.closed_by` of an entry whose running timer was closed because its user was being deleted. */
     public const CLOSED_BY_USER_DELETION = 'user_deletion';
 
+    /**
+     * Since 1.25.0: `metadata.closed_by` of an entry whose running timer was stopped by a new start of the same account
+     * ({@see HostTimerApi::start()}). Reserved: a client cannot set it.
+     */
+    public const CLOSED_BY_REPLACED = 'replaced';
+
     #[ORM\Id]
     #[ORM\Column(type: 'string', length: 36)]
     private string $id;
@@ -401,6 +407,17 @@ class TimeEntry
     public function isClosedByUserDeletion(): bool
     {
         return (($this->metadata ?? [])['closed_by'] ?? null) === self::CLOSED_BY_USER_DELETION;
+    }
+
+    /**
+     * Since 1.25.0: why the bundle closed the entry's timer: {@see self::CLOSED_BY_REPLACED} (a new start of the same
+     * account), {@see self::CLOSED_BY_USER_DELETION}, or null (a stop by the person or the client, or not a timer).
+     */
+    public function closedBy(): ?string
+    {
+        $closedBy = ($this->metadata ?? [])['closed_by'] ?? null;
+
+        return $closedBy === self::CLOSED_BY_REPLACED || $closedBy === self::CLOSED_BY_USER_DELETION ? $closedBy : null;
     }
 
     /**

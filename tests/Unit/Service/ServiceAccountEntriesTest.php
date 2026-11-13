@@ -99,6 +99,12 @@ final class ServiceAccountEntriesTest extends TestCase
         self::assertFalse((new NoServiceAccountPolicy())->isServiceAccount(TimeTrackUserRefFactory::build($this->agent)));
     }
 
+    public function testAManualEntryCannotForgeTheClosedByMark(): void
+    {
+        $entry = $this->manual(null)->create($this->person, 'task-1', new DateTimeImmutable('2026-11-13 08:00'), new DateTimeImmutable('2026-11-13 09:00'), TimeEntrySource::Manual, null, ['closed_by' => 'replaced', 'origin' => 'mcp']);
+        self::assertSame([null, ['origin' => 'mcp']], [$entry->closedBy(), $entry->getMetadata()]);
+    }
+
     public function testAnInvalidChannelIsRefusedBeforeAnyWrite(): void
     {
         $service = $this->manual(new StubServiceAccountPolicy());
