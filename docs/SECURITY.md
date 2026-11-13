@@ -334,7 +334,7 @@ Before tagging a release, confirm:
 | **Permissions** | Firewall + roles on manage routes; CORS restricted in prod |
 | **Limits** | Rate limits on client login; token purge documented |
 | **CSRF** | Manage UI mutations use CSRF tokens |
-| **AI security audit (REQ-SEC-004)** | Pass (conditional) recorded in monorepo `BUNDLES_SECURITY_ANALYSIS.md` |
+| **AI security audit (REQ-SEC-004)** | Latest independent audits (monorepo `BUNDLES_SECURITY_ANALYSIS.md`): Appendix OA (2026-11-12, 1.23.0: OA-M1 and OA-M2 Medium fixed, re-verification PASS on MySQL 8.0 and MariaDB 10.11, residual OA-R1 Low fixed in 1.23.1), Appendix NP (2026-11-12, 1.22.1, Pass), Appendix NG (2026-11-12, 1.22.0, NG-1..NG-5 fixed before release). 1.24.0 adds the public `TimeTrackUserRefFactory`, with no new route or I/O and no separate audit appendix. Earlier: Appendix HA (2026-11-06) Pass (conditional) / Medium with the owner-accepted residual above; Appendix IE (1.17.1) Pass (good) / Info |
 
 Record confirmation in the release PR or tag notes.
 
