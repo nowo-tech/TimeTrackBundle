@@ -949,6 +949,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         $limit  = max(1, $limit);
         if (!$this->ownerlessNeedsExactCheck($ownerlessScopeKeys)) {
             /** @var list<TimeEntry> $result */
+            // @igor-ignore - query builder created for this call, not a shared service.
             $result = $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
 
             return $result;
@@ -961,6 +962,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         $read    = 0;
         do {
             /** @var list<TimeEntry> $rows */
+            // @igor-ignore - query builder created for this call, not a shared service.
             $rows = $query->setFirstResult($read)->setMaxResults(self::EXACT_BATCH)->getQuery()->getResult();
             $read += self::EXACT_BATCH;
             foreach ($rows as $entry) {
