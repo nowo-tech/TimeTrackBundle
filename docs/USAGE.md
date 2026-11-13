@@ -15,6 +15,7 @@
 - [Calendar OAuth apps at runtime (1.20)](#calendar-oauth-apps-at-runtime-120)
 - [Billable entries (1.21)](#billable-entries-121)
 - [Leave on the clients (1.22, spec 204)](#leave-on-the-clients-122-spec-204)
+- [Timer for token principals and service accounts (1.25)](#timer-for-token-principals-and-service-accounts-125)
 - [Standard Symfony host](#standard-symfony-host)
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
 - [Worker mode (FrankenPHP, kernel reset false)](#worker-mode-frankenphp-kernel-reset-false)
@@ -851,6 +852,135 @@ return `['date' => 'YYYY-MM-DD', 'kind' => 'leave']` for every
 approved leave day. The bundle always sends its label as null, so a leave day never carries a type or a reason; keep
 labels for public holiday names.
 
+## Timer for token principals and service accounts (1.25)
+
+Since 1.25.0 (Beacon spec 234, AI Flow on Beacon tasks) a principal without an app password, such as an API token or an
+MCP session, can start, stop and read its timer through `Timer\HostTimerApi`, a public service your own controllers
+call. The app-password client API is unchanged.
+
+```php
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
+
+final readonly class TimerTool
+{
+    public function __construct(private HostTimerApi $timers, private TimeTrackUserRefFactory $refs) {}
+
+    public function start(User $account, string $taskId): array
+    {
+        // Your code authenticated the token and decided that this account may use the timer.
+        $start = $this->timers->start($this->refs->fromUser($account), $taskId, note: null, channel: 'mcp');
+
+        return [
+            'timer'   => ['taskId' => $start->timer->taskId, 'startedAt' => $start->timer->startedAt],
+            'stopped' => $start->stopped?->entryId, // the account's timer this start stopped, if one ran
+        ];
+    }
+}
+```
+
+| Method | Returns |
+|--------|---------|
+| `start(TimeTrackUserRef $actor, string $taskId, ?string $note = null, string $channel = 'api')` | `HostTimerStart`: `timer` (`TimerSnapshot`), `stopped` (`?TimerEntrySnapshot`, the replaced timer's entry), `stoppedEntries` |
+| `stop(TimeTrackUserRef $actor, ?string $note = null)` | `?TimerEntrySnapshot`: entry id, task, start, end, duration, source, channel, `serviceAccount`; null when no timer ran |
+| `current(TimeTrackUserRef $actor)` | `?TimerSnapshot`: timer id, task, start, client type, channel, note |
+
+The rules:
+
+- **Authorisation stays in your application.** Pass the account as a `TimeTrackUserRef` that carries its security user
+  object (`TimeTrackUserRefFactory::fromUser()`); a reference by id alone is refused with a `LogicException`. The bundle
+  then asks your `client_api.task_access_checker` (or its 1.23 twin `TaskAccessPolicyInterface`) **and** your task
+  provider — the same two checks as `POST timer/start` — and then the period lock. A refusal of either is one
+  `TaskNotTrackableException`, so the caller cannot tell "not allowed" from "does not exist"; the period lock throws
+  `PeriodLockedException` / `PeriodSubmittedException`.
+- **One running timer per account.** `start()` on an account whose timer runs stops that timer first and returns its
+  entry in `stopped` (ClickUp behaviour). That entry is marked `closed_by: replaced` in its metadata
+  (`TimeEntry::closedBy()`, `TimerEntrySnapshot::$closedBy`; reserved, a client or a manual entry cannot set it). The
+  access check, the task and the period lock all run before anything is stopped, so a start refused for one of those
+  reasons leaves the running timer untouched. Only the actor's own timer is ever read, started or stopped, so an
+  agent's call never stops a person's timer.
+- **Concurrent starts: the last call wins.** Each attempt checks and inserts under the account's row lock, so two calls of
+  `start()` for one account run one after the other and the second stops the first. A start that does not take the lock
+  (the client API) may still win the unique index in between: the start is retried, up to 3 attempts
+  (`TimerService::REPLACE_ATTEMPTS`), and every stopped timer is recorded exactly once. After the last attempt it throws
+  `ActiveTimerConflictException` (answer 409). That is the one refusal that is not untouched-on-refusal: entries stopped
+  on the earlier attempts are already written and committed, and their ids are on the exception
+  (`$stoppedEntryIds`), so your 409 can name them. The replaced timer is logged at `info` (`action: timer_replace`) with
+  the entry id and the account id only.
+- **The channel** (`api`, `mcp`, …: 1 to 16 characters of `a-z`, `0-9` and `_`, otherwise `InvalidArgumentException`) is
+  stored on the entry. It is a label for reports and audit, never an authorisation input. The entry's source stays `web`:
+  a dedicated source is planned for 2.0 (a new enum case would break an exhaustive `match` in your code). A client of the
+  client API cannot set the channel through its timer metadata.
+
+### Service accounts (agents)
+
+Implement `Integration\ServiceAccountPolicyInterface` and point `service_account_policy` at it (or alias the
+interface). The default, `NoServiceAccountPolicy`, treats everyone as a person.
+
+```php
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
+
+final readonly class AgentAccounts implements ServiceAccountPolicyInterface
+{
+    public function __construct(private UserRepository $users) {}
+
+    public function isServiceAccount(TimeTrackUserRef $account): bool
+    {
+        return $account->id !== null && $this->users->isServiceAccount($account->id);
+    }
+}
+```
+
+```yaml
+nowo_time_track:
+    service_account_policy: App\TimeTrack\AgentAccounts
+```
+
+For a service account:
+
+- its entries may overlap, its own and other accounts': `ManualEntryService::create()` does not refuse an `overlap`
+  (neither with its entries nor with its running timer), and a backdated timer start is not clamped to the end of its
+  latest entry;
+- every entry it writes is marked: `TimeEntry::isServiceAccount()`, `TimeEntryView::$serviceAccount`,
+  `TimerEntrySnapshot::$serviceAccount`, `serviceAccount` in the client API and personal-data export rows,
+  `service_account` in the CSV export.
+
+Nothing else changes: one running timer per account, the period lock (also for locked periods while a timer runs), the
+task checks, the time that follows a moved task (spec 217 FR-008) and the timer of a deleted account (closed and saved;
+the HA-M6 exception for deletes that run no bundle code still applies). People keep every overlap rule. The policy is
+asked on every write and its answer is never kept: keep it fast and free of request state (worker mode).
+
+**The policy must not throw, and must tolerate an account being deleted.** It is asked inside every timer stop, the stop
+that saves the running time of a user you are deleting included, where your account row may already be gone: answer
+false rather than failing for an unknown account. The bundle does not depend on that — an exception is caught, logged
+with its class only and read as "a person", so the entry is still written — but then an agent's entry is recorded as a
+person's. That rescue covers the timer paths only: `ManualEntryService::create()` lets the exception out, because one
+synchronous write of yours may fail loudly. A flaky policy therefore makes the two surfaces disagree about one account —
+its timer entries recorded as a person's, its manual entries refused — and no catch can repair an entity manager your
+policy closed itself, so keep it to reads.
+
+`ManualEntryService::create()` takes an optional `channel` too, for a finished entry logged through your API.
+
+### Telling agents' time from people's time
+
+Read the typed columns instead of the metadata: `TimeEntry::channel()` and `TimeEntry::isServiceAccount()` (mapped
+fields `channel` and `serviceAccount`, so your DQL can filter on them). The Doctrine store also implements
+`Repository\OriginFilteredTimeEntryRepositoryInterface`:
+
+```php
+use Nowo\TimeTrackBundle\Repository\TimeEntryOriginFilter;
+
+$agentTime  = $store->findPageByUsersPeriodAndOrigin($userIds, $from, $to, TimeEntryOriginFilter::serviceAccounts(), 0, 50);
+$mcpCount   = $store->countByUsersPeriodAndOrigin($userIds, $from, $to, new TimeEntryOriginFilter(channel: 'mcp'));
+$appsOnly   = $store->countByUsersPeriodAndOrigin($userIds, $from, $to, new TimeEntryOriginFilter(serviceAccount: false, withoutChannel: true));
+```
+
+The conditions are SQL (the page is cut after them) on the index `idx_time_track_entries_origin`
+(`service_account, channel, started_at`), with the user and period conditions of the other list queries. Rows are checked
+again in PHP (owners byte for byte, channel with `===`); a channel that is not a valid label is refused when the filter is
+built (REQ-SEC-006). Schema: see [UPGRADING](UPGRADING.md#to-1250).
+
 ## Standard Symfony host
 
 The zero-config path (REQ-ARCH-001): `user_class` is your attribute-mapped `App\Entity\User`, the same object your
@@ -1069,5 +1199,5 @@ The bundle runs under FrankenPHP worker mode with the kernel kept alive and **no
 (`FRANKENPHP_RESET_KERNEL=false`): no service keeps request, user or tenant data, the only per-flush state
 (`FormerPersonSnapshotListener`) is cleared by the bundle at `kernel.terminate`, `console.terminate` and the Messenger
 worker events, users are reloaded before role checks and a closed entity manager is reset after a failed flush.
-`WorkerModeNoResetTest` proves it with one kernel, two people and more than 3,000 requests. Clearing your entity manager's identity
+`WorkerModeNoResetTest` proves it with one kernel, two people and more than 3,000 requests. `HostTimerWorkerModeTest` does the same for `HostTimerApi` behind a host controller: a person and two agents in turn, the person's timer never stopped by an agent, and the service-account answer applied on the next request. Clearing your entity manager's identity
 map between requests stays your choice (memory). Details: [FRANKENPHP-WORKER-AUDIT.md](FRANKENPHP-WORKER-AUDIT.md).

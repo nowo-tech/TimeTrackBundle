@@ -27,13 +27,14 @@ use const DATE_ATOM;
 final class TimeEntryCsv
 {
     /** Header row. */
-    public const HEADER = ['id', 'taskId', 'taskTitle', 'boardId', 'startedAt', 'endedAt', 'durationSeconds', 'source', 'note', 'billable', 'description', 'imported', 'scope_key', 'locked'];
+    public const HEADER = ['id', 'taskId', 'taskTitle', 'boardId', 'startedAt', 'endedAt', 'durationSeconds', 'source', 'note', 'billable', 'description', 'imported', 'scope_key', 'locked', 'channel', 'service_account'];
 
     /**
      * CSV text of the entries (header first, RFC 4180 quoting). Since 1.11 the columns `billable`, `description` and
      * `imported` are appended, and the title of an entry listed in `$hiddenTaskEntryIds` is `$hiddenTitle` (the
      * translated `reports.task_not_visible` in the client API export; {@see TimeEntry::HIDDEN_TASK_TITLE} by default).
-     * Since 1.12 the `description` of such an entry is empty as well.
+     * Since 1.12 the `description` of such an entry is empty as well. Since 1.25.0 `channel` and `service_account` are
+     * appended (the agent mark: `yes` / `no`).
      *
      * @param list<TimeEntry> $entries
      * @param array<string, true> $hiddenTaskEntryIds entry id => true ({@see TimerService::hiddenTaskEntryIds()})
@@ -66,6 +67,8 @@ final class TimeEntryCsv
                 $entry->isReadOnly() ? 'yes' : 'no',
                 self::cell($entry->getScopeKey() ?? ''),
                 isset($lockedEntryIds[$entry->getId()]) ? 'yes' : 'no',
+                $entry->channel() ?? '',
+                $entry->isServiceAccount() ? 'yes' : 'no',
             ], ',', '"', '');
         }
         rewind($stream);

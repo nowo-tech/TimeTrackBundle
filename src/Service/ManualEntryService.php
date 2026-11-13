@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Service;
 
 use DateTimeImmutable;
+use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -15,8 +16,10 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\OverlappingTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -25,6 +28,7 @@ use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
@@ -44,6 +48,9 @@ use function in_array;
  * the start, longer than 24 h, in the future (beyond a 2-minute clock skew), older than the allowed age, the user may not
  * track the task, it overlaps one of the user's live entries or the running timer, or its period is locked or submitted
  * ({@see PeriodLockGuard}, 409). Dispatches {@see TimeEntryCreatedEvent}. Logs carry the action and source only.
+ *
+ * Since 1.25.0 a service account ({@see ServiceAccountPolicyInterface}) is not refused for an overlap: an agent's entries
+ * may overlap its own entries and its running timer. Every other check applies to it as to a person.
  */
 final readonly class ManualEntryService
 {
@@ -80,6 +87,8 @@ final readonly class ManualEntryService
         private ?TimeEntryBillableDefaultProviderInterface $billableDefaults = null,
         // Since 1.21 (audit MV-T-L3): asks `edit_billable` for an explicit `billable` (null = the caller's value is trusted).
         private ?TeamAccessGuard $accessGuard = null,
+        // Since 1.25.0: tells a service account (agent) from a person (null = everyone is a person).
+        private ?ServiceAccountPolicyInterface $serviceAccounts = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -110,12 +119,15 @@ final readonly class ManualEntryService
      * @param bool|null $billable Since 1.21: the entry's `billable` flag; null = the host default
      *                            ({@see TimeEntryBillableDefaultProviderInterface}), unset when it has none. An explicit
      *                            value needs {@see TeamAccessGuard::isBillableEditGranted()} (`billable_forbidden`)
+     * @param string|null $channel Since 1.25.0: the channel label stored on the entry (`api`, `mcp`, …; {@see TimerChannel})
      *
+     * @throws InvalidArgumentException When the channel is not a valid label (since 1.25.0)
      * @throws ManualEntryException
      * @throws PeriodWriteRefusedException When the period is locked or submitted
      */
-    public function create(UserInterface $user, string $taskId, DateTimeImmutable $start, DateTimeImmutable $end, TimeEntrySource $source, ?string $note = null, array $metadata = [], ?int $maxAgeDays = null, ?callable $prepare = null, ?callable $finish = null, ?bool $billable = null): TimeEntry
+    public function create(UserInterface $user, string $taskId, DateTimeImmutable $start, DateTimeImmutable $end, TimeEntrySource $source, ?string $note = null, array $metadata = [], ?int $maxAgeDays = null, ?callable $prepare = null, ?callable $finish = null, ?bool $billable = null, ?string $channel = null): TimeEntry
     {
+        $channel = $channel === null ? null : TimerChannel::assertValid($channel);
         if (!in_array($source, [TimeEntrySource::Manual, TimeEntrySource::Calendar], true)) {
             throw new ManualEntryException(ManualEntryException::INVALID_RANGE);
         }
@@ -139,24 +151,29 @@ final readonly class ManualEntryService
         if (!$task instanceof TaskReference) {
             throw new ManualEntryException(ManualEntryException::NOT_TRACKABLE);
         }
+        // Since 1.25.0: `closed_by` is reserved for the timer marks ({@see TimeEntry::closedBy()}); a caller cannot forge it.
+        unset($metadata['closed_by']);
         $note = $note !== null ? NoteSanitizer::cleanAndCut($note) : null;
         if ($note !== null) {
             $metadata['note'] = $note;
         }
 
         // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-        $entry = $this->serialised($user, function () use ($user, $task, $start, $end, $seconds, $source, $metadata, $prepare, $finish, $billable): TimeEntry {
+        $entry = $this->serialised($user, function () use ($user, $task, $start, $end, $seconds, $source, $metadata, $prepare, $finish, $billable, $channel): TimeEntry {
             if ($prepare !== null) {
                 $prepare();
             }
             // Since 1.24.1 (audit OM TT-L2): an unusable host key is no scope (warning), never a failed request.
             $scopeKey = ScopeKeys::fromHost($this->scopeProvider?->scopeKeyForTask($user, $task->id, $task->boardId), $this->logger, 'manual_entry_scope');
             $this->periodLockGuard?->assertWritable($user, $scopeKey, $start, WriteKind::EntryCreate);
-            if ($this->overlaps($user, $start, $end)) {
+            // Since 1.25.0: a service account's entries may overlap (asked per call, never memoised).
+            $serviceAccount = $this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false;
+            if (!$serviceAccount && $this->overlaps($user, $start, $end)) {
                 throw new ManualEntryException(ManualEntryException::OVERLAP);
             }
             $entry = new TimeEntry($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
             $entry->assignScopeKey($scopeKey);
+            $entry->markOrigin($channel, $serviceAccount);
             if ($billable !== null && $this->accessGuard instanceof TeamAccessGuard && !$this->accessGuard->isBillableEditGranted($user, $entry)) {
                 throw new ManualEntryException(ManualEntryException::BILLABLE_FORBIDDEN);
             }

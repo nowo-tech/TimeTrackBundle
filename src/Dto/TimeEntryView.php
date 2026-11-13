@@ -30,6 +30,9 @@ final readonly class TimeEntryView
         public TimeEntrySource $source,
         public ?string $externalSource,
         public ?string $externalId,
+        // Since 1.25.0: the channel (`api`, `mcp`, …; null outside HostTimerApi and host manual entries) and the agent mark.
+        public ?string $channel = null,
+        public bool $serviceAccount = false,
     ) {
     }
 
@@ -51,6 +54,8 @@ final readonly class TimeEntryView
             $entry->getSource(),
             $entry->getExternalSource(),
             $entry->getExternalId(),
+            $entry->channel(),
+            $entry->isServiceAccount(),
         );
     }
 }

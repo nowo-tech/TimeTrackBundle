@@ -203,8 +203,8 @@ class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertSame('org-a', $entries['entries'][0]['scopeKey'] ?? null);
         $this->client->request('GET', '/api/time-track/export?format=csv&from=' . $week->start . '&to=' . $week->end, [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]);
         $rows = array_map(static fn (string $line): array => str_getcsv($line, ',', '"', ''), array_filter(explode("\n", (string) $this->client->getResponse()->getContent())));
-        self::assertSame(['scope_key', 'locked'], array_slice($rows[0], -2));
-        self::assertSame(['org-a', 'yes'], array_slice($rows[1], -2));
+        self::assertSame(['scope_key', 'locked'], array_slice($rows[0], -4, 2));
+        self::assertSame(['org-a', 'yes'], array_slice($rows[1], -4, 2));
         $json = $this->api('GET', '/api/time-track/export?from=' . $week->start . '&to=' . $week->end, null, $token);
         self::assertTrue($json['entries'][0]['locked'] ?? false);
         $locked = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'startedAt' => (new DateTimeImmutable('-23 hours'))->format(DATE_ATOM)], $token);

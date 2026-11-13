@@ -7,10 +7,13 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Port\ClientCredentialMinterGate;
 use Nowo\TimeTrackBundle\Port\TaskAccessPolicyGate;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinClientPorts;
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 
 use function array_filter;
 use function array_values;
@@ -39,6 +42,25 @@ final class TwinClientPortsTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(201);
 
         $id = (string) $this->user->getId();
+        self::assertSame(['mayTrack:' . $id . ':task-forbidden', 'mayTrack:' . $id . ':task-1'], array_values(array_filter($this->twin()->asked, static fn (string $call): bool => str_starts_with($call, 'mayTrack:'))));
+    }
+
+    public function testTheTaskAccessPolicyDecidesTheHostTimerToo(): void
+    {
+        // Audit PA-1: `HostTimerApi::start()` goes through the same gate over the framework-free twin.
+        $api = self::getContainer()->get(HostTimerApi::class);
+        self::assertInstanceOf(HostTimerApi::class, $api);
+        $actor = TimeTrackUserRefFactory::build($this->user);
+        $id    = (string) $this->user->getId();
+
+        try {
+            $api->start($actor, 'task-forbidden', null, 'mcp');
+            self::fail('the twin policy refuses the task');
+        } catch (TaskNotTrackableException) {
+            // As for an unknown task.
+        }
+        self::assertNull($api->current($actor));
+        self::assertSame('task-1', $api->start($actor, 'task-1', null, 'mcp')->timer->taskId);
         self::assertSame(['mayTrack:' . $id . ':task-forbidden', 'mayTrack:' . $id . ':task-1'], array_values(array_filter($this->twin()->asked, static fn (string $call): bool => str_starts_with($call, 'mayTrack:'))));
     }
 

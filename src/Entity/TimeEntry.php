@@ -13,8 +13,11 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
+use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
@@ -47,6 +50,8 @@ use const DATE_ATOM;
 #[ORM\Index(name: 'idx_time_track_entries_user_scope_started', columns: ['user_id', 'scope_key', 'started_at'])]
 // Since 1.15: erasure and export of a former person.
 #[ORM\Index(name: 'idx_time_track_entries_person_ref', columns: ['person_ref'])]
+// Since 1.25.0: agent time vs people's time over a range (service accounts, channel).
+#[ORM\Index(name: 'idx_time_track_entries_origin', columns: ['service_account', 'channel', 'started_at'])]
 class TimeEntry
 {
     /**
@@ -60,6 +65,12 @@ class TimeEntry
 
     /** Since 1.15: `metadata.closed_by` of an entry whose running timer was closed because its user was being deleted. */
     public const CLOSED_BY_USER_DELETION = 'user_deletion';
+
+    /**
+     * Since 1.25.0: `metadata.closed_by` of an entry whose running timer was stopped by a new start of the same account
+     * ({@see HostTimerApi::start()}). Reserved: a client cannot set it.
+     */
+    public const CLOSED_BY_REPLACED = 'replaced';
 
     #[ORM\Id]
     #[ORM\Column(type: 'string', length: 36)]
@@ -106,6 +117,17 @@ class TimeEntry
     /** Since 1.15: when the person was anonymised; an anonymised entry is never written again. */
     #[ORM\Column(name: 'anonymised_at', type: 'datetime_immutable', nullable: true)]
     private ?DateTimeImmutable $anonymisedAt = null;
+
+    /**
+     * Since 1.25.0: the channel the entry was written through (`api`, `mcp`, … from {@see HostTimerApi} or a host's
+     * manual entry; null for the client API, the web UI and imports). Validated by {@see TimerChannel}.
+     */
+    #[ORM\Column(name: 'channel', type: 'string', length: 16, nullable: true)]
+    private ?string $channel = null;
+
+    /** Since 1.25.0: the entry belongs to a service account (agent), per {@see ServiceAccountPolicyInterface}. */
+    #[ORM\Column(name: 'service_account', type: 'boolean', options: ['default' => false])]
+    private bool $serviceAccount = false;
 
     /**
      * Creates a time entry.
@@ -389,6 +411,17 @@ class TimeEntry
     }
 
     /**
+     * Since 1.25.0: why the bundle closed the entry's timer: {@see self::CLOSED_BY_REPLACED} (a new start of the same
+     * account), {@see self::CLOSED_BY_USER_DELETION}, or null (a stop by the person or the client, or not a timer).
+     */
+    public function closedBy(): ?string
+    {
+        $closedBy = ($this->metadata ?? [])['closed_by'] ?? null;
+
+        return $closedBy === self::CLOSED_BY_REPLACED || $closedBy === self::CLOSED_BY_USER_DELETION ? $closedBy : null;
+    }
+
+    /**
      * Since 1.15: whether the person was anonymised (no name, reference, free text or task title; the external id is
      * hashed; the time stays). Pseudonymised rather than anonymous in the GDPR sense unless the host has assessed it: task
      * id, board, tenant and exact times stay, and in a small team they can single someone out.
@@ -561,6 +594,39 @@ class TimeEntry
     }
 
     /**
+     * Since 1.25.0: the channel the entry was written through (`api`, `mcp`, …), or null (client API, web UI, import).
+     */
+    public function channel(): ?string
+    {
+        return $this->channel;
+    }
+
+    /**
+     * Since 1.25.0: whether the entry belongs to a service account (agent) rather than a person.
+     */
+    public function isServiceAccount(): bool
+    {
+        return $this->serviceAccount;
+    }
+
+    /**
+     * Since 1.25.0: sets the channel and the service-account mark of a new entry (the bundle's writers call it).
+     *
+     * @internal
+     *
+     * @throws InvalidArgumentException when the channel is not a valid {@see TimerChannel} label
+     */
+    public function markOrigin(?string $channel, bool $serviceAccount): self
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->channel = $channel === null ? null : TimerChannel::assertValid($channel);
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->serviceAccount = $serviceAccount;
+
+        return $this;
+    }
+
+    /**
      * Client API shape. Since 1.11 it also has `billable`, `description`, `readOnly` and `taskVisible`; with
      * `$taskVisible` false the title is `$hiddenTitle` (the translated `reports.task_not_visible` in the client API,
      * {@see self::HIDDEN_TASK_TITLE} by default): imported entries of a task the owner cannot see. Since 1.12 the
@@ -588,6 +654,9 @@ class TimeEntry
             'taskVisible'     => $taskVisible,
             // Since 1.13: tenant scope (null = unassigned).
             'scopeKey' => $this->scopeKey,
+            // Since 1.25.0: the channel (null outside HostTimerApi / host manual entries) and the agent mark.
+            'channel'        => $this->channel,
+            'serviceAccount' => $this->serviceAccount,
         ];
         if ($this->user === null) {
             $array['person'] = ['name' => $this->personNameSnapshot, 'anonymised' => $this->anonymisedAt instanceof DateTimeImmutable];

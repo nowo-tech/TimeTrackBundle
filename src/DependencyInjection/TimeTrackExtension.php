@@ -72,7 +72,9 @@ use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Integration\NoServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Integration\NullTimeEntryBillableDefaultProvider;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
@@ -119,6 +121,7 @@ use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
@@ -348,6 +351,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $acceptedUserClasses = $config['accepted_user_classes'];
         $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses, (string) $config['user_mapping']);
         $this->registerBillable($container);
+        $this->registerServiceAccounts($container, $config['service_account_policy'] ?? null);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -386,6 +390,28 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$logger'          => new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
+    }
+
+    /**
+     * Since 1.25.0 (Beacon spec 234): the {@see ServiceAccountPolicyInterface} port (default {@see NoServiceAccountPolicy};
+     * `service_account_policy` or an alias override of the host), injected into the services that write live entries, and
+     * the public {@see HostTimerApi} for the host's own controllers.
+     */
+    private function registerServiceAccounts(ContainerBuilder $container, mixed $policyId): void
+    {
+        $container->setDefinition(NoServiceAccountPolicy::class, new Definition(NoServiceAccountPolicy::class));
+        $container->setAlias(ServiceAccountPolicyInterface::class, is_string($policyId) && $policyId !== '' ? $policyId : NoServiceAccountPolicy::class);
+        $policy = new Reference(ServiceAccountPolicyInterface::class);
+        foreach ([TimerService::class, ManualEntryService::class] as $serviceId) {
+            if ($container->hasDefinition($serviceId)) {
+                $container->getDefinition($serviceId)->setArgument('$serviceAccounts', $policy);
+            }
+        }
+        $container->setDefinition(HostTimerApi::class, (new Definition(HostTimerApi::class))
+            ->setPublic(true)
+            ->setArgument('$timers', new Reference(TimerService::class))
+            // Audit PA-1: the same access checker the client API asks (`client_api.task_access_checker`, or the 1.23 twin).
+            ->setArgument('$taskAccess', new Reference(TaskAccessCheckerInterface::class)));
     }
 
     /**
