@@ -63,6 +63,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.24.2** (patch): test and code hygiene of the 1.24.1 security fix, no behaviour change for a host whose scope
+keys are not numeric.
+
+### Fixed
+
+- `DoctrineOrmTimeEntryRepository::assignScopeKeys()` (`nowo:time-track:entries:backfill-scope`) bound a **numeric**
+  scope key such as `42` as an integer: PHP array keys made it an `int`, and the `(string)` cast that hid it was
+  redundant only by appearance. PostgreSQL refuses an integer parameter for a `varchar` column, so the back-fill of a
+  host with numeric scope keys could fail. The scope now travels in the value, as a string.
+
+### Tests
+
+- 100 % statement coverage again (the release gate): the 1.24.1 paths that had none are covered now — the import
+  writer's two `ScopeKeys::isUsable()` refusals (a scope key from the host provider, and the target scope of an owner
+  move) and the metadata listener's fatal scope-column check with `user_mapping: id` for an entity that has a scope but
+  no person reference, plus a server-version query that fails.
+
+### Changed
+
+- Rector hygiene on the 1.24.1 code: four private scope helpers in the timesheet, ledger, calendar and entry stores are
+  called on the instance instead of `self::`, and two redundant casts are gone. No behaviour change.
+
 ## [1.24.1] - 2026-11-13
 
 Target **1.24.1** (patch). See [UPGRADING](UPGRADING.md#to-1241) for the detection queries and the `ALTER`.

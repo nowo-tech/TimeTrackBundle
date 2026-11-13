@@ -19,6 +19,7 @@ use InvalidArgumentException;
 use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
+use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
@@ -150,9 +151,25 @@ final class ScopeKeysTest extends TestCase
             self::assertCount($collation === 'utf8mb4_bin' ? 1 : 0, $logger->messages, $version);
         }
 
+        // The server's own version is asked when server_version is not configured; a failing query is not fatal
+        // (audit OM TT-I2): the platform's default collation applies, without a warning.
+        $logger  = $this->logger();
+        $options = $this->metadata(Timesheet::class, UserMapping::RELATION, new MySQL80Platform(), $logger, versionQueryFails: true)->fieldMappings['scopeKey']->options ?? [];
+        self::assertSame('utf8mb4_0900_bin', $options['collation'] ?? null);
+        self::assertSame([], $logger->messages);
+
         // The id mapping keeps failing loudly.
         $this->expectException(LogicException::class);
         $this->metadata(Timesheet::class, UserMapping::ID, null);
+    }
+
+    public function testTheIdMappingAlsoFailsLoudlyForAnEntityThatOnlyHasAScopeColumn(): void
+    {
+        // CalendarConnection has a scope key but no person reference: the unreadable platform must still be fatal with
+        // `user_mapping: id`, from the scope column's own check.
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('nowo_time_track.user_mapping "id" needs the database platform');
+        $this->metadata(CalendarConnection::class, UserMapping::ID, null);
     }
 
     /**
@@ -176,7 +193,7 @@ final class ScopeKeysTest extends TestCase
      *
      * @return ClassMetadata<object>
      */
-    private function metadata(string $class, string $mapping, ?object $platform, ?AbstractLogger $logger = null, ?string $serverVersion = null): ClassMetadata
+    private function metadata(string $class, string $mapping, ?object $platform, ?AbstractLogger $logger = null, ?string $serverVersion = null, bool $versionQueryFails = false): ClassMetadata
     {
         $metadata = new ClassMetadata($class);
         $metadata->initializeReflection(new RuntimeReflectionService());
@@ -188,11 +205,14 @@ final class ScopeKeysTest extends TestCase
             $connection->method('getDatabasePlatform')->willReturn($platform);
         }
         $connection->method('getParams')->willReturn($serverVersion === null ? [] : ['serverVersion' => $serverVersion]);
+        if ($versionQueryFails) {
+            $connection->method('getServerVersion')->willThrowException(new RuntimeException('database down'));
+        }
         $em = $this->createStub(EntityManagerInterface::class);
         $em->method('getConnection')->willReturn($connection);
-        $listener = $logger === null
-            ? new TimeTrackMetadataListener('e', 't', 'c', SecurityUser::class, userMapping: $mapping)
-            : new TimeTrackMetadataListener('e', 't', 'c', SecurityUser::class, userMapping: $mapping, logger: $logger);
+        $listener = $logger instanceof AbstractLogger
+            ? new TimeTrackMetadataListener('e', 't', 'c', SecurityUser::class, userMapping: $mapping, logger: $logger)
+            : new TimeTrackMetadataListener('e', 't', 'c', SecurityUser::class, userMapping: $mapping);
         $listener->loadClassMetadata(new LoadClassMetadataEventArgs($metadata, $em));
 
         return $metadata;

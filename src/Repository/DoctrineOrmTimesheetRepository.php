@@ -108,7 +108,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getResult();
 
-        return ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($rows, $scopeKey), [$ownerId])[0] ?? null;
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->inScope($rows, $scopeKey), [$ownerId])[0] ?? null;
     }
 
     /**
@@ -161,7 +161,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         /** @var list<Timesheet> $result */
         $result = ($lock instanceof LockMode ? $query->getQuery()->setLockMode($lock) : $query->getQuery())->getResult();
 
-        return $scopeKey === null ? $result : self::inScope($result, $scopeKey);
+        return $scopeKey === null ? $result : $this->inScope($result, $scopeKey);
     }
 
     /**
@@ -185,7 +185,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getResult();
 
-        return ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($result, $scopeKey), [$ownerId]);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->inScope($result, $scopeKey), [$ownerId]);
     }
 
     /**
@@ -218,7 +218,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             /** @var list<Timesheet> $rows */
             $rows = $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
             $offset += $limit;
-            foreach (ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($rows, $scopeKey), $ownerIds) as $timesheet) {
+            foreach (ExactUserIds::keep($this->entityManager, Timesheet::class, $this->inScope($rows, $scopeKey), $ownerIds) as $timesheet) {
                 $kept[] = $timesheet;
                 if (count($kept) === $limit) {
                     return $kept;
@@ -252,7 +252,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             /** @var list<Timesheet> $rows */
             $rows = $query->setFirstResult($offset)->setMaxResults(self::EXACT_PAGE)->getQuery()->getResult();
             $offset += self::EXACT_PAGE;
-            $exact = ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($rows, $scopeKey), [$ownerId]);
+            $exact = ExactUserIds::keep($this->entityManager, Timesheet::class, $this->inScope($rows, $scopeKey), [$ownerId]);
             if ($exact !== []) {
                 return $exact[0];
             }
@@ -268,7 +268,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      *
      * @return list<Timesheet>
      */
-    private static function inScope(array $rows, string $scopeKey): array
+    private function inScope(array $rows, string $scopeKey): array
     {
         return ScopeKeys::keep($rows, $scopeKey, static fn (Timesheet $timesheet): string => $timesheet->getScopeKey());
     }

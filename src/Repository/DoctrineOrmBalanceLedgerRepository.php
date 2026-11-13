@@ -74,7 +74,7 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
             ->getResult();
 
         // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte.
-        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, self::inScope($heads, $scopeKey), [$ownerRef], $this->ownerRef(...))[0] ?? null;
+        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, $this->inScope($heads, $scopeKey), [$ownerRef], $this->ownerRef(...))[0] ?? null;
     }
 
     /**
@@ -99,7 +99,7 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
 
         // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte; since 1.24.1
         // (REQ-SEC-006) the scope key too.
-        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, self::inScope($result, $scopeKey), [$ownerRef], $this->ownerRef(...));
+        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, $this->inScope($result, $scopeKey), [$ownerRef], $this->ownerRef(...));
     }
 
     /**
@@ -109,7 +109,7 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
      *
      * @return list<BalanceLedgerLine>
      */
-    private static function inScope(array $lines, string $scopeKey): array
+    private function inScope(array $lines, string $scopeKey): array
     {
         return ScopeKeys::keep($lines, $scopeKey, static fn (BalanceLedgerLine $line): string => $line->getScopeKey());
     }
