@@ -24,6 +24,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 use function array_map;
 use function sort;
+use function sprintf;
 
 /**
  * 1.24.1 (REQ-SEC-006, audit OM): scope keys a host port answers. An unusable legacy key never fails a request
@@ -64,10 +65,13 @@ final class ScopeKeyHostTest extends FunctionalTestCase
     {
         ScopeKeyCollation::fold($this->entityManager()->getConnection());
         $monday = (new DateTimeImmutable('monday this week 08:00'))->modify('-14 days');
-        foreach (['org-a', 'Org-a', 'org-z'] as $scope) {
+        foreach (['org-a', 'Org-a', 'org-z'] as $i => $scope) {
             $entry = (new TimeEntry($this->user, 'task-1', 'T', 'board-1', $monday, $monday->modify('+1 hour'), 3600, TimeEntrySource::Web))->assignScopeKey($scope);
             (new DoctrineOrmTimeEntryRepository($this->entityManager()))->save($entry);
+            // Ids in this order, so the conflict (Org-a) comes before org-z: the run must go on with a reset entity manager.
+            $this->entityManager()->getConnection()->update('time_track_entries', ['id' => sprintf('00000000-0000-4000-8000-%012d', $i + 1)], ['id' => $entry->getId()]);
         }
+        $this->entityManager()->clear();
         $timesheets = self::getContainer()->get(TimesheetService::class);
         self::assertInstanceOf(TimesheetService::class, $timesheets);
 

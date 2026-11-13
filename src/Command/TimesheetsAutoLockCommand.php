@@ -81,33 +81,47 @@ final class TimesheetsAutoLockCommand extends Command
         $from     = $to->sub(new DateInterval(sprintf('P%dD', $lookback)));
         $locked   = 0;
         $failed   = 0;
-        foreach ($owners->ownersWithEntries($from, $to) as ['user' => $owner, 'scopeKey' => $scopeKey]) {
-            $timezone = $this->timezoneResolver->resolve($owner, $scopeKey);
-            // @igor-ignore - immutable local value of this run, not a shared service.
-            $cutoff  = $to->setTimezone(new DateTimeZone($timezone))->format('Y-m-d');
-            $periods = [];
-            foreach ($this->entries->findByUserAndPeriod(UserIdResolver::getId($owner), $from, $to) as $entry) {
-                if ($entry->getScopeKey() !== $scopeKey) {
-                    continue;
-                }
-                $period = Period::containing($this->timesheets->periodKind(), StorageTime::localDate($entry->getStartedAt(), $timezone));
-                if ($period->end < $cutoff) {
-                    $periods[$period->key] = $period;
-                }
-            }
-            foreach ($periods as $period) {
-                // Since 1.24.1 (audit OM TT-M1): a period that cannot be locked (e.g. `conflict` on a still-folding unique
-                // key of a look-alike scope, see UPGRADING "To 1.24.1") is logged and skipped; the run goes on and fails.
-                try {
-                    if ($this->timesheets->autoLock($owner, $scopeKey, $period) instanceof Timesheet) {
-                        ++$locked;
+        // Since 1.24.1 (audit OM TT-M1): a period that cannot be locked (e.g. `conflict` on a still-folding unique key of
+        // a look-alike scope, see UPGRADING "To 1.24.1") is logged and skipped, and the run goes on and fails at the end.
+        // A failed flush resets the entity manager, so the owners are read again and the periods already handled are
+        // skipped.
+        $handled = [];
+        do {
+            $retry = false;
+            foreach ($owners->ownersWithEntries($from, $to) as ['user' => $owner, 'scopeKey' => $scopeKey]) {
+                $timezone = $this->timezoneResolver->resolve($owner, $scopeKey);
+                // @igor-ignore - immutable local value of this run, not a shared service.
+                $cutoff  = $to->setTimezone(new DateTimeZone($timezone))->format('Y-m-d');
+                $ownerId = UserIdResolver::getId($owner);
+                $periods = [];
+                foreach ($this->entries->findByUserAndPeriod($ownerId, $from, $to) as $entry) {
+                    if ($entry->getScopeKey() !== $scopeKey) {
+                        continue;
                     }
-                } catch (TimesheetException $exception) {
-                    ++$failed;
-                    $this->logger->warning('TimeTrack timesheet auto-lock skipped a period.', ['bundle' => 'time_track', 'action' => 'timesheets_auto_lock', 'reason' => $exception->errorCode(), 'period' => $period->key]);
+                    $period = Period::containing($this->timesheets->periodKind(), StorageTime::localDate($entry->getStartedAt(), $timezone));
+                    if ($period->end < $cutoff) {
+                        $periods[$period->key] = $period;
+                    }
+                }
+                foreach ($periods as $period) {
+                    $key = $ownerId . "\0" . $scopeKey . "\0" . $period->key;
+                    if (isset($handled[$key])) {
+                        continue;
+                    }
+                    $handled[$key] = true;
+                    try {
+                        if ($this->timesheets->autoLock($owner, $scopeKey, $period) instanceof Timesheet) {
+                            ++$locked;
+                        }
+                    } catch (TimesheetException $exception) {
+                        ++$failed;
+                        $this->logger->warning('TimeTrack timesheet auto-lock skipped a period.', ['bundle' => 'time_track', 'action' => 'timesheets_auto_lock', 'reason' => $exception->errorCode(), 'period' => $period->key]);
+                        $retry = true;
+                        continue 3;
+                    }
                 }
             }
-        }
+        } while ($retry);
 
         $this->logger->info('TimeTrack timesheet auto-lock finished.', ['bundle' => 'time_track', 'action' => 'timesheets_auto_lock', 'locked' => $locked, 'failed' => $failed]);
         if ($failed > 0) {
