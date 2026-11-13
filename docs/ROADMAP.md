@@ -52,6 +52,10 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
 - **2.0** (Beacon review of 1.25): a dedicated `TimeEntrySource` (and `ClientType`) for entries written through
   `HostTimerApi` (`api` / `agent`); 1.25 stores them as `web` with the `channel` column, because a new enum case would
   break an exhaustive `match` in a host.
+  In the same major, `HostTimerApi`'s constructor takes `Security\TaskAccessPolicyInterface` instead of the deprecated
+  `TaskAccessCheckerInterface` it asks in 1.x (audit PA, Info): 1.25 uses the deprecated slot on purpose, because that
+  is the one the ports pass rewrites, so a host configuring either interface is served — but it is a **public** service,
+  so the signature change belongs in the 2.0 notes.
 - **1.23** (spec 199; was 1.22, before that 1.21): the monitoring API, with a full audit. Off unless your organisation
   enables it with a recorded DPIA; you see it first.
 

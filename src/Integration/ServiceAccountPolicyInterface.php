@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Integration;
 
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
@@ -29,6 +30,13 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
  * already be gone. An implementation that reads a repository must answer false instead of failing for an unknown
  * account. The bundle does not rely on that: an exception is caught, logged (the class only) and read as "a person",
  * so the entry is still written — but then an agent's entry is recorded as a person's.
+ *
+ * That rescue is for the timer paths only: {@see ManualEntryService::create()} lets the
+ * exception out, because one synchronous host-initiated write may fail loudly. So a **flaky** policy makes the two
+ * surfaces disagree about one account: its timer entries are quietly recorded as a person's while its manual entries are
+ * rejected outright. Also note that nothing can repair an entity manager the policy itself closed (a failing flush of
+ * its own): the catch keeps the policy's exception from escaping, not its side effects — which is why an implementation
+ * must only read.
  */
 interface ServiceAccountPolicyInterface
 {

@@ -38,6 +38,11 @@ origin filter (Beacon spec 234).
 | `Integration\NoServiceAccountPolicy` / the host's `ServiceAccountPolicyInterface` | none in the default | Asked on every write (timer stop, idle reassign, manual entry, backdated start); the answer lives in a local variable only |
 | `TimerService::startReplacing()` | locals only; the retry counter is a loop variable | A failed flush resets the closed manager (`RecoveringFlusher`) before the next attempt |
 
+Audit PA (Info): the `catch (Throwable)` around the service-account policy keeps a failing policy from losing a timer
+stop, but it cannot repair an entity manager the policy closed itself — `RecoveringFlusher::flush()` resets a closed
+manager and rethrows, and a policy that runs its own failing flush can still break the stop it was called from. The port
+documentation forbids that shape (read-only, no flush), which is the only defence available.
+
 Worker test: `HostTimerWorkerModeTest` serves a person and two agents in turn through `http_kernel` handle / terminate
 with the services resetter never run; every answer holds only the caller's timer, the person's timer is never stopped by
 an agent, a policy answer changed between two requests applies to the next write, and 300 write steps keep a flat

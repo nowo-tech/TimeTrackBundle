@@ -955,7 +955,10 @@ asked on every write and its answer is never kept: keep it fast and free of requ
 that saves the running time of a user you are deleting included, where your account row may already be gone: answer
 false rather than failing for an unknown account. The bundle does not depend on that — an exception is caught, logged
 with its class only and read as "a person", so the entry is still written — but then an agent's entry is recorded as a
-person's.
+person's. That rescue covers the timer paths only: `ManualEntryService::create()` lets the exception out, because one
+synchronous write of yours may fail loudly. A flaky policy therefore makes the two surfaces disagree about one account —
+its timer entries recorded as a person's, its manual entries refused — and no catch can repair an entity manager your
+policy closed itself, so keep it to reads.
 
 `ManualEntryService::create()` takes an optional `channel` too, for a finished entry logged through your API.
 
