@@ -34,8 +34,8 @@ final class ScopeKeyCollation
     /**
      * Gives the scope_key columns a folding collation, as on a database without the 1.24.1 ALTER: `utf8mb4_unicode_ci`
      * on MySQL / MariaDB (folds case and accents, pads trailing spaces), `NOCASE` on SQLite (folds ASCII case) and a
-     * non-deterministic ICU collation on PostgreSQL (folds case and accents; its unique indexes then refuse the
-     * look-alike too). PostgreSQL's own mapping never folds, so this only builds the host shape the tests need.
+     * non-deterministic ICU collation on PostgreSQL (folds case only; its unique indexes then refuse the look-alike
+     * too). PostgreSQL's own mapping never folds, so this only builds the host shape the tests need.
      */
     public static function fold(Connection $connection): void
     {
@@ -52,8 +52,13 @@ final class ScopeKeyCollation
     }
 
     /**
-     * A non-deterministic ICU collation compares `org-a` and `Org-a` as one value, unique indexes included. Pattern
-     * matching is not allowed on such a column, which the folding tests do not use.
+     * A non-deterministic ICU collation compares `org-a` and `Org-a` as one value, unique indexes included. `und-u-ks-level2`
+     * ignores case only: `org-á` and `org-a ` stay different values (level 1 would ignore accents, and PostgreSQL's
+     * `varchar` never pads), so this cell folds less than the MySQL / MariaDB `utf8mb4_unicode_ci` one above.
+     *
+     * PostgreSQL does not allow pattern matching on a column with a non-deterministic collation. Both callers of
+     * `self::fold()` (`Tests\Functional\ScopeKeyHostTest` and `Tests\Functional\ScopeKeyLookAlikeTest`) are bound by
+     * that: a `LIKE` on `scope_key` added to either of them would fail on the PostgreSQL cell alone.
      */
     private static function postgresFolding(Connection $connection, string $table, bool $nullable): void
     {
