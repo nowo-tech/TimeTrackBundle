@@ -1005,11 +1005,13 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         // Since 1.24.1 (audit OM TT-I1): the rows are read in keyset batches, so only one batch is held in memory.
         $count = 0;
         $after = '';
+        // @igor-ignore - query builder created for this call, not a shared service.
         $query->select('e.id AS id', 'IDENTITY(e.user) AS owner', 'e.scopeKey AS scopeKey')
             ->andWhere('e.id > :afterEntry')
             ->orderBy('e.id', SortDirection::Ascending)
             ->setMaxResults(self::EXACT_BATCH);
         do {
+            // @igor-ignore - query builder created for this call, not a shared service.
             /** @var list<array{id: string, owner: int|string|null, scopeKey: string|null}> $batch */
             $batch = $query->setParameter('afterEntry', $after)->getQuery()->getArrayResult();
             foreach ($batch as $row) {
