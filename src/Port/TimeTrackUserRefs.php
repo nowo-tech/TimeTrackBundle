@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use LogicException;
-use Nowo\TimeTrackBundle\Support\UserIdResolver;
-use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -14,7 +12,6 @@ use function sprintf;
 use function strlen;
 use function strrpos;
 use function substr;
-use function trim;
 
 /**
  * Converts between the Symfony users the TimeTrack services work on and the framework-free {@see TimeTrackUserRef} of
@@ -28,23 +25,12 @@ final class TimeTrackUserRefs
     private const PROXY_MARKER = '\\__CG__\\';
 
     /**
-     * The reference of a user object: its class (no Doctrine proxy), `UserIdResolver::idOf()` (null when none or blank),
+     * The reference of a user object (delegates to the public {@see TimeTrackUserRefFactory}): its class (no Doctrine proxy), `UserIdResolver::idOf()` (null when none or blank),
      * its identifier and role names when it is a Symfony user ('' and none otherwise), and the object itself (hidden).
      */
     public static function fromUser(object $user): TimeTrackUserRef
     {
-        if ($user instanceof HostUser) {
-            // Since 1.23.0 (`user_mapping: id`): a stored owner is your user's class and id (no object of yours).
-            return new TimeTrackUserRef($user->getUserClass(), $user->getId(), '', [], $user);
-        }
-        $id = UserIdResolver::idOf($user);
-        if ($id !== null && trim($id) === '') {
-            $id = null; // a blank id (e.g. getId() returning ' ') counts as none
-        }
-
-        return $user instanceof UserInterface
-            ? new TimeTrackUserRef(self::className($user), $id, $user->getUserIdentifier(), $user->getRoles(), $user)
-            : new TimeTrackUserRef(self::className($user), $id, '', [], $user);
+        return TimeTrackUserRefFactory::buildFromObject($user);
     }
 
     /**

@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.24.0](#to-1240)
 - [To 1.23.1](#to-1231)
 - [To 1.23.0](#to-1230)
   - [Framework-free host ports (optional until 2.0)](#framework-free-host-ports-optional-until-20)
@@ -79,6 +80,11 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.24.0
+
+Target **1.24.0** (minor), from **1.23.1**: `composer update nowo-tech/time-track-bundle`. No action required: new public
+API `Port\TimeTrackUserRefFactory` (see USAGE); no configuration, schema or behaviour change.
 
 ## To 1.23.1
 
