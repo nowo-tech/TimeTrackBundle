@@ -62,6 +62,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Timer for token principals** (Beacon spec 234 FR-023 / FR-024, AI Flow on Beacon tasks). `Timer\HostTimerApi` (public service) gives your own controllers `start()`, `stop()` and `current()` for a principal without an app password (an API token, an MCP session), taking the account as a `TimeTrackUserRef` with its security user object. Authorisation stays in the host; the task is checked through the configured task provider / access checker and the period lock as for every timer. One running timer per account: a start while one runs stops it first and reports its entry (`HostTimerStart::$stopped`); only the actor's own timer is ever touched, so an agent never stops a person's timer. Concurrent starts: each attempt checks and inserts under the account's row lock; a start that does not take it (client API) and wins the unique index in between is answered by a retry, up to 3 attempts (`TimerService::REPLACE_ATTEMPTS`), the last call wins and every stopped timer is recorded once; the replaced timer is logged at `info` (`timer_replace`) with the entry id and the account id only. Framework-free results: `TimerSnapshot`, `TimerEntrySnapshot`, `HostTimerStart`. The app-password client API is unchanged.
+- **Service accounts** (spec 234 FR-023). Host port `Integration\ServiceAccountPolicyInterface::isServiceAccount(TimeTrackUserRef): bool` (framework-free, REQ-ARCH-001 rule 3), configured with `service_account_policy` or an alias; default `NoServiceAccountPolicy` (everyone is a person). A service account's entries may overlap, its own and other accounts': `ManualEntryService` does not refuse `overlap` for it and a backdated start is not clamped to its latest entry. People keep every overlap rule; the period lock, the task-move rules (spec 217 FR-008) and the deleted-account timer (HA-M6 exception) are unchanged. The policy is asked on every write and never memoised (worker mode).
+- **Entry channel and service-account mark** (Beacon review of the 1.25 API). `time_track_entries.channel` (`VARCHAR(16)`, null) and `service_account` (boolean, default false), index `idx_time_track_entries_origin (service_account, channel, started_at)`. Typed accessors `TimeEntry::channel()` / `isServiceAccount()`, also on `TimeEntryView`, `TimerEntrySnapshot`, the client API entry shape (`channel`, `serviceAccount`), the personal-data export rows and the CSV export (`channel`, `service_account`). Channel labels are 1 to 16 characters of `a-z`, `0-9` and `_` (`Timer\TimerChannel`), refused otherwise (REQ-SEC-006); a client of the client API cannot forge it through timer metadata. `ManualEntryService::create()` takes an optional `channel`.
+- **Origin filter** for the entries store: `Repository\OriginFilteredTimeEntryRepositoryInterface` (`findPageByUsersPeriodAndOrigin()`, `countByUsersPeriodAndOrigin()`) with `TimeEntryOriginFilter` (channel, service account, no channel), implemented by the Doctrine store with SQL conditions and PHP re-checks.
+
+### Changed
+
+- **Schema migration required**: two columns and one index on `time_track_entries` (reference SQL in `docs/sql/1.25.0/`, the demo's `Version20261113000000`). No row is rewritten.
+
+### Tests
+
+- `HostTimerApiTest` (start / stop / current, replace and report, agent versus person, two concurrent starts and the exhausted retries, the account lock, refusals leave the timer untouched, no personal data in the replace log), `ServiceAccountEntriesTest` (overlaps per account and across accounts, people's rules unchanged, backdate clamp, idle reassign, accessors, CSV, filter look-alikes), `HostTimerApiDatabaseTest` (columns, origin filter on SQLite / MySQL / PostgreSQL, a start that loses the unique index on the real Doctrine stack) and `HostTimerWorkerModeTest` (REQ-RUNTIME-002: a person and two agents through one kernel kept alive without the services resetter, `http_kernel` handle / terminate).
+
 ### Documentation
 
 - `docs/SECURITY.md`: replace the outdated "Pass (conditional) recorded" checklist cell with the latest audits (Appendices OA, NP, NG) and their dates (REQ-SEC-001 / REQ-SEC-004).

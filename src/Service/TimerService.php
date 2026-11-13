@@ -34,9 +34,11 @@ use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
@@ -44,8 +46,11 @@ use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
+use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
@@ -67,6 +72,7 @@ use function is_string;
 use function max;
 use function mb_strlen;
 use function min;
+use function preg_match;
 use function sprintf;
 use function usort;
 
@@ -89,6 +95,15 @@ final readonly class TimerService
 
     /** Max length of a note on a timer or an entry, in code points ({@see NoteSanitizer::MAX_LENGTH}). */
     public const NOTE_MAX_LENGTH = NoteSanitizer::MAX_LENGTH;
+
+    /**
+     * Since 1.25.0: timer metadata key of the channel a {@see HostTimerApi} timer was started through. Reserved: a client
+     * cannot set it, and it moves to the entry's `channel` column when the timer stops.
+     */
+    public const CHANNEL_KEY = 'channel';
+
+    /** Since 1.25.0: attempts of {@see self::startReplacing()} when a concurrent start takes the account's timer slot. */
+    public const REPLACE_ATTEMPTS = 3;
 
     private ClockInterface $clock;
 
@@ -116,6 +131,8 @@ final readonly class TimerService
         ?UserReferenceResolverInterface $userReferences = null,
         // Since 1.21: the default `billable` of the entries a timer records (null = none, the flag stays unset).
         private ?TimeEntryBillableDefaultProviderInterface $billableDefaults = null,
+        // Since 1.25.0: tells a service account (agent) from a person (null = everyone is a person).
+        private ?ServiceAccountPolicyInterface $serviceAccounts = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -313,6 +330,89 @@ final readonly class TimerService
         $entry = $this->stop($user, null, $note);
 
         return ['entry' => $entry, 'timer' => $this->start($user, $taskId, $clientType, $metadata)];
+    }
+
+    /**
+     * Since 1.25.0 (Beacon spec 234 FR-023 / FR-024, {@see HostTimerApi}): starts a timer now on a task and, when the
+     * account already has one running, stops that one first (ClickUp behaviour) and returns its entry. Only the account's
+     * own timer is ever stopped: an agent's call cannot stop a person's timer.
+     *
+     * The task and the period lock are checked before anything is stopped, so a refused start leaves the running timer
+     * untouched. Each attempt runs in one transaction holding the account's write lock (stores with
+     * {@see UserSerialisedTimeEntryRepositoryInterface}), so two calls of this method for one account run one after the
+     * other: the second stops the first one's timer. When a start that does not take the lock (the client API) wins the
+     * unique index in between, the attempt is retried: up to {@see self::REPLACE_ATTEMPTS} attempts, the last call wins,
+     * and every stopped timer is recorded once.
+     *
+     * @param UserInterface $user Timer owner
+     * @param string $taskId Task to track
+     * @param ClientType $clientType Client of the new timer (source of its entry)
+     * @param string $channel Channel label ({@see TimerChannel}), stored on the entry
+     * @param array<string, mixed> $metadata Metadata of the new timer (`note`; reserved keys are dropped)
+     * @param string|null $stopNote Note stored on the entry of the replaced timer
+     *
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     * @throws PeriodLockedException When the current period is locked
+     * @throws PeriodSubmittedException When the current period is submitted
+     * @throws InvalidArgumentException When the channel is not a valid label
+     * @throws ActiveTimerConflictException When concurrent starts took the slot on every attempt
+     *
+     * @return array{timer: ActiveTimer, task: TaskReference, stopped: list<TimeEntry>} The new timer, its task and the entries of the timers it stopped (oldest first)
+     */
+    public function startReplacing(UserInterface $user, string $taskId, ClientType $clientType, string $channel, array $metadata = [], ?string $stopNote = null): array
+    {
+        $channel  = TimerChannel::assertValid($channel);
+        $task     = $this->resolveTrackable($user, $taskId);
+        $scopeKey = $this->scopeKeyFor($user, $task->id, $task->boardId);
+        $this->periodLockGuard?->assertWritable($user, $scopeKey, $this->clock->now(), WriteKind::TimerStart);
+        $metadata                    = $this->startMetadata($metadata);
+        $metadata[self::CHANNEL_KEY] = $channel;
+
+        $stopped = [];
+        for ($attempt = 1;; ++$attempt) {
+            $running = $this->getActive($user);
+            if ($running instanceof ActiveTimer) {
+                // Recorded once even when a concurrent call stops the same timer (conditional removal, CL-05).
+                $replaced = $this->closeTimer($user, $running, $this->clock->now(), $stopNote);
+                if ($replaced instanceof TimeEntry) {
+                    $stopped[] = $replaced;
+                    // Spec 234 (Beacon review): the replaced timer is logged with the entry id and the account id only.
+                    $this->logger->info('TimeTrack running timer replaced by a new start.', $this->context('timer_replace', $clientType) + ['channel' => $channel, 'entry_id' => $replaced->getId(), 'account_id' => UserIdResolver::getId($user)]);
+                }
+            }
+
+            try {
+                // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+                $timer = $this->serialised($user, function () use ($user, $task, $clientType, $metadata): ?ActiveTimer {
+                    if ($this->getActive($user) instanceof ActiveTimer) {
+                        return null; // Another start of this account got in first: stop that one on the next attempt.
+                    }
+                    $timer = new ActiveTimer($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $clientType, $metadata, $this->clock->now());
+                    $this->activeTimerRepository->save($timer);
+
+                    return $timer;
+                });
+            } catch (UniqueConstraintViolationException $e) {
+                // A start that does not take the account lock (client API) inserted its timer first.
+                $this->logger->warning('TimeTrack timer start rejected: concurrent start.', $this->context('timer_replace', $clientType) + ['attempt' => $attempt]);
+                if ($attempt >= self::REPLACE_ATTEMPTS) {
+                    throw ActiveTimerConflictException::concurrentStart($e);
+                }
+
+                continue;
+            }
+            if ($timer instanceof ActiveTimer) {
+                break;
+            }
+            if ($attempt >= self::REPLACE_ATTEMPTS) {
+                throw ActiveTimerConflictException::concurrentStart();
+            }
+        }
+
+        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['channel' => $channel, 'replaced' => $stopped !== []]);
+
+        return ['timer' => $timer, 'task' => $task, 'stopped' => $stopped];
     }
 
     /**
@@ -728,11 +828,16 @@ final readonly class TimerService
             $endedAt,
             $duration,
             $this->mapClientTypeToSource($timer->getClientType()),
-            $extraMetadata === [] ? $this->entryMetadata($timer->getMetadata(), $note) : [...($this->entryMetadata($timer->getMetadata(), $note) ?? []), ...$extraMetadata],
+            $extraMetadata === [] ? $this->entryMetadata($this->withoutChannel($timer->getMetadata()), $note) : [...($this->entryMetadata($this->withoutChannel($timer->getMetadata()), $note) ?? []), ...$extraMetadata],
             $endedAt,
         );
         $entry->assignScopeKey($this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()));
         $this->applyBillableDefault($entry);
+        $serviceAccount = $this->isServiceAccount($user);
+        $entry->markOrigin($this->channelOf($timer), $serviceAccount);
+        foreach ($extraEntries as $extra) {
+            $extra->markOrigin($extra->channel(), $serviceAccount);
+        }
         $entries = $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries;
 
         if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
@@ -764,6 +869,57 @@ final readonly class TimerService
         $this->logger->info('TimeTrack timer stopped.', $this->context('timer_stop', $timer->getClientType()));
 
         return $entry;
+    }
+
+    /**
+     * Since 1.25.0: the policy's answer for the user, asked per call (never memoised: worker mode).
+     */
+    private function isServiceAccount(UserInterface $user): bool
+    {
+        return $this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false;
+    }
+
+    /**
+     * Since 1.25.0: the channel a timer was started through ({@see self::CHANNEL_KEY}), or null. A stored value that is
+     * not a valid label (written by hand) is ignored.
+     */
+    private function channelOf(ActiveTimer $timer): ?string
+    {
+        $channel = ($timer->getMetadata() ?? [])[self::CHANNEL_KEY] ?? null;
+
+        return is_string($channel) && preg_match(TimerChannel::PATTERN, $channel) === 1 ? $channel : null;
+    }
+
+    /**
+     * Since 1.25.0: timer metadata without the channel (it moves to the entry's column).
+     *
+     * @param array<string, mixed>|null $metadata
+     *
+     * @return array<string, mixed>|null
+     */
+    private function withoutChannel(?array $metadata): ?array
+    {
+        if ($metadata === null || !isset($metadata[self::CHANNEL_KEY])) {
+            return $metadata;
+        }
+        unset($metadata[self::CHANNEL_KEY]);
+
+        return $metadata === [] ? null : $metadata;
+    }
+
+    /**
+     * Since 1.25.0: runs a write of the user's timer in one transaction holding the user's write lock (stores with
+     * {@see UserSerialisedTimeEntryRepositoryInterface}; others run it as is).
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function serialised(UserInterface $user, callable $operation): mixed
+    {
+        return $this->timeEntryRepository instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->timeEntryRepository->inUserTransaction($user, $operation) : $operation();
     }
 
     /**
@@ -806,8 +962,9 @@ final readonly class TimerService
      */
     private function startMetadata(array $metadata): array
     {
-        // Since 1.15: reserved for {@see self::stopForUserDeletion()}; a caller cannot forge the mark.
-        unset($metadata['closed_by']);
+        // Since 1.15: reserved for {@see self::stopForUserDeletion()}; a caller cannot forge the mark. Since 1.25.0 the
+        // channel too: only {@see self::startReplacing()} sets it.
+        unset($metadata['closed_by'], $metadata[self::CHANNEL_KEY]);
         if (!isset($metadata['note'])) {
             return $metadata;
         }
@@ -858,6 +1015,7 @@ final readonly class TimerService
             $this->clock->now(),
         );
         $reassigned->assignScopeKey($this->scopeKeyFor($user, $target->id, $target->boardId));
+        $reassigned->markOrigin($this->channelOf($timer), false); // the service-account mark is set by closeTimer()
         $this->applyBillableDefault($reassigned);
         $hasOwnEntry = $from > $timer->getStartedAt();
 
@@ -922,9 +1080,10 @@ final readonly class TimerService
                 : new ClampedTime($requested, $now);
         }
 
-        $lower   = $now->modify(sprintf('-%d seconds', $limits->maxSeconds));
-        $reason  = ClampedTime::REASON_MAX_BACKDATE;
-        $lastEnd = $this->latestEndedAt(UserIdResolver::getId($user), $lower);
+        $lower  = $now->modify(sprintf('-%d seconds', $limits->maxSeconds));
+        $reason = ClampedTime::REASON_MAX_BACKDATE;
+        // Since 1.25.0: a service account's entries may overlap, so its own latest entry does not clamp the start.
+        $lastEnd = $this->isServiceAccount($user) ? null : $this->latestEndedAt(UserIdResolver::getId($user), $lower);
         if ($lastEnd instanceof DateTimeImmutable && $lastEnd >= $lower) {
             $lower  = min($lastEnd, $now);
             $reason = ClampedTime::REASON_OVERLAP;

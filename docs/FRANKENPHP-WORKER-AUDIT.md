@@ -3,13 +3,14 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/time-track-bundle` (`symfony-bundle`) |
-| Current audit | **1.23.0** (`feat/arch-001`), 2026-11-12, framework-free ports and the private entity manager — see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager); **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
+| Current audit | **1.25.0** (Unreleased, `feat/host-timer-api`), 2026-11-13, host timer API and service accounts — see [Re-audit 1.25](#re-audit-125-host-timer-api-and-service-accounts); **1.23.0** (`feat/arch-001`), 2026-11-12, framework-free ports and the private entity manager — see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager); **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
 | First audit | `v1.3.3` / `d90eed2`, 2026-09-23 (findings W-01 … W-03 below) |
 | Method | Manual review of every service, listener, command and controller under `src/` (grep for `static`, mutable properties, `ResetInterface`, `exit` / `die`), Igor (`composer igor`), PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic` + `ruleset-worker`, and the many-request worker test |
 | **Verdict** | ✅ **Works with `FRANKENPHP_RESET_KERNEL=false`** — no service keeps request, user or tenant data; the one per-flush state is cleared by the bundle at every request, message and command boundary; the worker test passes with one kernel and two people in turn |
 
 ## Table of contents
 
+- [Re-audit 1.25 (host timer API and service accounts)](#re-audit-125-host-timer-api-and-service-accounts)
 - [Re-audit 1.23 (REQ-ARCH-001 ports and private entity manager)](#re-audit-123-req-arch-001-ports-and-private-entity-manager)
 - [Re-audit 1.22 (client leave, spec 204)](#re-audit-122-client-leave-spec-204)
 - [Re-audit 1.20 (runtime calendar OAuth apps)](#re-audit-120-runtime-calendar-oauth-apps)
@@ -23,6 +24,24 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.25 (host timer API and service accounts)
+
+Scope: `Timer\HostTimerApi`, its value objects, `TimerService::startReplacing()`, the service-account policy port and the
+origin filter (Beacon spec 234).
+
+| Service | State | Verdict |
+|---------|-------|---------|
+| `Timer\HostTimerApi` | `final readonly`: the timer service | Stateless; the actor arrives with every call and the results are built per call |
+| `Timer\TimerSnapshot`, `TimerEntrySnapshot`, `HostTimerStart`, `Repository\TimeEntryOriginFilter` | `final readonly` value objects | Built per call, never stored by the bundle |
+| `Timer\TimerChannel` | static helper, a constant pattern | Pure |
+| `Integration\NoServiceAccountPolicy` / the host's `ServiceAccountPolicyInterface` | none in the default | Asked on every write (timer stop, idle reassign, manual entry, backdated start); the answer lives in a local variable only |
+| `TimerService::startReplacing()` | locals only; the retry counter is a loop variable | A failed flush resets the closed manager (`RecoveringFlusher`) before the next attempt |
+
+Worker test: `HostTimerWorkerModeTest` serves a person and two agents in turn through `http_kernel` handle / terminate
+with the services resetter never run; every answer holds only the caller's timer, the person's timer is never stopped by
+an agent, a policy answer changed between two requests applies to the next write, and 300 write steps keep a flat
+memory.
 
 ## Re-audit 1.23 (REQ-ARCH-001 ports and private entity manager)
 

@@ -47,6 +47,11 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
   id value object next to the `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager
   so no service flushes the host's (rule 6).
 - **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.22 are removed.
+- **1.25** (Beacon spec 234, AI Flow on Beacon tasks): `HostTimerApi` (timer start / stop / current for token
+  principals), `ServiceAccountPolicyInterface` (agents' entries may overlap), the entry channel and service-account mark.
+- **2.0** (Beacon review of 1.25): a dedicated `TimeEntrySource` (and `ClientType`) for entries written through
+  `HostTimerApi` (`api` / `agent`); 1.25 stores them as `web` with the `channel` column, because a new enum case would
+  break an exhaustive `match` in a host.
 - **1.23** (spec 199; was 1.22, before that 1.21): the monitoring API, with a full audit. Off unless your organisation
   enables it with a recorded DPIA; you see it first.
 

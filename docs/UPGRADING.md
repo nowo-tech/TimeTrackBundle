@@ -81,6 +81,39 @@
 
 ## Unreleased
 
+Target **1.25.0** (minor), from **1.24.x**: `composer update nowo-tech/time-track-bundle`.
+
+**Schema migration required (every host).** `time_track_entries` gets `channel` (`VARCHAR(16)`, null) and
+`service_account` (boolean, not null, default false), and the index `idx_time_track_entries_origin` on
+`(service_account, channel, started_at)`. Run `doctrine:migrations:diff`, or apply the reference SQL of your platform in
+`docs/sql/1.25.0/` (the demo ships the MySQL one as `demo/symfony8/migrations/Version20261113000000.php`). No row is
+rewritten: existing entries are people's entries with no channel. On MySQL 8 the column additions are instant; the index
+is built online.
+
+```sql
+-- MySQL 8 / MariaDB
+ALTER TABLE time_track_entries ADD channel VARCHAR(16) DEFAULT NULL, ADD service_account TINYINT(1) DEFAULT 0 NOT NULL;
+CREATE INDEX idx_time_track_entries_origin ON time_track_entries (service_account, channel, started_at);
+```
+
+Nothing else to change: without a policy everyone is a person and every rule is the 1.24 one. To use the new parts
+(see [USAGE](USAGE.md#timer-for-token-principals-and-service-accounts-125)):
+
+- **Timer for an API token or MCP session**: call `Timer\HostTimerApi` from your own controller, with the account as
+  `TimeTrackUserRefFactory::fromUser($user)` and a channel label (`api`, `mcp`). A start while the account's timer runs
+  now stops that timer and reports it; the client API still answers 409 there, as before.
+- **Agents**: implement `Integration\ServiceAccountPolicyInterface` and set `service_account_policy` (or alias the
+  interface). Their entries may overlap and are marked `service_account`.
+- **Reports**: tell agents' time from people's time with `TimeEntry::isServiceAccount()` / `channel()` (DQL fields
+  `serviceAccount`, `channel`) or `OriginFilteredTimeEntryRepositoryInterface`; do not parse the metadata.
+- **Additive output**: the client API entry shape and the JSON export gain `channel` and `serviceAccount`, the CSV
+  export gains the columns `channel` and `service_account` at the end, and the personal-data export rows gain `channel`
+  and `serviceAccount`. A consumer that requires an exact set of keys or columns must accept them.
+- **Timer metadata**: the key `channel` is reserved; a client-supplied value is dropped at start, like `closed_by`.
+- If you construct `TimerService` or `ManualEntryService` by hand, they take an optional trailing `$serviceAccounts`
+  argument.
+- Coming in 2.0: a dedicated entry source for `HostTimerApi` entries (they are `web` in 1.x).
+
 ## To 1.24.0
 
 Target **1.24.0** (minor), from **1.23.1**: `composer update nowo-tech/time-track-bundle`. No action required: new public

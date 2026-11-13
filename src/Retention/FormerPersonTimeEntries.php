@@ -257,6 +257,9 @@ final readonly class FormerPersonTimeEntries
                     'description'          => $entry->getDescription(),
                     'note'                 => is_string($note) ? $note : null,
                     'closedByUserDeletion' => $entry->isClosedByUserDeletion(),
+                    // Since 1.25.0.
+                    'channel'        => $entry->channel(),
+                    'serviceAccount' => $entry->isServiceAccount(),
                 ];
             }
         } while (count($entries) === self::EXPORT_BATCH);

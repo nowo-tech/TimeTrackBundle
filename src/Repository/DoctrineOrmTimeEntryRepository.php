@@ -35,7 +35,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, LockingFindableTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, LockingFindableTimeEntryRepositoryInterface, OriginFilteredTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -1099,5 +1099,62 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->setParameter('userIds', $userIds)
             ->setParameter('from', $from)
             ->setParameter('to', $to);
+    }
+
+    /**
+     * Since 1.25.0: the users' entries of the period that pass the origin filter, newest first. The channel and the mark
+     * are SQL conditions (so the page is cut after them), and the rows are checked again in PHP: owners byte for byte
+     * ({@see ExactUserIds}) and the channel with `===` (REQ-SEC-006).
+     */
+    public function findPageByUsersPeriodAndOrigin(array $userIds, DateTimeImmutable $from, DateTimeImmutable $to, TimeEntryOriginFilter $filter, int $offset, int $limit): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        /** @var list<TimeEntry> $result */
+        $result = $this->originQuery($userIds, $from, $to, $filter)
+            ->select('e')
+            ->orderBy('e.startedAt', SortDirection::Descending)
+            ->addOrderBy('e.id', SortDirection::Descending)
+            ->setFirstResult(max(0, $offset))
+            ->setMaxResults(max(1, $limit))
+            ->getQuery()
+            ->getResult();
+
+        return array_values(array_filter($this->exactOwners($result, $userIds), $filter->matches(...)));
+    }
+
+    /**
+     * Since 1.25.0: number of the users' entries of the period that pass the origin filter.
+     */
+    public function countByUsersPeriodAndOrigin(array $userIds, DateTimeImmutable $from, DateTimeImmutable $to, TimeEntryOriginFilter $filter): int
+    {
+        if ($userIds === []) {
+            return 0;
+        }
+
+        return $this->countOwned($this->originQuery($userIds, $from, $to, $filter), $userIds);
+    }
+
+    /**
+     * @param list<string> $userIds
+     */
+    private function originQuery(array $userIds, DateTimeImmutable $from, DateTimeImmutable $to, TimeEntryOriginFilter $filter): QueryBuilder
+    {
+        $query = $this->periodQuery($userIds, $from, $to);
+        if ($filter->serviceAccount !== null) {
+            // @igor-ignore - Per-call QueryBuilder built in this method; not a shared service.
+            $query->andWhere('e.serviceAccount = :serviceAccount')->setParameter('serviceAccount', $filter->serviceAccount, Types::BOOLEAN);
+        }
+        if ($filter->withoutChannel) {
+            // @igor-ignore - Per-call QueryBuilder built in this method; not a shared service.
+            $query->andWhere('e.channel IS NULL');
+        } elseif ($filter->channel !== null) {
+            // @igor-ignore - Per-call QueryBuilder built in this method; not a shared service.
+            $query->andWhere('e.channel = :channel')->setParameter('channel', $filter->channel);
+        }
+
+        return $query;
     }
 }

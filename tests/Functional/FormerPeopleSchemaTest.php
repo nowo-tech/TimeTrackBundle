@@ -49,6 +49,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $em->persist(new TimeEntry($this->user, 'task-1', 'Kept', null, new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Web));
         $em->flush();
 
+        // Since 1.25.0: the later migration is rolled back first and applied again last.
+        $this->runSql($this->platformName() . '-down.sql', '1.25.0');
         $this->runSql($this->platformName() . '-down.sql');
         $table = $conn->createSchemaManager()->introspectTable('time_track_entries');
         self::assertTrue($table->getColumn('user_id')->getNotnull());
@@ -58,6 +60,7 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         self::assertSame(1, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
 
         $this->runSql($this->platformName() . '-up.sql');
+        $this->runSql($this->platformName() . '-up.sql', '1.25.0');
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.15 mapping');
         self::assertSame(['Kept', '3600'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT duration_seconds FROM time_track_entries')]);
     }
@@ -131,10 +134,10 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         };
     }
 
-    private function runSql(string $file): void
+    private function runSql(string $file, string $version = '1.15.0'): void
     {
         $conn = $this->entityManager()->getConnection();
-        foreach ($this->statements($file) as $statement) {
+        foreach ($this->statements($file, $version) as $statement) {
             $conn->executeStatement(str_replace('REFERENCES users (id)', 'REFERENCES app_user (id)', $statement));
         }
     }
@@ -142,10 +145,10 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
     /**
      * @return list<string>
      */
-    private function statements(string $file): array
+    private function statements(string $file, string $version = '1.15.0'): array
     {
         $statements = [];
-        foreach (explode("\n", (string) file_get_contents(dirname(__DIR__, 2) . '/docs/sql/1.15.0/' . $file)) as $line) {
+        foreach (explode("\n", (string) file_get_contents(dirname(__DIR__, 2) . '/docs/sql/' . $version . '/' . $file)) as $line) {
             $line = trim($line);
             // `.bail on` and `\\set ON_ERROR_STOP on` are for the native clients.
             if ($line !== '' && !str_starts_with($line, '--') && !str_starts_with($line, '.') && !str_starts_with($line, '\\')) {

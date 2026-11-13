@@ -14,6 +14,7 @@
             <index name="idx_time_track_entries_source" columns="source"/>
             <index name="idx_time_track_entries_user_scope_started" columns="user_id,scope_key,started_at"/>
             <index name="idx_time_track_entries_person_ref" columns="person_ref"/>
+            <index name="idx_time_track_entries_origin" columns="service_account,channel,started_at"/>
         </indexes>
         <unique-constraints>
             <unique-constraint name="uniq_time_track_entries_external" columns="external_source,external_id"/>
@@ -28,6 +29,12 @@
         <field name="personNameSnapshot" type="string" column="person_name_snapshot" length="255" nullable="true"/>
         <field name="personRef" type="string" column="person_ref" length="69" nullable="true"/>
         <field name="anonymisedAt" type="datetime_immutable" column="anonymised_at" nullable="true"/>
+        <field name="channel" type="string" column="channel" length="16" nullable="true"/>
+        <field name="serviceAccount" type="boolean" column="service_account">
+            <options>
+                <option name="default">0</option>
+            </options>
+        </field>
         <field name="taskId" type="string" column="task_id" length="36"/>
         <field name="taskTitleSnapshot" type="string" column="task_title_snapshot" length="255"/>
         <field name="boardIdSnapshot" type="string" column="board_id_snapshot" length="36" nullable="true"/>

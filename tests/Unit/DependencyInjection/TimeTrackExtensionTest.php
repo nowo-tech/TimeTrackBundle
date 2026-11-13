@@ -18,6 +18,8 @@ use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Integration\NoServiceAccountPolicy;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
@@ -32,6 +34,7 @@ use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\SecurityUser;
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -102,6 +105,25 @@ final class TimeTrackExtensionTest extends TestCase
             $argument = $container->getDefinition($serviceId)->getArgument('$userReferences');
             self::assertInstanceOf(Reference::class, $argument, $serviceId);
             self::assertSame(UserReferenceResolverInterface::class, (string) $argument);
+        }
+    }
+
+    public function testLoadWiresTheServiceAccountPolicyAndTheHostTimerApi(): void
+    {
+        foreach ([[[], NoServiceAccountPolicy::class], [['service_account_policy' => 'app.agents'], 'app.agents'], [['service_account_policy' => ''], NoServiceAccountPolicy::class]] as [$config, $alias]) {
+            $container = new ContainerBuilder();
+            $container->setParameter('kernel.environment', 'test');
+            $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+            (new TimeTrackExtension())->load([['user_class' => User::class] + $config], $container);
+
+            self::assertSame($alias, (string) $container->getAlias(ServiceAccountPolicyInterface::class));
+            foreach ([TimerService::class, ManualEntryService::class] as $serviceId) {
+                self::assertSame(ServiceAccountPolicyInterface::class, (string) $container->getDefinition($serviceId)->getArgument('$serviceAccounts'), $serviceId);
+            }
+            $api = $container->getDefinition(HostTimerApi::class);
+            self::assertTrue($api->isPublic());
+            self::assertSame(TimerService::class, (string) $api->getArgument('$timers'));
         }
     }
 

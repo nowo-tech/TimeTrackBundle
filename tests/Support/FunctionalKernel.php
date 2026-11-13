@@ -8,10 +8,12 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as Doctrine
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
+use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Fixtures\HostTimer\HostTimerTestController;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
@@ -21,6 +23,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
@@ -180,6 +183,11 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         // Since 1.21: the host's billable default (answers null, the default behaviour, until a test sets an answer).
         $container->services()->set(StubBillableDefaultProvider::class)->args([null])->public();
         $container->services()->alias(TimeEntryBillableDefaultProviderInterface::class, StubBillableDefaultProvider::class);
+        // Since 1.25.0 (spec 234): the host's service-account policy (identifiers starting with `agent-`) and a host
+        // controller over HostTimerApi for a token principal.
+        $container->services()->set(StubServiceAccountPolicy::class)->public();
+        $container->services()->alias(ServiceAccountPolicyInterface::class, StubServiceAccountPolicy::class);
+        $container->services()->set(HostTimerTestController::class)->autowire()->public()->tag('controller.service_arguments');
         if ($this->psrOnlyClock) {
             // Since 1.19.1: the host's own PSR clock wins over the framework's `clock` alias (as in Beacon).
             $container->services()->set(PsrOnlyClock::class)->public();
@@ -308,5 +316,6 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
     private function configureRoutes(RoutingConfigurator $routes): void
     {
         $routes->import('.', 'nowo_time_track');
+        $routes->add('host_timer_test', '/host-timer/{action}')->controller(HostTimerTestController::class)->methods(['POST']);
     }
 }
