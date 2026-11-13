@@ -10,6 +10,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
+use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -17,6 +18,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Psr\Log\LoggerInterface;
 use SortDirection;
@@ -42,6 +44,9 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /** Since 1.15: entries one bulk statement of a release or an anonymisation touches. */
     public const FORMER_PERSON_BATCH = 500;
+
+    /** Since 1.24.1: rows read per round while a listing is checked byte for byte before its page is cut. */
+    private const EXACT_BATCH = 500;
 
     /**
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
@@ -533,10 +538,11 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function ownersWithEntries(DateTimeImmutable $from, DateTimeImmutable $to): array
     {
-        /** @var list<array{userId: int|string, scopeKey: string}> $rows */
-        $rows = $this->entityManager->createQueryBuilder()
+        // Since 1.24.1 (REQ-SEC-006): the pairs are told apart byte for byte in PHP (a SQL DISTINCT on a still-folding
+        // column merged `acme` and `Acme`, so one of them never had its timesheet locked).
+        /** @var list<array{userId: int|string, scopeKey: string}> $all */
+        $all = $this->entityManager->createQueryBuilder()
             ->select('IDENTITY(e.user) AS userId', 'e.scopeKey AS scopeKey')
-            ->distinct()
             ->from(TimeEntry::class, 'e')
             ->where('e.scopeKey IS NOT NULL')
             // Since 1.15: ownerless entries have no timesheet to create.
@@ -547,6 +553,10 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->setParameter('to', $to)
             ->getQuery()
             ->getArrayResult();
+        $rows = [];
+        foreach ($all as $row) {
+            $rows[(string) $row['userId'] . "\0" . $row['scopeKey']] = $row;
+        }
         $userClass = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
         $owners    = [];
         foreach ($rows as $row) {
@@ -582,13 +592,16 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.13: sets the scope of still scopeless entries, one DQL update per scope, then detaches them.
+     * Since 1.13: sets the scope of still scopeless entries, one DQL update per scope, then detaches them. Since 1.24.1
+     * (REQ-SEC-006) a key that is not usable ({@see ScopeKeys::isUsable()}) is refused before anything is written.
+     *
+     * @throws InvalidArgumentException When a scope key is not usable
      */
     public function assignScopeKeys(array $scopeKeys): int
     {
         $byScope = [];
         foreach ($scopeKeys as $entryId => $scopeKey) {
-            $byScope[$scopeKey][] = (string) $entryId;
+            $byScope[ScopeKeys::assertUsable((string) $scopeKey)][] = (string) $entryId;
         }
         $changed = 0;
         foreach ($byScope as $scopeKey => $ids) {
@@ -756,6 +769,10 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function applyTaskMove(array $entryIds, ?string $boardId, ?string $scopeKey): int
     {
+        if ($scopeKey !== null) {
+            // Since 1.24.1 (REQ-SEC-006): never a scope key a look-alike could stand for.
+            ScopeKeys::assertUsable($scopeKey);
+        }
         $changed = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->update(TimeEntry::class, 'e')
             ->set('e.boardIdSnapshot', ':boardId')
@@ -924,28 +941,93 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function findPageWithOwnerless(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported, int $offset, int $limit): array
     {
-        /** @var list<TimeEntry> $result */
-        $result = $this->ownerlessPeriodQuery($userIds, $ownerlessScopeKeys, $from, $to, $includeImported)
+        $query = $this->ownerlessPeriodQuery($userIds, $ownerlessScopeKeys, $from, $to, $includeImported)
             ->select('e')
             ->orderBy('e.startedAt', SortDirection::Descending)
-            ->addOrderBy('e.id', SortDirection::Descending)
-            ->setFirstResult(max(0, $offset))
-            ->setMaxResults(max(1, $limit))
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('e.id', SortDirection::Descending);
+        $offset = max(0, $offset);
+        $limit  = max(1, $limit);
+        if (!$this->ownerlessNeedsExactCheck($ownerlessScopeKeys)) {
+            /** @var list<TimeEntry> $result */
+            $result = $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
 
-        return $result;
+            return $result;
+        }
+
+        // Since 1.24.1 (REQ-SEC-006): the owners (id mapping) and the ownerless scopes are checked byte for byte before
+        // the page is cut, so a look-alike's entry neither shows nor shifts the pages.
+        $kept    = [];
+        $skipped = 0;
+        $read    = 0;
+        do {
+            /** @var list<TimeEntry> $rows */
+            $rows = $query->setFirstResult($read)->setMaxResults(self::EXACT_BATCH)->getQuery()->getResult();
+            $read += self::EXACT_BATCH;
+            foreach ($rows as $entry) {
+                if (!$this->isListed($entry->getUserId(), $entry->getScopeKey(), $userIds, $ownerlessScopeKeys)) {
+                    continue;
+                }
+                if ($skipped < $offset) {
+                    ++$skipped;
+                    continue;
+                }
+                $kept[] = $entry;
+                if (count($kept) === $limit) {
+                    return $kept;
+                }
+            }
+        } while (count($rows) === self::EXACT_BATCH);
+
+        return $kept;
     }
 
     /**
-     * Since 1.15: number of the users' entries and the ownerless entries of the period.
+     * Since 1.15: number of the users' entries and the ownerless entries of the period. Since 1.24.1 (REQ-SEC-006) the
+     * owners (id mapping) and the ownerless scopes are counted in PHP, byte for byte, when they need it.
      */
     public function countWithOwnerless(array $userIds, ?array $ownerlessScopeKeys, DateTimeImmutable $from, DateTimeImmutable $to, bool $includeImported): int
     {
-        return (int) $this->ownerlessPeriodQuery($userIds, $ownerlessScopeKeys, $from, $to, $includeImported)
-            ->select('COUNT(e.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
+        $query = $this->ownerlessPeriodQuery($userIds, $ownerlessScopeKeys, $from, $to, $includeImported);
+        if (!$this->ownerlessNeedsExactCheck($ownerlessScopeKeys)) {
+            return (int) $query->select('COUNT(e.id)')->getQuery()->getSingleScalarResult();
+        }
+
+        $count = 0;
+        /** @var list<array{owner: int|string|null, scopeKey: string|null}> $rows */
+        $rows = $query->select('IDENTITY(e.user) AS owner', 'e.scopeKey AS scopeKey')->getQuery()->getArrayResult();
+        foreach ($rows as $row) {
+            $count += $this->isListed($row['owner'] === null ? null : (string) $row['owner'], $row['scopeKey'], $userIds, $ownerlessScopeKeys) ? 1 : 0;
+        }
+
+        return $count;
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006): whether the ownerless listing must be checked in PHP: a scope list (scope keys compare
+     * byte for byte) or the id mapping (owner ids compare byte for byte).
+     *
+     * @param list<string>|null $ownerlessScopeKeys
+     */
+    private function ownerlessNeedsExactCheck(?array $ownerlessScopeKeys): bool
+    {
+        return ($ownerlessScopeKeys !== null && $ownerlessScopeKeys !== []) || ExactUserIds::applies($this->entityManager, TimeEntry::class);
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006): whether a row the ownerless query returned belongs to the listing byte for byte: an
+     * owned entry of one of the users (compared exactly with the id mapping; the SQL match with the relation mapping, as
+     * before), or an ownerless entry in one of the scopes (any ownerless entry without a scope list).
+     *
+     * @param list<string> $userIds
+     * @param list<string>|null $ownerlessScopeKeys
+     */
+    private function isListed(?string $owner, ?string $scopeKey, array $userIds, ?array $ownerlessScopeKeys): bool
+    {
+        if ($owner !== null) {
+            return !ExactUserIds::applies($this->entityManager, TimeEntry::class) || in_array($owner, $userIds, true);
+        }
+
+        return $ownerlessScopeKeys === null || ScopeKeys::isOneOf($scopeKey, $ownerlessScopeKeys);
     }
 
     /**

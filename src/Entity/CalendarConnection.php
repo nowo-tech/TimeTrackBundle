@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Enum\CalendarConnectionMode;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Support\StorageTime;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use function substr;
@@ -88,6 +89,8 @@ class CalendarConnection
         private string $consentVersion,
         DateTimeImmutable $now,
     ) {
+        // Since 1.24.1 (REQ-SEC-006): a scope key a look-alike could stand for is refused, never trimmed.
+        ScopeKeys::assertUsable($this->scopeKey);
         $this->id          = Uuid::generateV7()->toString();
         $this->consentedAt = StorageTime::normalize($now);
         $this->createdAt   = $this->consentedAt;

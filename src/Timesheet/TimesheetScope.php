@@ -19,7 +19,9 @@ final readonly class TimesheetScope
     public const MAX_KEY_LENGTH = 64;
 
     /**
-     * @throws InvalidArgumentException When the key is longer than {@see self::MAX_KEY_LENGTH} bytes
+     * @throws InvalidArgumentException When the key is longer than {@see self::MAX_KEY_LENGTH} bytes, or (since 1.24.1,
+     *                                  REQ-SEC-006) has a leading or trailing space, another blank, a control,
+     *                                  format or invisible character or invalid UTF-8 ({@see ScopeKeys::isUsable()})
      */
     public function __construct(
         public string $key,
@@ -29,5 +31,6 @@ final readonly class TimesheetScope
         if (strlen($key) > self::MAX_KEY_LENGTH || mb_strlen($label) > 255) {
             throw new InvalidArgumentException('Scope key or label too long.');
         }
+        ScopeKeys::assertUsable($key);
     }
 }

@@ -292,6 +292,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$calendarRulesTableName', $prefix . '_calendar_rules')
             ->setArgument('$userMapping', $config['user_mapping'])
             ->setArgument('$hostUsersTableName', $prefix . '_host_users')
+            ->setArgument('$logger', new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE))
+            ->addTag('monolog.logger', ['channel' => 'time_track'])
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
         $loginRateLimit = $clients['login_rate_limit'];

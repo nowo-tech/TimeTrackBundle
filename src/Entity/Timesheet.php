@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 /**
@@ -113,6 +114,8 @@ class Timesheet
         private string $timezone,
         DateTimeInterface $now,
     ) {
+        // Since 1.24.1 (REQ-SEC-006): a scope key a look-alike could stand for is refused, never trimmed.
+        ScopeKeys::assertUsable($this->scopeKey);
         $this->id          = Uuid::generateV7()->toString();
         $this->periodKind  = $period->kind;
         $this->periodStart = Period::date($period->start);

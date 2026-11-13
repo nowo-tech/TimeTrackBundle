@@ -23,6 +23,8 @@ use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
 use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\UserRef\UserMapping;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Throwable;
 
 use function array_replace_recursive;
@@ -45,6 +47,18 @@ final readonly class TimeTrackMetadataListener
     ];
 
     /**
+     * Since 1.24.1 (REQ-SEC-006, audit OA-R2 / F4): the tenant scope key columns, which compare exactly with every
+     * `user_mapping` (a host's scope keys are no user ids).
+     */
+    public const SCOPE_FIELDS = [
+        Timesheet::class          => 'scopeKey',
+        BalanceLedgerLine::class  => 'scopeKey',
+        CalendarConnection::class => 'scopeKey',
+        CalendarRule::class       => 'scopeKey',
+        TimeEntry::class          => 'scopeKey',
+    ];
+
+    /**
      * Receives the configured table names and the host user class.
      */
     public function __construct(
@@ -61,6 +75,7 @@ final readonly class TimeTrackMetadataListener
         private string $calendarRulesTableName = 'time_track_calendar_rules',
         private string $userMapping = UserMapping::RELATION,
         private string $hostUsersTableName = 'time_track_host_users',
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -89,6 +104,7 @@ final readonly class TimeTrackMetadataListener
         if ($this->userMapping === UserMapping::ID) {
             $this->exactRefColumns($metadata, $args);
         }
+        $this->exactScopeColumn($metadata, $args);
 
         if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class, Timesheet::class, BalanceLedgerLine::class, CalendarConnection::class, CalendarSuggestion::class, CalendarRule::class], true)) {
             return;
@@ -117,6 +133,36 @@ final readonly class TimeTrackMetadataListener
     }
 
     /**
+     * Since 1.24.1 (REQ-SEC-006, audit OA-R2 / F4): the `scope_key` column compares exactly ({@see self::exactOptions()}),
+     * so the approver of scope `acme` never reads `Acme`'s or `acme `'s timesheets, ledger lines, calendar rows or
+     * entries. With `user_mapping: id` an unknown platform fails as for the user columns; with the relation mapping (no
+     * platform needed before 1.24.1) the column keeps its default collation and a warning is logged: the stores still
+     * re-check every scope key byte for byte.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    private function exactScopeColumn(ClassMetadata $metadata, LoadClassMetadataEventArgs $args): void
+    {
+        $field = self::SCOPE_FIELDS[$metadata->getName()] ?? null;
+        if ($field === null) {
+            return;
+        }
+        try {
+            $options = $this->exactOptions($args);
+        } catch (LogicException $exception) {
+            if ($this->userMapping === UserMapping::ID) {
+                throw $exception;
+            }
+            $this->logger->warning('TimeTrack could not read the database platform: the scope_key column of {entity} keeps its default collation. Set doctrine.dbal.server_version with the full version (e.g. 8.0.32 or 10.11.6-MariaDB) and clear the cache.', ['bundle' => 'time_track', 'entity' => $metadata->getName()]);
+
+            return;
+        }
+        if ($options !== []) {
+            $metadata->fieldMappings[$field]->options = $options + ($metadata->fieldMappings[$field]->options ?? []);
+        }
+    }
+
+    /**
      * The column options of an exact (binary, NO PAD) comparison on the platform: `utf8mb4_0900_bin` on MySQL 8,
      * `utf8mb4_nopad_bin` on MariaDB, `utf8mb4_bin` on older MySQL (PAD SPACE: trailing spaces are refused before
      * any write, see DoctrineUserReferenceResolver) and `Latin1_General_100_BIN2` on SQL Server (it always ignores
@@ -138,10 +184,24 @@ final readonly class TimeTrackMetadataListener
         return match (true) {
             $platform instanceof MariaDBPlatform       => ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_nopad_bin'],
             $platform instanceof MySQL80Platform       => ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_0900_bin'],
-            $platform instanceof AbstractMySQLPlatform => ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_bin'],
+            $platform instanceof AbstractMySQLPlatform => $this->padFallback($args),
             $platform instanceof SQLServerPlatform     => ['collation' => 'Latin1_General_100_BIN2'],
             default                                    => [],
         };
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006 item 8): `utf8mb4_bin` (PAD SPACE) is the fallback for MySQL before 8.0. A `server_version`
+     * without the patch number (`8`, `8.0`) also selects it on MySQL 8, so a warning is logged once per entity
+     * metadata load (the result is cached with the metadata) asking for the full version.
+     *
+     * @return array<string, string>
+     */
+    private function padFallback(LoadClassMetadataEventArgs $args): array
+    {
+        $this->logger->warning('TimeTrack falls back to the PAD SPACE collation utf8mb4_bin for {entity}: the database platform is MySQL before 8.0.17 or doctrine.dbal.server_version has no patch number. Set the full server_version (e.g. 8.0.32) so the identifier columns use utf8mb4_0900_bin.', ['bundle' => 'time_track', 'entity' => $args->getClassMetadata()->getName()]);
+
+        return ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_bin'];
     }
 
     /**

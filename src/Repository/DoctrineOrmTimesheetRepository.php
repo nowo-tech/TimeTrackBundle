@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Throwable;
 
@@ -27,6 +28,7 @@ use function array_filter;
 use function array_map;
 use function array_values;
 use function count;
+use function implode;
 use function max;
 use function spl_object_id;
 
@@ -37,6 +39,9 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
 {
     /** Ids bound per `IN (...)` of the purge. */
     public const IDS_PER_QUERY = 1000;
+
+    /** Since 1.24.1: rows read per round while a lookup keeps reading until it finds its exact match. */
+    private const EXACT_PAGE = 50;
 
     /**
      * Receives the entity manager (and the registry that resets it after a failed flush in worker mode).
@@ -79,12 +84,14 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
-     * The timesheet of an owner, scope and period.
+     * The timesheet of an owner, scope and period. Since 1.24.1 (REQ-SEC-006) the scope is re-checked byte for byte on
+     * every row the query returned (no `LIMIT` before that check: on a still-folding column a look-alike scope's row
+     * never hides the right one).
      */
     public function findForPeriod(string $ownerId, string $scopeKey, TimesheetPeriodKind $kind, string $periodStart): ?Timesheet
     {
-        /** @var Timesheet|null $timesheet */
-        $timesheet = $this->entityManager->createQueryBuilder()
+        /** @var list<Timesheet> $rows */
+        $rows = $this->entityManager->createQueryBuilder()
             ->select('t')
             ->from(Timesheet::class, 't')
             ->where('IDENTITY(t.user) = :owner')
@@ -95,11 +102,11 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->setParameter('scope', $scopeKey)
             ->setParameter('kind', $kind->value)
             ->setParameter('start', Period::date($periodStart), Types::DATE_IMMUTABLE)
-            ->setMaxResults(1)
+            ->orderBy('t.id', SortDirection::Ascending->value)
             ->getQuery()
-            ->getOneOrNullResult();
+            ->getResult();
 
-        return ExactUserIds::keepOne($this->entityManager, Timesheet::class, $timesheet, $ownerId);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($rows, $scopeKey), [$ownerId])[0] ?? null;
     }
 
     /**
@@ -152,7 +159,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         /** @var list<Timesheet> $result */
         $result = ($lock instanceof LockMode ? $query->getQuery()->setLockMode($lock) : $query->getQuery())->getResult();
 
-        return $result;
+        return $scopeKey === null ? $result : self::inScope($result, $scopeKey);
     }
 
     /**
@@ -176,11 +183,13 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->getQuery()
             ->getResult();
 
-        return ExactUserIds::keep($this->entityManager, Timesheet::class, $result, [$ownerId]);
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($result, $scopeKey), [$ownerId]);
     }
 
     /**
-     * Approval queue of the owners in the scope.
+     * Approval queue of the owners in the scope. Since 1.24.1 (REQ-SEC-006, audit OA-R2 / F4) the scope is re-checked
+     * byte for byte too, and the page is filled after both checks: it reads on until it has `$limit` timesheets or no row
+     * is left, so the approver of `acme` never sees `Acme`'s timesheets and a look-alike never shortens the queue.
      */
     public function findQueue(string $scopeKey, array $ownerIds, ?TimesheetStatus $status, int $limit): array
     {
@@ -195,25 +204,36 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->setParameter('scope', $scopeKey)
             ->setParameter('owners', $ownerIds)
             ->orderBy('t.periodStart', SortDirection::Ascending->value)
-            ->addOrderBy('t.id', SortDirection::Ascending->value)
-            ->setMaxResults(max(1, $limit));
+            ->addOrderBy('t.id', SortDirection::Ascending->value);
         if ($status instanceof TimesheetStatus) {
             $query->andWhere('t.status = :status')->setParameter('status', $status->value);
         }
 
-        /** @var list<Timesheet> $result */
-        $result = $query->getQuery()->getResult();
+        $limit  = max(1, $limit);
+        $kept   = [];
+        $offset = 0;
+        do {
+            /** @var list<Timesheet> $rows */
+            $rows = $query->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
+            $offset += $limit;
+            foreach (ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($rows, $scopeKey), $ownerIds) as $timesheet) {
+                $kept[] = $timesheet;
+                if (count($kept) === $limit) {
+                    return $kept;
+                }
+            }
+        } while (count($rows) === $limit);
 
-        return ExactUserIds::keep($this->entityManager, Timesheet::class, $result, $ownerIds);
+        return $kept;
     }
 
     /**
-     * The latest locked timesheet of the owner and scope ending before the date.
+     * The latest locked timesheet of the owner and scope ending before the date. Since 1.24.1 (REQ-SEC-006) the owner and
+     * the scope are checked byte for byte before the first match is taken (a look-alike's newer row never hides it).
      */
     public function findLatestLockedBefore(string $ownerId, string $scopeKey, string $beforeDate): ?Timesheet
     {
-        /** @var Timesheet|null $timesheet */
-        $timesheet = $this->entityManager->createQueryBuilder()
+        $query = $this->entityManager->createQueryBuilder()
             ->select('t')
             ->from(Timesheet::class, 't')
             ->where('IDENTITY(t.user) = :owner')
@@ -224,11 +244,31 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->setParameter('scope', $scopeKey)
             ->setParameter('before', Period::date($beforeDate), Types::DATE_IMMUTABLE)
             ->orderBy('t.periodEnd', SortDirection::Descending->value)
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
+            ->addOrderBy('t.id', SortDirection::Descending->value);
+        $offset = 0;
+        do {
+            /** @var list<Timesheet> $rows */
+            $rows = $query->setFirstResult($offset)->setMaxResults(self::EXACT_PAGE)->getQuery()->getResult();
+            $offset += self::EXACT_PAGE;
+            $exact = ExactUserIds::keep($this->entityManager, Timesheet::class, self::inScope($rows, $scopeKey), [$ownerId]);
+            if ($exact !== []) {
+                return $exact[0];
+            }
+        } while (count($rows) === self::EXACT_PAGE);
 
-        return ExactUserIds::keepOne($this->entityManager, Timesheet::class, $timesheet, $ownerId);
+        return null;
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006): the timesheets whose scope key is the key byte for byte.
+     *
+     * @param list<Timesheet> $rows
+     *
+     * @return list<Timesheet>
+     */
+    private static function inScope(array $rows, string $scopeKey): array
+    {
+        return ScopeKeys::keep($rows, $scopeKey, static fn (Timesheet $timesheet): string => $timesheet->getScopeKey());
     }
 
     /**
@@ -339,20 +379,21 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     private function purgeLedgerPrefixes(DateTimeImmutable $before, array &$touched): int
     {
-        /** @var list<array{ownerRef: string, scopeKey: string}> $chains */
-        $chains = $this->entityManager->createQueryBuilder()
+        /** @var list<array{ownerRef: string, scopeKey: string}> $rows */
+        $rows = $this->entityManager->createQueryBuilder()
             ->select('l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey')
-            ->distinct()
             ->from(BalanceLedgerLine::class, 'l')
             ->where('l.effectiveDate < :before')
             ->setParameter('before', $before, Types::DATE_IMMUTABLE)
             ->getQuery()
             ->getArrayResult();
         $deleted = 0;
-        foreach ($chains as $chain) {
-            /** @var list<array{id: string, effectiveDate: DateTimeImmutable, hash: string, prevHash: ?string, purgedBefore: ?DateTimeImmutable}> $lines */
-            $lines = $this->entityManager->createQueryBuilder()
-                ->select('l.id AS id', 'l.effectiveDate AS effectiveDate', 'l.hash AS hash', 'l.prevHash AS prevHash', 'l.purgedBefore AS purgedBefore')
+        // Since 1.24.1 (REQ-SEC-006): chains are told apart byte for byte in PHP (a SQL DISTINCT on a still-folding
+        // column merged `acme` and `Acme`), and each chain keeps only its own lines.
+        foreach (self::exactChains($rows) as $chain) {
+            /** @var list<array{id: string, ownerRef: string, scopeKey: string, effectiveDate: DateTimeImmutable, hash: string, prevHash: ?string, purgedBefore: ?DateTimeImmutable}> $all */
+            $all = $this->entityManager->createQueryBuilder()
+                ->select('l.id AS id', 'l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey', 'l.effectiveDate AS effectiveDate', 'l.hash AS hash', 'l.prevHash AS prevHash', 'l.purgedBefore AS purgedBefore')
                 ->from(BalanceLedgerLine::class, 'l')
                 ->where('l.ownerRef = :owner')
                 ->andWhere('l.scopeKey = :scope')
@@ -362,6 +403,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
                 ->addOrderBy('l.id', SortDirection::Ascending->value)
                 ->getQuery()
                 ->getArrayResult();
+            $lines  = array_values(array_filter($all, static fn (array $line): bool => $line['ownerRef'] === $chain['ownerRef'] && $line['scopeKey'] === $chain['scopeKey']));
             $prefix = [];
             $keep   = null;
             foreach ($this->chainOrder($lines) as $line) {
@@ -446,7 +488,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function timesheetIds(?string $scopeKey, ?string $ownerRef, string $afterId, int $limit): array
     {
-        if ($ownerRef !== null && ExactUserIds::applies($this->entityManager, Timesheet::class)) {
+        if ($scopeKey !== null || ($ownerRef !== null && ExactUserIds::applies($this->entityManager, Timesheet::class))) {
             return $this->exactTimesheetIds($scopeKey, $ownerRef, $afterId, max(1, $limit));
         }
 
@@ -457,9 +499,6 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             ->setParameter('after', $afterId)
             ->orderBy('t.id', SortDirection::Ascending->value)
             ->setMaxResults(max(1, $limit));
-        if ($scopeKey !== null) {
-            $query->andWhere('t.scopeKey = :scope')->setParameter('scope', $scopeKey);
-        }
         if ($ownerRef !== null) {
             $query->andWhere('t.ownerRef = :owner')->setParameter('owner', $ownerRef);
         }
@@ -473,30 +512,33 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     /**
      * Since 1.23.1 (id user mapping, audit OA-R1): {@see self::timesheetIds()} with the owner reference re-checked byte for
      * byte; it reads on until it has `$limit` ids or no row is left, so a look-alike row never ends a caller's paging early.
+     * Since 1.24.1 (REQ-SEC-006) the scope key too, with every user mapping (the owner reference only with the id mapping).
      *
      * @return list<string>
      */
-    private function exactTimesheetIds(?string $scopeKey, string $ownerRef, string $afterId, int $limit): array
+    private function exactTimesheetIds(?string $scopeKey, ?string $ownerRef, string $afterId, int $limit): array
     {
-        $kept = [];
+        $exactOwner = $ownerRef !== null && ExactUserIds::applies($this->entityManager, Timesheet::class);
+        $kept       = [];
         do {
             $query = $this->entityManager->createQueryBuilder()
-                ->select('t.id AS id', 't.ownerRef AS ownerRef')
+                ->select('t.id AS id', 't.ownerRef AS ownerRef', 't.scopeKey AS scopeKey')
                 ->from(Timesheet::class, 't')
                 ->where('t.id > :after')
-                ->andWhere('t.ownerRef = :owner')
                 ->setParameter('after', $afterId)
-                ->setParameter('owner', $ownerRef)
                 ->orderBy('t.id', SortDirection::Ascending->value)
                 ->setMaxResults($limit);
+            if ($ownerRef !== null) {
+                $query->andWhere('t.ownerRef = :owner')->setParameter('owner', $ownerRef);
+            }
             if ($scopeKey !== null) {
                 $query->andWhere('t.scopeKey = :scope')->setParameter('scope', $scopeKey);
             }
-            /** @var list<array{id: string, ownerRef: string}> $rows */
+            /** @var list<array{id: string, ownerRef: string, scopeKey: string}> $rows */
             $rows = $query->getQuery()->getArrayResult();
             foreach ($rows as $row) {
                 $afterId = $row['id'];
-                if ($row['ownerRef'] === $ownerRef) {
+                if ((!$exactOwner || $row['ownerRef'] === $ownerRef) && ($scopeKey === null || $row['scopeKey'] === $scopeKey)) {
                     $kept[] = $row['id'];
                     if (count($kept) === $limit) {
                         return $kept;
@@ -515,7 +557,6 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     {
         $query = $this->entityManager->createQueryBuilder()
             ->select('l.ownerRef AS ownerRef', 'l.scopeKey AS scopeKey')
-            ->distinct()
             ->from(BalanceLedgerLine::class, 'l')
             ->orderBy('l.ownerRef', SortDirection::Ascending->value)
             ->addOrderBy('l.scopeKey', SortDirection::Ascending->value);
@@ -527,12 +568,34 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         }
 
         /** @var list<array{ownerRef: string, scopeKey: string}> $rows */
-        $rows = $query->getQuery()->getArrayResult();
+        $rows = self::exactChains($query->getQuery()->getArrayResult());
+        if ($scopeKey !== null) {
+            // Since 1.24.1 (REQ-SEC-006): only the chains of this scope key, byte for byte.
+            $rows = array_values(array_filter($rows, static fn (array $row): bool => $row['scopeKey'] === $scopeKey));
+        }
         if ($ownerRef === null || !ExactUserIds::applies($this->entityManager, BalanceLedgerLine::class)) {
             return $rows;
         }
 
         // Since 1.23.1 (id user mapping, audit OA-R1): only the chains of this owner reference, byte for byte.
         return array_values(array_filter($rows, static fn (array $row): bool => $row['ownerRef'] === $ownerRef));
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006): the distinct (owner reference, scope key) pairs of the rows, byte for byte, in their
+     * order (a SQL `DISTINCT` on a folding collation would merge look-alike chains).
+     *
+     * @param array<array-key, array{ownerRef: string, scopeKey: string}> $rows
+     *
+     * @return list<array{ownerRef: string, scopeKey: string}>
+     */
+    private static function exactChains(array $rows): array
+    {
+        $chains = [];
+        foreach ($rows as $row) {
+            $chains[implode("\0", [$row['ownerRef'], $row['scopeKey']])] = ['ownerRef' => $row['ownerRef'], 'scopeKey' => $row['scopeKey']];
+        }
+
+        return array_values($chains);
     }
 }
