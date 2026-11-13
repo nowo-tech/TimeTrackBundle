@@ -30,6 +30,7 @@ use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -162,7 +163,8 @@ final readonly class ManualEntryService
             if ($prepare !== null) {
                 $prepare();
             }
-            $scopeKey = $this->scopeProvider?->scopeKeyForTask($user, $task->id, $task->boardId);
+            // Since 1.24.1 (audit OM TT-L2): an unusable host key is no scope (warning), never a failed request.
+            $scopeKey = ScopeKeys::fromHost($this->scopeProvider?->scopeKeyForTask($user, $task->id, $task->boardId), $this->logger, 'manual_entry_scope');
             $this->periodLockGuard?->assertWritable($user, $scopeKey, $start, WriteKind::EntryCreate);
             // Since 1.25.0: a service account's entries may overlap (asked per call, never memoised).
             $serviceAccount = $this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false;

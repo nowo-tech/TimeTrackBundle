@@ -10,6 +10,8 @@ use Nowo\TimeTrackBundle\Enum\TimesheetActorRole;
 use Nowo\TimeTrackBundle\Event\TimesheetAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -52,6 +54,7 @@ final readonly class TimesheetAccessGuard
         private bool $adminRolesView = false,
         private array $reopenRoles = [],
         private ?ManagerRegistry $managerRegistry = null,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -70,13 +73,14 @@ final readonly class TimesheetAccessGuard
     }
 
     /**
-     * The user's scopes (the current one first).
+     * The user's scopes (the current one first). Since 1.24.1 (audit OM TT-L2) a scope whose key is not usable is left
+     * out with a warning ({@see ScopeKeys::usableScopes()}).
      *
      * @return list<TimesheetScope>
      */
     public function scopesOf(UserInterface $user): array
     {
-        return $this->scopeProvider?->scopesFor($user) ?? [];
+        return ScopeKeys::usableScopes($this->scopeProvider?->scopesFor($user) ?? [], $this->logger);
     }
 
     /**

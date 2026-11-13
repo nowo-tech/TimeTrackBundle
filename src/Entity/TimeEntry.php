@@ -18,6 +18,7 @@ use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use function hash;
@@ -192,7 +193,7 @@ class TimeEntry
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $entry->personNameSnapshot = $person->name;
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
-        $entry->scopeKey = $person->scopeKey;
+        $entry->scopeKey = $person->scopeKey === null ? null : ScopeKeys::assertUsable($person->scopeKey);
 
         return $entry;
     }
@@ -569,14 +570,17 @@ class TimeEntry
 
     /**
      * Since 1.13: sets the tenant scope (the timer service and the import writer at write time, the back-fill command
-     * afterwards). At most 64 characters.
+     * afterwards). At most 64 bytes; since 1.24.1 (REQ-SEC-006) a key with a leading or trailing space, another blank, a
+     * control, format or invisible character or invalid UTF-8 is refused ({@see ScopeKeys::isUsable()}).
      *
      * @internal
+     *
+     * @throws InvalidArgumentException When the key is not usable
      */
     public function assignScopeKey(?string $scopeKey): self
     {
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
-        $this->scopeKey = $scopeKey;
+        $this->scopeKey = $scopeKey === null ? null : ScopeKeys::assertUsable($scopeKey);
 
         return $this;
     }

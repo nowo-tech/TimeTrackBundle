@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
@@ -219,6 +220,10 @@ final readonly class ImportedTimeEntryWriter
         foreach ($rows as [$owner, $data]) {
             $user     = $this->userOf($owner);
             $scopeKey = $user instanceof UserInterface ? ($this->scopeProvider?->scopeKeyForTask($user, $data->taskId, $data->boardId) ?? ($owner instanceof ImportedTimeEntryClaim ? $owner->scopeKey : null)) : null;
+            if ($scopeKey !== null && !ScopeKeys::isUsable($scopeKey)) {
+                // Since 1.24.1 (REQ-SEC-006): a scope key a look-alike could stand for is refused before anything is written.
+                throw new InvalidImportedTimeEntryException('scopeKey', 'pattern');
+            }
             $existing = $this->repository->findByExternal($data->externalSource, $data->externalId)
                 ?? $this->repository->findByExternal($data->externalSource, TimeEntry::anonymisedExternalId($data->externalSource, $data->externalId));
             try {
@@ -520,6 +525,10 @@ final readonly class ImportedTimeEntryWriter
                 throw new InvalidImportedTimeEntryException('externalIds', 'pattern');
             }
         }
+        if ($toScope !== null && !ScopeKeys::isUsable($toScope)) {
+            // Since 1.24.1 (REQ-SEC-006).
+            throw new InvalidImportedTimeEntryException('scopeKey', 'pattern');
+        }
         if (!$this->repository instanceof ImportedTimeEntryOwnerRepositoryInterface) {
             throw new LogicException('Moving imported entries requires a repository implementing ImportedTimeEntryOwnerRepositoryInterface.');
         }
@@ -698,6 +707,10 @@ final readonly class ImportedTimeEntryWriter
         }
         if ($person->scopeKey !== null && strlen($person->scopeKey) > ImportedTimeEntryPerson::MAX_SCOPE_KEY_LENGTH) {
             throw new InvalidImportedTimeEntryException('person.scopeKey', 'length');
+        }
+        if ($person->scopeKey !== null && !ScopeKeys::isUsable($person->scopeKey)) {
+            // Since 1.24.1 (REQ-SEC-006): no edge space, other blank, control, format or invisible character.
+            throw new InvalidImportedTimeEntryException('person.scopeKey', 'pattern');
         }
 
         return new ImportedTimeEntryPerson($person->ref, ImportedTimeEntryPerson::cleanName($person->name), $person->scopeKey);

@@ -45,6 +45,7 @@ use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
+use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
@@ -104,6 +105,8 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         $this->runSql($name . '-up.sql');
         // Since 1.15 the mapping also has this index, from docs/sql/1.15.0.
         $conn->executeStatement('CREATE INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets (owner_ref, period_end)');
+        // Since 1.24.1 the scope_key columns compare exactly (UPGRADING "To 1.24.1").
+        ScopeKeyCollation::apply($conn);
         self::assertSame([], $tool->getUpdateSchemaSql($metadata), 'the up script is exactly the 1.13 mapping');
     }
 

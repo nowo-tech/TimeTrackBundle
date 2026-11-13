@@ -52,6 +52,7 @@ use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -1150,11 +1151,12 @@ final readonly class TimerService
     }
 
     /**
-     * Since 1.13: tenant scope of a task for a new entry (null without timesheets).
+     * Since 1.13: tenant scope of a task for a new entry (null without timesheets). Since 1.24.1 (audit OM TT-L2) a key
+     * that is not usable is treated as no scope with a warning: the timer stop still saves the entry.
      */
     private function scopeKeyFor(UserInterface $user, string $taskId, ?string $boardId): ?string
     {
-        return $this->scopeProvider?->scopeKeyForTask($user, $taskId, $boardId);
+        return ScopeKeys::fromHost($this->scopeProvider?->scopeKeyForTask($user, $taskId, $boardId), $this->logger, 'timer_entry_scope');
     }
 
     /**

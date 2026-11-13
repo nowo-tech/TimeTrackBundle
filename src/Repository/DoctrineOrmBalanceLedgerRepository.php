@@ -12,6 +12,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 
 /**
@@ -57,20 +58,23 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
      * pick an older line (two lines in one millisecond, or a clock behind), which then refused every later line for good. The
      * unique `(owner_ref, scope_key, prev_hash)` key serves the subquery; `scope_key` is never NULL. The sort is only a tie-break,
      * for a chain that forked at its start before 1.16.2.
+     *
+     * Since 1.24.1 (REQ-SEC-006): every head the query returned is re-checked byte for byte (scope key always, owner
+     * reference with the id mapping) before the first one is taken, so a look-alike chain's head never stands for this
+     * chain's (no `LIMIT` before the check).
      */
     public function findLast(string $ownerRef, string $scopeKey): ?BalanceLedgerLine
     {
-        /** @var BalanceLedgerLine|null $line */
-        $line = $this->chain($ownerRef, $scopeKey)
+        /** @var list<BalanceLedgerLine> $heads */
+        $heads = $this->chain($ownerRef, $scopeKey)
             ->andWhere('NOT EXISTS (SELECT 1 FROM ' . BalanceLedgerLine::class . ' n WHERE n.ownerRef = l.ownerRef AND n.scopeKey = l.scopeKey AND n.prevHash = l.hash)')
             ->orderBy('l.createdAt', SortDirection::Descending->value)
             ->addOrderBy('l.id', SortDirection::Descending->value)
-            ->setMaxResults(1)
             ->getQuery()
-            ->getOneOrNullResult();
+            ->getResult();
 
         // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte.
-        return ExactUserIds::keepOne($this->entityManager, BalanceLedgerLine::class, $line, $ownerRef, $this->ownerRef(...));
+        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, self::inScope($heads, $scopeKey), [$ownerRef], $this->ownerRef(...))[0] ?? null;
     }
 
     /**
@@ -93,8 +97,21 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
         /** @var list<BalanceLedgerLine> $result */
         $result = $query->getQuery()->getResult();
 
-        // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte.
-        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, $result, [$ownerRef], $this->ownerRef(...));
+        // Since 1.23.1 (id user mapping, audit OA-R1): the owner reference must match byte for byte; since 1.24.1
+        // (REQ-SEC-006) the scope key too.
+        return ExactUserIds::keep($this->entityManager, BalanceLedgerLine::class, self::inScope($result, $scopeKey), [$ownerRef], $this->ownerRef(...));
+    }
+
+    /**
+     * Since 1.24.1 (REQ-SEC-006): the lines whose scope key is the key byte for byte.
+     *
+     * @param list<BalanceLedgerLine> $lines
+     *
+     * @return list<BalanceLedgerLine>
+     */
+    private static function inScope(array $lines, string $scopeKey): array
+    {
+        return ScopeKeys::keep($lines, $scopeKey, static fn (BalanceLedgerLine $line): string => $line->getScopeKey());
     }
 
     /**

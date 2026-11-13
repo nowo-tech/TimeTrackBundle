@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.24.1](#to-1241)
 - [To 1.24.0](#to-1240)
 - [To 1.23.1](#to-1231)
 - [To 1.23.0](#to-1230)
@@ -81,7 +82,7 @@
 
 ## Unreleased
 
-Target **1.25.0** (minor), from **1.24.x**: `composer update nowo-tech/time-track-bundle`.
+Target **1.25.0** (minor), from **1.24.1**: `composer update nowo-tech/time-track-bundle`.
 
 **Schema migration required (every host).** `time_track_entries` gets `channel` (`VARCHAR(16)`, null) and
 `service_account` (boolean, not null, default false), and the index `idx_time_track_entries_origin` on
@@ -115,6 +116,95 @@ Nothing else to change: without a policy everyone is a person and every rule is 
 - If you construct `TimerService` or `ManualEntryService` by hand, they take an optional trailing `$serviceAccounts`
   argument.
 - Coming in 2.0: a dedicated entry source for `HostTimerApi` entries (they are `web` in 1.x).
+
+## To 1.24.1
+
+Target **1.24.1** (patch), from **1.24.0**: `composer update nowo-tech/time-track-bundle`. Security fix (REQ-SEC-006,
+audit OA-R2 / F4): tenant scope keys are matched byte for byte. Before, on the default MySQL / MariaDB collations the
+approver of scope `acme` could see and act on `Acme` (or `àcme`, `acme `) timesheets of a person who works in both.
+Only hosts whose scope keys differ by case, accent or trailing space are affected. API unchanged.
+
+**What changes**
+
+- With every `user_mapping`, the `scope_key` columns of `time_track_timesheets`, `time_track_balance_ledger`,
+  `time_track_calendar_connections`, `time_track_calendar_rules` and `time_track_entries` get a binary NO PAD
+  collation: `utf8mb4_0900_bin` on MySQL ≥ 8.0.17, `utf8mb4_nopad_bin` on MariaDB, and `utf8mb4_bin` (PAD SPACE) on
+  older MySQL. PostgreSQL and SQLite already compare exactly; no change there.
+- The timesheet, ledger, calendar and entry stores re-check the scope key of every row with `===`, and the exact match
+  happens before `LIMIT` (approval queue, latest locked timesheet, ledger head, verify ids, ownerless entry pages), so
+  they never return another scope's row, also before you run the `ALTER` (which is still required, see 2.).
+- Scope keys with a leading or trailing space, another blank (NBSP, ideographic space…), a control, format,
+  private-use, unassigned or invisible character (ZWSP, BOM, bidi marks) or invalid UTF-8 are never stored or used:
+  - from your scope provider: a scope in `scopesFor()` with such a key is left out, and such a key from
+    `scopeKeyForTask()` counts as no scope (the timer stop or the manual entry is still saved, without a scope); both
+    log a warning, as `time-track:entries:backfill-scope` does when it leaves such entries without a scope;
+  - the entities throw `InvalidArgumentException`, and the import writer throws `InvalidImportedTimeEntryException`
+    (`scopeKey` / `person.scopeKey`, rule `pattern`).
+
+  An inner ASCII space stays allowed. Your scope provider must return keys as they are stored, never trimmed.
+- `time-track:timesheets:auto-lock` logs a period it cannot lock (e.g. `conflict`), goes on with the others and exits
+  with a failure at the end, instead of stopping at the first error.
+- REQ-SEC-006 item 8: when the bundle falls back to `utf8mb4_bin` it logs a warning. This happens on MySQL before
+  8.0.17 (no `utf8mb4_0900_bin`), and a `doctrine.dbal.server_version` without the patch number (`8`, `8.0`) selects it
+  on MySQL 8 too: set the full version (e.g. `8.0.32`,
+  `8.4.3`, `10.11.6-MariaDB`) and clear the cache.
+
+**1. Detection: run these queries BEFORE the `ALTER`** (MySQL / MariaDB; adjust the table names to your
+`table_prefix`). They compare with `HEX()` and group by the column's own (folding) collation, so they show what the
+current collation merges. `TRIM`, `DISTINCT`, `LOWER` or a `*_ci` comparison would fold too.
+
+```sql
+-- a) Scope keys that the current collation treats as one: each row is a group of look-alikes (hex of each variant).
+SELECT k.scope_key,
+       COUNT(DISTINCT HEX(k.scope_key))                   AS variants,
+       GROUP_CONCAT(DISTINCT HEX(k.scope_key) SEPARATOR ' ') AS hex_variants
+FROM (
+    SELECT scope_key FROM time_track_timesheets
+    UNION ALL SELECT scope_key FROM time_track_balance_ledger
+    UNION ALL SELECT scope_key FROM time_track_calendar_connections
+    UNION ALL SELECT scope_key FROM time_track_calendar_rules
+    UNION ALL SELECT scope_key FROM time_track_entries WHERE scope_key IS NOT NULL
+) k
+GROUP BY k.scope_key
+HAVING COUNT(DISTINCT HEX(k.scope_key)) > 1;
+
+-- b) Stored keys that 1.24.1 refuses for new writes (edge spaces, control characters, NBSP, ZWSP, BOM, bidi marks).
+SELECT 'time_track_timesheets' AS table_name, id, HEX(scope_key) AS hex_key
+FROM time_track_timesheets
+WHERE CAST(scope_key AS BINARY) <> CAST(TRIM(scope_key) AS BINARY)
+   OR HEX(scope_key) REGEXP '^(..)*(0[0-9A-F]|1[0-9A-F]|7F|C2A0|E2808[B-F]|E280A[8-F]|EFBBBF|E38080)';
+-- Repeat b) for time_track_balance_ledger, time_track_calendar_connections, time_track_calendar_rules and
+-- time_track_entries (add `scope_key IS NOT NULL` there).
+```
+
+What to do with the results:
+
+- a) After the `ALTER` each variant is a scope of its own, which is what your scope provider already says. Check that
+  every hex variant is a key your provider really returns; a variant it never returns (e.g. a key written with another
+  case by an old import) is no longer reachable: update those rows to the right key (by `id`) before or after the
+  `ALTER`.
+- b) Such rows stay readable only through a lookup with the exact same bytes, which the bundle no longer accepts: fix
+  them to the key your provider returns (by `id`), or leave them unreachable.
+
+**2. The `ALTER` is required** (or generate it with `doctrine:migrations:diff` once `server_version` is the full
+version). Binary collations distinguish more values than folding ones, so it never fails on a unique key. The stores
+re-check in PHP and never return another scope's row, but until you run it the three folding unique keys
+(`uniq_time_track_timesheets_period`, `uniq_time_track_balance_ledger_chain`, `uniq_time_track_calendar_connections`)
+block look-alike scopes: a person in both `acme` and `Acme` cannot get a timesheet, a ledger chain or a calendar
+connection in the second one (`conflict`), and `time-track:timesheets:auto-lock` reports those periods and exits with a
+failure.
+
+```sql
+-- MySQL >= 8.0.17 (use utf8mb4_nopad_bin on MariaDB, utf8mb4_bin on MySQL 5.7)
+ALTER TABLE time_track_timesheets           MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL;
+ALTER TABLE time_track_balance_ledger       MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL;
+ALTER TABLE time_track_calendar_connections MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL;
+ALTER TABLE time_track_calendar_rules       MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NOT NULL;
+ALTER TABLE time_track_entries              MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL DEFAULT NULL;
+```
+
+Check: `SELECT TABLE_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND
+COLUMN_NAME = 'scope_key';` lists the binary collation for the five tables.
 
 ## To 1.24.0
 

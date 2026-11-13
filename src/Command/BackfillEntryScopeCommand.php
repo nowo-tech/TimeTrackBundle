@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Command;
 use Nowo\TimeTrackBundle\Repository\ScopeBackfillRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Log\LoggerInterface;
@@ -86,7 +87,8 @@ final class BackfillEntryScopeCommand extends Command
             $after = $last->getId();
             $keys  = [];
             foreach ($this->scopeProvider->scopeKeysForEntries($entries) as $entryId => $scopeKey) {
-                if (is_string($scopeKey) && strlen($scopeKey) <= TimesheetScope::MAX_KEY_LENGTH) {
+                // Since 1.24.1 (REQ-SEC-006): a key a look-alike could stand for is never stored (the entry stays unplaced).
+                if (is_string($scopeKey) && strlen($scopeKey) <= TimesheetScope::MAX_KEY_LENGTH && ScopeKeys::isUsable($scopeKey)) {
                     $keys[(string) $entryId] = $scopeKey;
                 }
             }

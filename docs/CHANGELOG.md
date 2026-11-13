@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.24.1] - 2026-11-13](#1241---2026-11-13)
 - [[1.24.0] - 2026-11-13](#1240---2026-11-13)
 - [[1.23.1] - 2026-11-12](#1231---2026-11-12)
 - [[1.23.0] - 2026-11-12](#1230---2026-11-12)
@@ -76,6 +77,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - `HostTimerApiTest` (start / stop / current, replace and report, agent versus person, two concurrent starts and the exhausted retries, the account lock, refusals leave the timer untouched, no personal data in the replace log), `ServiceAccountEntriesTest` (overlaps per account and across accounts, people's rules unchanged, backdate clamp, idle reassign, accessors, CSV, filter look-alikes), `HostTimerApiDatabaseTest` (columns, origin filter on SQLite / MySQL / PostgreSQL, a start that loses the unique index on the real Doctrine stack) and `HostTimerWorkerModeTest` (REQ-RUNTIME-002: a person and two agents through one kernel kept alive without the services resetter, `http_kernel` handle / terminate).
+## [1.24.1] - 2026-11-13
+
+Target **1.24.1** (patch). See [UPGRADING](UPGRADING.md#to-1241) for the detection queries and the `ALTER`.
+
+### Security
+
+- REQ-SEC-006 (audit OA-R2 / F4, Low, conditional): tenant scope keys are matched byte for byte. On the default
+  MySQL / MariaDB collations the approver of scope `acme` could see and act on `Acme`, `àcme` or `acme ` timesheets of
+  a person who works in both scopes (`DoctrineOrmTimesheetRepository::findQueue()` re-checked the owners but not the
+  scope), and the other scope lookups relied on SQL alone. Affected: v1.13.0 to v1.24.0, only hosts whose scope keys
+  differ by case, accent or trailing space.
+  - The `scope_key` columns of the timesheet, ledger, calendar connection, calendar rule and entry tables get a binary
+    NO PAD collation with every `user_mapping` (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB).
+  - The timesheet (`findForPeriod`, `findGuarding*`, `findByOwner`, `findQueue`, `findLatestLockedBefore`,
+    `timesheetIds`, `ledgerChains`, retention purge), ledger (`findLast`, `findByOwner`), calendar
+    (`findConnectionFor`, `findConnectionsByUser`, `findSuggestionsByUser`, `findRulesByUser`, `deleteConnection`) and
+    entry (`findPageWithOwnerless`, `countWithOwnerless`, `ownersWithEntries`) stores re-check the scope key with
+    `===`; the exact match happens before `LIMIT`, and chains / (owner, scope) pairs are told apart in PHP instead of
+    with a folding SQL `DISTINCT`.
+  - Scope keys with a leading or trailing space, another blank, a control, format or invisible character or invalid
+    UTF-8 are never stored: the entities and the import writer refuse them; from the host scope provider such a key
+    counts as no scope (`scopeKeyForTask()`: the timer stop or manual entry is still saved) or its scope is left out
+    (`scopesFor()`), with a warning, as in the back-fill command. Private-use, unassigned and surrogate code points are
+    refused too.
+  - The `ALTER` of UPGRADING "To 1.24.1" is required: until it runs, the folding unique keys block look-alike scopes.
+
+### Fixed
+
+- REQ-SEC-006 item 8: the metadata listener logs a warning when it falls back to the PAD SPACE `utf8mb4_bin`
+  collation (MySQL before 8.0.17, now also detected on the MySQL 8.0 platform, or a `server_version` without the patch
+  number).
+- `time-track:timesheets:auto-lock` no longer stops at the first period it cannot lock: it logs it, goes on and exits
+  with a failure.
+- The (owner, scope) pairs of the auto-lock, the ledger chains of the purge and `verify`, and the rows
+  `countWithOwnerless()` counts in PHP are read in keyset batches, so only one batch is held in memory.
+- Ownerless entry pages (`findPageWithOwnerless`, `countWithOwnerless`) re-check the owner ids byte for byte with
+  `user_mapping: id`, like the other entry listings.
+- CI: the functional suite also runs on MySQL 8.4 and MariaDB 11.4.
 
 ### Documentation
 
@@ -1648,7 +1687,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.1...HEAD
+[1.24.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.0...v1.24.1
 [1.24.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.1...v1.24.0
 [1.23.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.22.1...v1.23.0

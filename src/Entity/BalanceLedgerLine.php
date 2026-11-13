@@ -12,6 +12,7 @@ use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Timesheet\Period;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
 use const DATE_ATOM;
@@ -90,6 +91,8 @@ class BalanceLedgerLine
         #[ORM\Column(name: 'actor_ref', type: 'string', length: 64, nullable: true)]
         private ?string $actorRef = null,
     ) {
+        // Since 1.24.1 (REQ-SEC-006): a scope key a look-alike could stand for is refused, never trimmed.
+        ScopeKeys::assertUsable($this->scopeKey);
         // Since 1.16.2 (audit HQ-L4): NULL does not collide on the unique key, so two concurrent first lines both committed.
         $this->prevHash ??= self::FIRST_LINE_PREV_HASH;
         $this->id            = Uuid::generateV7()->toString();
