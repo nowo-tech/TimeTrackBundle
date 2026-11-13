@@ -82,6 +82,12 @@
 
 ## Unreleased
 
+Target **1.24.2** (patch), from **1.24.1**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+API change, and nothing to do.
+
+- If your tenant scope keys are **numeric** (`42`, `100`), re-run `nowo:time-track:entries:backfill-scope` on
+  PostgreSQL: before 1.24.2 the command could fail there, because such a key reached the query as an integer.
+
 ## To 1.24.1
 
 Target **1.24.1** (patch), from **1.24.0**: `composer update nowo-tech/time-track-bundle`. Security fix (REQ-SEC-006,

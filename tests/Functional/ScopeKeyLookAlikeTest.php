@@ -30,6 +30,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
+use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 
@@ -178,6 +179,44 @@ final class ScopeKeyLookAlikeTest extends FunctionalTestCase
             }
         }
         self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
+    }
+
+    public function testAnUnusableScopeFromTheHostProviderIsRefusedBeforeAnyImportIsWritten(): void
+    {
+        // The host scope provider answers a key a look-alike could stand for: the batch is refused, nothing is written.
+        $provider             = new FixedScopeProvider();
+        $provider->taskScopes = ['task-1' => "bob\u{00A0}"];
+        $writer               = new ImportedTimeEntryWriter($this->entries(), scopeProvider: $provider);
+        $start                = new DateTimeImmutable('2026-11-10 09:00:00');
+
+        try {
+            $writer->upsert($this->user, new ImportedTimeEntryData('clickup:s', 'e-1', 'task-1', 'T', null, $start, $start->modify('+1 hour'), 3600));
+            self::fail('an unusable scope from the provider is refused');
+        } catch (InvalidImportedTimeEntryException $exception) {
+            self::assertSame(['scopeKey', 'pattern'], [$exception->field, $exception->rule]);
+        }
+        self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
+
+        // A usable key from the same provider writes the entry with that scope.
+        $provider->taskScopes = ['task-1' => 'bob'];
+        $writer->upsert($this->user, new ImportedTimeEntryData('clickup:s', 'e-1', 'task-1', 'T', null, $start, $start->modify('+1 hour'), 3600));
+        self::assertSame('bob', (string) $this->entityManager()->getConnection()->fetchOne('SELECT scope_key FROM time_track_entries'));
+    }
+
+    public function testAnUnusableTargetScopeIsRefusedBeforeAnyOwnerMove(): void
+    {
+        $writer = new ImportedTimeEntryWriter($this->entries());
+        $start  = new DateTimeImmutable('2026-11-10 09:00:00');
+        $other  = $this->createUser('other@example.com');
+        $writer->upsert($this->user, new ImportedTimeEntryData('clickup:s', 'e-1', 'task-1', 'T', null, $start, $start->modify('+1 hour'), 3600));
+
+        try {
+            $writer->moveBetweenUsers('clickup:s', $this->user, $other, 'bob ');
+            self::fail('an unusable target scope is refused');
+        } catch (InvalidImportedTimeEntryException $exception) {
+            self::assertSame(['scopeKey', 'pattern'], [$exception->field, $exception->rule]);
+        }
+        self::assertSame((string) $this->user->getId(), (string) $this->entityManager()->getConnection()->fetchOne('SELECT user_id FROM time_track_entries'), 'the entry did not move');
     }
 
     /**
