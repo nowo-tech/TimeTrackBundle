@@ -93,7 +93,8 @@ Target **1.24.1** (patch). See [UPGRADING](UPGRADING.md#to-1241) for the detecti
   number).
 - `time-track:timesheets:auto-lock` no longer stops at the first period it cannot lock: it logs it, goes on and exits
   with a failure.
-- The (owner, scope) pairs of the auto-lock and the ledger chains of the purge and `verify` are read in keyset batches.
+- The (owner, scope) pairs of the auto-lock, the ledger chains of the purge and `verify`, and the rows
+  `countWithOwnerless()` counts in PHP are read in keyset batches, so only one batch is held in memory.
 - Ownerless entry pages (`findPageWithOwnerless`, `countWithOwnerless`) re-check the owner ids byte for byte with
   `user_mapping: id`, like the other entry listings.
 - CI: the functional suite also runs on MySQL 8.4 and MariaDB 11.4.

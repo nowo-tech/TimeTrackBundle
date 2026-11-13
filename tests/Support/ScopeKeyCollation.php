@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\MariaDBPlatform;
 use Doctrine\DBAL\Platforms\MySQL80Platform;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use LogicException;
 
@@ -32,7 +33,9 @@ final class ScopeKeyCollation
 
     /**
      * Gives the scope_key columns a folding collation, as on a database without the 1.24.1 ALTER: `utf8mb4_unicode_ci`
-     * on MySQL / MariaDB (folds case and accents, pads trailing spaces), `NOCASE` on SQLite (folds ASCII case).
+     * on MySQL / MariaDB (folds case and accents, pads trailing spaces), `NOCASE` on SQLite (folds ASCII case) and a
+     * non-deterministic ICU collation on PostgreSQL (folds case and accents; its unique indexes then refuse the
+     * look-alike too). PostgreSQL's own mapping never folds, so this only builds the host shape the tests need.
      */
     public static function fold(Connection $connection): void
     {
@@ -40,10 +43,23 @@ final class ScopeKeyCollation
         foreach (self::TABLES as $table => $nullable) {
             if ($platform instanceof AbstractMySQLPlatform) {
                 $connection->executeStatement(sprintf('ALTER TABLE %s MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci %s', $table, $nullable ? 'NULL' : 'NOT NULL'));
+            } elseif ($platform instanceof PostgreSQLPlatform) {
+                self::postgresFolding($connection, $table, $nullable);
             } elseif ($platform instanceof SQLitePlatform) {
                 self::sqliteNoCase($connection, $table);
             }
         }
+    }
+
+    /**
+     * A non-deterministic ICU collation compares `org-a` and `Org-a` as one value, unique indexes included. Pattern
+     * matching is not allowed on such a column, which the folding tests do not use.
+     */
+    private static function postgresFolding(Connection $connection, string $table, bool $nullable): void
+    {
+        $connection->executeStatement("CREATE COLLATION IF NOT EXISTS scope_key_folding (provider = icu, locale = 'und-u-ks-level2', deterministic = false)");
+        $connection->executeStatement(sprintf('ALTER TABLE %s ALTER COLUMN scope_key TYPE VARCHAR(64) COLLATE scope_key_folding', $table));
+        $connection->executeStatement(sprintf('ALTER TABLE %s ALTER COLUMN scope_key %s NOT NULL', $table, $nullable ? 'DROP' : 'SET'));
     }
 
     private static function sqliteNoCase(Connection $connection, string $table): void
