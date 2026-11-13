@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.24.2](#to-1242)
 - [To 1.24.1](#to-1241)
 - [To 1.24.0](#to-1240)
 - [To 1.23.1](#to-1231)
@@ -81,6 +82,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.24.2
+
+From **1.24.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Target **1.24.2** (patch), from **1.24.1**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
 API change, and nothing to do.
