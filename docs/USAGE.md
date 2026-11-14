@@ -1101,19 +1101,29 @@ Rules for both paths:
   refuse), throw `Monitoring\MonitoringEvidenceRejectedException`: the client gets `422 evidence_rejected`, deletes its
   copy and never retries, and the upload intent is burnt. Any other exception means "try again later" (`503`).
 - **Discarded time.** Listen to `TimeTrackEvents::MONITORING_SPAN_DISCARDED` (`Event\MonitoringSpanDiscardedEvent`:
-  the worker's `TimeTrackUserRef`, `from`, `to`, `reason` `idle_discard` or `idle_split`) and delete the worker's
-  screenshots, discard markers and activity inside `[from, to)` in the same flow. The bundle dispatches it, only while
-  monitoring is configured, whenever a worker discards idle time (`timer/discard-idle` `discard` / `split`, or
-  `TimerService::resolveIdle()` from your code), after the entry is recorded.
-- **Activity time.** The bundle cuts the `app` seconds of a worker and slot to `slotMinutes × 60` across batches (in the
-  rate-limit pool, not atomic across two concurrent batches): keep your own per-slot sum as the backstop.
+  the worker's `TimeTrackUserRef`, `from`, `to`, `reason`) and delete the worker's screenshots, discard markers and
+  activity inside `[from, to)`. The bundle dispatches it, only while monitoring is configured, after the entry is
+  recorded, for every span a worker gives up: `idle_discard` (`[from, now)`: the timer stopped at the idle start),
+  `idle_split` (`[from, to)`, the timer continued) and `backdated_stop` (`timer/stop` with an `endedAt` before now:
+  `[endedAt, now)`). **Make your listener async**: dispatch a Messenger message with retries and return. The bundle
+  catches and logs (class only) a listener that throws, so the worker never gets a 500 for a discard that is already
+  committed, but then the deletion is yours to retry: never drop it. Also delete evidence on
+  `TimeEntriesRemovedEvent` (time removed by a manager) and on the worker's erasure.
+- **Activity time.** The bundle cuts the `app` seconds of a worker and slot to `slotMinutes × 60` across batches, in
+  `client_api.rate_limit.cache_pool`: with several nodes that pool **must be shared** (e.g. Redis), or each node keeps
+  its own count. It is not atomic across two concurrent batches, and it is updated after `storeActivity()`: if the pool
+  fails at that moment the client gets a 503 and its retry stores the items again. Keep your own per-slot sum (and an
+  upsert per worker, entry, slot, kind and name) as the backstop.
 - **Switching monitoring off.** Once `policy_source` is unset every monitoring route answers 404, `DELETE` included: give
   workers a way to discard their screenshots on your web page.
 - **Consent.** App passwords (`POST login`, whatever your authenticator returns) never grant `monitoring:write`; only the
   device flow does, after the worker approved it on the consent page (the bundle's page shows a translated label; show
   one on your own page too).
 - Set `client_api.monitoring.upload_base_url` to your public `https://` origin so the signed upload URLs never follow
-  a request's `Host` header or scheme.
+  a request's `Host` header or scheme. An env placeholder works (`'%env(DEFAULT_URI)%'`); one trailing `/` is accepted.
+  The value is checked when a URL is signed: anything other than an exact https origin answers `503
+  monitoring_unavailable` (fail closed) and logs a warning without the value.
+- `hasScreenshot()` always receives `''` as `$entryId` (kept for BC): answer for the slot.
 
 ### DDD / hexagonal host
 

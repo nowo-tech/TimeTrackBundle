@@ -431,8 +431,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         if ($enabled) {
             // Since 1.26.0 (Beacon Q3): discarded spans of tracked time → MonitoringSpanDiscardedEvent.
             $container->setDefinition(MonitoringSpanDiscardListener::class, (new Definition(MonitoringSpanDiscardListener::class))
-                ->setArguments(['$eventDispatcher' => new Reference('event_dispatcher')])
-                ->addTag('kernel.event_listener', ['event' => TimeTrackEvents::IDLE_RESOLVED, 'method' => 'onIdleResolved']));
+                ->setArguments(['$eventDispatcher' => new Reference('event_dispatcher'), '$clock' => $clockRef, '$logger' => $loggerRef])
+                ->addTag('kernel.event_listener', ['event' => TimeTrackEvents::IDLE_RESOLVED, 'method' => 'onIdleResolved'])
+                ->addTag('kernel.event_listener', ['event' => TimeTrackEvents::TIMER_STOP, 'method' => 'onTimerStop'])
+                ->addTag('monolog.logger', ['channel' => 'time_track']));
         }
         $container->setDefinition(MonitoringContext::class, (new Definition(MonitoringContext::class))
             ->setArguments([

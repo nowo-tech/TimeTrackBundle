@@ -756,10 +756,11 @@ final class Configuration implements ConfigurationInterface
                                     ->defaultNull()
                                 ->end()
                                 ->scalarNode('upload_base_url')
-                                    ->info('Since 1.26 (audit PM-L2): exact origin "https://host[:port]" of the signed upload URLs, e.g. "%beacon.app_url%" (null = the request scheme and host; then set framework.trusted_hosts / trusted_proxies).')
+                                    ->info('Since 1.26 (audit PM-L2): exact origin "https://host[:port]" (one trailing "/" allowed) of the signed upload URLs, e.g. "%env(DEFAULT_URI)%" (checked at runtime: anything else answers 503); null = the request scheme and host, then set framework.trusted_hosts / trusted_proxies.')
                                     ->defaultNull()
                                     ->validate()
-                                        ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || preg_match(self::HTTPS_ORIGIN_PATTERN, $v) !== 1))
+                                        // An env placeholder (seen here as '' or the raw %env()%) is checked at runtime (audit PM delta D1-L1).
+                                        ->ifTrue(static fn (mixed $v): bool => $v !== null && (!is_string($v) || ($v !== '' && !str_contains($v, '%env(') && preg_match(self::HTTPS_ORIGIN_PATTERN, (string) preg_replace('~/\z~', '', $v)) !== 1)))
                                         ->thenInvalid('client_api.monitoring.upload_base_url must be an exact origin "https://host[:port]" (no path, query, trailing slash or credentials), got %s.')
                                     ->end()
                                 ->end()

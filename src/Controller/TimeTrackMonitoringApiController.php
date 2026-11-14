@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
+use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
@@ -74,6 +75,7 @@ use function mb_stripos;
 use function min;
 use function preg_match;
 use function preg_replace;
+use function str_ends_with;
 use function strlen;
 use function strtolower;
 use function substr;
@@ -436,7 +438,7 @@ final readonly class TimeTrackMonitoringApiController
 
             return $this->responseFactory->json(['id' => $id], Response::HTTP_CREATED, $request);
         } catch (MonitoringEvidenceRejectedException) {
-            $this->intents()->markRejected($intent->getId());
+            $this->markRejectedQuietly($intent->getId());
 
             return $this->rejected($principal, $request);
         } catch (Throwable $exception) {
@@ -845,7 +847,7 @@ final readonly class TimeTrackMonitoringApiController
     {
         $until = $intent->getSignedUntil() ?? $this->clock->now();
         $exp   = $until->getTimestamp();
-        $base  = $this->settings->uploadBaseUrl;
+        $base  = $this->uploadBase($this->settings->uploadBaseUrl);
         // Audit PM-L2: with `upload_base_url` the URL never follows the request's Host header or scheme.
         $url = ($base ?? '') . $this->urlGenerator()->generate($this->settings->uploadRoute, [
             'uploadId' => $intent->getId(),
@@ -911,6 +913,38 @@ final readonly class TimeTrackMonitoringApiController
         } catch (Throwable $exception) {
             $this->logger->warning('TimeTrack monitoring upload not marked stored.', ['bundle' => 'time_track', 'action' => 'client_monitoring_upload', 'exception' => $exception::class]);
         }
+    }
+
+    /**
+     * Audit PM delta D1-L3: a failure to record the rejection is logged; the client still gets `422 evidence_rejected`.
+     */
+    private function markRejectedQuietly(string $id): void
+    {
+        try {
+            $this->intents()->markRejected($id);
+        } catch (Throwable $exception) {
+            $this->logger->warning('TimeTrack monitoring upload not marked rejected.', ['bundle' => 'time_track', 'action' => 'client_monitoring_upload', 'exception' => $exception::class]);
+        }
+    }
+
+    /**
+     * Audit PM delta D1-L1: the configured base, resolved at runtime (it may come from an env var): an exact https origin,
+     * one trailing `/` tolerated (Symfony's `DEFAULT_URI` style). Anything else fails closed (`503`); the value is never
+     * logged.
+     *
+     * @throws RuntimeException when the value is not an exact https origin
+     */
+    private function uploadBase(?string $base): ?string
+    {
+        if ($base === null) {
+            return null;
+        }
+        $origin = str_ends_with($base, '/') ? substr($base, 0, -1) : $base;
+        if (preg_match(Configuration::HTTPS_ORIGIN_PATTERN, $origin) !== 1) {
+            throw new RuntimeException('client_api.monitoring.upload_base_url is not an exact https origin.');
+        }
+
+        return $origin;
     }
 
     /**

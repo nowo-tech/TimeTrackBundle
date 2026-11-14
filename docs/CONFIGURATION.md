@@ -446,15 +446,17 @@ nowo_time_track:
       acknowledgement_store: ~     # Monitoring\MonitoringAcknowledgementStoreInterface (null = the bundle table)
       signer: ~                    # Monitoring\MonitoringUploadSignerInterface (null = HMAC-SHA256, derived key)
       signing_key: ~               # secret of the default signer (null = kernel.secret), e.g. "%env(TIME_TRACK_MONITORING_KEY)%"
-      upload_base_url: ~           # exact "https://host[:port]" of the signed upload URLs (null = the request's scheme and host)
+      upload_base_url: ~           # exact "https://host[:port]" (one trailing "/" ok) or "%env(DEFAULT_URI)%" (null = the request's scheme and host)
       rate_limit:                  # per token and 10-minute window, 0 = off, on top of client_api.rate_limit
         intents_per_10_min: 6      # POST screenshots/intent (screenshots/discarded and DELETE screenshots/{id} count apart, same limit)
         uploads_per_10_min: 6      # PUT uploads/{uploadId}
         activity_per_10_min: 30    # POST activity
 ```
 
-- Refused at compile time: `policy_source` without `evidence_store`; an `upload_base_url` that is not an exact
-  `https://host[:port]` origin.
+- Refused at compile time: `policy_source` without `evidence_store`; a literal `upload_base_url` that is not an exact
+  `https://host[:port]` origin (one trailing `/` allowed). An env placeholder is checked at runtime instead: a resolved
+  value with a path, query, fragment, credentials or another scheme makes every intent answer `503
+  monitoring_unavailable` (nothing is signed) and logs a warning without the value.
 - `upload_base_url` (recommended): the signed upload URLs start with it instead of the request's scheme and host, so a
   forged `Host` header or a TLS proxy without `trusted_proxies` can never turn them into `http://` or another host. The
   path still comes from the `monitoring_upload` route.

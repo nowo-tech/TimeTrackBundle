@@ -155,10 +155,12 @@ To turn monitoring on (only once your organisation has recorded its DPIA and its
   the public one (`framework.trusted_hosts`, `trusted_proxies`). The default signer uses `kernel.secret` unless you set
   `client_api.monitoring.signing_key`.
 - Re-encode the screenshots with a pixel limit in your evidence store: the bundle checks the header only.
-- Set `client_api.monitoring.upload_base_url` to your public `https://` origin (recommended).
+- Set `client_api.monitoring.upload_base_url` to your public `https://` origin (recommended), e.g.
+  `'%env(DEFAULT_URI)%'`. The activity budget uses `client_api.rate_limit.cache_pool`: share it across nodes (Redis).
 - Keep your evidence store unique on **(user, slot)**, whatever the entry id; throw
   `Monitoring\MonitoringEvidenceRejectedException` to refuse evidence for good (`422 evidence_rejected`); listen to
-  `TimeTrackEvents::MONITORING_SPAN_DISCARDED` to delete the evidence of discarded idle time.
+  `TimeTrackEvents::MONITORING_SPAN_DISCARDED` (asynchronously, through Messenger) to delete the evidence of discarded
+  idle time and backdated stops.
 - `ClientScope::all()` now includes `monitoring:write`: if you grant `all()` anywhere (an authenticator, a device-flow
   allow-list), you would grant monitoring too. Grant explicit lists. A password login never grants it anyway.
 - **Additive output** for hosts that consume `ClientApiEvent`: three new actions (`monitoring_acknowledged`,

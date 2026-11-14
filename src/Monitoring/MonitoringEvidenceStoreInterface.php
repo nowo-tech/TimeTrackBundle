@@ -47,8 +47,8 @@ interface MonitoringEvidenceStoreInterface
 
     /**
      * Whether the worker already has a screenshot (or a discard marker) for this slot, **whatever the entry**: the key
-     * is (user, slot) — the same worked minute has a timer id and later an entry id (audit PM-M2). `$entryId` is kept
-     * for information. Keep a unique key on (user, slot) in your store.
+     * is (user, slot) — the same worked minute has a timer id and later an entry id (audit PM-M2). Since then the bundle
+     * always passes `''` as `$entryId` (kept for BC only): ignore it. Keep a unique key on (user, slot) in your store.
      */
     public function hasScreenshot(TimeTrackUserRef $user, string $entryId, DateTimeImmutable $slot): bool;
 }

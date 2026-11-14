@@ -28,6 +28,8 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
 
     public bool $failMarkStored = false;
 
+    public bool $failMarkRejected = false;
+
     public function __construct(private readonly MonitoringUploadIntentRepositoryInterface $inner)
     {
     }
@@ -68,6 +70,9 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
 
     public function markRejected(string $id): void
     {
+        if ($this->failMarkRejected) {
+            throw new RuntimeException('intent store down');
+        }
         $this->inner->markRejected($id);
     }
 

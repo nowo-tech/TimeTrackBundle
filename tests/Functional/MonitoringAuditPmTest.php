@@ -10,6 +10,7 @@ use Nowo\TimeTrackBundle\Monitoring\ActivityItem;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceRejectedException;
 use Nowo\TimeTrackBundle\Tests\Support\MonitoringFixtures;
 use Nowo\TimeTrackBundle\Tests\Support\RacingMonitoringIntentRepository;
+use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_fill;
@@ -204,6 +205,78 @@ class MonitoringAuditPmTest extends MonitoringTestCase
         }
         self::assertSame(['idle_discard', 'idle_split'], array_map(static fn (MonitoringSpanDiscardedEvent $event): string => $event->reason, $events));
         self::assertSame((string) $this->user->getId(), $events[0]->user->id);
-        self::assertSame([$this->now() - 1800, $this->now() - 600], [$events[0]->from->getTimestamp(), $events[0]->to->getTimestamp()]);
+        // Delta D1-M1 / P11: `discard` stops the timer at `from`, so everything up to now is gone; `split` drops [from, to).
+        self::assertSame([$this->now() - 1800, $this->now()], [$events[0]->from->getTimestamp(), $events[0]->to->getTimestamp()]);
+        self::assertSame([$this->now() - 1800, $this->now() - 600], [$events[1]->from->getTimestamp(), $events[1]->to->getTimestamp()]);
+    }
+
+    /** Delta D1-M1 / P10: a backdated `timer/stop` discards [applied end, now). */
+    public function testD1BackdatedStopEmitsTheSpan(): void
+    {
+        $events = $this->spanEvents();
+        $token  = $this->token();
+        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'startedAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - 3600)], $token);
+        $this->api('POST', '/api/time-track/timer/stop', ['endedAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - 2400)], $token);
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $events->list);
+        self::assertSame(['backdated_stop', $this->now() - 2400, $this->now()], [$events->list[0]->reason, $events->list[0]->from->getTimestamp(), $events->list[0]->to->getTimestamp()]);
+
+        $this->startTimer($token);
+        $this->api('POST', '/api/time-track/timer/stop', [], $token);
+        $this->startTimer($token);
+        $this->api('POST', '/api/time-track/timer/stop', ['endedAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now())], $token);
+        self::assertCount(1, $events->list, 'a stop at now discards nothing');
+    }
+
+    /** Delta D1-L2 / P12: a host listener that throws never turns a committed discard into a 500. */
+    public function testD1AThrowingHostListenerIsLogged(): void
+    {
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->addListener(TimeTrackEvents::MONITORING_SPAN_DISCARDED, static function (): void {
+            throw new RuntimeException('ZZ-STORE-DOWN');
+        });
+        $token = $this->token();
+        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'startedAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - 3600)], $token);
+        $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - 1800), 'to' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - 600), 'action' => 'split'], $token);
+        self::assertResponseIsSuccessful();
+        self::assertContains('TimeTrack monitoring span listener failed.', $this->logger()->messages());
+        self::assertNotContains('ZZ-STORE-DOWN', $this->logger()->contextValues());
+    }
+
+    /** Delta D1-L3: a failing markRejected() still answers 422 evidence_rejected with the privacy headers. */
+    public function testD1AFailingMarkRejectedStillAnswers422(): void
+    {
+        $token = $this->token();
+        $this->acknowledge($token);
+        $timer  = $this->startTimer($token);
+        $image  = MonitoringFixtures::webp(1280, 720);
+        $grant  = $this->intent($token, $this->intentBody($timer, $image), 'd1-l3');
+        $racing = self::getContainer()->get(RacingMonitoringIntentRepository::class);
+        self::assertInstanceOf(RacingMonitoringIntentRepository::class, $racing);
+        $racing->failMarkRejected     = true;
+        $this->evidence()->rejectWith = new MonitoringEvidenceRejectedException('undecodable');
+        self::assertSame('evidence_rejected', $this->put(self::url($grant), $token, $image)['error'] ?? null);
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('nosniff', $this->client->getResponse()->headers->get('X-Content-Type-Options'));
+        self::assertContains('TimeTrack monitoring upload not marked rejected.', $this->logger()->messages());
+    }
+
+    /**
+     * @return object{list: list<MonitoringSpanDiscardedEvent>}
+     */
+    private function spanEvents(): object
+    {
+        $events = new class {
+            /** @var list<MonitoringSpanDiscardedEvent> */
+            public array $list = [];
+        };
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->addListener(TimeTrackEvents::MONITORING_SPAN_DISCARDED, static function (MonitoringSpanDiscardedEvent $event) use ($events): void {
+            $events->list[] = $event;
+        });
+
+        return $events;
     }
 }

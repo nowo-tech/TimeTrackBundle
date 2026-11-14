@@ -260,6 +260,9 @@ Idempotency-Key: 5d2e…
 - Buffer: ≤ `maxBufferedScreenshots` (36) and ≤ 50 MB, delete items older than `maxBufferAgeHours` (24 h) unsent;
   encrypted at rest; retry with backoff ×2 up to 30 minutes honouring `Retry-After`. Delete the buffer on sign-out,
   account switch, policy off and *Clear local data*.
+- Giving up tracked time deletes its evidence on the host: idle `discard` (from the idle start), idle `split` (the idle
+  span) and a `timer/stop` with an `endedAt` before now (from `endedAt`). Delete the local buffered items of that span
+  too.
 - Narrowing (or `enabled: false`) applies at once; widening waits for the acknowledgement (the server refuses every
   upload with `not_acknowledged` until then).
 
