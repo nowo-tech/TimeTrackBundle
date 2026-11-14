@@ -94,6 +94,21 @@ final readonly class ClientApiAuditor
         );
     }
 
+    /**
+     * Since 1.26: records a refused monitoring request (`kind_off`, `not_acknowledged`, `outside_timer`,
+     * `outside_hours`, `too_old`, `duplicate`, `policy_changed`, `notice_mismatch`, `invalid_signature`, a cap code),
+     * throttled per credential (or user) and reason like {@see self::denied()}. Never an image, an app or a window name.
+     */
+    public function monitoringRefused(string $reason, ClientToken $token, ?string $clientIp): void
+    {
+        $key = 'token:' . ($token->getCredentialId() ?? 'user:' . $this->userId($token->getUser()));
+        if ($this->rateLimiter instanceof ClientApiRateLimiter && $this->rateLimiter->hit('audit_monitoring', $key . '|' . $reason, 1, $this->denialIntervalSeconds) > 0) {
+            return;
+        }
+
+        $this->record(ClientApiAuditAction::MonitoringRefused, $token->getUser(), $token->getCredentialId(), $token->getClientType(), $clientIp, $reason);
+    }
+
     private function userId(object $user): ?string
     {
         if (!$user instanceof UserInterface) {

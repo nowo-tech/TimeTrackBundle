@@ -10,6 +10,7 @@ use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
+use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
@@ -24,6 +25,8 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringEvidenceStore;
+use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringPolicySource;
 use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -170,6 +173,10 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(StubCalendarCredentialProvider::class)->public();
         $container->services()->set(MutableProfileProvider::class)->public();
         $container->services()->set(StubMeetingProvider::class)->public();
+        // Since 1.26: the host's monitoring policy and evidence store (used where a test sets client_api.monitoring).
+        $container->services()->set(StubMonitoringPolicySource::class)->public();
+        $container->services()->set(StubMonitoringEvidenceStore::class)->public();
+        $container->services()->set(RacingMonitoringIntentRepository::class)->decorate(MonitoringUploadIntentRepositoryInterface::class)->args([service('.inner')])->public();
         // Since 1.20: a runtime OAuth app store (`calendar.oauth.app_provider` in the worker test) and the discovery
         // service, public so a test can reach them.
         $container->services()->set(MutableCalendarOAuthAppProvider::class)->public();

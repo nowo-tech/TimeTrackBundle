@@ -42,6 +42,11 @@ enum ClientScope: string
     case SuggestionsWrite = 'suggestions:write';
     /** Since 1.14: `GET me/meetings` (spec 210). Explicit grant only (one re-consent of existing desktops, Q-O17). */
     case MeetingsRead = 'meetings:read';
+    /**
+     * Since 1.26: activity monitoring (contract §24, spec 199) — acknowledge the notice, upload screenshots and activity,
+     * discard. Explicit grant only, never a default: request it in the device flow when `GET me.monitoring` is present.
+     */
+    case MonitoringWrite = 'monitoring:write';
 
     /**
      * Every scope.

@@ -37,4 +37,13 @@ enum ClientApiAuditAction: string
 
     /** Since 1.13: the owner withdrew a timesheet through the client API. */
     case TimesheetWithdrawn = 'timesheet_withdrawn';
+
+    /** Since 1.26: the worker acknowledged a monitoring policy version (the reason is `v<version>`). */
+    case MonitoringAcknowledged = 'monitoring_acknowledged';
+
+    /** Since 1.26: a screenshot was uploaded and stored (no image, no app or window name). */
+    case MonitoringUploaded = 'monitoring_uploaded';
+
+    /** Since 1.26: a monitoring request was refused (the reason is the refusal code); throttled like request_denied. */
+    case MonitoringRefused = 'monitoring_refused';
 }

@@ -51,6 +51,7 @@ use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
 use Nowo\TimeTrackBundle\Command\CalendarSyncCommand;
+use Nowo\TimeTrackBundle\Command\PurgeExpiredClientTokensCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsPurgeCommand;
 use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
@@ -58,6 +59,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackMonitoringApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
@@ -84,6 +86,12 @@ use Nowo\TimeTrackBundle\Meeting\MeetingLinkDetector;
 use Nowo\TimeTrackBundle\Meeting\MeetingQueryParser;
 use Nowo\TimeTrackBundle\Meeting\MeetingResponder;
 use Nowo\TimeTrackBundle\Meeting\MeetingSettings;
+use Nowo\TimeTrackBundle\Monitoring\HmacMonitoringUploadSigner;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgementStoreInterface;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringGate;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringSettings;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringUploadSignerInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
@@ -97,12 +105,15 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmBalanceLedgerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmCalendarRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringAcknowledgementStore;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringUploadIntentRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetEventRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryResolver;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
+use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
@@ -296,6 +307,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$userMapping', $config['user_mapping'])
             ->setArgument('$hostUsersTableName', $prefix . '_host_users')
             ->setArgument('$logger', new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE))
+            ->setArgument('$monitoringAcknowledgementsTableName', $prefix . '_monitoring_acknowledgements')
+            ->setArgument('$monitoringUploadIntentsTableName', $prefix . '_monitoring_upload_intents')
             ->addTag('monolog.logger', ['channel' => 'time_track'])
             ->addTag('doctrine.event_listener', ['event' => 'loadClassMetadata']));
 
@@ -350,6 +363,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         /** @var list<class-string> $acceptedUserClasses */
         $acceptedUserClasses = $config['accepted_user_classes'];
         $this->registerUserReferences($container, (string) $config['user_class'], $emRef, $acceptedUserClasses, (string) $config['user_mapping']);
+        $this->registerMonitoring($container, $config, $emRef, $registryRef);
         $this->registerBillable($container);
         $this->registerServiceAccounts($container, $config['service_account_policy'] ?? null);
 
@@ -359,6 +373,95 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->setArgument('$cssFramework', $config['templates']['css_framework'])
                 ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
         }
+    }
+
+    /**
+     * Since 1.26.0 (contract §24, spec 199): activity monitoring — the intent store and the default acknowledgement store
+     * (always registered: their tables are always mapped), the default signer, the host ports, the context, the gate
+     * and the controller; `GET me` gets the context. Off (every route 404, no `GET me` block) without
+     * `client_api.monitoring.policy_source`.
+     *
+     * @param array<string, mixed> $config Processed configuration
+     */
+    private function registerMonitoring(ContainerBuilder $container, array $config, Reference $emRef, Reference $registryRef): void
+    {
+        /** @var array{monitoring: array{policy_source: string|null, evidence_store: string|null, acknowledgement_store: string|null, signer: string|null, signing_key: string|null, rate_limit: array{intents_per_10_min: int, uploads_per_10_min: int, activity_per_10_min: int}}} $api */
+        $api        = $config['client_api'];
+        $monitoring = $api['monitoring'];
+        /** @var array{routes: array<string, array{path: string, name: string}>} $clients */
+        $clients   = $config['clients'];
+        $loggerRef = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $clockRef  = new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE);
+        $policy    = $monitoring['policy_source'];
+        $evidence  = $monitoring['evidence_store'];
+        $enabled   = is_string($policy) && $policy !== '' && is_string($evidence) && $evidence !== '';
+        $container->setParameter('nowo_time_track.client_api.monitoring.enabled', $enabled);
+
+        $container->setDefinition(DoctrineOrmMonitoringUploadIntentRepository::class, (new Definition(DoctrineOrmMonitoringUploadIntentRepository::class))
+            ->setArguments(['$entityManager' => $emRef, '$managerRegistry' => $registryRef]));
+        $container->setAlias(MonitoringUploadIntentRepositoryInterface::class, DoctrineOrmMonitoringUploadIntentRepository::class);
+        $container->setDefinition(DoctrineOrmMonitoringAcknowledgementStore::class, (new Definition(DoctrineOrmMonitoringAcknowledgementStore::class))
+            ->setArguments([
+                '$entityManager'   => $emRef,
+                '$userReferences'  => new Reference(UserReferenceResolverInterface::class),
+                '$managerRegistry' => $registryRef,
+            ]));
+        $container->setDefinition(HmacMonitoringUploadSigner::class, (new Definition(HmacMonitoringUploadSigner::class))
+            ->setArguments(['$secret' => is_string($monitoring['signing_key']) && $monitoring['signing_key'] !== '' ? $monitoring['signing_key'] : '%kernel.secret%']));
+        foreach ([
+            MonitoringAcknowledgementStoreInterface::class => [$monitoring['acknowledgement_store'], DoctrineOrmMonitoringAcknowledgementStore::class],
+            MonitoringUploadSignerInterface::class         => [$monitoring['signer'], HmacMonitoringUploadSigner::class],
+        ] as $interface => [$serviceId, $default]) {
+            $container->setAlias($interface, is_string($serviceId) && $serviceId !== '' ? $serviceId : $default);
+        }
+
+        $container->setDefinition(MonitoringSettings::class, (new Definition(MonitoringSettings::class))
+            ->setArguments([
+                '$uploadRoute'      => $clients['routes']['monitoring_upload']['name'],
+                '$intentsPer10Min'  => $monitoring['rate_limit']['intents_per_10_min'],
+                '$uploadsPer10Min'  => $monitoring['rate_limit']['uploads_per_10_min'],
+                '$activityPer10Min' => $monitoring['rate_limit']['activity_per_10_min'],
+            ]));
+        $container->setDefinition(MonitoringContext::class, (new Definition(MonitoringContext::class))
+            ->setArguments([
+                '$policySource'     => $enabled ? new Reference((string) $policy) : null,
+                '$acknowledgements' => $enabled ? new Reference(MonitoringAcknowledgementStoreInterface::class) : null,
+                '$evidence'         => $enabled ? new Reference((string) $evidence) : null,
+                '$logger'           => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(MonitoringGate::class, (new Definition(MonitoringGate::class))
+            ->setArguments([
+                '$timers'           => new Reference(ActiveTimerRepositoryInterface::class),
+                '$entries'          => new Reference(TimeEntryRepositoryInterface::class),
+                '$calendar'         => new Reference(WorkingCalendarProviderInterface::class),
+                '$timezoneResolver' => new Reference(TimesheetTimezoneResolver::class),
+                '$profileProvider'  => new Reference(ClientUserProfileProviderInterface::class),
+                '$scopeProvider'    => new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ]));
+        $container->getDefinition(TimeTrackMonitoringApiController::class)
+            ->setArguments([
+                '$guard'           => new Reference(ClientApiGuard::class),
+                '$responseFactory' => new Reference(ClientResponseFactory::class),
+                '$rateLimiter'     => new Reference(ClientApiRateLimiter::class),
+                '$idempotency'     => new Reference(ClientIdempotencyStore::class),
+                '$auditor'         => new Reference(ClientApiAuditor::class),
+                '$context'         => new Reference(MonitoringContext::class),
+                '$gate'            => new Reference(MonitoringGate::class),
+                '$settings'        => new Reference(MonitoringSettings::class),
+                '$signer'          => $enabled ? new Reference(MonitoringUploadSignerInterface::class) : null,
+                '$intents'         => $enabled ? new Reference(MonitoringUploadIntentRepositoryInterface::class) : null,
+                '$urlGenerator'    => $enabled ? new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE) : null,
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+                '$userReferences'  => $enabled ? new Reference(UserReferenceResolverInterface::class) : null,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']);
+        $container->getDefinition(TimeTrackClientApiController::class)
+            ->setArgument('$monitoring', new Reference(MonitoringContext::class));
+        $container->getDefinition(PurgeExpiredClientTokensCommand::class)
+            ->setArgument('$monitoringIntents', new Reference(MonitoringUploadIntentRepositoryInterface::class))
+            ->setArgument('$clock', $clockRef);
     }
 
     /**

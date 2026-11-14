@@ -65,6 +65,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.26.0** (minor).
+
+### Added
+
+- **Activity monitoring, opt-in** (Beacon spec 199, client contract §TT-MON agreed 2026-11-14). Off unless the host configures `client_api.monitoring.policy_source` and `evidence_store` **and** the organisation enables it with a recorded DPIA; the worker sees the notice first and is never scored. Without it `GET me` and every 1.25 answer are unchanged and the new routes answer 404.
+  - Framework-free ports (`TimeTrackUserRef` and bundle VOs only, no deprecated twin): `Monitoring\MonitoringPolicySourceInterface::policyOf()` (VO `MonitoringPolicy`), `MonitoringEvidenceStoreInterface` (`storeScreenshot(ScreenshotUpload)`, `markDiscarded`, `discard`, `storeActivity(list<ActivityItem>)`, `hasScreenshot`; the bundle never writes files), `MonitoringAcknowledgementStoreInterface` (VO `MonitoringAcknowledgement`; standard default `Repository\DoctrineOrmMonitoringAcknowledgementStore` on a bundle table through the bundle entity manager, DDD hosts alias it) and `MonitoringUploadSignerInterface` (VO `MonitoringUploadClaim`; default `HmacMonitoringUploadSigner`, HMAC-SHA256 with a key derived per call from `client_api.monitoring.signing_key` or `kernel.secret`, constant-time verification).
+  - `GET me`: `features.monitoring` and the `monitoring` block (§24.1) only with a policy for the user; `enabled` is false while `lockedUntilChecklist`; `acknowledgement.required` from the host's `acknowledgementRequired` and the acknowledgement store.
+  - Scope `monitoring:write` (never a default grant; request it in the device flow).
+  - Routes: `POST monitoring/acknowledge` (204; 409 `policy_changed`; 422 `notice_mismatch`), `POST monitoring/screenshots/intent` (every refusal check before any byte: policy and kind, acknowledgement, SC-002 against the worker's own running timer or timer entry, the spec 198 schedule through the working-calendar port, ± 120 s skew and `maxBufferAgeHours`, slot not taken; 201 with a one-shot URL signed over upload id, token hash, SHA-256, size, MIME and expiry, TTL 120 s; idempotent replays), `PUT monitoring/uploads/{uploadId}` (policy re-check, then every cap while streaming to a temporary file deleted in `finally`: `Content-Length` = declared ≤ 1.5 MiB, MIME from the magic bytes (WebP / JPEG), header dimensions = declared ≤ 3840 px, SHA-256 = declared, single use), `POST monitoring/screenshots/discarded`, `DELETE monitoring/screenshots/{id}`, `POST monitoring/activity` (≤ 200 items, names redacted again, excluded apps and items outside the timer, schedule or age dropped; 202 `{accepted, dropped}`). Rate limits per token and 10 minutes: 6 intents, 6 uploads, 30 activity batches (`client_api.monitoring.rate_limit`).
+  - `ClientApiEvent` actions `monitoring_acknowledged`, `monitoring_uploaded` and `monitoring_refused` (throttled per credential and reason); never an image, a hash, an app or a window name.
+  - Two always-mapped tables, empty while monitoring is off: `time_track_monitoring_acknowledgements` and `time_track_monitoring_upload_intents` (reference SQL in `docs/sql/1.26.0/`, demo migration `Version20261114000000`). `nowo:time-track:client-tokens:purge` also deletes upload intents older than 24 h.
+  - Worker mode (kernel reset false): no per-request state in any service, intents and replays in the bundle entity manager and the rate-limit pool, image bytes only in local variables of the PUT; tested with two users taking turns in one kernel without the services resetter.
+
+### Changed
+
+- `TimeTrackClientApiController::RESERVED_FEATURES` is empty (`monitoring` became real). `features.monitoring` is still `false` for every host without a monitoring policy source.
+
+### Tests
+
+- `HostTimerApiTest` no longer reads a fixed day (2026-11-13 / 14) for the entries it records.
+
 ## [1.25.0] - 2026-11-13
 
 ### Added

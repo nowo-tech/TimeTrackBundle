@@ -43,6 +43,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
 use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -116,8 +117,13 @@ final readonly class TimeTrackClientApiController
     /** Since 1.14 (contract Q-B22): the only metadata accepted without `client_api.allow_metadata` — "track the meeting". */
     public const MEETING_ORIGIN = ['origin' => 'meeting'];
 
-    /** Features of `GET me` reserved for later releases; always false (1.13: `workday` became real). */
-    public const RESERVED_FEATURES = ['monitoring'];
+    /**
+     * Features of `GET me` reserved for later releases; always false (1.13: `workday`, 1.26: `monitoring` became real).
+     * Empty since 1.26; kept for BC.
+     *
+     * @var list<string>
+     */
+    public const RESERVED_FEATURES = [];
 
     /** Earliest UTC offset accepted on client timestamps, in minutes (-12:00; 1.9.2). */
     public const MIN_UTC_OFFSET_MINUTES = -720;
@@ -159,6 +165,7 @@ final readonly class TimeTrackClientApiController
      * @param CalendarConnectionService|null $calendar Calendar suggestions (`me.features.calendar_suggestions`, 1.14; null = off)
      * @param ManualEntryService|null $manualEntries `POST entries` (`me.features.manual_entries`, 1.14; null = off)
      * @param MeetingContext|null $meetings Meetings API (`me.features.meetings`, `me.meetings`, `me.links.calendars`, 1.14; null = off)
+     * @param MonitoringContext|null $monitoring Activity monitoring (`me.features.monitoring`, `me.monitoring`, 1.26; null = off)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -185,6 +192,7 @@ final readonly class TimeTrackClientApiController
         private ?MeetingContext $meetings = null,
         /** @var list<string> Since 1.15: `framework.enabled_locales`, what the `privacy` language is chosen among */
         private array $enabledLocales = [],
+        private ?MonitoringContext $monitoring = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -258,7 +266,7 @@ final readonly class TimeTrackClientApiController
     /**
      * GET me: user id, identifier, display name, scopes and working hours of the token user, plus
      * `minSupportedVersion` for the token client type when the host sets a valid semver one (1.9.1), and (1.10)
-     * `features` (object of booleans; `workday` and `monitoring` reserved, always false) and `limits` (backdate and
+     * `features` (object of booleans; since 1.26 `monitoring` is true only with a host policy for the user) and `limits` (backdate and
      * idle-check settings for the token user), and (1.11) `locale` (the user's preferred locale, or null), and (1.12)
      * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
      * shape ({@see ClientWorkingHoursNormalizer}), and (1.15) `privacy` when the profile provider implements
@@ -325,9 +333,9 @@ final readonly class TimeTrackClientApiController
         if ($reportsLeave) {
             $features['leave'] = $features['workday'];
         }
-        foreach (self::RESERVED_FEATURES as $reserved) {
-            $features[$reserved] = false;
-        }
+        // Since 1.26 (contract §24.1, spec 199): true only with a policy for this user (no `monitoring` key otherwise).
+        $monitoring             = $this->monitoring?->summary($user);
+        $features['monitoring'] = $monitoring !== null;
 
         $body['features'] = $features;
         $body['limits']   = [
@@ -338,7 +346,10 @@ final readonly class TimeTrackClientApiController
         $body['timesheet'] = $this->workingTime?->timesheetSummary($user);
         // Since 1.14: meeting sync state (null when off) and the host's Calendars page for the Connect button.
         $body['meetings'] = $meetings;
-        $body['links']    = [
+        if ($monitoring !== null) {
+            $body['monitoring'] = $monitoring;
+        }
+        $body['links'] = [
             'calendars' => $this->meetings?->calendarsLink(),
             // Since 1.19 (spec 198): the host's working-time page, only while the workday API is on for the user.
             'workingTime' => $features['workday'] ? $this->workingTime?->workingTimeLink() : null,

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from the attribute mapping of Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent (1.26.0, REQ-ARCH-001 rule 2; keep in sync, XmlMappingParityTest). The table
+     prefix (table_prefix) and the user association target (user_class / user_mapping) are applied at runtime by the
+     TimeTrackMetadataListener, as with the attribute mapping. -->
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
+    <entity name="Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent" table="time_track_monitoring_upload_intents">
+        <indexes>
+            <index name="idx_time_track_monitoring_intent_slot" columns="user_id,entry_id,slot"/>
+            <index name="idx_time_track_monitoring_intent_created" columns="created_at"/>
+        </indexes>
+        <unique-constraints>
+            <unique-constraint name="uniq_time_track_monitoring_intent_key" columns="user_id,idempotency_hash"/>
+        </unique-constraints>
+        <id name="id" type="string" column="id" length="36"/>
+        <field name="status" type="string" column="status" length="16"/>
+        <field name="signedUntil" type="datetime_immutable" column="signed_until" nullable="true"/>
+        <field name="screenshotId" type="string" column="screenshot_id" length="64" nullable="true"/>
+        <field name="slot" type="datetime_immutable" column="slot"/>
+        <field name="takenAt" type="datetime_immutable" column="taken_at"/>
+        <field name="createdAt" type="datetime_immutable" column="created_at"/>
+        <field name="idempotencyHash" type="string" column="idempotency_hash" length="64">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="bodyHash" type="string" column="body_hash" length="64">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <field name="entryId" type="string" column="entry_id" length="36"/>
+        <field name="policyVersion" type="integer" column="policy_version"/>
+        <field name="blurred" type="boolean" column="blurred"/>
+        <field name="mime" type="string" column="mime" length="16"/>
+        <field name="bytes" type="integer" column="bytes"/>
+        <field name="width" type="integer" column="width"/>
+        <field name="height" type="integer" column="height"/>
+        <field name="sha256" type="string" column="sha256" length="64">
+            <options>
+                <option name="fixed">true</option>
+            </options>
+        </field>
+        <many-to-one field="user" target-entity="App\Entity\User">
+            <join-column name="user_id" referenced-column-name="id" nullable="false" on-delete="CASCADE"/>
+        </many-to-one>
+    </entity>
+</doctrine-mapping>

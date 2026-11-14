@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 1.26 (activity monitoring, spec 199)](#re-audit-126-activity-monitoring-spec-199)
 - [Re-audit 1.25 (host timer API and service accounts)](#re-audit-125-host-timer-api-and-service-accounts)
 - [Re-audit 1.23 (REQ-ARCH-001 ports and private entity manager)](#re-audit-123-req-arch-001-ports-and-private-entity-manager)
 - [Re-audit 1.22 (client leave, spec 204)](#re-audit-122-client-leave-spec-204)
@@ -24,6 +25,24 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.26 (activity monitoring, spec 199)
+
+Scope: `Controller\TimeTrackMonitoringApiController`, `Monitoring\*`, the two monitoring repositories and the purge.
+
+| Service | State | Verdict |
+|---------|-------|---------|
+| `Controller\TimeTrackMonitoringApiController` | `final readonly`: collaborators, clock, logger | Stateless; the image bytes pass through local variables of the PUT only (streamed in 64 KiB chunks to a temporary file deleted in `finally`, handles closed in `finally`) |
+| `Monitoring\MonitoringContext`, `MonitoringGate` | `final readonly`: the host ports and the bundle stores | No memo: the policy, the acknowledgement, the timer, the entry, the calendar and the working hours are read on every call, so no `ResetInterface` is needed |
+| `Monitoring\HmacMonitoringUploadSigner` | the configured secret (container parameter) | The key is derived on every call; no static, no cache |
+| `Monitoring\MonitoringSettings`, `MonitoringImageInspector` | constants / config scalars | Pure |
+| `Repository\DoctrineOrmMonitoringUploadIntentRepository`, `DoctrineOrmMonitoringAcknowledgementStore` | the bundle entity manager | Reads use `HINT_REFRESH` and detach the rows they return; state changes are single conditional DQL statements (`TimeTrackSavepoint`), so no managed row survives a request and two workers never both consume a URL |
+| Replays | intent rows (bundle EM); acknowledgement and activity answers in `client_api.rate_limit.cache_pool` | Shared by every worker; never in process memory |
+
+Worker test: `MonitoringWorkerModeTest` serves two people with different policies in turn through `http_kernel` handle /
+terminate with the services resetter never run: each sees only their own policy and acknowledgement, the same
+`Idempotency-Key` of the other person is not a replay, one cannot use the other's upload URL, and 500 `GET me` steps with
+the monitoring block keep a flat memory.
 
 ## Re-audit 1.25 (host timer API and service accounts)
 

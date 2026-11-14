@@ -19,6 +19,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
 - [Meetings API (1.14)](#meetings-api-114)
+- [Activity monitoring (1.26)](#activity-monitoring-126)
 - [Security](#security)
 
 ## Required
@@ -428,6 +429,46 @@ nowo_time_track:
 
 - Client route `clients.routes.me_meetings` (`/api/time-track/me/meetings`, name `nowo_time_track_client_me_meetings`).
 - Refused at compile time: `enabled` without `provider`, values outside the ranges, a Jitsi host that is not a host name.
+
+## Activity monitoring (1.26)
+
+Off by default (spec 199, client contract in [CLIENT-API](CLIENT-API.md#changes-in-126-activity-monitoring-spec-199),
+ports in [USAGE](USAGE.md#activity-monitoring-ports-126)). Monitoring is **opt-in**: an organisation enables it only with
+a recorded DPIA, and the worker sees the notice before anything is collected. Without `policy_source` nothing changes:
+`GET me` has `features.monitoring: false` and no `monitoring` key, and every monitoring route answers 404.
+
+```yaml
+nowo_time_track:
+  client_api:
+    monitoring:
+      policy_source: ~             # Monitoring\MonitoringPolicySourceInterface service id (null = off)
+      evidence_store: ~            # Monitoring\MonitoringEvidenceStoreInterface service id (required with policy_source)
+      acknowledgement_store: ~     # Monitoring\MonitoringAcknowledgementStoreInterface (null = the bundle table)
+      signer: ~                    # Monitoring\MonitoringUploadSignerInterface (null = HMAC-SHA256, derived key)
+      signing_key: ~               # secret of the default signer (null = kernel.secret), e.g. "%env(TIME_TRACK_MONITORING_KEY)%"
+      rate_limit:                  # per token and 10-minute window, 0 = off, on top of client_api.rate_limit
+        intents_per_10_min: 6      # POST screenshots/intent (screenshots/discarded and DELETE screenshots/{id} count apart, same limit)
+        uploads_per_10_min: 6      # PUT uploads/{uploadId}
+        activity_per_10_min: 30    # POST activity
+```
+
+- Refused at compile time: `policy_source` without `evidence_store`.
+- `acknowledgement_store` and `signer` may also be set by aliasing the interface in your services (DDD hosts).
+- The default signer never uses the secret as the key: it derives one per call (HMAC of a fixed purpose string). Changing
+  `signing_key` (or `kernel.secret`) only invalidates the upload URLs of the last 120 seconds. For a rotation with
+  current + previous keys, alias `MonitoringUploadSignerInterface` to your own signer.
+- Parameter `nowo_time_track.client_api.monitoring.enabled` (bool) tells whether both ports are configured.
+- Client routes (`clients.routes.*`, change path or name like the others): `monitoring_acknowledge` (`POST
+  /api/time-track/monitoring/acknowledge`), `monitoring_screenshot_intent` (`POST …/monitoring/screenshots/intent`),
+  `monitoring_upload` (`PUT …/monitoring/uploads/{uploadId}`; the signed URLs are generated from this route, absolute,
+  so set `framework.trusted_hosts` / your proxy so the generated host is the public one), `monitoring_screenshot_discarded`
+  (`POST …/monitoring/screenshots/discarded`), `monitoring_screenshot_delete` (`DELETE …/monitoring/screenshots/{screenshotId}`)
+  and `monitoring_activity` (`POST …/monitoring/activity`); names `nowo_time_track_api_monitoring_*`.
+- Fixed by the contract (not configurable): URL lifetime 120 s, clock skew ± 120 s, images ≤ 1 572 864 bytes (1.5 MiB),
+  `image/webp` or `image/jpeg`, ≤ 3840 px a side, ≤ 200 activity items per batch.
+- Tables (always mapped, empty while off): `<prefix>_monitoring_acknowledgements`, `<prefix>_monitoring_upload_intents`
+  (see [UPGRADING](UPGRADING.md#unreleased)). `nowo:time-track:client-tokens:purge` also deletes upload intents older than
+  24 h.
 
 ## Security
 

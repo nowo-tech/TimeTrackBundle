@@ -16,6 +16,7 @@
 - [Billable entries (1.21)](#billable-entries-121)
 - [Leave on the clients (1.22, spec 204)](#leave-on-the-clients-122-spec-204)
 - [Timer for token principals and service accounts (1.25)](#timer-for-token-principals-and-service-accounts-125)
+- [Activity monitoring ports (1.26)](#activity-monitoring-ports-126)
 - [Standard Symfony host](#standard-symfony-host)
 - [Using it from a DDD / hexagonal application](#using-it-from-a-ddd--hexagonal-application)
 - [Worker mode (FrankenPHP, kernel reset false)](#worker-mode-frankenphp-kernel-reset-false)
@@ -981,6 +982,169 @@ The conditions are SQL (the page is cut after them) on the index `idx_time_track
 again in PHP (owners byte for byte, channel with `===`); a channel that is not a valid label is refused when the filter is
 built (REQ-SEC-006). Schema: see [UPGRADING](UPGRADING.md#to-1250).
 
+## Activity monitoring ports (1.26)
+
+Spec 199, contract §TT-MON. **Opt-in**: an organisation turns monitoring on only with a recorded DPIA, and each worker
+sees the notice before anything is collected; workers are never scored. The bundle owns the client API (routes, scope
+`monitoring:write`, every refusal check, caps, MIME sniffing, rate limits, audit events) and never writes files; your
+application owns the policy, the checklist, the notice, the storage, the viewers, retention and the workers' rights.
+Configuration: [CONFIGURATION](CONFIGURATION.md#activity-monitoring-126); client contract:
+[CLIENT-API](CLIENT-API.md#changes-in-126-activity-monitoring-spec-199).
+
+Four ports, all framework-free (`TimeTrackUserRef` and bundle value objects only; no Doctrine, no HttpFoundation, no
+`UserInterface`), none with a deprecated twin:
+
+| Port | You implement | Default | VO |
+|---|---|---|---|
+| `Monitoring\MonitoringPolicySourceInterface::policyOf(TimeTrackUserRef): ?MonitoringPolicy` | **yes** (`client_api.monitoring.policy_source`; null = off for the worker) | — | `MonitoringPolicy` |
+| `Monitoring\MonitoringEvidenceStoreInterface` (`storeScreenshot`, `markDiscarded`, `discard`, `storeActivity`, `hasScreenshot`) | **yes** (`client_api.monitoring.evidence_store`) | — | `ScreenshotUpload`, `ActivityItem` |
+| `Monitoring\MonitoringAcknowledgementStoreInterface` (`acknowledge`, `lastAcknowledged`) | DDD hosts | `Repository\DoctrineOrmMonitoringAcknowledgementStore` (bundle table, bundle entity manager) | `MonitoringAcknowledgement` |
+| `Monitoring\MonitoringUploadSignerInterface` (`sign`, `verify`) | optional | `Monitoring\HmacMonitoringUploadSigner` | `MonitoringUploadClaim` |
+
+### Standard Symfony host
+
+Implement the policy source and the evidence store as services and point the configuration at them; acknowledgements
+go to the bundle's table (`<prefix>_monitoring_acknowledgements`, through the bundle's entity manager) and the upload
+URLs are signed with a key derived from `kernel.secret`.
+
+```php
+use Nowo\TimeTrackBundle\Monitoring\MonitoringPolicy;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringPolicySourceInterface;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
+
+final readonly class MonitoringPolicySource implements MonitoringPolicySourceInterface
+{
+    public function __construct(private MonitoringPolicyRepository $policies, private NoticeRenderer $notices) {}
+
+    public function policyOf(TimeTrackUserRef $user): ?MonitoringPolicy
+    {
+        $policy = $user->id === null ? null : $this->policies->forWorker($user->id); // organisation + checklist
+        if ($policy === null) {
+            return null; // nothing is collected, GET me has no monitoring block
+        }
+
+        return new MonitoringPolicy(
+            enabled: $policy->isEnabled(),                    // published as false while the checklist is open
+            policyVersion: $policy->version(),               // bumped by every change
+            noticeUrl: $this->notices->url($policy->version()),
+            noticeSha256: hash('sha256', $this->notices->text($policy->version())), // what the worker must have seen
+            kinds: $policy->kinds(),                         // screenshots, apps, activity
+            acknowledgementRequired: $policy->widensSince($this->lastAcknowledgedVersion($user)),
+            lockedUntilChecklist: !$policy->checklistComplete(),
+            dpiaReference: $policy->dpiaReference(),
+            dpiaRecordedAt: $policy->dpiaRecordedAt()?->format('Y-m-d'),
+            blur: $policy->blur(),
+            fullResolution: $policy->fullResolution(),
+            excludedApps: $policy->excludedApps(),
+            retentionDays: $policy->retentionDays(),
+        );
+    }
+}
+```
+
+`acknowledgementRequired` is yours: whether this version widens collection (a new kind, more samples, full resolution,
+window titles on, a shorter review window) compared with the last version the worker acknowledged. Read that version from
+`MonitoringAcknowledgementStoreInterface::lastAcknowledged()` (inject the interface; it is the bundle's store unless you
+replaced it). The bundle publishes `acknowledgement.required` as `true` whenever the worker never acknowledged a version.
+
+```php
+use Nowo\TimeTrackBundle\Monitoring\ActivityItem;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceStoreInterface;
+use Nowo\TimeTrackBundle\Monitoring\ScreenshotUpload;
+
+final readonly class MonitoringEvidenceStore implements MonitoringEvidenceStoreInterface
+{
+    public function storeScreenshot(ScreenshotUpload $upload): string
+    {
+        // Read the stream NOW (it is closed and deleted right after): re-encode with a pixel limit (drops EXIF / ICC),
+        // encrypt (e.g. StorageKit), store, and return an id of 1-64 characters [A-Za-z0-9_-].
+        $object = $this->storage->putEncrypted($this->reencode->webp($upload->stream(), maxPixels: 3840 * 3840));
+
+        return $this->screenshots->add($upload->user->id, $upload->entryId, $upload->slot, $upload->takenAt, $object, $upload->blurred, $upload->policyVersion)->id;
+    }
+
+    public function markDiscarded(TimeTrackUserRef $user, string $entryId, DateTimeImmutable $slot): void { /* slot = unverified */ }
+
+    public function discard(TimeTrackUserRef $user, string $screenshotId): bool { /* own only; soft delete, purge in 24 h */ }
+
+    public function storeActivity(TimeTrackUserRef $user, array $items): void { /* list<ActivityItem> */ }
+
+    public function hasScreenshot(TimeTrackUserRef $user, string $entryId, DateTimeImmutable $slot): bool { /* screenshot or discard marker */ }
+}
+```
+
+```yaml
+nowo_time_track:
+  client_api:
+    monitoring:
+      policy_source: App\TimeTrack\MonitoringPolicySource
+      evidence_store: App\TimeTrack\MonitoringEvidenceStore
+```
+
+Rules for both paths:
+
+- Every call is for the authenticated worker only: read or change only `$user`'s data. `discard()` returns false for an
+  id that is not theirs (the client gets a 404, no existence oracle).
+- `entryId` is the worker's running timer id or the id of the timer entry it became (`timer/stop`): link screenshots
+  and activity to entries by the user and the time (`takenAt` / `slot` lie inside the entry), not by id equality alone.
+- The bundle passes `ScreenshotUpload` only after checking the size, the SHA-256, the magic bytes and the header
+  dimensions (≤ 3840 px). It never decodes pixels: **re-encode with a pixel limit** before storing or showing anything.
+- `blurred: true` images were blurred on the device at the policy's level; for full-resolution policies derive the
+  blurred viewer variant yourself, asynchronously (Messenger), never in the request.
+- Keep nothing per request in your adapters' properties (FrankenPHP worker mode, kernel reset false).
+- The web page that acknowledges the notice calls the same `MonitoringAcknowledgementStoreInterface::acknowledge()`,
+  with `clientType: 'web'` and the hash of the text it showed.
+
+### DDD / hexagonal host
+
+Keep the acknowledgements in your own model: alias the interface (or set
+`client_api.monitoring.acknowledgement_store`) to an adapter over your repository; the bundle's table then stays empty.
+Optionally replace the signer, e.g. to rotate keys held in your settings store (sign with the current key, verify with
+the current and the previous one, compare with `hash_equals`).
+
+```yaml
+services:
+  Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgementStoreInterface: '@App\Infrastructure\TimeTrack\AcknowledgementStore'
+  Nowo\TimeTrackBundle\Monitoring\MonitoringUploadSignerInterface: '@App\Infrastructure\TimeTrack\RotatingUploadSigner'
+```
+
+```php
+final readonly class AcknowledgementStore implements MonitoringAcknowledgementStoreInterface
+{
+    public function __construct(private AcknowledgementRepository $acknowledgements) {} // your domain port
+
+    public function acknowledge(TimeTrackUserRef $user, MonitoringAcknowledgement $acknowledgement): void
+    {
+        // Idempotent per (worker, version): keep the first record.
+        $this->acknowledgements->recordOnce($user->id, $acknowledgement->policyVersion, $acknowledgement->acknowledgedAt, $acknowledgement->clientType, $acknowledgement->noticeSha256);
+    }
+
+    public function lastAcknowledged(TimeTrackUserRef $user): ?MonitoringAcknowledgement { /* highest version, or null */ }
+}
+
+final readonly class RotatingUploadSigner implements MonitoringUploadSignerInterface
+{
+    public function sign(MonitoringUploadClaim $claim): string
+    {
+        return hash_hmac('sha256', $claim->canonical(), $this->keys->current()); // read the key per call, no cache
+    }
+
+    public function verify(MonitoringUploadClaim $claim, string $signature): bool
+    {
+        foreach ([$this->keys->current(), $this->keys->previous()] as $key) {
+            if ($key !== null && hash_equals(hash_hmac('sha256', $claim->canonical(), $key), $signature)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+```
+
+The bundle keeps its own upload intents (`<prefix>_monitoring_upload_intents`: declared size, hash, slot and state of the
+one-shot URL, never the image) through its entity manager in both paths; they are purged 24 h after creation.
+
 ## Standard Symfony host
 
 The zero-config path (REQ-ARCH-001): `user_class` is your attribute-mapped `App\Entity\User`, the same object your
@@ -998,7 +1162,8 @@ looks the user up by `(string) $user->getId()`.
 
 TimeTrackBundle is a **bounded context with its own model and persistence**: it owns Doctrine entities
 (`TimeEntry`, `ActiveTimer`, `Timesheet`, `TimesheetEvent`, `BalanceLedgerLine`, `ClientToken`, `DeviceAuthorization`,
-`CalendarConnection`, `CalendarSuggestion`, `CalendarRule`) and ships its own web UI and client API. Your domain does
+`CalendarConnection`, `CalendarSuggestion`, `CalendarRule`, and since 1.26 `MonitoringAcknowledgementRecord` and
+`MonitoringUploadIntent`) and ships its own web UI and client API. Your domain does
 not extend anything from it (no traits, no mapped superclasses).
 
 ### What stays in your domain
@@ -1045,6 +1210,7 @@ final readonly class MyTaskDirectory
 | `Repository\ImportedTimeEntryStoreInterface`, `EntryOwnerRefsRepositoryInterface` | `ImportedTimeEntryRepositoryInterface`, `EntryOwnersRepositoryInterface` | your time entry store |
 | `Client\ClientUserLeaveProviderInterface` (1.22, spec 204) | — | `client_api.leave_provider` (framework-free since 1.22; tested in `DddHostLeaveTest`) |
 | `Security\TimeTrackAccessCheckerInterface`, `WorkingTime\OvertimePolicyInterface`, `Integration\TimeEntryBillableDefaultProviderInterface` | — | already framework-free |
+| `Monitoring\MonitoringPolicySourceInterface`, `MonitoringEvidenceStoreInterface`, `MonitoringAcknowledgementStoreInterface`, `MonitoringUploadSignerInterface` (1.26) | — | `client_api.monitoring.*` (framework-free from the start; see [Activity monitoring ports](#activity-monitoring-ports-126)) |
 
 A service implementing the deprecated interface is asked through it (also when it implements the twin too); one
 implementing only the twin is asked through an internal gate. A configured service implementing neither fails the

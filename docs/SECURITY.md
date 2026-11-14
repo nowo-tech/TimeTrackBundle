@@ -15,6 +15,7 @@
 - [Moving imported time between owners (1.16)](#moving-imported-time-between-owners-116)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Identifier columns and look-alike ids (1.23.0, audit OA)](#identifier-columns-and-look-alike-ids-1230-audit-oa)
+- [Activity monitoring (1.26)](#activity-monitoring-126)
 - [Secrets & cryptography](#secrets--cryptography)
 - [Logging](#logging)
 - [Dependency and updates](#dependency-and-updates)
@@ -64,7 +65,7 @@ Threat model of the client API (1.9 contract v0.2, 1.10 contract v0.3):
 | Clickjacking of the approval page | Every answer of the default verification page sends `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `Cache-Control: no-store`; a host page built on `DeviceAuthorizationService` must send the same ([USAGE](USAGE.md#host-integration-client-api-19)) |
 | Flooding / DoS | Per-token and per-IP fixed-window limits on a shared pool (`client_api.rate_limit.cache_pool`, Redis recommended); bounded lists (`tasks` ≤ 50, `entries` ≤ 100, export ≤ 10 000 rows, `entries` / `export` / reports periods ≤ 366 days); since 1.13 the working-time routes are bounded too (see [Timesheets, balance and lock](#timesheets-balance-and-lock-113)) |
 | Custom entry stores (EF-I6) | Without `LatestTimeEntryRepositoryInterface` the overlap check reads the backdate window plus one day; an older entry that ends inside the window is missed (documented in UPGRADING) |
-| Monitoring creep | No server-side activity signal: `heartbeat` ignores `isIdle`; free `metadata` rejected unless `client_api.allow_metadata`; idle handling is the user's decision (`timer/discard-idle`); the 1.10 idle-check settings (`GET me`) only configure the client prompt, and the server still receives only the decision, never an activity counter |
+| Monitoring creep | Activity monitoring is opt-in (1.26, [below](#activity-monitoring-126)): nothing is collected without a host policy source, a policy for the worker, a recorded DPIA and the worker's acknowledgement. Outside it no server-side activity signal: `heartbeat` ignores `isIdle`; free `metadata` rejected unless `client_api.allow_metadata`; idle handling is the user's decision (`timer/discard-idle`); the 1.10 idle-check settings (`GET me`) only configure the client prompt, and the server still receives only the decision, never an activity counter |
 | Time inflation by backdating (1.10) | Instants normalised to the server zone first (EF-M1); `startedAt` clamped to `client_api.backdate.max_seconds` (≤ 24 h), never before the user's latest entry, never after now; `endedAt` only shortens time; every clamp is reported to the client, logged without data (`timer_start_clamped`, `timer_stop_clamped`) and exposed to the host on `TimerStartEvent::getStartTime()` / `TimerStopEvent::getEndTime()` |
 | IDOR / oracle on idle reassign (1.10) | `taskId` checked with `TaskAccessCheckerInterface::canTrack()` before any write; a missing and a foreign task get a byte-identical `403 task_forbidden`; only the token user's own timer is touched; `IdleResolvedEvent` for host audit |
 | Open redirect via task URLs (1.10) | `url` published only when https, without credentials, spaces or control characters (Unicode included), on `client_api.task_url.origin` (else the request origin); never logged; clients re-check the origin. Without `task_url.origin` the request origin follows the caller's `Host` header (EF-I1): it only affects the caller's own response, but set `task_url.origin` or `framework.trusted_hosts` |
@@ -282,6 +283,25 @@ Residuals (author's view, for the auditor): kept entries keep counting in the so
   `getId()`, so a look-alike needs two of your users whose ids differ only by case, accent or trailing blanks; integer
   and UUID ids cannot collide. If your ids can, use `user_mapping: id` or give those columns a binary collation in your
   migration. No advisory: no default installation is affected.
+
+## Activity monitoring (1.26)
+
+Opt-in (spec 199): the organisation enables it only with a recorded DPIA and the worker sees the notice first; no
+scoring. The bundle checks; the host stores ([USAGE](USAGE.md#activity-monitoring-ports-126)).
+
+| Threat | Control |
+|--------|---------|
+| Collection without a basis | Off without `client_api.monitoring.policy_source` (every route 404); `kind_off` without a policy, while `enabled` is false or `lockedUntilChecklist`, or for a kind the policy does not list; `not_acknowledged` until the worker acknowledged the current version (or an earlier one when the current one does not widen collection); the acknowledgement proves the exact notice text (`notice_mismatch` otherwise) |
+| Collection outside working time | SC-002 at intent time: the worker's **own** running timer, or one of their recorded timer entries, covered `takenAt` (manual, calendar and imported entries are refused); the working calendar (spec 198 schedule, days off, leave) through the existing port; at most `maxBufferAgeHours` (≤ 24 h) old and 120 s in the future |
+| Someone else's upload | The URL is signed (HMAC-SHA256, key derived per call, `hash_equals`) over the upload id, the **SHA-256 of the Bearer token** that asked for it, the declared hash, size, MIME and expiry; the PUT needs the same token, the same user's intent row and the current expiry; one request only (conditional `pending → uploading`), 120 s; a failed upload burns the URL and a replay signs one that expires later, so a dead URL never becomes valid again |
+| Malicious files | Streamed to a temporary file (deleted in `finally`): `Content-Length` = declared ≤ 1.5 MiB, body size = declared, SHA-256 = declared, MIME from the magic bytes (WebP / JPEG only, the header and the declared type are never trusted), header dimensions = declared ≤ 3840 px. The bundle reads the header only and never decodes pixels; the host re-encodes with a pixel limit before storing or showing (documented) |
+| Leaks through logs and events | Logs carry the action, the status and the duration; `ClientApiEvent` carries the action and a refusal code (throttled per credential and reason). Never an image, a hash, an upload id, a signature, an app or a window name. App names are redacted again (e-mail addresses, runs of 4+ digits) and excluded apps dropped before they reach the host |
+| Flooding | Per token and 10 minutes: 6 intents, 6 uploads, 30 activity batches (configurable), on top of the client API limits; ≤ 200 activity items per batch; intent rows purged after 24 h |
+| Replays | `Idempotency-Key` per user: intents in the intent table (unique per user and key hash, same body or `422 idempotency_mismatch`), acknowledgements and activity in the rate-limit pool for 24 h |
+| Worker mode | No per-request state in any service; image bytes only in local variables of the PUT; tested with two users taking turns in one kernel without the services resetter |
+
+Residual: the slot check (`hasScreenshot` + live intents) is not atomic across two concurrent intents with different
+keys for the same slot; the host store should keep one screenshot per worker, entry and slot.
 
 ## Secrets & cryptography
 
