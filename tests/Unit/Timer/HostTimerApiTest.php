@@ -101,7 +101,7 @@ final class HostTimerApiTest extends TestCase
         self::assertSame('2026-11-13 10:25:00', $entry->endedAt->format('Y-m-d H:i:s'));
         self::assertNull($api->current($this->ref($this->agent)));
 
-        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14'));
+        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('+1 day'));
         self::assertCount(1, $stored);
         self::assertSame(['mcp', true, ['note' => "Executing C-12\ndone"]], [$stored[0]->channel(), $stored[0]->isServiceAccount(), $stored[0]->getMetadata()], 'the channel moves from the timer metadata to the column');
     }
@@ -140,7 +140,7 @@ final class HostTimerApiTest extends TestCase
         self::assertNotNull($stopped);
         self::assertNull($stopped->closedBy, 'a plain stop has no mark');
 
-        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14'));
+        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('+1 day'));
         $marks  = array_map(static fn (TimeEntry $entry): array => [$entry->getTaskId(), $entry->closedBy(), $entry->getMetadata()], $stored);
         self::assertContains(['task-1', 'replaced', ['note' => 'first', 'closed_by' => 'replaced']], $marks);
         self::assertContains(['task-2', null, null], $marks);
@@ -177,7 +177,7 @@ final class HostTimerApiTest extends TestCase
         $this->clock->sleep(60);
         self::assertNotNull($api->stop($this->ref($this->agent)));
         self::assertNotNull($api->stop($this->ref($this->otherAgent)));
-        $period = [new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14')];
+        $period = [new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('+1 day')];
         self::assertCount(3, $this->entries->findByUserAndPeriod('2', ...$period));
         self::assertCount(1, $this->entries->findByUserAndPeriod('3', ...$period));
         self::assertSame($personTimer->timerId, $api->current($this->ref($this->person))?->timerId);
@@ -240,7 +240,7 @@ final class HostTimerApiTest extends TestCase
         }
         self::assertSame(['task-1', 'task-2'], $deny->asked, 'asked on every start');
         self::assertSame('task-1', $api->current($this->ref($this->agent))?->taskId, 'the running timer is untouched');
-        self::assertCount(0, $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14')), 'nothing was stopped or recorded');
+        self::assertCount(0, $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('+1 day')), 'nothing was stopped or recorded');
 
         // The refusal is the same exception as an unknown task, so the caller learns nothing about what it may not see.
         $this->expectException(TaskNotTrackableException::class);
@@ -316,7 +316,7 @@ final class HostTimerApiTest extends TestCase
         self::assertSame(['task-1', 'task-3'], array_map(static fn (TimerEntrySnapshot $entry): string => $entry->taskId, $start->stoppedEntries), 'ours, then the racer\'s');
         self::assertSame('task-3', $start->stopped?->taskId);
         self::assertSame('task-2', $api->current($this->ref($this->agent))?->taskId, 'the last call wins');
-        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14'));
+        $stored = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('+1 day'));
         self::assertSame(['task-1', 'task-3'], array_map(static fn (TimeEntry $entry): string => $entry->getTaskId(), $stored), 'each stopped timer recorded once');
         self::assertCount(1, $this->records('timer_replace', 'warning'));
         self::assertCount(2, $this->records('timer_replace'));
@@ -340,7 +340,7 @@ final class HostTimerApiTest extends TestCase
         }
         self::assertSame(TimerService::REPLACE_ATTEMPTS, $timers->saves);
         self::assertSame('task-3', $api->current($this->ref($this->agent))?->taskId, 'the last racer\'s timer runs');
-        $recorded = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('2026-11-14'));
+        $recorded = $this->entries->findByUserAndPeriod('2', new DateTimeImmutable('2026-11-13'), new DateTimeImmutable('+1 day'));
         self::assertCount(TimerService::REPLACE_ATTEMPTS - 1, $recorded);
         $ids   = array_map(static fn (TimeEntry $entry): string => $entry->getId(), $recorded);
         $named = $conflict->stoppedEntryIds;
