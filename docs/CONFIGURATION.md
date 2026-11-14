@@ -474,7 +474,7 @@ nowo_time_track:
 - Fixed by the contract (not configurable): URL lifetime 120 s, clock skew ± 120 s, images ≤ 1 572 864 bytes (1.5 MiB),
   `image/webp` or `image/jpeg`, ≤ 3840 px a side, ≤ 200 activity items per batch.
 - Tables (always mapped, empty while off): `<prefix>_monitoring_acknowledgements`, `<prefix>_monitoring_upload_intents`
-  (see [UPGRADING](UPGRADING.md#unreleased)). `nowo:time-track:client-tokens:purge` also deletes upload intents older than
+  (see [UPGRADING](UPGRADING.md#to-1260)). `nowo:time-track:client-tokens:purge` also deletes upload intents older than
   24 h.
 
 ## Security

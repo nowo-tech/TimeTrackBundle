@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.26.0](#to-1260)
 - [To 1.25.0](#to-1250)
 - [To 1.24.2](#to-1242)
 - [To 1.24.1](#to-1241)
@@ -84,8 +85,16 @@
 
 ## Unreleased
 
+## To 1.26.0
+
+From **1.25.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
 <!-- Release checklist: the chore(release) commit renames this heading to `## To 1.26.0` and adds its TOC entry;
-     CONFIGURATION links to `UPGRADING.md#unreleased` until then. -->
+     CONFIGURATION links to `UPGRADING.md#to-1260` until then. -->
 
 Target **1.26.0** (minor), from **1.25.0**: `composer update nowo-tech/time-track-bundle`.
 
