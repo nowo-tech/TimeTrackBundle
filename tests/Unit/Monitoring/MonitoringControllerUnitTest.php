@@ -16,7 +16,7 @@ final class MonitoringControllerUnitTest extends TestCase
     public function testRedact(): void
     {
         self::assertSame('Mail [email]', TimeTrackMonitoringApiController::redact('Mail a.b+c@example.co.uk'));
-        self::assertSame('Ticket [digits] - 1Password 8', TimeTrackMonitoringApiController::redact('Ticket 123456 - 1Password 8'));
+        self::assertSame('Ticket [digits] - VaultApp 8', TimeTrackMonitoringApiController::redact('Ticket 123456 - VaultApp 8'));
         self::assertSame('[email]', TimeTrackMonitoringApiController::redact(' x@y.z '));
         self::assertSame('Editor [digits] v12', TimeTrackMonitoringApiController::redact('Editor 2026 v12'));
     }

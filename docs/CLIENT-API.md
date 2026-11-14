@@ -87,7 +87,7 @@ Present, and `features.monitoring: true`, only when the host has a policy for th
   "capture": {"screenshotsPer10Min": 1, "slotMinutes": 10, "reviewWindowMinutes": 10},
   "screenshots": {"enabled": true, "blur": "medium", "fullResolution": false, "maxLongSidePx": 1920},
   "windowTitles": false,
-  "excludedApps": ["1password", "keepassxc"],
+  "excludedApps": ["vaultapp", "diaryapp"],
   "retentionDays": 30,
   "upload": {"maxBufferedScreenshots": 36, "maxBufferAgeHours": 24}
 }

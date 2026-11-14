@@ -65,7 +65,7 @@ class MonitoringApiTest extends MonitoringTestCase
             'capture'              => ['screenshotsPer10Min' => 1, 'slotMinutes' => 10, 'reviewWindowMinutes' => 10],
             'screenshots'          => ['enabled' => true, 'blur' => 'medium', 'fullResolution' => false, 'maxLongSidePx' => 1920],
             'windowTitles'         => false,
-            'excludedApps'         => ['1password', 'keepassxc'],
+            'excludedApps'         => ['vaultapp', 'diaryapp'],
             'retentionDays'        => 30,
             'upload'               => ['maxBufferedScreenshots' => 36, 'maxBufferAgeHours' => 24],
         ], $me['monitoring'] ?? null);
@@ -470,7 +470,7 @@ class MonitoringApiTest extends MonitoringTestCase
         $slot  = gmdate('Y-m-d\TH:i:s\Z', time() - time() % 600);
         $items = [
             ['entryId' => $timer, 'slot' => $slot, 'kind' => 'app', 'name' => 'Mail ana@example.com 123456', 'seconds' => 300],
-            ['entryId' => $timer, 'slot' => $slot, 'kind' => 'app', 'name' => '1Password 8', 'seconds' => 10],
+            ['entryId' => $timer, 'slot' => $slot, 'kind' => 'app', 'name' => 'VaultApp 8', 'seconds' => 10],
             ['entryId' => $timer, 'slot' => $slot, 'kind' => 'level', 'seconds' => 600, 'level' => 72],
             ['entryId' => '00000000-0000-0000-0000-000000000000', 'slot' => $slot, 'kind' => 'level', 'seconds' => 600, 'level' => 10],
         ];

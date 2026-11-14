@@ -35,7 +35,7 @@ final class MonitoringFixtures
             'kinds'          => $kinds,
             'dpiaReference'  => 'DPIA-2026-003',
             'dpiaRecordedAt' => '2026-11-10',
-            'excludedApps'   => ['1password', 'keepassxc'],
+            'excludedApps'   => ['vaultapp', 'diaryapp'],
         ]);
     }
 
