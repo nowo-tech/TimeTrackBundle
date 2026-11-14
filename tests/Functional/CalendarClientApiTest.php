@@ -261,7 +261,9 @@ class CalendarClientApiTest extends FunctionalTestCase
 
     public function testResolveKeys(): void
     {
-        self::mockTime();
+        // Frozen at the 5th second of the current minute: the limiter's cache item lives until the window ends in real
+        // seconds, so a frozen clock near the end of a minute let the counter expire on a slow database (MySQL CI flake).
+        self::mockTime((new DateTimeImmutable())->setTime((int) date('G'), (int) date('i'), 5));
         $token  = $this->token(ClientScope::SuggestionsRead);
         $result = $this->api('POST', '/api/time-track/suggestions/resolve-keys', ['keys' => ['#task-1', '#task-9', '#cafebabe', '#task-1']], $token);
         self::assertResponseIsSuccessful();
