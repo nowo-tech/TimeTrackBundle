@@ -38,7 +38,7 @@ class MonitoringWorkerModeTest extends MonitoringTestCase
      */
     protected static function createKernel(array $options = []): KernelInterface
     {
-        return new FunctionalKernel(static::timeTrackConfig(), false, false, false);
+        return new FunctionalKernel(static::timeTrackConfig(), false, false, false, false, true);
     }
 
     public function testTwoPeopleTakeTurnsWithoutTheServicesResetter(): void
@@ -49,7 +49,7 @@ class MonitoringWorkerModeTest extends MonitoringTestCase
         $source                                 = $this->policySource();
         $source->byUser[(string) $second['id']] = MonitoringFixtures::policy(3, ['activity']);
 
-        $this->call('POST', self::ACK, $person['token'], ['policyVersion' => 7, 'noticeSha256' => MonitoringFixtures::noticeSha256(), 'shownAt' => gmdate('Y-m-d\TH:i:s\Z')], Response::HTTP_NO_CONTENT, ['HTTP_IDEMPOTENCY_KEY' => 'same-key']);
+        $this->call('POST', self::ACK, $person['token'], ['policyVersion' => 7, 'noticeSha256' => MonitoringFixtures::noticeSha256(), 'shownAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now())], Response::HTTP_NO_CONTENT, ['HTTP_IDEMPOTENCY_KEY' => 'same-key']);
         $timers = [];
         foreach ([$person, $second] as $i => $who) {
             $timers[$i] = (string) ($this->call('POST', '/api/time-track/timer/start', $who['token'], ['taskId' => 'task-1', 'clientType' => 'desktop'], Response::HTTP_CREATED)['timer']['id'] ?? '');

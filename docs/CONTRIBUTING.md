@@ -9,6 +9,10 @@ make igor
 make release-check
 ```
 
+**Memory (audit PM-I7).** The full PHPUnit suite needs more than PHP's default 128 MB: `composer test` and
+`composer test-coverage` set `memory_limit=512M`; when you call PHPUnit directly use
+`php -d memory_limit=1G vendor/bin/phpunit` (1 GB also covers the coverage run and the database variants).
+
 ## Table of contents
 
 - [Code of Conduct](#code-of-conduct)

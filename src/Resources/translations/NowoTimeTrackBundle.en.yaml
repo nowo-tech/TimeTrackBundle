@@ -56,6 +56,8 @@ device:
   client_name: "Device name"
   client_type: "Client"
   scopes: "Permissions"
+  scope_monitoring_write: "Activity monitoring (monitoring:write)"
+  scope_monitoring_write_help: "Lets this device send the blurred screenshots, app time and activity level your organisation's monitoring policy lists, only while your own timer runs. Approve only if you have read the monitoring notice."
   requested_at: "Requested at"
   requested_from: "Requested from (network)"
   expires: "Expires"

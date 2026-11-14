@@ -38,6 +38,8 @@ Scope: `Controller\TimeTrackMonitoringApiController`, `Monitoring\*`, the two mo
 | `Monitoring\MonitoringSettings`, `MonitoringImageInspector` | constants / config scalars | Pure |
 | `Repository\DoctrineOrmMonitoringUploadIntentRepository`, `DoctrineOrmMonitoringAcknowledgementStore` | the bundle entity manager | Reads use `HINT_REFRESH` and detach the rows they return; state changes are single conditional DQL statements (`TimeTrackSavepoint`), so no managed row survives a request and two workers never both consume a URL |
 | Replays | intent rows (bundle EM); acknowledgement and activity answers in `client_api.rate_limit.cache_pool` | Shared by every worker; never in process memory |
+| `Monitoring\MonitoringActivityBudget` | the shared cache pool | App seconds per (user, slot) live in `client_api.rate_limit.cache_pool` (25 h), never in process memory |
+| `Monitoring\MonitoringSpanDiscardListener` | the event dispatcher | Stateless: re-dispatches each discarded idle span as `MonitoringSpanDiscardedEvent` |
 
 Worker test: `MonitoringWorkerModeTest` serves two people with different policies in turn through `http_kernel` handle /
 terminate with the services resetter never run: each sees only their own policy and acknowledgement, the same

@@ -33,12 +33,14 @@ final readonly class MonitoringSettings
      * @param int $intentsPer10Min `POST screenshots/intent` (and `screenshots/discarded`, `DELETE screenshots/{id}`) per token (0 = off)
      * @param int $uploadsPer10Min `PUT uploads/{uploadId}` per token (0 = off)
      * @param int $activityPer10Min `POST activity` per token (0 = off)
+     * @param string|null $uploadBaseUrl Since audit PM-L2: `https://host[:port]` the signed URLs start with (null = the request's scheme and host)
      */
     public function __construct(
         public string $uploadRoute = 'nowo_time_track_api_monitoring_upload',
         public int $intentsPer10Min = 6,
         public int $uploadsPer10Min = 6,
         public int $activityPer10Min = 30,
+        public ?string $uploadBaseUrl = null,
     ) {
     }
 }

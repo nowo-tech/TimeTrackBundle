@@ -126,6 +126,19 @@ enum ClientScope: string
     }
 
     /**
+     * Since 1.26 (Beacon Q5): the scopes a password login (app password, `POST login`) may grant — the list without
+     * `monitoring:write`, which only the device flow (the user's explicit approval on the consent page) can grant.
+     *
+     * @param list<self> $scopes
+     *
+     * @return list<self>
+     */
+    public static function grantableByPassword(array $scopes): array
+    {
+        return array_values(array_filter($scopes, static fn (self $scope): bool => $scope !== self::MonitoringWrite));
+    }
+
+    /**
      * Scope values of a list of scopes.
      *
      * @param list<self> $scopes

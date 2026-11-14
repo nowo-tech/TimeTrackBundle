@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringSpanDiscardListener;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 
@@ -31,6 +32,7 @@ class MonitoringDisabledTest extends FunctionalTestCase
         $token = (string) $auth->issueToken($user, ClientType::Desktop, null, [ClientScope::MonitoringWrite])['token'];
         self::assertNotContains('monitoring:write', $this->api('GET', '/api/time-track/me', null, $this->login())['scopes'] ?? [], 'never a default scope');
 
+        self::assertFalse(self::getContainer()->has(MonitoringSpanDiscardListener::class), 'no span event while off (Beacon Q3)');
         foreach ([
             ['POST', '/api/time-track/monitoring/acknowledge'],
             ['POST', '/api/time-track/monitoring/screenshots/intent'],

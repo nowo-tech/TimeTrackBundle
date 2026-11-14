@@ -60,7 +60,7 @@ class MonitoringStoresTest extends MonitoringTestCase
         $user = $this->entityManager()->find(AppUser::class, $this->user->getId());
         self::assertInstanceOf(AppUser::class, $user);
         $userId = (string) $user->getId();
-        $now    = new DateTimeImmutable();
+        $now    = $this->at('+0 seconds');
         $slot   = $now->setTimestamp($now->getTimestamp() - $now->getTimestamp() % 600);
         $make   = static fn (string $key, DateTimeImmutable $created): MonitoringUploadIntent => new MonitoringUploadIntent($user, hash('sha256', $key), str_repeat('b', 64), 'entry-1', $slot, $now, 7, true, 'image/webp', 10, 1, 1, str_repeat('s', 64), $created);
 
@@ -72,9 +72,9 @@ class MonitoringStoresTest extends MonitoringTestCase
 
         self::assertNull($store->findForUser($fresh->getId(), '999999'));
         self::assertSame($fresh->getId(), $store->findByKey($userId, hash('sha256', 'fresh'))?->getId());
-        self::assertTrue($store->slotTaken($userId, 'entry-1', $slot, $old->getId(), $now), 'the fresh pending URL holds the slot');
-        self::assertFalse($store->slotTaken($userId, 'entry-1', $slot, $fresh->getId(), $now), 'an expired pending one does not');
-        self::assertFalse($store->slotTaken($userId, 'entry-2', $slot, '', $now));
+        self::assertTrue($store->slotTaken($userId, $slot, $old->getId(), $now), 'the fresh pending URL holds the slot');
+        self::assertFalse($store->slotTaken($userId, $slot, $fresh->getId(), $now), 'an expired pending one does not');
+        self::assertFalse($store->slotTaken($userId, $slot->modify('+600 seconds'), '', $now), 'another slot');
 
         $until = $fresh->getSignedUntil();
         self::assertNotNull($until);
@@ -91,7 +91,9 @@ class MonitoringStoresTest extends MonitoringTestCase
         $stored = $store->findForUser($fresh->getId(), $userId);
         self::assertSame([MonitoringUploadIntent::STATUS_STORED, 'shot-9'], [$stored?->getStatus(), $stored?->getScreenshotId()]);
         self::assertFalse($store->sign($fresh->getId(), $now->modify('+600 seconds'), $now->modify('+1 hour')), 'a stored intent is never signed again');
-        self::assertTrue($store->slotTaken($userId, 'entry-1', $slot, $old->getId(), $now));
+        self::assertTrue($store->slotTaken($userId, $slot, $old->getId(), $now));
+        $store->markRejected($fresh->getId());
+        self::assertSame(MonitoringUploadIntent::STATUS_STORED, $store->findForUser($fresh->getId(), $userId)?->getStatus(), 'only an upload in progress is rejected');
 
         $command = self::getContainer()->get(PurgeExpiredClientTokensCommand::class);
         self::assertInstanceOf(PurgeExpiredClientTokensCommand::class, $command);

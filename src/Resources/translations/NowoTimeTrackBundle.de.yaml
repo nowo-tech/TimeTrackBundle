@@ -56,6 +56,8 @@ device:
   client_name: "Gerätename"
   client_type: "Client"
   scopes: "Berechtigungen"
+  scope_monitoring_write: "Aktivitätsüberwachung (monitoring:write)"
+  scope_monitoring_write_help: "Erlaubt diesem Gerät, die unscharfen Bildschirmfotos, die App-Zeit und das Aktivitätsniveau zu senden, die die Überwachungsrichtlinie Ihrer Organisation vorsieht, nur solange Ihr eigener Timer läuft. Genehmigen Sie nur, wenn Sie den Überwachungshinweis gelesen haben."
   requested_at: "Angefordert am"
   requested_from: "Angefordert von (Netzwerk)"
   expires: "Läuft ab"

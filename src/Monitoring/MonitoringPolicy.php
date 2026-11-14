@@ -67,7 +67,7 @@ final readonly class MonitoringPolicy
      * @param bool $lockedUntilChecklist The organisation's checklist is incomplete: nothing is collected
      * @param string|null $dpiaReference DPIA id (never the file)
      * @param string|null $dpiaRecordedAt Date the DPIA was recorded (`Y-m-d`)
-     * @param int $screenshotsPer10Min 0-6
+     * @param int $screenshotsPer10Min 1 in v1 (0 only without the screenshots kind)
      * @param int $slotMinutes 1-60
      * @param int $reviewWindowMinutes 0-60
      * @param string $blur One of {@see self::BLUR_LEVELS}; `none` only with `fullResolution`
@@ -128,7 +128,9 @@ final readonly class MonitoringPolicy
         $this->check(in_array($scope, self::SCOPES, true), 'scope must be organization or personal.');
         $this->check($dpiaReference === null || (trim($dpiaReference) !== '' && mb_strlen($dpiaReference) <= 64), 'dpiaReference must be 1-64 characters.');
         $this->check($dpiaRecordedAt === null || preg_match('/^\d{4}-\d{2}-\d{2}$/D', $dpiaRecordedAt) === 1, 'dpiaRecordedAt must be a Y-m-d date.');
-        $this->check($screenshotsPer10Min >= 0 && $screenshotsPer10Min <= 6, 'screenshotsPer10Min must be 0-6.');
+        // Audit PM-I6 (Beacon): one screenshot per slot in v1 — the server keeps one per (user, slot) and the rate limits
+        // are sized for it; 0 only when screenshots are not collected.
+        $this->check($screenshotsPer10Min === 1 || ($screenshotsPer10Min === 0 && !in_array('screenshots', $this->kinds, true)), 'screenshotsPer10Min must be 1 (0 only without the screenshots kind).');
         $this->check($slotMinutes >= 1 && $slotMinutes <= 60, 'slotMinutes must be 1-60.');
         $this->check($reviewWindowMinutes >= 0 && $reviewWindowMinutes <= 60, 'reviewWindowMinutes must be 0-60.');
         $this->check(in_array($blur, self::BLUR_LEVELS, true), 'blur must be none, low, medium or high.');

@@ -26,6 +26,8 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
 
     public bool $failFind = false;
 
+    public bool $failMarkStored = false;
+
     public function __construct(private readonly MonitoringUploadIntentRepositoryInterface $inner)
     {
     }
@@ -59,9 +61,14 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
         return $this->inner->findByKey($userId, $idempotencyHash);
     }
 
-    public function slotTaken(string $userId, string $entryId, DateTimeImmutable $slot, string $exceptId, DateTimeImmutable $now): bool
+    public function slotTaken(string $userId, DateTimeImmutable $slot, string $exceptId, DateTimeImmutable $now): bool
     {
-        return $this->inner->slotTaken($userId, $entryId, $slot, $exceptId, $now);
+        return $this->inner->slotTaken($userId, $slot, $exceptId, $now);
+    }
+
+    public function markRejected(string $id): void
+    {
+        $this->inner->markRejected($id);
     }
 
     public function sign(string $id, DateTimeImmutable $until, DateTimeImmutable $staleBefore): bool
@@ -84,6 +91,9 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
 
     public function markStored(string $id, string $screenshotId): void
     {
+        if ($this->failMarkStored) {
+            throw new RuntimeException('intent store down');
+        }
         $this->inner->markStored($id, $screenshotId);
     }
 

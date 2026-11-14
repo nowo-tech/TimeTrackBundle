@@ -446,13 +446,18 @@ nowo_time_track:
       acknowledgement_store: ~     # Monitoring\MonitoringAcknowledgementStoreInterface (null = the bundle table)
       signer: ~                    # Monitoring\MonitoringUploadSignerInterface (null = HMAC-SHA256, derived key)
       signing_key: ~               # secret of the default signer (null = kernel.secret), e.g. "%env(TIME_TRACK_MONITORING_KEY)%"
+      upload_base_url: ~           # exact "https://host[:port]" of the signed upload URLs (null = the request's scheme and host)
       rate_limit:                  # per token and 10-minute window, 0 = off, on top of client_api.rate_limit
         intents_per_10_min: 6      # POST screenshots/intent (screenshots/discarded and DELETE screenshots/{id} count apart, same limit)
         uploads_per_10_min: 6      # PUT uploads/{uploadId}
         activity_per_10_min: 30    # POST activity
 ```
 
-- Refused at compile time: `policy_source` without `evidence_store`.
+- Refused at compile time: `policy_source` without `evidence_store`; an `upload_base_url` that is not an exact
+  `https://host[:port]` origin.
+- `upload_base_url` (recommended): the signed upload URLs start with it instead of the request's scheme and host, so a
+  forged `Host` header or a TLS proxy without `trusted_proxies` can never turn them into `http://` or another host. The
+  path still comes from the `monitoring_upload` route.
 - `acknowledgement_store` and `signer` may also be set by aliasing the interface in your services (DDD hosts).
 - The default signer never uses the secret as the key: it derives one per call (HMAC of a fixed purpose string). Changing
   `signing_key` (or `kernel.secret`) only invalidates the upload URLs of the last 120 seconds. For a rotation with

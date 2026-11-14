@@ -105,7 +105,7 @@ the acknowledgements first if your organisation needs them as evidence).
 
 ```sql
 CREATE TABLE time_track_monitoring_acknowledgements (id VARCHAR(36) NOT NULL, acknowledged_at DATETIME NOT NULL, policy_version INT NOT NULL, client_type VARCHAR(16) NOT NULL, notice_sha256 CHAR(64) NOT NULL, user_id INT NOT NULL, UNIQUE INDEX uniq_time_track_monitoring_ack_version (user_id, policy_version), INDEX IDX_18089BE9A76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
-CREATE TABLE time_track_monitoring_upload_intents (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, signed_until DATETIME DEFAULT NULL, screenshot_id VARCHAR(64) DEFAULT NULL, slot DATETIME NOT NULL, taken_at DATETIME NOT NULL, created_at DATETIME NOT NULL, idempotency_hash CHAR(64) NOT NULL, body_hash CHAR(64) NOT NULL, entry_id VARCHAR(36) NOT NULL, policy_version INT NOT NULL, blurred TINYINT(1) NOT NULL, mime VARCHAR(16) NOT NULL, bytes INT NOT NULL, width INT NOT NULL, height INT NOT NULL, sha256 CHAR(64) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_monitoring_intent_slot (user_id, entry_id, slot), INDEX idx_time_track_monitoring_intent_created (created_at), UNIQUE INDEX uniq_time_track_monitoring_intent_key (user_id, idempotency_hash), INDEX IDX_59FDD04DA76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
+CREATE TABLE time_track_monitoring_upload_intents (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, signed_until DATETIME DEFAULT NULL, screenshot_id VARCHAR(64) DEFAULT NULL, slot DATETIME NOT NULL, taken_at DATETIME NOT NULL, created_at DATETIME NOT NULL, idempotency_hash CHAR(64) NOT NULL, body_hash CHAR(64) NOT NULL, entry_id VARCHAR(36) NOT NULL, policy_version INT NOT NULL, blurred TINYINT(1) NOT NULL, mime VARCHAR(16) NOT NULL, bytes INT NOT NULL, width INT NOT NULL, height INT NOT NULL, sha256 CHAR(64) NOT NULL, user_id INT NOT NULL, INDEX idx_time_track_monitoring_intent_slot (user_id, slot), INDEX idx_time_track_monitoring_intent_created (created_at), UNIQUE INDEX uniq_time_track_monitoring_intent_key (user_id, idempotency_hash), INDEX IDX_59FDD04DA76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB;
 ALTER TABLE time_track_monitoring_acknowledgements ADD CONSTRAINT FK_18089BE9A76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
 ALTER TABLE time_track_monitoring_upload_intents ADD CONSTRAINT FK_59FDD04DA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE;
 ```
@@ -119,7 +119,7 @@ CREATE TABLE time_track_monitoring_acknowledgements (id VARCHAR(36) NOT NULL, ac
 CREATE UNIQUE INDEX uniq_time_track_monitoring_ack_version ON time_track_monitoring_acknowledgements (user_id, policy_version);
 CREATE INDEX IDX_18089BE9A76ED395 ON time_track_monitoring_acknowledgements (user_id);
 CREATE TABLE time_track_monitoring_upload_intents (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, signed_until TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, screenshot_id VARCHAR(64) DEFAULT NULL, slot TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, taken_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, idempotency_hash CHAR(64) NOT NULL, body_hash CHAR(64) NOT NULL, entry_id VARCHAR(36) NOT NULL, policy_version INT NOT NULL, blurred BOOLEAN NOT NULL, mime VARCHAR(16) NOT NULL, bytes INT NOT NULL, width INT NOT NULL, height INT NOT NULL, sha256 CHAR(64) NOT NULL, user_id INT NOT NULL, PRIMARY KEY (id));
-CREATE INDEX idx_time_track_monitoring_intent_slot ON time_track_monitoring_upload_intents (user_id, entry_id, slot);
+CREATE INDEX idx_time_track_monitoring_intent_slot ON time_track_monitoring_upload_intents (user_id, slot);
 CREATE INDEX idx_time_track_monitoring_intent_created ON time_track_monitoring_upload_intents (created_at);
 CREATE UNIQUE INDEX uniq_time_track_monitoring_intent_key ON time_track_monitoring_upload_intents (user_id, idempotency_hash);
 CREATE INDEX IDX_59FDD04DA76ED395 ON time_track_monitoring_upload_intents (user_id);
@@ -136,7 +136,7 @@ CREATE TABLE time_track_monitoring_acknowledgements (id VARCHAR(36) NOT NULL, ac
 CREATE UNIQUE INDEX uniq_time_track_monitoring_ack_version ON time_track_monitoring_acknowledgements (user_id, policy_version);
 CREATE INDEX IDX_18089BE9A76ED395 ON time_track_monitoring_acknowledgements (user_id);
 CREATE TABLE time_track_monitoring_upload_intents (id VARCHAR(36) NOT NULL, status VARCHAR(16) NOT NULL, signed_until DATETIME DEFAULT NULL, screenshot_id VARCHAR(64) DEFAULT NULL, slot DATETIME NOT NULL, taken_at DATETIME NOT NULL, created_at DATETIME NOT NULL, idempotency_hash CHAR(64) NOT NULL, body_hash CHAR(64) NOT NULL, entry_id VARCHAR(36) NOT NULL, policy_version INTEGER NOT NULL, blurred BOOLEAN NOT NULL, mime VARCHAR(16) NOT NULL, bytes INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 CHAR(64) NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (id), CONSTRAINT FK_59FDD04DA76ED395 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE);
-CREATE INDEX idx_time_track_monitoring_intent_slot ON time_track_monitoring_upload_intents (user_id, entry_id, slot);
+CREATE INDEX idx_time_track_monitoring_intent_slot ON time_track_monitoring_upload_intents (user_id, slot);
 CREATE INDEX idx_time_track_monitoring_intent_created ON time_track_monitoring_upload_intents (created_at);
 CREATE UNIQUE INDEX uniq_time_track_monitoring_intent_key ON time_track_monitoring_upload_intents (user_id, idempotency_hash);
 CREATE INDEX IDX_59FDD04DA76ED395 ON time_track_monitoring_upload_intents (user_id);
@@ -155,6 +155,12 @@ To turn monitoring on (only once your organisation has recorded its DPIA and its
   the public one (`framework.trusted_hosts`, `trusted_proxies`). The default signer uses `kernel.secret` unless you set
   `client_api.monitoring.signing_key`.
 - Re-encode the screenshots with a pixel limit in your evidence store: the bundle checks the header only.
+- Set `client_api.monitoring.upload_base_url` to your public `https://` origin (recommended).
+- Keep your evidence store unique on **(user, slot)**, whatever the entry id; throw
+  `Monitoring\MonitoringEvidenceRejectedException` to refuse evidence for good (`422 evidence_rejected`); listen to
+  `TimeTrackEvents::MONITORING_SPAN_DISCARDED` to delete the evidence of discarded idle time.
+- `ClientScope::all()` now includes `monitoring:write`: if you grant `all()` anywhere (an authenticator, a device-flow
+  allow-list), you would grant monitoring too. Grant explicit lists. A password login never grants it anyway.
 - **Additive output** for hosts that consume `ClientApiEvent`: three new actions (`monitoring_acknowledged`,
   `monitoring_uploaded`, `monitoring_refused`). `ClientApiAuditAction` gained three cases: an exhaustive `match` over it
   needs them. `ClientScope` gained `MonitoringWrite` (`ClientScope::all()` has 14 cases).

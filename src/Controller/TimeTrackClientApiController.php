@@ -237,8 +237,9 @@ final readonly class TimeTrackClientApiController
         }
 
         $this->loginRateLimiter->reset($clientIp, $username);
-        $user  = $result->requireUser();
-        $token = $this->authService->issueToken($user, $clientType, $result->getCredentialId(), $result->getScopes());
+        $user = $result->requireUser();
+        // Since 1.26 (Beacon Q5): a password never grants monitoring:write.
+        $token = $this->authService->issueToken($user, $clientType, $result->getCredentialId(), ClientScope::grantableByPassword($result->getScopes()));
         $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $result->getCredentialId(), $clientType, $clientIp);
 
         return $this->responseFactory->json($token, Response::HTTP_OK, $request);

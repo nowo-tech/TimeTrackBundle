@@ -10,7 +10,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringPolicySource;
 use Nowo\TimeTrackBundle\Tests\Support\MonitoringFixtures;
 
 use function gmdate;
-use function time;
 
 /**
  * Since 1.26.0 (contract §24.3): per-token limits of the monitoring routes in 10-minute windows (defaults 6 intents,
@@ -47,7 +46,7 @@ class MonitoringRateLimitTest extends MonitoringTestCase
         self::assertResponseStatusCodeSame(422);
         $this->assertLimited($this->put(self::url($grant), $token, $image));
 
-        $slot = gmdate('Y-m-d\TH:i:s\Z', time() - time() % 600);
+        $slot = gmdate('Y-m-d\TH:i:s\Z', $this->now() - $this->now() % 600);
         $item = ['items' => [['entryId' => $timer, 'slot' => $slot, 'kind' => 'level', 'seconds' => 600, 'level' => 50]]];
         $this->api('POST', self::ACTIVITY, $item, $token, ['HTTP_IDEMPOTENCY_KEY' => 'a']);
         self::assertResponseStatusCodeSame(202);

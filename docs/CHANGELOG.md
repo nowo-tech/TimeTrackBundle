@@ -78,6 +78,10 @@ Target **1.26.0** (minor).
   - Two always-mapped tables, empty while monitoring is off: `time_track_monitoring_acknowledgements` and `time_track_monitoring_upload_intents` (reference SQL in `docs/sql/1.26.0/`, demo migration `Version20261114000000`). `nowo:time-track:client-tokens:purge` also deletes upload intents older than 24 h.
   - Worker mode (kernel reset false): no per-request state in any service, intents and replays in the bundle entity manager and the rate-limit pool, image bytes only in local variables of the PUT; tested with two users taking turns in one kernel without the services resetter.
 
+  - SEC-004 audit PM (same release, before the tag): slots must be on the policy's UTC grid (`slotMinutes × 60`, `400 invalid_request {field: slot}` on intent, discarded and activity); one screenshot per **(user, slot)** whatever the entry id; excluded apps matched before the redaction; optional `client_api.monitoring.upload_base_url` for the signed URLs; the policy's `maxLongSidePx` enforced at intent and PUT (`422 upload_mismatch {field: dimensions}`); the PUT re-checks the timer (SC-002), the schedule and the age; `app` seconds per (user, slot) capped at the slot across batches (202 gains `droppedSeconds`); `Monitoring\MonitoringEvidenceRejectedException` → `422 evidence_rejected` (intent burnt, never retried); the `201` keeps the id when the intent cannot be marked; `screenshotsPer10Min` is 1 in v1; a translated `monitoring:write` label on the consent page.
+  - `Event\MonitoringSpanDiscardedEvent` (`nowo_time_track.monitoring.span_discarded`, Beacon Q3): dispatched, only while monitoring is configured, when a worker discards idle time (`timer/discard-idle` `discard` / `split`), so the host deletes that span's evidence.
+  - A password login (app password) never grants `monitoring:write` (`ClientScope::grantableByPassword()`), whatever the host authenticator returns (Beacon Q5).
+
 ### Changed
 
 - `TimeTrackClientApiController::RESERVED_FEATURES` is empty (`monitoring` became real). `features.monitoring` is still `false` for every host without a monitoring policy source.
@@ -85,6 +89,7 @@ Target **1.26.0** (minor).
 ### Tests
 
 - `HostTimerApiTest` no longer reads a fixed day (2026-11-13 / 14) for the entries it records.
+- The monitoring tests run on a frozen clock (`FrozenMonitoringClock`), so no test depends on a second or slot boundary (audit PM-L8). The full suite needs `memory_limit` above 128 MB (CONTRIBUTING).
 
 ## [1.25.0] - 2026-11-13
 

@@ -7,7 +7,7 @@
                   xsi:schemaLocation="http://doctrine-project.org/schemas/orm/doctrine-mapping https://www.doctrine-project.org/schemas/orm/doctrine-mapping.xsd">
     <entity name="Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent" table="time_track_monitoring_upload_intents">
         <indexes>
-            <index name="idx_time_track_monitoring_intent_slot" columns="user_id,entry_id,slot"/>
+            <index name="idx_time_track_monitoring_intent_slot" columns="user_id,slot"/>
             <index name="idx_time_track_monitoring_intent_created" columns="created_at"/>
         </indexes>
         <unique-constraints>

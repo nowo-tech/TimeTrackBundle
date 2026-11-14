@@ -57,18 +57,16 @@ final readonly class DoctrineOrmMonitoringUploadIntentRepository implements Moni
     }
 
     /** Whether another live intent holds the slot. */
-    public function slotTaken(string $userId, string $entryId, DateTimeImmutable $slot, string $exceptId, DateTimeImmutable $now): bool
+    public function slotTaken(string $userId, DateTimeImmutable $slot, string $exceptId, DateTimeImmutable $now): bool
     {
         /** @var list<MonitoringUploadIntent> $rows */
         $rows = $this->entityManager->createQueryBuilder()
             ->select('i')
             ->from(MonitoringUploadIntent::class, 'i')
             ->where('IDENTITY(i.user) = :user')
-            ->andWhere('i.entryId = :entry')
             ->andWhere('i.slot = :slot')
             ->andWhere('i.id <> :except')
             ->setParameter('user', $userId)
-            ->setParameter('entry', $entryId)
             ->setParameter('slot', StorageTime::normalize($slot), 'datetime_immutable')
             ->setParameter('except', $exceptId)
             ->getQuery()
@@ -79,7 +77,7 @@ final readonly class DoctrineOrmMonitoringUploadIntentRepository implements Moni
             $until = $row->getSignedUntil();
             $live  = in_array($row->getStatus(), [MonitoringUploadIntent::STATUS_UPLOADING, MonitoringUploadIntent::STATUS_STORED], true)
                 || ($row->getStatus() === MonitoringUploadIntent::STATUS_PENDING && $until !== null && $until->getTimestamp() > $now->getTimestamp());
-            if ($row->getEntryId() === $entryId && $live) {
+            if ($live && $row->getSlot()->getTimestamp() === $slot->getTimestamp()) {
                 $taken = true;
             }
         }
@@ -137,6 +135,20 @@ final readonly class DoctrineOrmMonitoringUploadIntentRepository implements Moni
             ->where('i.id = :id')
             ->andWhere('i.status = :uploading')
             ->setParameter('spent', MonitoringUploadIntent::STATUS_SPENT)
+            ->setParameter('uploading', MonitoringUploadIntent::STATUS_UPLOADING)
+            ->setParameter('id', $id)
+            ->getQuery(), $this->entityManager);
+    }
+
+    /** Uploading → rejected. */
+    public function markRejected(string $id): void
+    {
+        TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
+            ->update(MonitoringUploadIntent::class, 'i')
+            ->set('i.status', ':rejected')
+            ->where('i.id = :id')
+            ->andWhere('i.status = :uploading')
+            ->setParameter('rejected', MonitoringUploadIntent::STATUS_REJECTED)
             ->setParameter('uploading', MonitoringUploadIntent::STATUS_UPLOADING)
             ->setParameter('id', $id)
             ->getQuery(), $this->entityManager);

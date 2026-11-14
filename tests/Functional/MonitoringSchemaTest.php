@@ -39,7 +39,7 @@ final class MonitoringSchemaTest extends FunctionalTestCase
         $intent = $em->getClassMetadata(MonitoringUploadIntent::class);
         self::assertSame(self::TABLES[1], $intent->getTableName());
         self::assertSame(['user_id', 'idempotency_hash'], $intent->table['uniqueConstraints']['uniq_time_track_monitoring_intent_key']['columns'] ?? null);
-        self::assertSame(['user_id', 'entry_id', 'slot'], $intent->table['indexes']['idx_time_track_monitoring_intent_slot']['columns'] ?? null);
+        self::assertSame(['user_id', 'slot'], $intent->table['indexes']['idx_time_track_monitoring_intent_slot']['columns'] ?? null);
     }
 
     public function testTheReferenceMigrationsMatchTheMapping(): void

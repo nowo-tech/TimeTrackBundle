@@ -31,9 +31,10 @@ interface MonitoringUploadIntentRepositoryInterface
     public function findByKey(string $userId, string $idempotencyHash): ?MonitoringUploadIntent;
 
     /**
-     * Whether another intent of the user holds the slot: stored, uploading, or pending with a URL still valid at `$now`.
+     * Whether another intent of the user holds the slot (whatever its entry id, audit PM-M2): stored, uploading, or
+     * pending with a URL still valid at `$now`.
      */
-    public function slotTaken(string $userId, string $entryId, DateTimeImmutable $slot, string $exceptId, DateTimeImmutable $now): bool;
+    public function slotTaken(string $userId, DateTimeImmutable $slot, string $exceptId, DateTimeImmutable $now): bool;
 
     /**
      * Records the expiry of a new URL of a pending or spent intent (or of an upload stuck since before `$staleBefore`),
@@ -56,6 +57,11 @@ interface MonitoringUploadIntentRepositoryInterface
      * A stored upload: uploading → stored, with the host's screenshot id.
      */
     public function markStored(string $id, string $screenshotId): void;
+
+    /**
+     * The host refused the evidence for good: uploading → rejected.
+     */
+    public function markRejected(string $id): void;
 
     /**
      * Deletes the intents created before `$before` (of one user, or of everyone); returns how many.

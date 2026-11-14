@@ -72,6 +72,7 @@ use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\NoServiceAccountPolicy;
@@ -88,9 +89,11 @@ use Nowo\TimeTrackBundle\Meeting\MeetingResponder;
 use Nowo\TimeTrackBundle\Meeting\MeetingSettings;
 use Nowo\TimeTrackBundle\Monitoring\HmacMonitoringUploadSigner;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgementStoreInterface;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringActivityBudget;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringGate;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringSettings;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringSpanDiscardListener;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringUploadSignerInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
@@ -385,7 +388,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerMonitoring(ContainerBuilder $container, array $config, Reference $emRef, Reference $registryRef): void
     {
-        /** @var array{monitoring: array{policy_source: string|null, evidence_store: string|null, acknowledgement_store: string|null, signer: string|null, signing_key: string|null, rate_limit: array{intents_per_10_min: int, uploads_per_10_min: int, activity_per_10_min: int}}} $api */
+        /** @var array{monitoring: array{policy_source: string|null, evidence_store: string|null, acknowledgement_store: string|null, signer: string|null, signing_key: string|null, upload_base_url: string|null, rate_limit: array{intents_per_10_min: int, uploads_per_10_min: int, activity_per_10_min: int}}, rate_limit: array{cache_pool: string}} $api */
         $api        = $config['client_api'];
         $monitoring = $api['monitoring'];
         /** @var array{routes: array<string, array{path: string, name: string}>} $clients */
@@ -421,7 +424,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$intentsPer10Min'  => $monitoring['rate_limit']['intents_per_10_min'],
                 '$uploadsPer10Min'  => $monitoring['rate_limit']['uploads_per_10_min'],
                 '$activityPer10Min' => $monitoring['rate_limit']['activity_per_10_min'],
+                '$uploadBaseUrl'    => $monitoring['upload_base_url'],
             ]));
+        $container->setDefinition(MonitoringActivityBudget::class, (new Definition(MonitoringActivityBudget::class))
+            ->setArguments(['$cache' => new Reference($api['rate_limit']['cache_pool'])]));
+        if ($enabled) {
+            // Since 1.26.0 (Beacon Q3): discarded spans of tracked time → MonitoringSpanDiscardedEvent.
+            $container->setDefinition(MonitoringSpanDiscardListener::class, (new Definition(MonitoringSpanDiscardListener::class))
+                ->setArguments(['$eventDispatcher' => new Reference('event_dispatcher')])
+                ->addTag('kernel.event_listener', ['event' => TimeTrackEvents::IDLE_RESOLVED, 'method' => 'onIdleResolved']));
+        }
         $container->setDefinition(MonitoringContext::class, (new Definition(MonitoringContext::class))
             ->setArguments([
                 '$policySource'     => $enabled ? new Reference((string) $policy) : null,
@@ -449,6 +461,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$context'         => new Reference(MonitoringContext::class),
                 '$gate'            => new Reference(MonitoringGate::class),
                 '$settings'        => new Reference(MonitoringSettings::class),
+                '$budget'          => new Reference(MonitoringActivityBudget::class),
                 '$signer'          => $enabled ? new Reference(MonitoringUploadSignerInterface::class) : null,
                 '$intents'         => $enabled ? new Reference(MonitoringUploadIntentRepositoryInterface::class) : null,
                 '$urlGenerator'    => $enabled ? new Reference('router', ContainerInterface::NULL_ON_INVALID_REFERENCE) : null,

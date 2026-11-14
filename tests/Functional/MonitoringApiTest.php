@@ -192,8 +192,8 @@ class MonitoringApiTest extends MonitoringTestCase
         }
 
         // A JPEG of a recorded desktop entry, in the next slot of the past.
-        $start = new DateTimeImmutable('-3 hours');
-        $entry = $this->recordedEntry($start, new DateTimeImmutable('-1 hour'));
+        $start = $this->at('-3 hours');
+        $entry = $this->recordedEntry($start, $this->at('-1 hour'));
         $jpeg  = MonitoringFixtures::jpeg(800, 600, 64);
         $grant = $this->intent($token, $this->intentBody($entry, $jpeg, ['mime' => 'image/jpeg', 'width' => 800, 'height' => 600], $start->getTimestamp() + 900), 'cap-2');
         self::assertResponseStatusCodeSame(201);
@@ -233,28 +233,28 @@ class MonitoringApiTest extends MonitoringTestCase
 
         // SC-002: the worker's own timer ran on entryId at takenAt.
         $refused('outside_timer', $this->intentBody('00000000-0000-0000-0000-000000000000', $image), 't1');
-        $refused('outside_timer', $this->intentBody($timer, $image, takenAt: time() - 3600), 't2');
-        $manual = $this->recordedEntry(new DateTimeImmutable('-2 hours'), new DateTimeImmutable('-1 hour'), TimeEntrySource::Manual);
-        $refused('outside_timer', $this->intentBody($manual, $image, takenAt: time() - 5400), 't3');
+        $refused('outside_timer', $this->intentBody($timer, $image, takenAt: $this->now() - 3600), 't2');
+        $manual = $this->recordedEntry($this->at('-2 hours'), $this->at('-1 hour'), TimeEntrySource::Manual);
+        $refused('outside_timer', $this->intentBody($manual, $image, takenAt: $this->now() - 5400), 't3');
         $other      = $this->createUser('other@example.com');
         $otherTimer = $this->startTimer($this->token($other));
         $refused('outside_timer', $this->intentBody($otherTimer, $image), 't4');
-        $ended = $this->recordedEntry(new DateTimeImmutable('-2 hours'), new DateTimeImmutable('-1 hour'));
-        $refused('outside_timer', $this->intentBody($ended, $image, takenAt: time() - 1800), 't5');
+        $ended = $this->recordedEntry($this->at('-2 hours'), $this->at('-1 hour'));
+        $refused('outside_timer', $this->intentBody($ended, $image, takenAt: $this->now() - 1800), 't5');
 
         // Spec 198 schedule through the working calendar (here derived from the working hours).
-        $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N'), 'from' => '00:00', 'to' => '00:01']]];
+        $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N', $this->now()), 'from' => '00:00', 'to' => '00:01']]];
         $refused('outside_hours', $this->intentBody($timer, $image), 'h1');
-        $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N', time() + 86_400), 'from' => '00:00', 'to' => '23:59']]];
+        $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N', $this->now() + 86_400), 'from' => '00:00', 'to' => '23:59']]];
         $refused('outside_hours', $this->intentBody($timer, $image), 'h2');
         $this->profile()->hours = null;
-        $past                   = $this->recordedEntry(new DateTimeImmutable('-3 hours'), new DateTimeImmutable('-1 hour'));
-        $this->intent($token, $this->intentBody($past, $image, takenAt: time() - 7200), 'no-schedule');
+        $past                   = $this->recordedEntry($this->at('-3 hours'), $this->at('-1 hour'));
+        $this->intent($token, $this->intentBody($past, $image, takenAt: $this->now() - 7200), 'no-schedule');
         self::assertResponseStatusCodeSame(201, 'no schedule from the host: no restriction');
         $this->profile()->hours = (new MutableProfileProvider())->hours;
 
-        $old = $this->recordedEntry(new DateTimeImmutable('-30 hours'), new DateTimeImmutable('-28 hours'));
-        $refused('too_old', $this->intentBody($old, $image, takenAt: time() - 29 * 3600), 'o1');
+        $old = $this->recordedEntry($this->at('-30 hours'), $this->at('-28 hours'));
+        $refused('too_old', $this->intentBody($old, $image, takenAt: $this->now() - 29 * 3600), 'o1');
 
         // The slot already has a screenshot, or another live intent holds it.
         $this->evidence()->taken = true;
@@ -284,7 +284,7 @@ class MonitoringApiTest extends MonitoringTestCase
         foreach ([
             'entryId'       => 'not an id!',
             'slot'          => 'soon',
-            'takenAt'       => gmdate('Y-m-d\TH:i:s\Z', time() + 600),
+            'takenAt'       => gmdate('Y-m-d\TH:i:s\Z', $this->now() + 600),
             'policyVersion' => '7',
             'blurred'       => 'yes',
             'mime'          => 5,
@@ -301,7 +301,7 @@ class MonitoringApiTest extends MonitoringTestCase
         self::assertResponseStatusCodeSame(415);
         $this->intent($token, ['bytes' => 1_572_865] + $base, 'big');
         self::assertResponseStatusCodeSame(413);
-        $answer = $this->intent($token, ['slot' => gmdate('Y-m-d\TH:i:s\Z', time() + 60)] + $base, 'slot-after');
+        $answer = $this->intent($token, ['slot' => gmdate('Y-m-d\TH:i:s\Z', $this->now() + 60)] + $base, 'slot-after');
         self::assertSame(['invalid_request', 'slot'], [$answer['error'] ?? null, $answer['field'] ?? null], 'takenAt lies in its slot');
         $answer = $this->intent($token, ['blurred' => false] + $base, 'unblurred');
         self::assertSame(['invalid_request', 'blurred'], [$answer['error'] ?? null, $answer['field'] ?? null], 'only blurred images without fullResolution');
@@ -319,7 +319,7 @@ class MonitoringApiTest extends MonitoringTestCase
 
         $this->policySource()->policy = MonitoringFixtures::policy(7, overrides: ['fullResolution' => true, 'blur' => 'none']);
         $this->evidence()->taken      = false;
-        $this->intent($token, ['blurred' => false, 'slot' => gmdate('Y-m-d\TH:i:s\Z', time() - time() % 600 - 600)] + $base, 'full');
+        $this->intent($token, ['blurred' => false, 'slot' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - $this->now() % 600 - 600)] + $base, 'full');
         self::assertResponseStatusCodeSame(400, 'still the slot rule');
         $this->policySource()->failWith = 'down';
         $this->intent($token, $base, 'down');
@@ -332,7 +332,7 @@ class MonitoringApiTest extends MonitoringTestCase
         $this->acknowledge($token);
         $timer = $this->startTimer($token);
         $image = MonitoringFixtures::webp(1280, 720);
-        $taken = time();
+        $taken = $this->now();
         $grant = function (string $key, string $content, array $overrides = []) use ($token, $timer, $taken): string {
             $answer = $this->intent($token, $this->intentBody($timer, $content, $overrides, $taken), $key);
             self::assertContains($this->client->getResponse()->getStatusCode(), [200, 201], $key);
@@ -368,8 +368,8 @@ class MonitoringApiTest extends MonitoringTestCase
         $fails(415, 'unsupported_media_type', null, $grant('c4', $garbage), $garbage);
         $wrong = MonitoringFixtures::webp(1280, 700);
         $fails(422, 'upload_mismatch', 'dimensions', $grant('c5', $wrong), $wrong);
-        $huge = MonitoringFixtures::webp(3841, 100);
-        $fails(422, 'upload_mismatch', 'dimensions', $grant('c6', $huge, ['width' => 3840, 'height' => 100]), $huge);
+        $huge = MonitoringFixtures::webp(1921, 100);
+        $fails(422, 'upload_mismatch', 'dimensions', $grant('c6', $huge, ['width' => 1920, 'height' => 100]), $huge);
         self::assertSame([], $this->evidence()->screenshots);
 
         // Signatures: tampered, another user's upload, expired, malformed.
@@ -421,20 +421,20 @@ class MonitoringApiTest extends MonitoringTestCase
         $token = $this->token();
         $this->acknowledge($token);
         $timer = $this->startTimer($token);
-        $slot  = gmdate('Y-m-d\TH:i:s\Z', time() - time() % 600);
+        $slot  = gmdate('Y-m-d\TH:i:s\Z', $this->now() - $this->now() % 600);
 
         $this->api('POST', self::DISCARDED, ['entryId' => $timer, 'slot' => $slot, 'reason' => 'worker'], $token);
         self::assertResponseStatusCodeSame(204);
         self::assertSame([['user' => (string) $this->user->getId(), 'entryId' => $timer, 'slot' => (new DateTimeImmutable($slot))->format(DATE_ATOM)]], $this->evidence()->discarded);
-        foreach (['entryId' => '../x', 'slot' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600), 'reason' => 'manager'] as $field => $value) {
+        foreach (['entryId' => '../x', 'slot' => gmdate('Y-m-d\TH:i:s\Z', $this->now() + 3600), 'reason' => 'manager'] as $field => $value) {
             $answer = $this->api('POST', self::DISCARDED, [$field => $value] + ['entryId' => $timer, 'slot' => $slot, 'reason' => 'worker'], $token);
             self::assertResponseStatusCodeSame(400);
             self::assertSame($field, $answer['field'] ?? null);
         }
         $answer = $this->api('POST', self::DISCARDED, ['entryId' => '00000000-0000-0000-0000-000000000000', 'slot' => $slot, 'reason' => 'worker'], $token);
         self::assertSame([422, 'outside_timer'], [$this->client->getResponse()->getStatusCode(), $answer['reason'] ?? null]);
-        $old    = $this->recordedEntry(new DateTimeImmutable('-30 hours'), new DateTimeImmutable('-28 hours'));
-        $answer = $this->api('POST', self::DISCARDED, ['entryId' => $old, 'slot' => gmdate('Y-m-d\TH:i:s\Z', time() - 29 * 3600), 'reason' => 'worker'], $token);
+        $old    = $this->recordedEntry($this->at('-30 hours'), $this->at('-28 hours'));
+        $answer = $this->api('POST', self::DISCARDED, ['entryId' => $old, 'slot' => gmdate('Y-m-d\TH:i:s\Z', $this->now() - 29 * 3600), 'reason' => 'worker'], $token);
         self::assertSame([422, 'too_old'], [$this->client->getResponse()->getStatusCode(), $answer['reason'] ?? null]);
         $this->policySource()->policy = null;
         $answer                       = $this->api('POST', self::DISCARDED, ['entryId' => $timer, 'slot' => $slot, 'reason' => 'worker'], $token);
@@ -467,7 +467,7 @@ class MonitoringApiTest extends MonitoringTestCase
     {
         $token = $this->token();
         $timer = $this->startTimer($token);
-        $slot  = gmdate('Y-m-d\TH:i:s\Z', time() - time() % 600);
+        $slot  = gmdate('Y-m-d\TH:i:s\Z', $this->now() - $this->now() % 600);
         $items = [
             ['entryId' => $timer, 'slot' => $slot, 'kind' => 'app', 'name' => 'Mail ana@example.com 123456', 'seconds' => 300],
             ['entryId' => $timer, 'slot' => $slot, 'kind' => 'app', 'name' => 'VaultApp 8', 'seconds' => 10],
@@ -489,7 +489,7 @@ class MonitoringApiTest extends MonitoringTestCase
             ['items' => [['name' => null] + $items[0]]],
             ['items' => [['kind' => 'domain'] + $items[0]]],
             ['items' => [['seconds' => 601] + $items[0]]],
-            ['items' => [['slot' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600)] + $items[2]]],
+            ['items' => [['slot' => gmdate('Y-m-d\TH:i:s\Z', $this->now() + 3600)] + $items[2]]],
             ['items' => [['level' => '72'] + $items[2]]],
             ['items' => [['name' => 5] + $items[0]]],
             ['items' => [['entryId' => 'a/b'] + $items[0]]],
@@ -502,7 +502,7 @@ class MonitoringApiTest extends MonitoringTestCase
 
         $answer = $send(['items' => $items]);
         self::assertResponseStatusCodeSame(202);
-        self::assertSame(['accepted' => 2, 'dropped' => 2], $answer, 'the excluded app and the foreign entry are dropped');
+        self::assertSame(['accepted' => 2, 'dropped' => 2, 'droppedSeconds' => 0], $answer, 'the excluded app and the foreign entry are dropped');
         self::assertSame($answer, $send(['items' => $items]), 'a replay');
         self::assertResponseStatusCodeSame(202);
         $send(['items' => [$items[2]]]);
@@ -519,7 +519,7 @@ class MonitoringApiTest extends MonitoringTestCase
         self::assertSame('kind_off', $send(['items' => $items], 'off')['reason'] ?? null);
         $this->policySource()->policy = MonitoringFixtures::policy();
         $answer                       = $send(['items' => [$items[3]]], 'nothing');
-        self::assertSame(['accepted' => 0, 'dropped' => 1], $answer);
+        self::assertSame(['accepted' => 0, 'dropped' => 1, 'droppedSeconds' => 0], $answer);
         self::assertCount(1, $this->evidence()->activity, 'nothing to store: the host is not called');
         $this->evidence()->failWith = 'down';
         $send(['items' => $items], 'down');
@@ -543,8 +543,8 @@ class MonitoringApiTest extends MonitoringTestCase
 
         $racing->raceNextSave = true;
         $racing->raceBody     = hash('sha256', 'another body');
-        $past                 = $this->recordedEntry(new DateTimeImmutable('-3 hours'), new DateTimeImmutable('-1 hour'));
-        $answer               = $this->intent($token, $this->intentBody($past, $image, takenAt: time() - 7200), 'raced-other');
+        $past                 = $this->recordedEntry($this->at('-3 hours'), $this->at('-1 hour'));
+        $answer               = $this->intent($token, $this->intentBody($past, $image, takenAt: $this->now() - 7200), 'raced-other');
         self::assertResponseStatusCodeSame(422);
         self::assertSame('idempotency_mismatch', $answer['error'] ?? null);
 

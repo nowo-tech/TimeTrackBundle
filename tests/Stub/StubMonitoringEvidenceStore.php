@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Stub;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Monitoring\ActivityItem;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceRejectedException;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceStoreInterface;
 use Nowo\TimeTrackBundle\Monitoring\ScreenshotUpload;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
@@ -35,6 +36,9 @@ final class StubMonitoringEvidenceStore implements MonitoringEvidenceStoreInterf
 
     public ?string $failWith = null;
 
+    /** Thrown by the store methods (not by the reads): the host's typed rejection. */
+    public ?MonitoringEvidenceRejectedException $rejectWith = null;
+
     /** Id returned by the next storeScreenshot() (null = shot-N). */
     public ?string $nextId = null;
 
@@ -44,6 +48,7 @@ final class StubMonitoringEvidenceStore implements MonitoringEvidenceStoreInterf
     public function storeScreenshot(ScreenshotUpload $upload): string
     {
         $this->fail();
+        $this->reject();
         $id                     = $this->nextId ?? 'shot-' . (count($this->screenshots) + 1);
         $this->screenshots[$id] = [
             'user'          => $upload->user->id,
@@ -66,6 +71,7 @@ final class StubMonitoringEvidenceStore implements MonitoringEvidenceStoreInterf
     public function markDiscarded(TimeTrackUserRef $user, string $entryId, DateTimeImmutable $slot): void
     {
         $this->fail();
+        $this->reject();
         $this->discarded[] = ['user' => $user->id, 'entryId' => $entryId, 'slot' => $slot->format(DATE_ATOM)];
     }
 
@@ -84,6 +90,7 @@ final class StubMonitoringEvidenceStore implements MonitoringEvidenceStoreInterf
     public function storeActivity(TimeTrackUserRef $user, array $items): void
     {
         $this->fail();
+        $this->reject();
         $this->activity[] = ['user' => $user->id, 'items' => $items];
     }
 
@@ -94,12 +101,20 @@ final class StubMonitoringEvidenceStore implements MonitoringEvidenceStoreInterf
             return $this->taken;
         }
         foreach ($this->screenshots as $shot) {
-            if ($shot['user'] === $user->id && $shot['entryId'] === $entryId && $shot['slot'] === $slot->format(DATE_ATOM)) {
+            // The key is (user, slot), whatever the entry (audit PM-M2).
+            if ($shot['user'] === $user->id && $shot['slot'] === $slot->format(DATE_ATOM)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private function reject(): void
+    {
+        if ($this->rejectWith instanceof MonitoringEvidenceRejectedException) {
+            throw $this->rejectWith;
+        }
     }
 
     private function fail(): void

@@ -35,6 +35,7 @@ final class MonitoringValueObjectsTest extends TestCase
         self::assertFalse(MonitoringFixtures::policy(7, overrides: ['lockedUntilChecklist' => true])->allows('screenshots'));
         self::assertFalse(MonitoringFixtures::policy(7, overrides: ['enabled' => false])->isCollecting());
         self::assertSame('none', MonitoringFixtures::policy(7, overrides: ['blur' => 'none', 'fullResolution' => true])->blur);
+        self::assertSame(0, MonitoringFixtures::policy(7, ['apps'], ['screenshotsPer10Min' => 0])->screenshotsPer10Min, 'no screenshots kind: 0 is allowed');
     }
 
     /**
@@ -54,33 +55,33 @@ final class MonitoringValueObjectsTest extends TestCase
     {
         yield 'unknown kind' => [['kinds' => ['websites']]];
         foreach ([
-            'version'          => ['policyVersion' => 0],
-            'http notice'      => ['noticeUrl' => 'http://beacon.example/n'],
-            'spaced notice'    => ['noticeUrl' => 'https://beacon.example/a b'],
-            'notice hash'      => ['noticeSha256' => str_repeat('A', 64)],
-            'scope'            => ['scope' => 'team'],
-            'dpia reference'   => ['dpiaReference' => ' '],
-            'dpia date'        => ['dpiaRecordedAt' => '20/11/2026'],
-            'samples'          => ['screenshotsPer10Min' => 7],
-            'negative samples' => ['screenshotsPer10Min' => -1],
-            'slot'             => ['slotMinutes' => 0],
-            'long slot'        => ['slotMinutes' => 61],
-            'review'           => ['reviewWindowMinutes' => 61],
-            'negative review'  => ['reviewWindowMinutes' => -1],
-            'blur'             => ['blur' => 'extreme'],
-            'no blur'          => ['blur' => 'none'],
-            'long side'        => ['maxLongSidePx' => 3841],
-            'no side'          => ['maxLongSidePx' => 0],
-            'retention'        => ['retentionDays' => 0],
-            'long retention'   => ['retentionDays' => 3651],
-            'buffer'           => ['maxBufferedScreenshots' => 37],
-            'negative buffer'  => ['maxBufferedScreenshots' => -1],
-            'buffer age'       => ['maxBufferAgeHours' => 25],
-            'no buffer age'    => ['maxBufferAgeHours' => 0],
-            'blank app'        => ['excludedApps' => [' ']],
-            'long app'         => ['excludedApps' => [str_repeat('a', 121)]],
-            'app type'         => ['excludedApps' => [5]],
-            'many apps'        => ['excludedApps' => array_map(static fn (int $i): string => 'app' . $i, range(1, 101))],
+            'version'         => ['policyVersion' => 0],
+            'http notice'     => ['noticeUrl' => 'http://beacon.example/n'],
+            'spaced notice'   => ['noticeUrl' => 'https://beacon.example/a b'],
+            'notice hash'     => ['noticeSha256' => str_repeat('A', 64)],
+            'scope'           => ['scope' => 'team'],
+            'dpia reference'  => ['dpiaReference' => ' '],
+            'dpia date'       => ['dpiaRecordedAt' => '20/11/2026'],
+            'samples'         => ['screenshotsPer10Min' => 2],
+            'no samples'      => ['screenshotsPer10Min' => 0],
+            'slot'            => ['slotMinutes' => 0],
+            'long slot'       => ['slotMinutes' => 61],
+            'review'          => ['reviewWindowMinutes' => 61],
+            'negative review' => ['reviewWindowMinutes' => -1],
+            'blur'            => ['blur' => 'extreme'],
+            'no blur'         => ['blur' => 'none'],
+            'long side'       => ['maxLongSidePx' => 3841],
+            'no side'         => ['maxLongSidePx' => 0],
+            'retention'       => ['retentionDays' => 0],
+            'long retention'  => ['retentionDays' => 3651],
+            'buffer'          => ['maxBufferedScreenshots' => 37],
+            'negative buffer' => ['maxBufferedScreenshots' => -1],
+            'buffer age'      => ['maxBufferAgeHours' => 25],
+            'no buffer age'   => ['maxBufferAgeHours' => 0],
+            'blank app'       => ['excludedApps' => [' ']],
+            'long app'        => ['excludedApps' => [str_repeat('a', 121)]],
+            'app type'        => ['excludedApps' => [5]],
+            'many apps'       => ['excludedApps' => array_map(static fn (int $i): string => 'app' . $i, range(1, 101))],
         ] as $name => $override) {
             yield $name => [['policy' => $override]];
         }

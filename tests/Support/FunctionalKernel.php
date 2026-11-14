@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\HostTimer\HostTimerTestController;
+use Nowo\TimeTrackBundle\Tests\Stub\FrozenMonitoringClock;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
@@ -84,7 +85,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
     /**
      * @param array<string, mixed> $timeTrackConfig
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false)
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false)
     {
         parent::__construct('test', $debug);
     }
@@ -118,7 +119,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -199,6 +200,11 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(RecordingTaskAccessChecker::class)->args([['task-2']])->public();
         $container->services()->alias(ServiceAccountPolicyInterface::class, StubServiceAccountPolicy::class);
         $container->services()->set(HostTimerTestController::class)->autowire()->public()->tag('controller.service_arguments');
+        if ($this->frozenClock) {
+            // Since 1.26.0 (audit PM-L8): the monitoring tests' frozen clock.
+            $container->services()->set(FrozenMonitoringClock::class)->public();
+            $container->services()->alias(ClockInterface::class, FrozenMonitoringClock::class)->public();
+        }
         if ($this->psrOnlyClock) {
             // Since 1.19.1: the host's own PSR clock wins over the framework's `clock` alias (as in Beacon).
             $container->services()->set(PsrOnlyClock::class)->public();

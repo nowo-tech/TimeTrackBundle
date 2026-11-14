@@ -19,7 +19,9 @@ use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Monitoring\ActivityItem;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgement;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringActivityBudget;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceRejectedException;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceStoreInterface;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringGate;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringImageInspector;
@@ -69,6 +71,7 @@ use function is_string;
 use function json_decode;
 use function max;
 use function mb_stripos;
+use function min;
 use function preg_match;
 use function preg_replace;
 use function strlen;
@@ -130,6 +133,7 @@ final readonly class TimeTrackMonitoringApiController
         private MonitoringContext $context,
         private MonitoringGate $gate,
         private MonitoringSettings $settings,
+        private MonitoringActivityBudget $budget,
         private ?MonitoringUploadSignerInterface $signer = null,
         private ?MonitoringUploadIntentRepositoryInterface $intents = null,
         private ?UrlGeneratorInterface $urlGenerator = null,
@@ -299,6 +303,9 @@ final readonly class TimeTrackMonitoringApiController
             if ($existing instanceof MonitoringUploadIntent && $existing->getStatus() === MonitoringUploadIntent::STATUS_STORED) {
                 return $this->responseFactory->json(['id' => $existing->getScreenshotId(), 'status' => 'stored'], Response::HTTP_OK, $request);
             }
+            if ($existing instanceof MonitoringUploadIntent && $existing->getStatus() === MonitoringUploadIntent::STATUS_REJECTED) {
+                return $this->rejected($principal, $request);
+            }
             $refused = $this->intentRefusal($principal, $parsed, $existing?->getId() ?? '', $now, $request);
             if ($refused instanceof Response) {
                 return $refused;
@@ -361,14 +368,18 @@ final readonly class TimeTrackMonitoringApiController
             return $this->invalid($request, 'blurred');
         }
         $slotEnd = $intent['slot']->getTimestamp() + $policy->slotMinutes * 60;
-        if ($intent['takenAt']->getTimestamp() < $intent['slot']->getTimestamp() || $intent['takenAt']->getTimestamp() >= $slotEnd) {
+        if (!$this->onGrid($intent['slot'], $policy) || $intent['takenAt']->getTimestamp() < $intent['slot']->getTimestamp() || $intent['takenAt']->getTimestamp() >= $slotEnd) {
             return $this->invalid($request, 'slot');
+        }
+        // Audit PM-L3: the policy's long-side cap (≤ 3840).
+        if (max($intent['width'], $intent['height']) > $policy->maxLongSidePx) {
+            return $this->mismatch($request, 'dimensions');
         }
         $reason = $this->gate->refusal($principal->user, $policy, $this->context->lastAcknowledged($principal->user), 'screenshots', $intent['entryId'], $intent['takenAt'], $now);
         if ($reason !== null) {
             return $this->refused($principal, $request, $reason);
         }
-        if ($this->slotTaken($principal, $intent['entryId'], $intent['slot'], $ownIntentId, $now)) {
+        if ($this->slotTaken($principal, $intent['slot'], $ownIntentId, $now)) {
             $this->auditor->monitoringRefused('duplicate', $principal->token, $request->getClientIp());
 
             return $this->responseFactory->error('duplicate', 'This slot already has a screenshot.', Response::HTTP_CONFLICT, $request);
@@ -404,7 +415,7 @@ final readonly class TimeTrackMonitoringApiController
         $stored = false;
         $path   = null;
         try {
-            $refused = $this->uploadRefusal($principal, $intent, $request);
+            $refused = $this->uploadRefusal($principal, $intent, $now, $request);
             if ($refused instanceof Response) {
                 return $refused;
             }
@@ -415,15 +426,19 @@ final readonly class TimeTrackMonitoringApiController
 
                 return $streamed;
             }
-            if ($this->slotTaken($principal, $intent->getEntryId(), $intent->getSlot(), $intent->getId(), $now)) {
+            if ($this->slotTaken($principal, $intent->getSlot(), $intent->getId(), $now)) {
                 return $this->responseFactory->error('duplicate', 'This slot already has a screenshot.', Response::HTTP_CONFLICT, $request);
             }
-            $id = $this->store($principal, $intent, $path);
-            $this->intents()->markStored($intent->getId(), $id);
+            $id     = $this->store($principal, $intent, $path);
             $stored = true;
+            $this->markStoredQuietly($intent->getId(), $id);
             $this->auditor->record(ClientApiAuditAction::MonitoringUploaded, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp());
 
             return $this->responseFactory->json(['id' => $id], Response::HTTP_CREATED, $request);
+        } catch (MonitoringEvidenceRejectedException) {
+            $this->intents()->markRejected($intent->getId());
+
+            return $this->rejected($principal, $request);
         } catch (Throwable $exception) {
             return $this->unavailable($request, $exception);
         } finally {
@@ -440,7 +455,7 @@ final readonly class TimeTrackMonitoringApiController
      * The policy re-check of a PUT (409 / 422), then the request headers (415 / 413 / 422); null when the body may be
      * read.
      */
-    private function uploadRefusal(ClientApiPrincipal $principal, MonitoringUploadIntent $intent, Request $request): ?Response
+    private function uploadRefusal(ClientApiPrincipal $principal, MonitoringUploadIntent $intent, DateTimeImmutable $now, Request $request): ?Response
     {
         $policy = $this->context->policyFor($principal->user);
         if (!$policy instanceof MonitoringPolicy) {
@@ -449,11 +464,14 @@ final readonly class TimeTrackMonitoringApiController
         if ($intent->getPolicyVersion() > $policy->policyVersion || (!$intent->isBlurred() && !$policy->fullResolution)) {
             return $this->policyChanged($principal, $request, $policy);
         }
-        if (!$policy->allows('screenshots')) {
-            return $this->refused($principal, $request, MonitoringGate::KIND_OFF);
+        // Audit PM-L4: every intent check again (kind, acknowledgement, SC-002, schedule, age), as at intent time.
+        $reason = $this->gate->refusal($principal->user, $policy, $this->context->lastAcknowledged($principal->user), 'screenshots', $intent->getEntryId(), $intent->getTakenAt(), $now);
+        if ($reason !== null) {
+            return $this->refused($principal, $request, $reason);
         }
-        if (!MonitoringGate::isAcknowledged($policy, $this->context->lastAcknowledged($principal->user))) {
-            return $this->refused($principal, $request, MonitoringGate::NOT_ACKNOWLEDGED);
+        // Audit PM-L3: the current policy's long-side cap.
+        if (max($intent->getWidth(), $intent->getHeight()) > $policy->maxLongSidePx) {
+            return $this->mismatch($request, 'dimensions');
         }
         $type = strtolower(trim((string) preg_replace('/;.*$/s', '', (string) $request->headers->get('Content-Type', ''))));
         if ($type !== $intent->getMime()) {
@@ -583,11 +601,16 @@ final readonly class TimeTrackMonitoringApiController
             if (!$policy instanceof MonitoringPolicy) {
                 return $this->refused($principal, $request, MonitoringGate::KIND_OFF);
             }
+            if (!$this->onGrid($slot, $policy)) {
+                return $this->invalid($request, 'slot');
+            }
             $reason = $this->gate->refusal($principal->user, $policy, null, 'screenshots', $entryId, $slot, $now, $policy->slotMinutes * 60, false, false);
             if ($reason !== null) {
                 return $this->refused($principal, $request, $reason);
             }
             $this->evidence()->markDiscarded(TimeTrackUserRefs::fromUser($principal->user), $entryId, $slot);
+        } catch (MonitoringEvidenceRejectedException) {
+            return $this->rejected($principal, $request);
         } catch (Throwable $exception) {
             return $this->unavailable($request, $exception);
         }
@@ -636,33 +659,62 @@ final readonly class TimeTrackMonitoringApiController
         if ($items === null) {
             return $this->invalid($request, 'items');
         }
-        $accepted = [];
+        $accepted       = [];
+        $droppedSeconds = 0;
         try {
             $policy = $this->context->policyFor($principal->user);
             if (!$policy instanceof MonitoringPolicy || !$policy->isCollecting()) {
                 return $this->refused($principal, $request, MonitoringGate::KIND_OFF);
             }
+            foreach ($items as ['item' => $item]) {
+                if (!$this->onGrid($item->slot, $policy)) {
+                    return $this->invalid($request, 'items');
+                }
+            }
             $last = $this->context->lastAcknowledged($principal->user);
             if (!MonitoringGate::isAcknowledged($policy, $last)) {
                 return $this->refused($principal, $request, MonitoringGate::NOT_ACKNOWLEDGED);
             }
-            foreach ($items as $item) {
+            foreach ($items as ['item' => $item]) {
                 if (!$policy->allows($item->policyKind())) {
                     return $this->refused($principal, $request, MonitoringGate::KIND_OFF);
                 }
             }
-            foreach ($items as $item) {
-                if (!$this->excluded($item, $policy) && $this->gate->refusal($principal->user, $policy, $last, $item->policyKind(), $item->entryId, $item->slot, $now, $policy->slotMinutes * 60) === null) {
-                    $accepted[] = $item;
+            // Audit PM-L5: app seconds per (user, slot) never exceed the slot, counting earlier batches.
+            $capacity = $policy->slotMinutes * 60;
+            $used     = [];
+            foreach ($items as ['item' => $item, 'raw' => $raw]) {
+                if ($this->excluded($raw, $item->name, $policy) || $this->gate->refusal($principal->user, $policy, $last, $item->policyKind(), $item->entryId, $item->slot, $now, $capacity) !== null) {
+                    continue;
                 }
+                if ($item->kind === ActivityItem::KIND_APP) {
+                    $slot = $item->slot->getTimestamp();
+                    $used[$slot] ??= $this->budget->used($userId, $slot);
+                    $kept = min($item->seconds, max(0, $capacity - $used[$slot]));
+                    $droppedSeconds += $item->seconds - $kept;
+                    if ($kept === 0 && $item->seconds > 0) {
+                        continue;
+                    }
+                    $used[$slot] += $kept;
+                    $item = $kept === $item->seconds ? $item : new ActivityItem($item->entryId, $item->slot, $item->kind, $item->name, $kept);
+                }
+                $accepted[] = $item;
             }
             if ($accepted !== []) {
                 $this->evidence()->storeActivity(TimeTrackUserRefs::fromUser($principal->user), $accepted);
+                foreach ($accepted as $item) {
+                    if ($item->kind === ActivityItem::KIND_APP) {
+                        // @igor-ignore - I/O delegate: the seconds are written to the shared cache pool, not kept in the service.
+                        $this->budget->add($userId, $item->slot->getTimestamp(), $item->seconds);
+                    }
+                }
             }
+        } catch (MonitoringEvidenceRejectedException) {
+            return $this->rejected($principal, $request);
         } catch (Throwable $exception) {
             return $this->unavailable($request, $exception);
         }
-        $body = ['accepted' => count($accepted), 'dropped' => count($items) - count($accepted)];
+        $body = ['accepted' => count($accepted), 'dropped' => count($items) - count($accepted), 'droppedSeconds' => $droppedSeconds];
         $this->idempotency->save($userId, 'monitoring_activity:' . $key, $bodyHash, Response::HTTP_ACCEPTED, $body);
 
         return $this->responseFactory->json($body, Response::HTTP_ACCEPTED, $request);
@@ -724,11 +776,12 @@ final readonly class TimeTrackMonitoringApiController
     }
 
     /**
-     * The items of an activity batch (1-200, names redacted), or null when one is invalid.
+     * The items of an activity batch (1-200, names redacted) with the name as sent (audit PM-L1: exclusions are matched
+     * on it before the redaction), or null when one is invalid.
      *
      * @param array<string, mixed> $payload
      *
-     * @return list<ActivityItem>|null
+     * @return list<array{item: ActivityItem, raw: string|null}>|null
      */
     private function parseActivity(array $payload, DateTimeImmutable $now): ?array
     {
@@ -749,7 +802,7 @@ final readonly class TimeTrackMonitoringApiController
                 return null;
             }
             try {
-                $items[] = new ActivityItem($entryId, $slot, $kind, $name === null ? null : self::redact($name), $seconds, $level);
+                $items[] = ['item' => new ActivityItem($entryId, $slot, $kind, $name === null ? null : self::redact($name), $seconds, $level), 'raw' => $name];
             } catch (InvalidArgumentException) {
                 return null;
             }
@@ -771,10 +824,13 @@ final readonly class TimeTrackMonitoringApiController
     /**
      * Whether an app item names an excluded app (case-insensitive substring): such items are dropped, never stored.
      */
-    private function excluded(ActivityItem $item, MonitoringPolicy $policy): bool
+    private function excluded(?string $raw, ?string $redacted, MonitoringPolicy $policy): bool
     {
-        foreach ($item->name === null ? [] : $policy->excludedApps as $app) {
-            if (mb_stripos((string) $item->name, $app) !== false) {
+        if ($raw === null) {
+            return false;
+        }
+        foreach ($policy->excludedApps as $app) {
+            if (mb_stripos($raw, $app) !== false || mb_stripos((string) $redacted, $app) !== false) {
                 return true;
             }
         }
@@ -789,11 +845,13 @@ final readonly class TimeTrackMonitoringApiController
     {
         $until = $intent->getSignedUntil() ?? $this->clock->now();
         $exp   = $until->getTimestamp();
-        $url   = $this->urlGenerator()->generate($this->settings->uploadRoute, [
+        $base  = $this->settings->uploadBaseUrl;
+        // Audit PM-L2: with `upload_base_url` the URL never follows the request's Host header or scheme.
+        $url = ($base ?? '') . $this->urlGenerator()->generate($this->settings->uploadRoute, [
             'uploadId' => $intent->getId(),
             'exp'      => $exp,
             'sig'      => $this->signer()->sign($this->claim($principal, $intent, $exp)),
-        ], UrlGeneratorInterface::ABSOLUTE_URL);
+        ], $base === null ? UrlGeneratorInterface::ABSOLUTE_URL : UrlGeneratorInterface::ABSOLUTE_PATH);
 
         return $this->responseFactory->json([
             'uploadId'  => $intent->getId(),
@@ -825,10 +883,44 @@ final readonly class TimeTrackMonitoringApiController
         return new MonitoringUploadClaim($intent->getId(), $principal->token->getTokenHash(), $intent->getSha256(), $intent->getBytes(), $intent->getMime(), $exp);
     }
 
-    private function slotTaken(ClientApiPrincipal $principal, string $entryId, DateTimeImmutable $slot, string $ownIntentId, DateTimeImmutable $now): bool
+    /**
+     * Audit PM-M2: one screenshot per (user, slot), whatever the entry id.
+     */
+    private function slotTaken(ClientApiPrincipal $principal, DateTimeImmutable $slot, string $ownIntentId, DateTimeImmutable $now): bool
     {
-        return $this->evidence()->hasScreenshot(TimeTrackUserRefs::fromUser($principal->user), $entryId, $slot)
-            || $this->intents()->slotTaken(UserIdResolver::getId($principal->user), $entryId, $slot, $ownIntentId, $now);
+        return $this->evidence()->hasScreenshot(TimeTrackUserRefs::fromUser($principal->user), '', $slot)
+            || $this->intents()->slotTaken(UserIdResolver::getId($principal->user), $slot, $ownIntentId, $now);
+    }
+
+    /**
+     * Audit PM-M1: a slot starts on the UTC grid of the policy (Unix seconds divisible by `slotMinutes × 60`).
+     */
+    private function onGrid(DateTimeImmutable $slot, MonitoringPolicy $policy): bool
+    {
+        return $slot->getTimestamp() % ($policy->slotMinutes * 60) === 0;
+    }
+
+    /**
+     * Audit PM-L7: the host stored the screenshot; a failure to record it on the intent still answers its id (a replay
+     * then finds it through `hasScreenshot()` and answers 409 duplicate).
+     */
+    private function markStoredQuietly(string $id, string $screenshotId): void
+    {
+        try {
+            $this->intents()->markStored($id, $screenshotId);
+        } catch (Throwable $exception) {
+            $this->logger->warning('TimeTrack monitoring upload not marked stored.', ['bundle' => 'time_track', 'action' => 'client_monitoring_upload', 'exception' => $exception::class]);
+        }
+    }
+
+    /**
+     * Audit PM-L6: `422 evidence_rejected`, the host refused the evidence for good (not retried).
+     */
+    private function rejected(ClientApiPrincipal $principal, Request $request): JsonResponse
+    {
+        $this->auditor->monitoringRefused('evidence_rejected', $principal->token, $request->getClientIp());
+
+        return $this->responseFactory->error('evidence_rejected', 'The host refused this evidence. Do not retry; delete the local copy.', Response::HTTP_UNPROCESSABLE_ENTITY, $request);
     }
 
     private function releaseQuietly(string $id): void

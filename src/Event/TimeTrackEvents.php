@@ -82,4 +82,7 @@ final class TimeTrackEvents
 
     /** Since 1.21: {@see TimeEntryBillableChangedEvent} — the `billable` flag of an entry changed (audit record, ids only). */
     public const TIME_ENTRY_BILLABLE_CHANGED = 'nowo_time_track.time_entry.billable_changed';
+
+    /** Since 1.26: {@see MonitoringSpanDiscardedEvent} — the worker discarded a span of tracked time; delete its evidence (only while monitoring is configured). */
+    public const MONITORING_SPAN_DISCARDED = 'nowo_time_track.monitoring.span_discarded';
 }

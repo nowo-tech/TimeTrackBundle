@@ -1094,6 +1094,26 @@ Rules for both paths:
 - Keep nothing per request in your adapters' properties (FrankenPHP worker mode, kernel reset false).
 - The web page that acknowledges the notice calls the same `MonitoringAcknowledgementStoreInterface::acknowledge()`,
   with `clientType: 'web'` and the hash of the text it showed.
+- **Unique on (user, slot).** Keep one screenshot (or discard marker) per worker and slot in your store, whatever the
+  entry id, and make `hasScreenshot()` answer for the slot whatever `$entryId` says: the same worked minute has a timer
+  id and later an entry id. Slots are on the UTC grid of the policy (Unix time divisible by `slotMinutes × 60`).
+- **Refusing for good.** When a store method will never accept the evidence (an image you cannot decode, a slot you
+  refuse), throw `Monitoring\MonitoringEvidenceRejectedException`: the client gets `422 evidence_rejected`, deletes its
+  copy and never retries, and the upload intent is burnt. Any other exception means "try again later" (`503`).
+- **Discarded time.** Listen to `TimeTrackEvents::MONITORING_SPAN_DISCARDED` (`Event\MonitoringSpanDiscardedEvent`:
+  the worker's `TimeTrackUserRef`, `from`, `to`, `reason` `idle_discard` or `idle_split`) and delete the worker's
+  screenshots, discard markers and activity inside `[from, to)` in the same flow. The bundle dispatches it, only while
+  monitoring is configured, whenever a worker discards idle time (`timer/discard-idle` `discard` / `split`, or
+  `TimerService::resolveIdle()` from your code), after the entry is recorded.
+- **Activity time.** The bundle cuts the `app` seconds of a worker and slot to `slotMinutes × 60` across batches (in the
+  rate-limit pool, not atomic across two concurrent batches): keep your own per-slot sum as the backstop.
+- **Switching monitoring off.** Once `policy_source` is unset every monitoring route answers 404, `DELETE` included: give
+  workers a way to discard their screenshots on your web page.
+- **Consent.** App passwords (`POST login`, whatever your authenticator returns) never grant `monitoring:write`; only the
+  device flow does, after the worker approved it on the consent page (the bundle's page shows a translated label; show
+  one on your own page too).
+- Set `client_api.monitoring.upload_base_url` to your public `https://` origin so the signed upload URLs never follow
+  a request's `Host` header or scheme.
 
 ### DDD / hexagonal host
 

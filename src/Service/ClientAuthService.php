@@ -83,7 +83,7 @@ final readonly class ClientAuthService
         $result = $this->authenticate($username, $password, $clientType);
 
         return $result instanceof ClientAuthResult
-            ? $this->issueToken($result->requireUser(), $clientType, $result->getCredentialId(), $result->getScopes())
+            ? $this->issueToken($result->requireUser(), $clientType, $result->getCredentialId(), ClientScope::grantableByPassword($result->getScopes()))
             : null;
     }
 

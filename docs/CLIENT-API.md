@@ -66,7 +66,7 @@ keystrokes, clipboard, webcam, microphone content, location, files, anything out
 scores. Collection follows the timer: pausing or stopping the timer stops it; there is no separate pause switch.
 
 All write routes need the scope **`monitoring:write`** (never a default; ask for it in the device flow when `GET me`
-has a `monitoring` block). Every answer carries `Cache-Control: no-store, private`, `Pragma: no-cache`, `Vary:
+has a `monitoring` block; a password login — app password — never grants it, whatever the host authenticator returns). Every answer carries `Cache-Control: no-store, private`, `Pragma: no-cache`, `Vary:
 Authorization` and `X-Content-Type-Options: nosniff`. Clients send `X-TimeTrack-Capabilities:
 screenshots=1;apps=1;titles=0` on every request (the bundle does not read it; the host may).
 
@@ -93,6 +93,8 @@ Present, and `features.monitoring: true`, only when the host has a policy for th
 }
 ```
 
+- `capture.screenshotsPer10Min` is always `1` in 1.26 (`0` only without the `screenshots` kind): the server keeps one
+  screenshot per worker and slot, and the rate limits are sized for it.
 - `enabled` is always `false` while `lockedUntilChecklist` is true (the organisation is still completing its
   checklist): show "Monitoring is being prepared by your organisation; nothing is collected".
 - `scope`: `organization` or `personal` (self-analytics, "only you can see this").
@@ -141,19 +143,26 @@ Idempotency-Key: 0b8f6a1e-3c1d-4f7e-9a51-2a8f4b6c7d90
 - `entryId`: the id of the worker's **running timer** (`GET timer` → `timer.id`) while it runs. After the timer stopped
   (a buffered item), send the id of the entry it became (`timer/stop` / `timer/switch` → `entry.id`): the timer id no
   longer exists then. Manual, calendar and imported entries never had a running timer and are refused.
-- `slot`: the start of the slot; `takenAt` must lie in `[slot, slot + slotMinutes)`. `policyVersion`: the version the
-  capture was taken under. `sha256`: lowercase hex of the exact bytes you will upload.
+- `slot`: the start of the slot, **on the UTC grid of the policy**: its Unix time is divisible by `slotMinutes × 60`
+  (with `slotMinutes: 10`, `…:00:00Z`, `…:10:00Z`, … — the same rule on `screenshots/discarded` and `activity`).
+  `takenAt` must lie in `[slot, slot + slotMinutes)`. `policyVersion`: the version the capture was taken under.
+  `sha256`: lowercase hex of the exact bytes you will upload. `width` / `height`: at most the policy's
+  `screenshots.maxLongSidePx` on the long side (and never above 3840).
+- One screenshot per worker and slot, **whatever the entry id**: a slot uploaded under the timer id cannot be uploaded
+  again under the entry id it became.
 
 Every refusal check runs **here, before any byte is sent**, in this order:
 
 | Answer | When |
 | --- | --- |
-| `400 invalid_request {field}` | missing key; `entryId`, `slot`, `takenAt` (RFC 3339, not more than 120 s in the future), `policyVersion`, `blurred`, `bytes` (≥ 1), `width` / `height` (1–3840), `sha256` invalid; `takenAt` outside its slot (`field: slot`); `blurred: false` while the current version does not allow full resolution (`field: blurred`) |
+| `400 invalid_request {field}` | missing key; `entryId`, `slot`, `takenAt` (RFC 3339, not more than 120 s in the future), `policyVersion`, `blurred`, `bytes` (≥ 1), `width` / `height` (1–3840), `sha256` invalid; `slot` off the policy grid or `takenAt` outside its slot (`field: slot`); `blurred: false` while the current version does not allow full resolution (`field: blurred`) |
+| `422 upload_mismatch {field: "dimensions"}` | the long side is above the policy's `maxLongSidePx` (drop or re-encode the capture) |
 | `413 too_large` | `bytes` above 1 572 864 (1.5 MiB) |
 | `415 unsupported_media_type` | `mime` other than `image/webp` / `image/jpeg` |
 | `409 policy_changed {policyVersion}` | `policyVersion` newer than the server's, or an unblurred capture of an older version the current one no longer allows unblurred: refetch and drop what the policy no longer allows |
 | `422 monitoring_refused {reason}` | `kind_off` (no policy, `enabled: false`, locked, or screenshots not enabled), `not_acknowledged` (the current version needs an acknowledgement), `outside_timer` (the worker's own timer did not run on `entryId` at `takenAt`), `outside_hours` (outside the working calendar: the spec 198 schedule, a day off or leave; only when the host gives a schedule), `too_old` (`takenAt` older than `maxBufferAgeHours`) |
-| `409 duplicate` | the slot already has a screenshot (or a discard marker), or another live upload of yours holds it |
+| `409 duplicate` | the slot already has a screenshot (or a discard marker), or another live upload of yours holds it, whatever its entry id |
+| `422 evidence_rejected` | replay of an intent whose upload the host refused for good: do not retry, delete the local copy |
 | `429 rate_limited` | 6 intents per 10 minutes per token (`Retry-After`, `retryAfter`) |
 | `503 monitoring_unavailable` | a host port failed (`Retry-After: 60`) |
 
@@ -171,8 +180,13 @@ stored: retrying after a lost answer is always safe. Refusals are not replayed: 
 succeeds once the worker acknowledged. Another body with the same key: `422 idempotency_mismatch`.
 
 **2. `PUT <url>`** with the raw bytes, the same Bearer token (the URL is bound to it) and the declared `Content-Type`.
-The URL is valid for **120 s and one request**. The bundle re-checks the policy (`422 kind_off` / `not_acknowledged`,
-`409 policy_changed`) before reading the body, then enforces every cap while streaming it to a temporary file:
+The URL is valid for **120 s and one request**. **Only PUT to a URL whose origin (scheme, host and port) is the pinned
+API base you called**; refuse any other URL (defence in depth: the host should set `client_api.monitoring.upload_base_url`
+so the URL never follows a request's `Host` header). Before reading the body the bundle re-checks everything it checked
+at intent time against the current policy and timer: `409 policy_changed`, `422 monitoring_refused` (`kind_off`,
+`not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `too_old`) and `422
+upload_mismatch {field: "dimensions"}` (the policy's `maxLongSidePx`). Then it enforces every cap while streaming the
+body to a temporary file:
 
 | Answer | When |
 | --- | --- |
@@ -182,10 +196,13 @@ The URL is valid for **120 s and one request**. The bundle re-checks the policy 
 | `415 unsupported_media_type` | `Content-Type` not the declared type; the bytes are not WebP or JPEG (magic bytes); the image header cannot be read |
 | `422 upload_mismatch {field}` | `bytes` (`Content-Length` missing or not the declared size, or the body shorter / longer), `sha256`, `mime` (the magic bytes are the other accepted type), `dimensions` (the header's width / height are not the declared ones) |
 | `409 duplicate` | the slot got a screenshot meanwhile |
+| `422 evidence_rejected` | the host refused the image for good (e.g. it cannot decode it): do not retry, delete the local copy |
 | `429 rate_limited` | 6 uploads per 10 minutes per token |
-| `503 monitoring_unavailable` | the host store failed |
+| `503 monitoring_unavailable` | the host store failed (temporary; retry later) |
 
-After any failure the URL is dead; a replay of the intent signs a new one. Delete the local copy after a 2xx.
+After any failure the URL is dead; a replay of the intent signs a new one (except after `evidence_rejected`). Delete
+the local copy after a 2xx. The `201` always carries the id once the host stored the image, even if the bundle could not
+record it on the intent; a later replay of that intent then answers `409 duplicate`, so keep the id from the `201`.
 
 ### POST monitoring/screenshots/discarded
 
@@ -197,14 +214,16 @@ POST /api/time-track/monitoring/screenshots/discarded
 {"entryId": "1f0c…", "slot": "2026-11-20T09:10:00Z", "reason": "worker"}
 ```
 
-`204`; `400 invalid_request {field}` (`entryId`, `slot` — RFC 3339, not in the future — or `reason` other than
-`worker`); `422 monitoring_refused` `kind_off` / `outside_timer` (the slot does not overlap the worker's own timer on
-`entryId`) / `too_old`; `429` (6 per 10 minutes per token); `503`.
+`204`; `400 invalid_request {field}` (`entryId`, `slot` — RFC 3339, not in the future, on the policy grid — or `reason`
+other than `worker`); `422 monitoring_refused` `kind_off` / `outside_timer` (the slot does not overlap the worker's own
+timer on `entryId`) / `too_old`; `422 evidence_rejected`; `429` (6 per 10 minutes per token); `503`.
 
 ### DELETE monitoring/screenshots/{id}
 
 Discard an uploaded screenshot of your own (soft delete, purged within 24 h by the host). Works whatever the policy says
-now. `204`; `404 not_found` (unknown or not yours); `429` (6 per 10 minutes per token); `503`.
+now — but only while the host has monitoring configured: once it is switched off every route, this one included, answers
+`404`, and the worker discards through the host's web page (Beacon Q6). `204`; `404 not_found` (unknown or not yours);
+`429` (6 per 10 minutes per token); `503`.
 
 ### POST monitoring/activity
 
@@ -222,10 +241,12 @@ Idempotency-Key: 5d2e…
 - 1–200 items. `app`: `name` (1–120 characters, e-mail addresses and digit runs redacted by the client; the bundle
   redacts again: `[email]`, runs of 4+ digits → `[digits]`), `seconds` 0–600, no `level`. `level`: `level` 0–100,
   `seconds` 0–600, no `name`.
-- `202 {"accepted": 2, "dropped": 0}`. Items whose slot does not overlap the worker's own timer on `entryId`, lies outside
-  the working calendar, is older than `maxBufferAgeHours`, or names an excluded app are **dropped** (counted, never
-  stored); the rest goes to the host.
-- `400 invalid_request {field: "items"}`; `422 monitoring_refused` `kind_off` (no policy, not enabled, or an item's kind
+- `202 {"accepted": 2, "dropped": 0, "droppedSeconds": 0}`. Items whose slot does not overlap the worker's own timer on
+  `entryId`, lies outside the working calendar, is older than `maxBufferAgeHours`, or names an excluded app (matched on
+  the name as sent, before the redaction) are **dropped** (counted, never stored); the rest goes to the host.
+- The `app` seconds of one worker and slot never exceed `slotMinutes × 60`, counting earlier batches: an item that does
+  not fit is cut to what is left, one that finds nothing left is dropped; `droppedSeconds` is the app time removed.
+- `400 invalid_request {field: "items"}` (also a slot off the policy grid); `422 evidence_rejected`; `422 monitoring_refused` `kind_off` (no policy, not enabled, or an item's kind
   — `apps` for `app`, `activity` for `level` — is off: refetch and delete those items) / `not_acknowledged`; `429` (30
   per 10 minutes per token); `503`.
 
@@ -576,7 +597,7 @@ grant.
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 | 503 | `meetings_unavailable` | Since 1.14: the host meeting provider failed (`Retry-After: 60`) |
-| 400 / 403 / 409 / 413 / 415 / 422 / 503 | `invalid_request`, `invalid_signature`, `policy_changed`, `duplicate`, `too_large`, `unsupported_media_type`, `notice_mismatch`, `monitoring_refused` (+ `reason`), `upload_mismatch` (+ `field`), `monitoring_unavailable` | Since 1.26: the monitoring routes ([Changes in 1.26](#changes-in-126-activity-monitoring-spec-199)) |
+| 400 / 403 / 409 / 413 / 415 / 422 / 503 | `invalid_request`, `invalid_signature`, `policy_changed`, `duplicate`, `too_large`, `unsupported_media_type`, `notice_mismatch`, `monitoring_refused` (+ `reason`), `upload_mismatch` (+ `field`), `evidence_rejected`, `monitoring_unavailable` | Since 1.26: the monitoring routes ([Changes in 1.26](#changes-in-126-activity-monitoring-spec-199)) |
 
 ## Endpoints
 

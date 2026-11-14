@@ -16,14 +16,15 @@ use Nowo\TimeTrackBundle\ValueObject\Uuid;
  * and body of the request, and the state of its one-shot signed URL. The image itself is never stored here.
  *
  * States: `pending` (the URL signed until `signedUntil` is valid), `uploading` (a PUT consumed it and is streaming),
- * `spent` (that PUT failed; the URL is dead and a replay of the intent signs one that expires later), `stored` (the host
- * stored it as `screenshotId`). Rows are purged 24 h after creation (the replay window) by
+ * `spent` (that PUT failed; the URL is dead and a replay of the intent signs one that expires later), `rejected` (the
+ * host refused it for good), `stored` (the host stored it as `screenshotId`). One screenshot per user and slot,
+ * whatever the entry id (audit PM-M2). Rows are purged 24 h after creation (the replay window) by
  * `nowo:time-track:client-tokens:purge` and when the user asks for a new intent; deleted with the user.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_monitoring_upload_intents')]
 #[ORM\UniqueConstraint(name: 'uniq_time_track_monitoring_intent_key', columns: ['user_id', 'idempotency_hash'])]
-#[ORM\Index(name: 'idx_time_track_monitoring_intent_slot', columns: ['user_id', 'entry_id', 'slot'])]
+#[ORM\Index(name: 'idx_time_track_monitoring_intent_slot', columns: ['user_id', 'slot'])]
 #[ORM\Index(name: 'idx_time_track_monitoring_intent_created', columns: ['created_at'])]
 class MonitoringUploadIntent
 {
@@ -38,6 +39,9 @@ class MonitoringUploadIntent
 
     /** A PUT failed after consuming the URL: the URL is dead; a replay of the intent signs a later one. */
     public const STATUS_SPENT = 'spent';
+
+    /** Since audit PM-L6: the host refused the evidence for good (`422 evidence_rejected`); never signed again. */
+    public const STATUS_REJECTED = 'rejected';
 
     #[ORM\Id]
     #[ORM\Column(type: 'string', length: 36)]
@@ -123,7 +127,7 @@ class MonitoringUploadIntent
         return $this->bodyHash;
     }
 
-    /** `pending`, `uploading`, `spent` or `stored`. */
+    /** `pending`, `uploading`, `spent`, `rejected` or `stored`. */
     public function getStatus(): string
     {
         return $this->status;

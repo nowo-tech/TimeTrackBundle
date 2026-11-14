@@ -13,7 +13,9 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
  * request (policy, acknowledgement, running timer, schedule, age, slot, caps, MIME, dimensions, hash) and hands the
  * result here. Framework-free (REQ-ARCH-001 rule 3).
  *
- * Every method is called for the authenticated worker only and must only read or change that worker's data.
+ * Every method is called for the authenticated worker only and must only read or change that worker's data. A store
+ * method that refuses the evidence for good throws {@see MonitoringEvidenceRejectedException} (`422
+ * evidence_rejected`, never retried); any other exception is a temporary failure (`503`, retried).
  */
 interface MonitoringEvidenceStoreInterface
 {
@@ -44,7 +46,9 @@ interface MonitoringEvidenceStoreInterface
     public function storeActivity(TimeTrackUserRef $user, array $items): void;
 
     /**
-     * Whether the worker's slot of the entry already has a screenshot (or a discard marker).
+     * Whether the worker already has a screenshot (or a discard marker) for this slot, **whatever the entry**: the key
+     * is (user, slot) — the same worked minute has a timer id and later an entry id (audit PM-M2). `$entryId` is kept
+     * for information. Keep a unique key on (user, slot) in your store.
      */
     public function hasScreenshot(TimeTrackUserRef $user, string $entryId, DateTimeImmutable $slot): bool;
 }

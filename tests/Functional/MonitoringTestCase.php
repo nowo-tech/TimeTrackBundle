@@ -11,11 +11,14 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\Tests\Stub\FrozenMonitoringClock;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringEvidenceStore;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringPolicySource;
+use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\Tests\Support\MonitoringFixtures;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
+use Symfony\Component\HttpKernel\KernelInterface;
 
 use function array_values;
 use function gmdate;
@@ -23,7 +26,6 @@ use function hash;
 use function is_string;
 use function parse_url;
 use function strlen;
-use function time;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -41,6 +43,35 @@ abstract class MonitoringTestCase extends FunctionalTestCase
     protected const DISCARDED = '/api/time-track/monitoring/screenshots/discarded';
 
     protected const ACTIVITY = '/api/time-track/monitoring/activity';
+
+    /**
+     * Audit PM-L8: every monitoring test runs on a frozen clock ({@see FrozenMonitoringClock}).
+     *
+     * @param array<string, mixed> $options
+     */
+    protected static function createKernel(array $options = []): KernelInterface
+    {
+        return new FunctionalKernel(static::timeTrackConfig(), false, false, true, false, true);
+    }
+
+    /**
+     * The frozen "now" of the server, as a Unix timestamp (start of the current 10-minute slot).
+     */
+    protected function now(): int
+    {
+        $clock = self::getContainer()->get(FrozenMonitoringClock::class);
+        self::assertInstanceOf(FrozenMonitoringClock::class, $clock);
+
+        return $clock->now()->getTimestamp();
+    }
+
+    /**
+     * An instant relative to the frozen now (e.g. "-3 hours").
+     */
+    protected function at(string $modify): DateTimeImmutable
+    {
+        return (new DateTimeImmutable('@' . $this->now()))->modify($modify);
+    }
 
     protected static function timeTrackConfig(): array
     {
@@ -113,7 +144,7 @@ abstract class MonitoringTestCase extends FunctionalTestCase
      */
     protected function acknowledge(string $token, int $version = 7, string $key = 'ack-1'): void
     {
-        $this->api('POST', self::ACK, ['policyVersion' => $version, 'noticeSha256' => MonitoringFixtures::noticeSha256(), 'shownAt' => gmdate('Y-m-d\TH:i:s\Z')], $token, ['HTTP_IDEMPOTENCY_KEY' => $key]);
+        $this->api('POST', self::ACK, ['policyVersion' => $version, 'noticeSha256' => MonitoringFixtures::noticeSha256(), 'shownAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now())], $token, ['HTTP_IDEMPOTENCY_KEY' => $key]);
         self::assertResponseStatusCodeSame(204);
     }
 
@@ -153,7 +184,7 @@ abstract class MonitoringTestCase extends FunctionalTestCase
      */
     protected function intentBody(string $entryId, string $image, array $overrides = [], ?int $takenAt = null): array
     {
-        $taken = $takenAt ?? time();
+        $taken = $takenAt ?? $this->now();
 
         return $overrides + [
             'entryId'       => $entryId,

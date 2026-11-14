@@ -294,14 +294,25 @@ scoring. The bundle checks; the host stores ([USAGE](USAGE.md#activity-monitorin
 | Collection without a basis | Off without `client_api.monitoring.policy_source` (every route 404); `kind_off` without a policy, while `enabled` is false or `lockedUntilChecklist`, or for a kind the policy does not list; `not_acknowledged` until the worker acknowledged the current version (or an earlier one when the current one does not widen collection); the acknowledgement proves the exact notice text (`notice_mismatch` otherwise) |
 | Collection outside working time | SC-002 at intent time: the worker's **own** running timer, or one of their recorded timer entries, covered `takenAt` (manual, calendar and imported entries are refused); the working calendar (spec 198 schedule, days off, leave) through the existing port; at most `maxBufferAgeHours` (≤ 24 h) old and 120 s in the future |
 | Someone else's upload | The URL is signed (HMAC-SHA256, key derived per call, `hash_equals`) over the upload id, the **SHA-256 of the Bearer token** that asked for it, the declared hash, size, MIME and expiry; the PUT needs the same token, the same user's intent row and the current expiry; one request only (conditional `pending → uploading`), 120 s; a failed upload burns the URL and a replay signs one that expires later, so a dead URL never becomes valid again |
+| Too many screenshots | One per worker and slot, **whatever the entry id** (intents keyed on (user, slot), the host store unique on (user, slot)); slots must be on the UTC grid of the policy (`slotMinutes × 60`), so shifting a slot by a second is refused (audit PM-M1, PM-M2); `screenshotsPer10Min` is 1 in v1; the policy's `maxLongSidePx` caps the size at intent and at PUT |
 | Malicious files | Streamed to a temporary file (deleted in `finally`): `Content-Length` = declared ≤ 1.5 MiB, body size = declared, SHA-256 = declared, MIME from the magic bytes (WebP / JPEG only, the header and the declared type are never trusted), header dimensions = declared ≤ 3840 px. The bundle reads the header only and never decodes pixels; the host re-encodes with a pixel limit before storing or showing (documented) |
 | Leaks through logs and events | Logs carry the action, the status and the duration; `ClientApiEvent` carries the action and a refusal code (throttled per credential and reason). Never an image, a hash, an upload id, a signature, an app or a window name. App names are redacted again (e-mail addresses, runs of 4+ digits) and excluded apps dropped before they reach the host |
 | Flooding | Per token and 10 minutes: 6 intents, 6 uploads, 30 activity batches (configurable), on top of the client API limits; ≤ 200 activity items per batch; intent rows purged after 24 h |
 | Replays | `Idempotency-Key` per user: intents in the intent table (unique per user and key hash, same body or `422 idempotency_mismatch`), acknowledgements and activity in the rate-limit pool for 24 h |
 | Worker mode | No per-request state in any service; image bytes only in local variables of the PUT; tested with two users taking turns in one kernel without the services resetter |
 
+The PUT re-checks the policy, the acknowledgement, the timer (SC-002), the schedule and the age before reading a byte,
+so a timer discarded during the URL's 120 s gets nothing stored. With `client_api.monitoring.upload_base_url` the signed
+URL never follows the request's `Host` header or scheme, and the desktop refuses a URL off its pinned API origin. A host
+that cannot accept an image throws `MonitoringEvidenceRejectedException` (`422 evidence_rejected`, never retried).
+Discarded idle time emits `MonitoringSpanDiscardedEvent` so the host deletes its evidence. App passwords never grant
+`monitoring:write`. Excluded apps are matched on the name as sent, before the redaction; the `app` seconds of a slot
+never exceed the slot.
+
 Residual: the slot check (`hasScreenshot` + live intents) is not atomic across two concurrent intents with different
-keys for the same slot; the host store should keep one screenshot per worker, entry and slot.
+keys for the same slot, and the per-slot activity sum is not atomic across two concurrent batches; the host store keeps
+one screenshot per worker and slot (unique key) and its own per-slot sum. `ClientScope::all()` includes
+`monitoring:write`: a host that grants `all()` would grant it too.
 
 ## Secrets & cryptography
 

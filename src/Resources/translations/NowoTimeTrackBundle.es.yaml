@@ -56,6 +56,8 @@ device:
   client_name: "Nombre del dispositivo"
   client_type: "Cliente"
   scopes: "Permisos"
+  scope_monitoring_write: "Monitorización de actividad (monitoring:write)"
+  scope_monitoring_write_help: "Permite a este dispositivo enviar las capturas difuminadas, el tiempo por aplicación y el nivel de actividad que indique la política de monitorización de tu organización, solo mientras corre tu propio temporizador. Aprueba solo si has leído el aviso de monitorización."
   requested_at: "Solicitado el"
   requested_from: "Solicitado desde (red)"
   expires: "Caduca"
