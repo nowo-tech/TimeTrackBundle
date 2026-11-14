@@ -181,7 +181,7 @@ succeeds once the worker acknowledged. Another body with the same key: `422 idem
 
 **2. `PUT <url>`** with the raw bytes, the same Bearer token (the URL is bound to it) and the declared `Content-Type`.
 The URL is valid for **120 s and one request**. **Only PUT to a URL whose origin (scheme, host and port) is the pinned
-API base you called**; refuse any other URL (defence in depth: the host should set `client_api.monitoring.upload_base_url`
+API base you called** — compare scheme and host case-insensitively (lowercase both; a default `:443` equals no port); refuse any other URL (defence in depth: the host should set `client_api.monitoring.upload_base_url`
 so the URL never follows a request's `Host` header). Before reading the body the bundle re-checks everything it checked
 at intent time against the current policy and timer: `409 policy_changed`, `422 monitoring_refused` (`kind_off`,
 `not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `too_old`) and `422
@@ -261,7 +261,7 @@ Idempotency-Key: 5d2e…
   encrypted at rest; retry with backoff ×2 up to 30 minutes honouring `Retry-After`. Delete the buffer on sign-out,
   account switch, policy off and *Clear local data*.
 - Giving up tracked time deletes its evidence on the host: idle `discard` (from the idle start), idle `split` (the idle
-  span) and a `timer/stop` with an `endedAt` before now (from `endedAt`). Delete the local buffered items of that span
+  span), idle `reassign` with `then: stop` (from `to`) and a `timer/stop` with an `endedAt` before now (from `endedAt`). Delete the local buffered items of that span
   too.
 - Narrowing (or `enabled: false`) applies at once; widening waits for the acknowledgement (the server refuses every
   upload with `not_acknowledged` until then).

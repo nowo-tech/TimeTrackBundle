@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Monitoring;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
+use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Event\IdleResolvedEvent;
 use Nowo\TimeTrackBundle\Event\MonitoringSpanDiscardedEvent;
@@ -25,9 +26,11 @@ use Throwable;
  *
  * - idle `discard` (`timer/discard-idle`, `TimerService::resolveIdle()`): the timer stops at `from`, so `[from, now)`;
  * - idle `split`: the idle span `[from, to)` (the timer continues at `to`);
- * - a backdated stop (`timer/stop` with `endedAt`, `TimerService::stopAt()`): `[applied end, now)`.
+ * - idle `reassign` with `then: stop`: the idle span is kept on the other task, `[to, now)` is given up;
+ * - a backdated stop (`timer/stop` with `endedAt`, or host code `TimerService::stop($user, $past)`): `[end, now)`.
  *
- * `keep` and `reassign` keep the time. Registered only while monitoring is configured. A host listener that throws is
+ * `keep` and `reassign` with `continue` / `switch` keep the time. Spans may overlap (an idle `discard` also reports its
+ * stop): hosts delete idempotently. Registered only while monitoring is configured. A host listener that throws is
  * caught and logged (class only): the discard is already committed and must not become a 500; hand the deletion to
  * an async message with retries. Stateless (FrankenPHP worker mode).
  */
@@ -57,7 +60,9 @@ final readonly class MonitoringSpanDiscardListener
         match ($event->getResolution()) {
             IdleResolution::Discard => $this->dispatch($event->userRef(), $event->getFrom(), $this->clock->now(), MonitoringSpanDiscardedEvent::REASON_IDLE_DISCARD),
             IdleResolution::Split   => $this->dispatch($event->userRef(), $event->getFrom(), $event->getTo(), MonitoringSpanDiscardedEvent::REASON_IDLE_SPLIT),
-            default                 => null,
+            // Audit PM delta D2-L1: the idle span went to another task (kept); the timer stopped there, so [to, now) is gone.
+            IdleResolution::Reassign => $event->getFollowUp() === IdleFollowUp::Stop ? $this->dispatch($event->userRef(), $event->getTo(), $this->clock->now(), MonitoringSpanDiscardedEvent::REASON_IDLE_REASSIGN_STOP) : null,
+            default                  => null,
         };
     }
 

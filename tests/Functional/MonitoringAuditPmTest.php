@@ -8,6 +8,8 @@ use Nowo\TimeTrackBundle\Event\MonitoringSpanDiscardedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Monitoring\ActivityItem;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringEvidenceRejectedException;
+use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Support\MonitoringFixtures;
 use Nowo\TimeTrackBundle\Tests\Support\RacingMonitoringIntentRepository;
 use RuntimeException;
@@ -226,6 +228,48 @@ class MonitoringAuditPmTest extends MonitoringTestCase
         $this->startTimer($token);
         $this->api('POST', '/api/time-track/timer/stop', ['endedAt' => gmdate('Y-m-d\TH:i:s\Z', $this->now())], $token);
         self::assertCount(1, $events->list, 'a stop at now discards nothing');
+    }
+
+    /** Delta D2-L1 / P13: reassign then stop gives up [to, now). */
+    public function testD2ReassignThenStopEmitsTheRest(): void
+    {
+        $events = $this->spanEvents();
+        $token  = $this->token();
+        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'startedAt' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 3600)], $token);
+        $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 1800), 'to' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 600), 'action' => 'reassign', 'taskId' => 'task-3', 'then' => 'stop'], $token);
+        self::assertResponseIsSuccessful();
+        self::assertSame([['idle_reassign_stop', $this->now() - 600, $this->now()]], array_map(static fn (MonitoringSpanDiscardedEvent $event): array => [$event->reason, $event->from->getTimestamp(), $event->to->getTimestamp()], $events->list), 'the reassigned span is kept time');
+
+        $token = $this->token($this->createUser('continue@example.com'));
+        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'startedAt' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 3600)], $token);
+        $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 1800), 'to' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 600), 'action' => 'reassign', 'taskId' => 'task-3', 'then' => 'continue'], $token);
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $events->list, 'reassign + continue keeps everything');
+    }
+
+    /** Delta D2-L2 / P14: host code stopping a timer at a past instant gives up [end, now); idle discard / split do not add a wrong span. */
+    public function testD2HostBackdatedStopEmitsTheSpan(): void
+    {
+        $events = $this->spanEvents();
+        $token  = $this->token();
+        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'startedAt' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 3600)], $token);
+        $service = self::getContainer()->get(TimerService::class);
+        self::assertInstanceOf(TimerService::class, $service);
+        $user = $this->entityManager()->find(AppUser::class, $this->user->getId());
+        self::assertInstanceOf(AppUser::class, $user);
+        self::assertSame($this->now() - 2400, $service->stop($user, $this->at('-2400 seconds'))?->getEndedAt()->getTimestamp());
+        self::assertSame([['backdated_stop', $this->now() - 2400, $this->now()]], array_map(static fn (MonitoringSpanDiscardedEvent $event): array => [$event->reason, $event->from->getTimestamp(), $event->to->getTimestamp()], $events->list));
+
+        $this->startTimer($token);
+        $user = $this->entityManager()->find(AppUser::class, $this->user->getId());
+        self::assertInstanceOf(AppUser::class, $user);
+        $service->stop($user, $this->at('+0 seconds'));
+        self::assertCount(1, $events->list, 'a host stop at now gives up nothing');
+
+        $token = $this->token($this->createUser('split@example.com'));
+        $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'clientType' => 'desktop', 'startedAt' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 3600)], $token);
+        $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 1800), 'to' => gmdate('Y-m-d\\TH:i:s\\Z', $this->now() - 600), 'action' => 'split'], $token);
+        self::assertSame(['backdated_stop', 'idle_split'], array_map(static fn (MonitoringSpanDiscardedEvent $event): string => $event->reason, $events->list), 'a split never reports [from, now): the timer continues');
     }
 
     /** Delta D1-L2 / P12: a host listener that throws never turns a committed discard into a 500. */

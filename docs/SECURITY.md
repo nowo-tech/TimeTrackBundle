@@ -305,7 +305,8 @@ The PUT re-checks the policy, the acknowledgement, the timer (SC-002), the sched
 so a timer discarded during the URL's 120 s gets nothing stored. With `client_api.monitoring.upload_base_url` the signed
 URL never follows the request's `Host` header or scheme, and the desktop refuses a URL off its pinned API origin. A host
 that cannot accept an image throws `MonitoringEvidenceRejectedException` (`422 evidence_rejected`, never retried).
-Discarded time (idle `discard` `[from, now)`, idle `split` `[from, to)`, a backdated stop `[endedAt, now)`) emits
+Discarded time (idle `discard` `[from, now)`, idle `split` `[from, to)`, idle `reassign` + `then: stop` `[to, now)`, a
+stop at a past end from the client API or host code `[end, now)`) emits
 `MonitoringSpanDiscardedEvent` so the host deletes its evidence; a throwing host listener is caught and logged, never a
 500 for a committed discard. `upload_base_url` may be an env placeholder; it is checked when a URL is signed and fails
 closed (503). App passwords never grant
@@ -314,7 +315,8 @@ never exceed the slot.
 
 Residual: the slot check (`hasScreenshot` + live intents) is not atomic across two concurrent intents with different
 keys for the same slot, and the per-slot activity sum is not atomic across two concurrent batches; the host store keeps
-one screenshot per worker and slot (unique key) and its own per-slot sum. The activity budget needs a rate-limit pool
+one screenshot per worker and slot (unique key) and its own per-slot sum. Hosts should run a reconcile job deleting
+evidence outside every recorded entry and running timer (safety net for a lost span event). The activity budget needs a rate-limit pool
 shared across nodes (Redis). `ClientScope::all()` includes
 `monitoring:write`: a host that grants `all()` would grant it too.
 

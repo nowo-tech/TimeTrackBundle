@@ -1104,11 +1104,17 @@ Rules for both paths:
   the worker's `TimeTrackUserRef`, `from`, `to`, `reason`) and delete the worker's screenshots, discard markers and
   activity inside `[from, to)`. The bundle dispatches it, only while monitoring is configured, after the entry is
   recorded, for every span a worker gives up: `idle_discard` (`[from, now)`: the timer stopped at the idle start),
-  `idle_split` (`[from, to)`, the timer continued) and `backdated_stop` (`timer/stop` with an `endedAt` before now:
-  `[endedAt, now)`). **Make your listener async**: dispatch a Messenger message with retries and return. The bundle
+  `idle_split` (`[from, to)`, the timer continued), `idle_reassign_stop` (idle span reassigned with `then: stop`:
+  `[to, now)`) and `backdated_stop` (`timer/stop` with an `endedAt` before now, or your own code calling
+  `TimerService::stop($user, $past)`, e.g. a forgotten-timer stopper: `[end, now)`). Spans may overlap (an idle
+  `discard` is also a stop at `from`, so it reports `backdated_stop` too): delete idempotently. **Make your listener async**: dispatch a Messenger message with retries and return. The bundle
   catches and logs (class only) a listener that throws, so the worker never gets a 500 for a discard that is already
   committed, but then the deletion is yours to retry: never drop it. Also delete evidence on
   `TimeEntriesRemovedEvent` (time removed by a manager) and on the worker's erasure.
+- **Reconcile job (recommended safety net).** Run a periodic job that deletes every screenshot, discard marker and
+  activity item whose `takenAt` / slot lies outside all recorded entries and the running timer of that worker. It
+  covers a lost or failed span event, any future discard path, manager removals and erasure; the event is then an
+  optimisation, not the only control.
 - **Activity time.** The bundle cuts the `app` seconds of a worker and slot to `slotMinutes × 60` across batches, in
   `client_api.rate_limit.cache_pool`: with several nodes that pool **must be shared** (e.g. Redis), or each node keeps
   its own count. It is not atomic across two concurrent batches, and it is updated after `storeActivity()`: if the pool
