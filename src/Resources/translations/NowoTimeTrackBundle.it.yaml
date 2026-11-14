@@ -56,6 +56,8 @@ device:
   client_name: "Nome del dispositivo"
   client_type: "Client"
   scopes: "Autorizzazioni"
+  scope_monitoring_write: "Monitoraggio dell'attività (monitoring:write)"
+  scope_monitoring_write_help: "Consente a questo dispositivo di inviare le schermate sfocate, il tempo per applicazione e il livello di attività previsti dalla politica di monitoraggio della tua organizzazione, solo mentre è attivo il tuo timer. Approva solo se hai letto l'informativa sul monitoraggio."
   requested_at: "Richiesto il"
   requested_from: "Richiesto da (rete)"
   expires: "Scade"

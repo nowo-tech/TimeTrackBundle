@@ -66,6 +66,8 @@ services:
             - '../../Calendar/'
             # Since 1.14: the meetings API services are defined by the extension (value objects excluded too).
             - '../../Meeting/'
+            # Since 1.26: the monitoring services are defined by the extension (value objects and ports excluded too).
+            - '../../Monitoring/'
 
     Nowo\TimeTrackBundle\Controller\:
         resource: '../../Controller/'

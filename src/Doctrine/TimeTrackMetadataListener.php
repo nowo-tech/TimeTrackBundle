@@ -18,6 +18,8 @@ use Nowo\TimeTrackBundle\Entity\CalendarRule;
 use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
+use Nowo\TimeTrackBundle\Entity\MonitoringAcknowledgementRecord;
+use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
@@ -79,6 +81,8 @@ final readonly class TimeTrackMetadataListener
         private string $userMapping = UserMapping::RELATION,
         private string $hostUsersTableName = 'time_track_host_users',
         private LoggerInterface $logger = new NullLogger(),
+        private string $monitoringAcknowledgementsTableName = 'time_track_monitoring_acknowledgements',
+        private string $monitoringUploadIntentsTableName = 'time_track_monitoring_upload_intents',
     ) {
     }
 
@@ -102,14 +106,17 @@ final readonly class TimeTrackMetadataListener
             CalendarSuggestion::class  => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->calendarSuggestionsTableName])),
             CalendarRule::class        => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->calendarRulesTableName])),
             HostUser::class            => $this->mapHostUsers($metadata, $args),
-            default                    => null,
+            // Since 1.26.0 (contract §24).
+            MonitoringAcknowledgementRecord::class => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->monitoringAcknowledgementsTableName])),
+            MonitoringUploadIntent::class          => $metadata->setPrimaryTable(array_merge($metadata->table, ['name' => $this->monitoringUploadIntentsTableName])),
+            default                                => null,
         };
         if ($this->userMapping === UserMapping::ID) {
             $this->exactRefColumns($metadata, $args);
         }
         $this->exactScopeColumn($metadata, $args);
 
-        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class, Timesheet::class, BalanceLedgerLine::class, CalendarConnection::class, CalendarSuggestion::class, CalendarRule::class], true)) {
+        if (!in_array($class, [TimeEntry::class, ActiveTimer::class, ClientToken::class, DeviceAuthorization::class, Timesheet::class, BalanceLedgerLine::class, CalendarConnection::class, CalendarSuggestion::class, CalendarRule::class, MonitoringAcknowledgementRecord::class, MonitoringUploadIntent::class], true)) {
             return;
         }
 

@@ -92,7 +92,7 @@ final class SecurityAuditClTest extends TestCase
         $user  = new TestUser('u1', 'a@example.com');
 
         self::assertSame(ClientScope::values(ClientScope::defaults()), $stack->authService->issueToken($user, ClientType::Desktop)['scopes']);
-        self::assertCount(13, ClientScope::all(), 'the 1.13 and 1.14 scopes exist but need an explicit grant');
+        self::assertCount(14, ClientScope::all(), 'the 1.13, 1.14 and 1.26 scopes exist but need an explicit grant');
         self::assertSame([], $stack->authService->issueToken($user, ClientType::Desktop, 'c', [])['scopes']);
     }
 

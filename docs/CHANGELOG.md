@@ -65,6 +65,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Target **1.26.0** (minor).
+
+### Added
+
+- **Activity monitoring, opt-in** (Beacon spec 199, client contract §TT-MON agreed 2026-11-14). Off unless the host configures `client_api.monitoring.policy_source` and `evidence_store` **and** the organisation enables it with a recorded DPIA; the worker sees the notice first and is never scored. Without it `GET me` and every 1.25 answer are unchanged and the new routes answer 404.
+  - Framework-free ports (`TimeTrackUserRef` and bundle VOs only, no deprecated twin): `Monitoring\MonitoringPolicySourceInterface::policyOf()` (VO `MonitoringPolicy`), `MonitoringEvidenceStoreInterface` (`storeScreenshot(ScreenshotUpload)`, `markDiscarded`, `discard`, `storeActivity(list<ActivityItem>)`, `hasScreenshot`; the bundle never writes files), `MonitoringAcknowledgementStoreInterface` (VO `MonitoringAcknowledgement`; standard default `Repository\DoctrineOrmMonitoringAcknowledgementStore` on a bundle table through the bundle entity manager, DDD hosts alias it) and `MonitoringUploadSignerInterface` (VO `MonitoringUploadClaim`; default `HmacMonitoringUploadSigner`, HMAC-SHA256 with a key derived per call from `client_api.monitoring.signing_key` or `kernel.secret`, constant-time verification).
+  - `GET me`: `features.monitoring` and the `monitoring` block (§24.1) only with a policy for the user; `enabled` is false while `lockedUntilChecklist`; `acknowledgement.required` from the host's `acknowledgementRequired` and the acknowledgement store.
+  - Scope `monitoring:write` (never a default grant; request it in the device flow).
+  - Routes: `POST monitoring/acknowledge` (204; 409 `policy_changed`; 422 `notice_mismatch`), `POST monitoring/screenshots/intent` (every refusal check before any byte: policy and kind, acknowledgement, SC-002 against the worker's own running timer or timer entry, the spec 198 schedule through the working-calendar port, ± 120 s skew and `maxBufferAgeHours`, slot not taken; 201 with a one-shot URL signed over upload id, token hash, SHA-256, size, MIME and expiry, TTL 120 s; idempotent replays), `PUT monitoring/uploads/{uploadId}` (policy re-check, then every cap while streaming to a temporary file deleted in `finally`: `Content-Length` = declared ≤ 1.5 MiB, MIME from the magic bytes (WebP / JPEG), header dimensions = declared ≤ 3840 px, SHA-256 = declared, single use), `POST monitoring/screenshots/discarded`, `DELETE monitoring/screenshots/{id}`, `POST monitoring/activity` (≤ 200 items, names redacted again, excluded apps and items outside the timer, schedule or age dropped; 202 `{accepted, dropped}`). Rate limits per token and 10 minutes: 6 intents, 6 uploads, 30 activity batches (`client_api.monitoring.rate_limit`).
+  - `ClientApiEvent` actions `monitoring_acknowledged`, `monitoring_uploaded` and `monitoring_refused` (throttled per credential and reason); never an image, a hash, an app or a window name.
+  - Two always-mapped tables, empty while monitoring is off: `time_track_monitoring_acknowledgements` and `time_track_monitoring_upload_intents` (reference SQL in `docs/sql/1.26.0/`, demo migration `Version20261114000000`). `nowo:time-track:client-tokens:purge` also deletes upload intents older than 24 h.
+  - Worker mode (kernel reset false): no per-request state in any service, intents and replays in the bundle entity manager and the rate-limit pool, image bytes only in local variables of the PUT; tested with two users taking turns in one kernel without the services resetter.
+
+  - SEC-004 audit PM (same release, before the tag): slots must be on the policy's UTC grid (`slotMinutes × 60`, `400 invalid_request {field: slot}` on intent, discarded and activity); one screenshot per **(user, slot)** whatever the entry id; excluded apps matched before the redaction; optional `client_api.monitoring.upload_base_url` for the signed URLs; the policy's `maxLongSidePx` enforced at intent and PUT (`422 upload_mismatch {field: dimensions}`); the PUT re-checks the timer (SC-002), the schedule and the age; `app` seconds per (user, slot) capped at the slot across batches (202 gains `droppedSeconds`); `Monitoring\MonitoringEvidenceRejectedException` → `422 evidence_rejected` (intent burnt, never retried); the `201` keeps the id when the intent cannot be marked; `screenshotsPer10Min` is 1 in v1; a translated `monitoring:write` label on the consent page.
+  - `Event\MonitoringSpanDiscardedEvent` (`nowo_time_track.monitoring.span_discarded`, Beacon Q3, audit PM delta D1-M1): dispatched, only while monitoring is configured, for every span a worker gives up — idle `discard` (`[from, now)`), idle `split` (`[from, to)`) idle `reassign` with `then: stop` (`[to, now)`, reason `idle_reassign_stop`, delta D2-L1) and a stop at a past end (`[end, now)`, reason `backdated_stop`: a backdated `timer/stop`, or host code `TimerService::stop($user, $past)`, delta D2-L2; `TimerStopEvent::getEndTime()` is then set too) — so the host deletes that span's evidence. Spans may overlap; hosts delete idempotently and should run a reconcile job as a safety net. A host listener that throws is caught and logged (D1-L2).
+  - `upload_base_url` accepts an env placeholder (e.g. `%env(DEFAULT_URI)%`, one trailing `/` allowed), checked at runtime: anything else answers 503 (D1-L1). A failure to mark an intent rejected still answers `422 evidence_rejected` (D1-L3).
+  - A password login (app password) never grants `monitoring:write` (`ClientScope::grantableByPassword()`), whatever the host authenticator returns (Beacon Q5).
+
+### Changed
+
+- `TimeTrackClientApiController::RESERVED_FEATURES` is empty (`monitoring` became real). `features.monitoring` is still `false` for every host without a monitoring policy source.
+
+### Tests
+
+- `HostTimerApiTest` no longer reads a fixed day (2026-11-13 / 14) for the entries it records.
+- The monitoring tests run on a frozen clock (`FrozenMonitoringClock`), so no test depends on a second or slot boundary (audit PM-L8). The full suite needs `memory_limit` above 128 MB (CONTRIBUTING).
+
 ## [1.25.0] - 2026-11-13
 
 ### Added

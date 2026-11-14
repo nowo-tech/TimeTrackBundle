@@ -236,19 +236,33 @@ final readonly class TimerService
      * Stops the running timer of the user and records it as a time entry.
      *
      * @param UserInterface $user Timer owner
-     * @param DateTimeImmutable|null $endedAt End of the entry (default: now; used by the idle resolution)
+     * @param DateTimeImmutable|null $endedAt End of the entry (default: now). Since 1.26 an end before now is reported as
+     *                                        `TimerStopEvent::getEndTime()` (requested = applied = `$endedAt`)
      * @param string|null $note Note of the user stored in the entry metadata (`note`)
      *
      * @return TimeEntry|null The recorded entry, or null when no timer was running (or a concurrent stop recorded it)
      */
     public function stop(UserInterface $user, ?DateTimeImmutable $endedAt = null, ?string $note = null): ?TimeEntry
     {
+        $now = $this->clock->now();
+        // Since 1.26 (audit PM delta D2-L2): an explicit end before now is reported on TimerStopEvent::getEndTime(), as a
+        // backdated `timer/stop` is, so the time given up ([end, now)) can be told apart.
+        $endTime = $endedAt instanceof DateTimeImmutable && $endedAt->getTimestamp() < $now->getTimestamp() ? new ClampedTime($endedAt, $endedAt) : null;
+
+        return $this->stopTimer($user, $endedAt ?? $now, $note, $endTime);
+    }
+
+    /**
+     * Stops the running timer at `$endedAt` without reporting a backdated end (the idle resolution reports its own span).
+     */
+    private function stopTimer(UserInterface $user, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null): ?TimeEntry
+    {
         $timer = $this->getActive($user);
         if (!$timer instanceof ActiveTimer) {
             return null;
         }
 
-        return $this->closeTimer($user, $timer, $endedAt ?? $this->clock->now(), $note);
+        return $this->closeTimer($user, $timer, $endedAt, $note, $endTime);
     }
 
     /**
@@ -508,7 +522,7 @@ final readonly class TimerService
             return $this->reassignIdle($user, $timer, $from, $to, $target, $followUp, $clientType, $note);
         }
 
-        $entry = $this->stop($user, $from);
+        $entry = $this->stopTimer($user, $from);
         if (!$entry instanceof TimeEntry) {
             return null; // A concurrent call stopped the timer first (1.9.1, CL-05).
         }

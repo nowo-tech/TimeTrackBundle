@@ -10,10 +10,12 @@ use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
+use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\HostTimer\HostTimerTestController;
+use Nowo\TimeTrackBundle\Tests\Stub\FrozenMonitoringClock;
 use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
@@ -24,6 +26,8 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringEvidenceStore;
+use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringPolicySource;
 use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -81,7 +85,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
     /**
      * @param array<string, mixed> $timeTrackConfig
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false)
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false)
     {
         parent::__construct('test', $debug);
     }
@@ -115,7 +119,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -170,6 +174,10 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(StubCalendarCredentialProvider::class)->public();
         $container->services()->set(MutableProfileProvider::class)->public();
         $container->services()->set(StubMeetingProvider::class)->public();
+        // Since 1.26: the host's monitoring policy and evidence store (used where a test sets client_api.monitoring).
+        $container->services()->set(StubMonitoringPolicySource::class)->public();
+        $container->services()->set(StubMonitoringEvidenceStore::class)->public();
+        $container->services()->set(RacingMonitoringIntentRepository::class)->decorate(MonitoringUploadIntentRepositoryInterface::class)->args([service('.inner')])->public();
         // Since 1.20: a runtime OAuth app store (`calendar.oauth.app_provider` in the worker test) and the discovery
         // service, public so a test can reach them.
         $container->services()->set(MutableCalendarOAuthAppProvider::class)->public();
@@ -192,6 +200,11 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(RecordingTaskAccessChecker::class)->args([['task-2']])->public();
         $container->services()->alias(ServiceAccountPolicyInterface::class, StubServiceAccountPolicy::class);
         $container->services()->set(HostTimerTestController::class)->autowire()->public()->tag('controller.service_arguments');
+        if ($this->frozenClock) {
+            // Since 1.26.0 (audit PM-L8): the monitoring tests' frozen clock.
+            $container->services()->set(FrozenMonitoringClock::class)->public();
+            $container->services()->alias(ClockInterface::class, FrozenMonitoringClock::class)->public();
+        }
         if ($this->psrOnlyClock) {
             // Since 1.19.1: the host's own PSR clock wins over the framework's `clock` alias (as in Beacon).
             $container->services()->set(PsrOnlyClock::class)->public();

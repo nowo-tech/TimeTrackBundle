@@ -56,8 +56,9 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
   `TaskAccessCheckerInterface` it asks in 1.x (audit PA, Info): 1.25 uses the deprecated slot on purpose, because that
   is the one the ports pass rewrites, so a host configuring either interface is served — but it is a **public** service,
   so the signature change belongs in the 2.0 notes.
-- **1.23** (spec 199; was 1.22, before that 1.21): the monitoring API, with a full audit. Off unless your organisation
-  enables it with a recorded DPIA; you see it first.
+- **1.26** (spec 199; planned for 1.23, before that 1.22 and 1.21): the activity-monitoring API (screenshots, apps,
+  activity level), with a full audit. Opt-in: off unless your organisation enables it with a recorded DPIA; you see it
+  first. Websites / domains come later, with an extension release.
 
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 
@@ -88,8 +89,10 @@ symfony-beacon host (Beacon `docs/ROADMAP.md`, *TimeTrack: browser extension + d
 The clients record **working time** (art. 34.9 Estatuto de los Trabajadores). Monitoring (LOPDGDD arts. 87–91, spec
 199) is **off unless your organisation enables it with a recorded DPIA; you see it first**:
 
-- No screenshots, no keystrokes, no application or URL logging unless the organisation enables monitoring with a
-  recorded DPIA, and then only what its policy lists; the worker sees the policy and what is captured first.
+- No screenshots, no application or activity logging unless the organisation enables monitoring with a recorded DPIA
+  (opt-in, 1.26), and then only what its policy lists, only while the worker's own timer runs; the worker sees the
+  notice and what is captured first. Never keystrokes, clipboard, webcam, microphone, location or files; no URL logging
+  in 1.26.
 - Every optional feature is opt-in, with dated consent.
 - Worker information text and a DPIA template shipped with the documentation.
 - Right to disconnect (LOPDGDD art. 88): no auto-start, no notifications outside the configured working hours.

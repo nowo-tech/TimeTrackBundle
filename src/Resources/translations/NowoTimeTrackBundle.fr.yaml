@@ -56,6 +56,8 @@ device:
   client_name: "Nom de l’appareil"
   client_type: "Client"
   scopes: "Autorisations"
+  scope_monitoring_write: "Surveillance de l'activité (monitoring:write)"
+  scope_monitoring_write_help: "Permet à cet appareil d'envoyer les captures floutées, le temps par application et le niveau d'activité prévus par la politique de surveillance de votre organisation, uniquement pendant que votre propre minuteur tourne. N'approuvez que si vous avez lu l'avis de surveillance."
   requested_at: "Demandé le"
   requested_from: "Demandé depuis (réseau)"
   expires: "Expire"

@@ -23,7 +23,7 @@ final class TimerStopEvent extends Event
     /**
      * Creates the event for the timer owner and the recorded entry.
      *
-     * @param ClampedTime|null $endTime The client's `endedAt` and the applied end (since 1.10; null without one)
+     * @param ClampedTime|null $endTime The client's `endedAt` and the applied end (since 1.10; null without one; since 1.26 also an explicit host end before now)
      */
     public function __construct(
         private readonly UserInterface $user,
@@ -60,7 +60,9 @@ final class TimerStopEvent extends Event
     }
 
     /**
-     * The client-supplied end and the applied one (since 1.10; null when the client sent no `endedAt`).
+     * The client-supplied end and the applied one (since 1.10; null when the client sent no `endedAt`). Since 1.26 also
+     * set, with requested = applied, when host code stopped the timer at an explicit end before now
+     * (`TimerService::stop($user, $endedAt)`).
      */
     public function getEndTime(): ?ClampedTime
     {

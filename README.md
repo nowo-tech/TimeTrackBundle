@@ -32,6 +32,10 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
   ([CLIENT-API](docs/CLIENT-API.md#changes-in-114-calendar-suggestions-manual-entries), [MEETINGS.md](docs/MEETINGS.md)).
 - **Billable entries (1.21)**: an audited `billable` setter under the edit and period-lock rules, a host default for
   new entries and `PATCH entries/{id}` on the client API ([USAGE](docs/USAGE.md#billable-entries-121)).
+- **Activity monitoring (1.26, opt-in)**: off unless your organisation enables it with a recorded DPIA and the worker
+  sees the notice first; blurred screenshots, app time and an activity level only while the worker's own timer runs,
+  every refusal checked before any byte is accepted, signed one-shot uploads, framework-free ports for the policy and
+  the storage ([USAGE](docs/USAGE.md#activity-monitoring-ports-126), [CLIENT-API](docs/CLIENT-API.md#changes-in-126-activity-monitoring-spec-199)).
 
 ## Installation
 

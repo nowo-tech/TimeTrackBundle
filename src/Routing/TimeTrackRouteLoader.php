@@ -10,6 +10,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackManageController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackMonitoringApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
@@ -118,6 +119,16 @@ final class TimeTrackRouteLoader extends Loader
                 // Contract §22: the caller's own meetings (404 while off).
                 'me_meetings' => ['meetings', ['GET', 'OPTIONS'], TimeTrackMeetingsApiController::class],
             ];
+            // Since 1.26 (contract §24, spec 199): activity monitoring (404 while monitoring is off).
+            $monitoring = TimeTrackMonitoringApiController::class;
+            $apiMap += [
+                'monitoring_acknowledge'          => ['acknowledge', ['POST', 'OPTIONS'], $monitoring],
+                'monitoring_screenshot_intent'    => ['screenshotIntent', ['POST', 'OPTIONS'], $monitoring],
+                'monitoring_upload'               => ['upload', ['PUT', 'OPTIONS'], $monitoring],
+                'monitoring_screenshot_discarded' => ['screenshotDiscarded', ['POST', 'OPTIONS'], $monitoring],
+                'monitoring_screenshot_delete'    => ['screenshotDelete', ['DELETE', 'OPTIONS'], $monitoring],
+                'monitoring_activity'             => ['activity', ['POST', 'OPTIONS'], $monitoring],
+            ];
             if ($this->deviceFlowEnabled) {
                 $apiMap['device_code']  = ['code', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
                 $apiMap['device_token'] = ['token', ['POST', 'OPTIONS'], TimeTrackClientDeviceController::class];
@@ -149,6 +160,9 @@ final class TimeTrackRouteLoader extends Loader
         'periodKey' => 'current|previous|\d{4}-W\d{2}|\d{4}-\d{2}',
         // Since 1.14: a calendar connection id.
         'id' => '[A-Za-z0-9-]{1,36}',
+        // Since 1.26: a screenshot upload id (UUID) and a host screenshot id.
+        'uploadId'     => '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+        'screenshotId' => '[A-Za-z0-9_-]{1,64}',
     ];
 
     /**

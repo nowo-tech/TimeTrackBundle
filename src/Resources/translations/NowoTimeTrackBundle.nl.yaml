@@ -56,6 +56,8 @@ device:
   client_name: "Apparaatnaam"
   client_type: "Client"
   scopes: "Rechten"
+  scope_monitoring_write: "Activiteitsmonitoring (monitoring:write)"
+  scope_monitoring_write_help: "Laat dit apparaat de vervaagde schermafbeeldingen, app-tijd en het activiteitsniveau versturen die het monitoringbeleid van je organisatie noemt, alleen terwijl je eigen timer loopt. Keur alleen goed als je de monitoringverklaring hebt gelezen."
   requested_at: "Aangevraagd op"
   requested_from: "Aangevraagd vanaf (netwerk)"
   expires: "Verloopt"

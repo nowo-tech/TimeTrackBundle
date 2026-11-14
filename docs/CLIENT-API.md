@@ -1,4 +1,4 @@
-# Client API reference (1.22, contract v0.3.1 + timetrack-next v1.1)
+# Client API reference (1.26, contract v0.3.1 + timetrack-next v1.1 + §TT-MON)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,14 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
+  - [GET me: `monitoring`](#get-me-monitoring)
+  - [POST monitoring/acknowledge](#post-monitoringacknowledge)
+  - [Screenshot upload (two steps)](#screenshot-upload-two-steps)
+  - [POST monitoring/screenshots/discarded](#post-monitoringscreenshotsdiscarded)
+  - [DELETE monitoring/screenshots/{id}](#delete-monitoringscreenshotsid)
+  - [POST monitoring/activity](#post-monitoringactivity)
+  - [Client checklist](#client-checklist)
 - [Changes in 1.22 (leave, spec 204)](#changes-in-122-leave-spec-204)
 - [Changes in 1.21 (billable)](#changes-in-121-billable)
   - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
@@ -43,6 +51,220 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Changes in 1.26 (activity monitoring, spec 199)
+
+Additive, opt-in (contract §TT-MON, timetrack-next §24). **Off unless the host configures it** (`client_api.monitoring`)
+**and** the organisation enables it with a recorded DPIA; the worker sees the notice first. Without it `GET me` is byte
+for byte the 1.25 body (`features.monitoring: false`, no `monitoring` key) and every route below answers `404
+not_found`.
+
+What may be collected (v1): **screenshots** (one random instant per slot, blurred on the device unless the policy allows
+full resolution), the frontmost **app** name and its seconds, and an **activity** level (0–100, from the idle seconds the
+client already polls). Websites / domains are not part of 1.26 (they come with a later extension release). **Never**:
+keystrokes, clipboard, webcam, microphone content, location, files, anything outside the worker's own running timer,
+scores. Collection follows the timer: pausing or stopping the timer stops it; there is no separate pause switch.
+
+All write routes need the scope **`monitoring:write`** (never a default; ask for it in the device flow when `GET me`
+has a `monitoring` block; a password login — app password — never grants it, whatever the host authenticator returns). Every answer carries `Cache-Control: no-store, private`, `Pragma: no-cache`, `Vary:
+Authorization` and `X-Content-Type-Options: nosniff`. Clients send `X-TimeTrack-Capabilities:
+screenshots=1;apps=1;titles=0` on every request (the bundle does not read it; the host may).
+
+### GET me: `monitoring`
+
+Present, and `features.monitoring: true`, only when the host has a policy for this worker. No key = collect nothing.
+
+```json
+"features": {…, "monitoring": true},
+"monitoring": {
+  "enabled": true,
+  "scope": "organization",
+  "policyVersion": 7,
+  "lockedUntilChecklist": false,
+  "dpia": {"reference": "DPIA-2026-003", "recordedAt": "2026-11-20", "noticeUrl": "https://beacon.example/monitoring-notice/7"},
+  "acknowledgement": {"required": true, "acknowledgedVersion": 6, "acknowledgedAt": "2026-11-18T09:12:00Z"},
+  "kinds": ["screenshots", "apps", "activity"],
+  "capture": {"screenshotsPer10Min": 1, "slotMinutes": 10, "reviewWindowMinutes": 10},
+  "screenshots": {"enabled": true, "blur": "medium", "fullResolution": false, "maxLongSidePx": 1920},
+  "windowTitles": false,
+  "excludedApps": ["vaultapp", "diaryapp"],
+  "retentionDays": 30,
+  "upload": {"maxBufferedScreenshots": 36, "maxBufferAgeHours": 24}
+}
+```
+
+- `capture.screenshotsPer10Min` is always `1` in 1.26 (`0` only without the `screenshots` kind): the server keeps one
+  screenshot per worker and slot, and the rate limits are sized for it.
+- `enabled` is always `false` while `lockedUntilChecklist` is true (the organisation is still completing its
+  checklist): show "Monitoring is being prepared by your organisation; nothing is collected".
+- `scope`: `organization` or `personal` (self-analytics, "only you can see this").
+- `dpia` holds an id and a date only; `noticeUrl` is the https notice of this version on the same host.
+- `acknowledgement.required`: the worker never acknowledged a version, or this version widens collection and is not the
+  one they acknowledged last. Narrowing versions bump `policyVersion` with `required: false`.
+- `blur`: `none` (only with `fullResolution: true`), `low`, `medium`, `high` (downscale to ≤ 1280 px, then Gaussian σ =
+  6 / 10 / 16 px). `screenshots.enabled` is `kinds` containing `screenshots` while `enabled`.
+- Refetch `GET me` every 5 minutes while monitoring applies, on wake, on `409 policy_changed` and on `422 kind_off`.
+
+### POST monitoring/acknowledge
+
+`POST /api/time-track/monitoring/acknowledge`, header `Idempotency-Key` (1–64 visible characters, required; 24 h
+replay of the same body, `422 idempotency_mismatch` for another body). Show the notice **in the app** (fetched from
+`noticeUrl`, rendered as sanitised text) before any collection, then:
+
+```json
+POST /api/time-track/monitoring/acknowledge
+Idempotency-Key: 6f1c2a9e-ack-7
+{"policyVersion": 7, "noticeSha256": "3b5d…(64 hex)", "shownAt": "2026-11-20T08:59:41Z"}
+```
+
+| Answer | When |
+| --- | --- |
+| `204` | stored as `(user, policyVersion, acknowledgedAt = server time, clientType, noticeSha256)`; acknowledging a version twice keeps the first record |
+| `400 invalid_request {field}` | missing key, or `policyVersion` (integer ≥ 1), `noticeSha256` (64 hex) or `shownAt` (RFC 3339) invalid |
+| `409 policy_changed {policyVersion}` | not the current version (`policyVersion: null` when no policy applies any more): refetch `GET me` and show the new notice |
+| `422 notice_mismatch` | `noticeSha256` is not the SHA-256 of the notice text the host rendered for that version (a stale cache) |
+| `503 monitoring_unavailable` | a host port failed (`Retry-After: 60`) |
+
+`204`, `409` and `422` are replayed for the same key and body. The host's web page acknowledges into the same store, so
+the desktop does not ask twice.
+
+### Screenshot upload (two steps)
+
+**1. `POST /api/time-track/monitoring/screenshots/intent`**, `Idempotency-Key` = a UUID v4 the client generates at
+capture time and keeps with the buffered item.
+
+```json
+POST /api/time-track/monitoring/screenshots/intent
+Idempotency-Key: 0b8f6a1e-3c1d-4f7e-9a51-2a8f4b6c7d90
+{"entryId": "1f0c…", "slot": "2026-11-20T09:10:00Z", "takenAt": "2026-11-20T09:13:27Z", "policyVersion": 7,
+ "blurred": true, "mime": "image/webp", "bytes": 182344, "width": 1280, "height": 720, "sha256": "9c0e…(64 hex)"}
+```
+
+- `entryId`: the id of the worker's **running timer** (`GET timer` → `timer.id`) while it runs. After the timer stopped
+  (a buffered item), send the id of the entry it became (`timer/stop` / `timer/switch` → `entry.id`): the timer id no
+  longer exists then. Manual, calendar and imported entries never had a running timer and are refused.
+- `slot`: the start of the slot, **on the UTC grid of the policy**: its Unix time is divisible by `slotMinutes × 60`
+  (with `slotMinutes: 10`, `…:00:00Z`, `…:10:00Z`, … — the same rule on `screenshots/discarded` and `activity`).
+  `takenAt` must lie in `[slot, slot + slotMinutes)`. `policyVersion`: the version the capture was taken under.
+  `sha256`: lowercase hex of the exact bytes you will upload. `width` / `height`: at most the policy's
+  `screenshots.maxLongSidePx` on the long side (and never above 3840).
+- One screenshot per worker and slot, **whatever the entry id**: a slot uploaded under the timer id cannot be uploaded
+  again under the entry id it became.
+
+Every refusal check runs **here, before any byte is sent**, in this order:
+
+| Answer | When |
+| --- | --- |
+| `400 invalid_request {field}` | missing key; `entryId`, `slot`, `takenAt` (RFC 3339, not more than 120 s in the future), `policyVersion`, `blurred`, `bytes` (≥ 1), `width` / `height` (1–3840), `sha256` invalid; `slot` off the policy grid or `takenAt` outside its slot (`field: slot`); `blurred: false` while the current version does not allow full resolution (`field: blurred`) |
+| `422 upload_mismatch {field: "dimensions"}` | the long side is above the policy's `maxLongSidePx` (drop or re-encode the capture) |
+| `413 too_large` | `bytes` above 1 572 864 (1.5 MiB) |
+| `415 unsupported_media_type` | `mime` other than `image/webp` / `image/jpeg` |
+| `409 policy_changed {policyVersion}` | `policyVersion` newer than the server's, or an unblurred capture of an older version the current one no longer allows unblurred: refetch and drop what the policy no longer allows |
+| `422 monitoring_refused {reason}` | `kind_off` (no policy, `enabled: false`, locked, or screenshots not enabled), `not_acknowledged` (the current version needs an acknowledgement), `outside_timer` (the worker's own timer did not run on `entryId` at `takenAt`), `outside_hours` (outside the working calendar: the spec 198 schedule, a day off or leave; only when the host gives a schedule), `too_old` (`takenAt` older than `maxBufferAgeHours`) |
+| `409 duplicate` | the slot already has a screenshot (or a discard marker), or another live upload of yours holds it, whatever its entry id |
+| `422 evidence_rejected` | replay of an intent whose upload the host refused for good: do not retry, delete the local copy |
+| `429 rate_limited` | 6 intents per 10 minutes per token (`Retry-After`, `retryAfter`) |
+| `503 monitoring_unavailable` | a host port failed (`Retry-After: 60`) |
+
+`201`:
+
+```json
+{"uploadId": "c3a9d0e2-6b7f-4d1a-9e8c-5f2b1a0d4e6f",
+ "url": "https://beacon.example/api/time-track/monitoring/uploads/c3a9d0e2-6b7f-4d1a-9e8c-5f2b1a0d4e6f?exp=1794641721&sig=10760cac…",
+ "method": "PUT", "headers": {"Content-Type": "image/webp"}, "expiresAt": "2026-11-20T09:15:21Z"}
+```
+
+A replay with the same key and body answers `200` with the same body while the URL is valid, a body with a **new** URL
+(that expires later) once it expired or an upload through it failed, or `200 {"id": "…", "status": "stored"}` once
+stored: retrying after a lost answer is always safe. Refusals are not replayed: a key refused with `not_acknowledged`
+succeeds once the worker acknowledged. Another body with the same key: `422 idempotency_mismatch`.
+
+**2. `PUT <url>`** with the raw bytes, the same Bearer token (the URL is bound to it) and the declared `Content-Type`.
+The URL is valid for **120 s and one request**. **Only PUT to a URL whose origin (scheme, host and port) is the pinned
+API base you called** — compare scheme and host case-insensitively (lowercase both; a default `:443` equals no port); refuse any other URL (defence in depth: the host should set `client_api.monitoring.upload_base_url`
+so the URL never follows a request's `Host` header). Before reading the body the bundle re-checks everything it checked
+at intent time against the current policy and timer: `409 policy_changed`, `422 monitoring_refused` (`kind_off`,
+`not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `too_old`) and `422
+upload_mismatch {field: "dimensions"}` (the policy's `maxLongSidePx`). Then it enforces every cap while streaming the
+body to a temporary file:
+
+| Answer | When |
+| --- | --- |
+| `201 {"id": "…"}` | stored by the host (the id is used by `DELETE`) |
+| `403 invalid_signature` | unknown, expired, already used, tampered, or another user's / another token's URL: ask for the intent again (same key) |
+| `413 too_large` | `Content-Length` (or the body) above 1.5 MiB |
+| `415 unsupported_media_type` | `Content-Type` not the declared type; the bytes are not WebP or JPEG (magic bytes); the image header cannot be read |
+| `422 upload_mismatch {field}` | `bytes` (`Content-Length` missing or not the declared size, or the body shorter / longer), `sha256`, `mime` (the magic bytes are the other accepted type), `dimensions` (the header's width / height are not the declared ones) |
+| `409 duplicate` | the slot got a screenshot meanwhile |
+| `422 evidence_rejected` | the host refused the image for good (e.g. it cannot decode it): do not retry, delete the local copy |
+| `429 rate_limited` | 6 uploads per 10 minutes per token |
+| `503 monitoring_unavailable` | the host store failed (temporary; retry later) |
+
+After any failure the URL is dead; a replay of the intent signs a new one (except after `evidence_rejected`). Delete
+the local copy after a 2xx. The `201` always carries the id once the host stored the image, even if the bundle could not
+record it on the intent; a later replay of that intent then answers `409 duplicate`, so keep the id from the `201`.
+
+### POST monitoring/screenshots/discarded
+
+The worker discarded the capture in the local review window; nothing is uploaded and the host marks the slot
+*unverified*.
+
+```json
+POST /api/time-track/monitoring/screenshots/discarded
+{"entryId": "1f0c…", "slot": "2026-11-20T09:10:00Z", "reason": "worker"}
+```
+
+`204`; `400 invalid_request {field}` (`entryId`, `slot` — RFC 3339, not in the future, on the policy grid — or `reason`
+other than `worker`); `422 monitoring_refused` `kind_off` / `outside_timer` (the slot does not overlap the worker's own
+timer on `entryId`) / `too_old`; `422 evidence_rejected`; `429` (6 per 10 minutes per token); `503`.
+
+### DELETE monitoring/screenshots/{id}
+
+Discard an uploaded screenshot of your own (soft delete, purged within 24 h by the host). Works whatever the policy says
+now — but only while the host has monitoring configured: once it is switched off every route, this one included, answers
+`404`, and the worker discards through the host's web page (Beacon Q6). `204`; `404 not_found` (unknown or not yours);
+`429` (6 per 10 minutes per token); `503`.
+
+### POST monitoring/activity
+
+Activity aggregates of slots, header `Idempotency-Key` (required; 24 h replay of the `202`; `422 idempotency_mismatch`).
+
+```json
+POST /api/time-track/monitoring/activity
+Idempotency-Key: 5d2e…
+{"items": [
+  {"entryId": "1f0c…", "slot": "2026-11-20T09:10:00Z", "kind": "app", "name": "Code", "seconds": 412},
+  {"entryId": "1f0c…", "slot": "2026-11-20T09:10:00Z", "kind": "level", "seconds": 600, "level": 72}
+]}
+```
+
+- 1–200 items. `app`: `name` (1–120 characters, e-mail addresses and digit runs redacted by the client; the bundle
+  redacts again: `[email]`, runs of 4+ digits → `[digits]`), `seconds` 0–600, no `level`. `level`: `level` 0–100,
+  `seconds` 0–600, no `name`.
+- `202 {"accepted": 2, "dropped": 0, "droppedSeconds": 0}`. Items whose slot does not overlap the worker's own timer on
+  `entryId`, lies outside the working calendar, is older than `maxBufferAgeHours`, or names an excluded app (matched on
+  the name as sent, before the redaction) are **dropped** (counted, never stored); the rest goes to the host.
+- The `app` seconds of one worker and slot never exceed `slotMinutes × 60`, counting earlier batches: an item that does
+  not fit is cut to what is left, one that finds nothing left is dropped; `droppedSeconds` is the app time removed.
+- `400 invalid_request {field: "items"}` (also a slot off the policy grid); `422 evidence_rejected`; `422 monitoring_refused` `kind_off` (no policy, not enabled, or an item's kind
+  — `apps` for `app`, `activity` for `level` — is off: refetch and delete those items) / `not_acknowledged`; `429` (30
+  per 10 minutes per token); `503`.
+
+### Client checklist
+
+- Collect only while the worker's own timer runs (server view), not idle, screen not locked, inside the schedule, policy
+  `enabled`, kind enabled, version acknowledged. Skip a slot (not "unverified") when an excluded app or a private window
+  is in front.
+- Indicator whenever monitoring applies (tray state, *What is collected now* panel with the notice link, who sees it and
+  retention). No alarm states.
+- Buffer: ≤ `maxBufferedScreenshots` (36) and ≤ 50 MB, delete items older than `maxBufferAgeHours` (24 h) unsent;
+  encrypted at rest; retry with backoff ×2 up to 30 minutes honouring `Retry-After`. Delete the buffer on sign-out,
+  account switch, policy off and *Clear local data*.
+- Giving up tracked time deletes its evidence on the host: idle `discard` (from the idle start), idle `split` (the idle
+  span), idle `reassign` with `then: stop` (from `to`) and a `timer/stop` with an `endedAt` before now (from `endedAt`). Delete the local buffered items of that span
+  too.
+- Narrowing (or `enabled: false`) applies at once; widening waits for the acknowledgement (the server refuses every
+  upload with `not_acknowledged` until then).
 
 ## Changes in 1.22 (leave, spec 204)
 
@@ -224,7 +446,7 @@ Additive; with the features off every existing route answers as in 1.12 apart fr
 - **`GET me`**: `features.workday` (real: a workday provider and a register for the user), `features.timesheets`,
   `features.balance`, `features.calendar_suggestions` / `features.manual_entries` (false until 1.14),
   `features.task_effort` (true); `timesheet`: `{scopeKey, periodKey, status, lockedThrough}` of the current scope and
-  period, or null. `monitoring` stays reserved (false).
+  period, or null. `monitoring` stays reserved (false) until 1.26 (see [Changes in 1.26](#changes-in-126-activity-monitoring-spec-199)).
 - **Entries / export**: each entry gains `scopeKey` (null = unassigned) and `locked` (its period is locked or submitted:
   no bundle path may change it — skip it for *Resume*); the CSV gains the columns `scope_key` and `locked` (`yes` / `no`).
 - **Timer routes** (`timer/start`, `timer/switch`, `timer/discard-idle`): `409 {error: "period_locked", lockedThrough}`
@@ -354,7 +576,8 @@ calls `ClientTokenRevoker::revokeByCredential()`.
 `balance:read`, `timesheet:read`, `timesheet:write`. A login grants what the authenticator returns
 (`ClientAuthResult::success($user, $credentialId, $scopes)`, default the first four); a device grants what it asked for
 and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 scopes and, since 1.14, `entries:write`,
-`suggestions:read`, `suggestions:write` and `meetings:read` always need an explicit grant.
+`suggestions:read`, `suggestions:write` and `meetings:read`, and since 1.26 `monitoring:write`, always need an explicit
+grant.
 
 ## Errors
 
@@ -377,6 +600,7 @@ and the user approved. Tokens issued before 1.9 carry the first four. The 1.13 s
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 | 503 | `meetings_unavailable` | Since 1.14: the host meeting provider failed (`Retry-After: 60`) |
+| 400 / 403 / 409 / 413 / 415 / 422 / 503 | `invalid_request`, `invalid_signature`, `policy_changed`, `duplicate`, `too_large`, `unsupported_media_type`, `notice_mismatch`, `monitoring_refused` (+ `reason`), `upload_mismatch` (+ `field`), `evidence_rejected`, `monitoring_unavailable` | Since 1.26: the monitoring routes ([Changes in 1.26](#changes-in-126-activity-monitoring-spec-199)) |
 
 ## Endpoints
 
@@ -420,7 +644,7 @@ Since 1.10 the body also carries:
 whether it may offer the user a switch to turn the idle check off (organisation policy: `false`; personal accounts may
 get `true` from the host's `IdleCheckSettingsProviderInterface`).
 
-`workday` and `monitoring` are **reserved** and always `false` in 1.10. Clients treat a missing or unknown key as
+`workday` and `monitoring` are **reserved** and always `false` in 1.10 (`workday` real since 1.13, `monitoring` since 1.26). Clients treat a missing or unknown key as
 `false` and ignore keys they do not know. `limits.idle_check` is the token user's setting (host provider, else the
 instance settings) and is present even when `features.idle_check` is false.
 

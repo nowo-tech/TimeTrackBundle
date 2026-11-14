@@ -22,7 +22,7 @@ final readonly class ClientApiEvent
      * @param string|null $credentialId Host credential id
      * @param string|null $clientType `extension`, `desktop` or `web`
      * @param string|null $ipPrefix Client IP truncated to /24 or /64
-     * @param string|null $reason Denial reason (`invalid_token`, `credential_inactive`, `insufficient_scope`, `task_forbidden`, `rate_limited`)
+     * @param string|null $reason Denial reason (`invalid_token`, `credential_inactive`, `insufficient_scope`, `task_forbidden`, `rate_limited`); since 1.26 the monitoring refusal code or `v<version>` of an acknowledgement
      * @param DateTimeImmutable $occurredAt When it happened
      */
     public function __construct(
