@@ -275,6 +275,85 @@ jobs:
           TIME_TRACK_TEST_MAPPING_TYPE: ${{ matrix.mapping }}
         run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage ${{ matrix.private == '1' && '--exclude-group shared-entity-manager' || '' }}
 
+  # 1.27.0 (Beacon spec 239): lock waits and concurrent processes on real servers (tests/Database, run with
+  # fail-on-skipped), then the deterministic race replays and the runner tests on the same server, with doctrine/dbal 4
+  # and 3. Passwordless services.
+  load-readiness:
+    name: Load readiness (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'MySQL 8.4', url: 'mysql://root@127.0.0.1:3306/tt?serverVersion=8.4.0&charset=utf8mb4', dbal: '' }
+          - { name: 'PostgreSQL 16', url: 'postgresql://postgres@127.0.0.1:5432/tt?serverVersion=16&charset=utf8', dbal: '' }
+          - { name: 'MySQL 8.4, DBAL 3', url: 'mysql://root@127.0.0.1:3306/tt?serverVersion=8.4.0&charset=utf8mb4', dbal: '^3.8.2' }
+          - { name: 'PostgreSQL 16, DBAL 3', url: 'postgresql://postgres@127.0.0.1:5432/tt?serverVersion=16&charset=utf8', dbal: '^3.8.2' }
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: tt
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h127.0.0.1 -uroot --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: tt
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: json, pdo_sqlite, pdo_mysql, pdo_pgsql, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Use DBAL 3
+        if: ${{ matrix.dbal != '' }}
+        run: composer require --no-interaction --no-progress --with-all-dependencies "doctrine/dbal:${{ matrix.dbal }}"
+
+      - name: Lock wait and multi-process tests
+        timeout-minutes: 10
+        env:
+          TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
+        run: php -d memory_limit=1G vendor/bin/phpunit --no-coverage --fail-on-skipped --testsuite database
+
+      - name: Race replays and the transaction runner on the real server
+        timeout-minutes: 10
+        env:
+          TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
+        run: >-
+          php -d memory_limit=1G vendor/bin/phpunit --no-coverage
+          --filter 'LoadReadiness|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest'
+          tests/Functional
+
+      - name: The same with the private entity manager
+        timeout-minutes: 10
+        env:
+          TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
+          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: '1'
+        run: >-
+          php -d memory_limit=1G vendor/bin/phpunit --no-coverage --exclude-group shared-entity-manager
+          --filter 'LoadReadiness|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest'
+          tests/Functional
+
   rollback-clients:
     # Since 1.15 (audit HA-H2): the reference SQL through sqlite3, mysql, mariadb and psql, with their default options.
     name: Rollback scripts with the native clients

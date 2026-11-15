@@ -66,6 +66,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Load readiness (Beacon spec 239). See [HIGH-LOAD.md](HIGH-LOAD.md) and [UPGRADING](UPGRADING.md#unreleased).
+
+### Added
+
+- `Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner` (`nowo_time_track.transaction_runner`): the bundle's own
+  transaction runner (nowo-tech/transaction-contract `TransactionRunnerInterface`, built on nowo-tech/transaction-doctrine),
+  injected into the stores and services by its concrete class. `run()` makes one attempt; `runRetrying()` replays a
+  deadlock or lock wait timeout of the outermost transaction only, with full-jitter backoff; `runStatements()` for
+  statement-only units (no flush). After any failure the connection is back at its entry level (closed only when the
+  rollback fails).
+- `StorageFailureSubscriber`: on the bundle's routes a transient storage failure answers `503` with `Retry-After`, a unique
+  conflict `409` (client API: `{"error": "unavailable" | "conflict"}` with its CORS headers; pages: HTTP exceptions); no
+  SQL reaches the client.
+- `DeviceAuthorizationNotPendingException`: an approval or denial of a device request that another request decided,
+  exchanged or expired meanwhile.
+- `ClientIdempotencyStore::forget()`, `ManualEntryService::isRecorded()`, `DoctrineOrmActiveTimerRepository::lockById()`,
+  `DoctrineOrmTimesheetRepository::lockForTransition()`, `DoctrineOrmDeviceAuthorizationRepository::lockById()`, and
+  `runner()` on the Doctrine stores.
+- CI job "Load readiness": MySQL 8.4 and PostgreSQL 16, each with doctrine/dbal 4 and 3 (passwordless services):
+  `tests/Database` (lock waits, concurrent processes) with `--fail-on-skipped`, and the race replays in both entity
+  manager modes. PHPStan FrankenPHP 1.4 with its load-readiness rules.
+
+### Changed
+
+- Requires nowo-tech/transaction-contract `^1.0`, nowo-tech/transaction-doctrine `^1.1` and doctrine/dbal `^3.8.2 || ^4`
+  (the ranges ORM 3 already allowed).
+- The bundle never resets the application's entity manager in the middle of a request any more: a manager a failed
+  TimeTrack flush closed stays closed for the rest of the request (the next flush fails loudly) and is replaced at the
+  next request, message or command boundary. A failed unit detaches only the TimeTrack rows it touched.
+  `RecoveringFlusher::resetIfClosed()` is a no-op (deprecated).
+- New rows whose unique key a concurrent request may take (running timer, a period's timesheet row, acknowledgement,
+  upload intent, imported entries) are written through DBAL in a savepoint and then managed: a lost race throws the unique
+  violation with the manager open. Doctrine persist events no longer fire for those rows (the bundle registers none).
+- Timer start, stop, switch, note, timesheet transitions and first views, ledger lines and screenshot intents take the
+  account's (owner's) write lock first: one lock order (user, then timesheet / timer / device row, then entries).
+- Timesheet transitions lock and re-read the timesheet row and compute the entries hash and totals under the locks; a
+  decision another request committed meanwhile answers `invalid_transition` (it was `conflict` only when the version
+  check caught it).
+- The `Idempotency-Key` answer of `POST entries` is stored inside the transaction (dropped when the commit fails); a stored
+  201 is replayed only when its entry is committed.
+- Imports: a raced batch is read again with or without a `ManagerRegistry` (the manager stays open).
+- The unit-of-work boundary subscriber is registered in every mode (it was registered with the private manager only).
+
+### Fixed
+
+- Two concurrent timer starts of one account: the loser's failed flush reset the application's entity manager (every
+  entity it had loaded detached, its later changes silently lost; later writes failed with
+  `ORMInvalidArgumentException`). Same class: a raced acknowledgement, upload intent, first timesheet view, ledger line
+  and import batch.
+- A stop while the task moved to another board (FR-008) recorded the entry on the old board and scope.
+- Two notes kept on the running timer at once: the first note was lost.
+- Submit while an entry of the period was being written: the submitted hash missed the entry and the approval answered
+  `stale`.
+- A retry of `POST entries` with the same `Idempotency-Key` right after the first commit wrote a second entry (agents) or
+  stored `overlap` for the key (people).
+- Two approvals of one device request issued two credentials (one orphaned); an approval could overwrite a denial.
+- Two screenshot intents for one slot (spec 199) both got an upload URL, and then neither upload was stored.
+- A deadlock or lock wait timeout answered 500 with the driver's error; it now answers 503 with `Retry-After`, and the
+  worker's connection is never left inside a nested transaction.
+
 ## [1.26.0] - 2026-11-14
 
 Target **1.26.0** (minor).

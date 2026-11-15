@@ -98,6 +98,7 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Usage](docs/USAGE.md)
+- [High load](docs/HIGH-LOAD.md) (since 1.27: transaction runner, 503 / 409, races, lock order)
 - [Templates (UiKit page contract)](docs/TEMPLATES.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
