@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.27.0](#to-1270)
 - [To 1.26.0](#to-1260)
 - [To 1.25.0](#to-1250)
 - [To 1.24.2](#to-1242)
@@ -84,6 +85,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.27.0
+
+From **1.26.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Load readiness (Beacon spec 239), no configuration change. Read [HIGH-LOAD.md](HIGH-LOAD.md).
 
