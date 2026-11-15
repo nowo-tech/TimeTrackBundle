@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringUploadIntentRepository;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * 1.27.0 (Beacon spec 239): a new row refused by its unique key (another request wrote it first) is thrown with the
@@ -18,6 +19,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringUploadIntentRepository;
  */
 final class TimeTrackRowsTest extends FunctionalTestCase
 {
+    #[Group('shared-entity-manager')]
     public function testALostInsertOutsideATransactionLeavesTheManagerOpen(): void
     {
         $timers = $this->timers();
