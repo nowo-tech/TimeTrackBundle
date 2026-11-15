@@ -17,6 +17,8 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\Period;
@@ -66,6 +68,9 @@ final readonly class BalanceLedger
         ?ClockInterface $clock = null,
         private LoggerInterface $logger = new NullLogger(),
         ?UserReferenceResolverInterface $userReferences = null,
+        // Since 1.27.0 (Beacon spec 239): the owner's write lock (stores with UserSerialisedTimeEntryRepositoryInterface)
+        // around the checks and the append (null = no lock, the 1.26 behaviour).
+        private ?TimeEntryRepositoryInterface $entries = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -103,33 +108,41 @@ final readonly class BalanceLedger
         }
         $reason = $reason === null ? null : mb_substr($reason, 0, self::REASON_MAX_LENGTH);
 
-        $reversed = null;
-        if ($kind === LedgerKind::Reversal) {
-            $reversed = $reversesId === null ? null : $this->lines->find($reversesId);
-            if (!$reversed instanceof BalanceLedgerLine || $reversed->getOwnerRef() !== $ownerId || $reversed->getScopeKey() !== $scopeKey) {
-                throw new LedgerRefusedException('not_found');
-            }
-            if ($reversed->getKind() === LedgerKind::Reversal) {
-                throw new LedgerRefusedException('not_reversible');
-            }
-            if ($this->lines->findReversalOf($reversed->getId()) instanceof BalanceLedgerLine) {
-                throw new LedgerRefusedException('already_reversed');
-            }
-            $seconds = -$reversed->getSeconds();
-        } elseif (!$this->validSeconds($kind, $seconds)) {
-            throw new LedgerRefusedException('invalid_seconds');
-        }
-        if ($kind === LedgerKind::Opening && $this->hasOpening($ownerId, $scopeKey)) {
-            throw new LedgerRefusedException('opening_exists');
-        }
-        $locked = $this->lockGuard->lockingTimesheetForDate($ownerId, $scopeKey, $effectiveDate);
-        if ($locked instanceof Timesheet) {
-            throw new PeriodLockedException($locked->getId(), $locked->getPeriodEnd(), WriteKind::Ledger);
-        }
-
-        $line = $this->append($owner, $ownerId, $scopeKey, $kind, $seconds, $effectiveDate, $reason, null, $reversed?->getId(), UserIdResolver::getId($actor));
+        // Since 1.27.0 (Beacon spec 239): the rules and the chain head are read under the owner's write lock, so two lines
+        // added at the same moment chain one after the other instead of one of them failing on the unique chain key
+        // (which closed the entity manager). The key stays the backstop for a writer that does not take the lock.
         try {
-            $this->lines->flush();
+            // @igor-ignore - the closure runs once inside this call, it is not stored.
+            $line = $this->inOwnerLock($owner, function () use ($owner, $ownerId, $scopeKey, $kind, $seconds, $effectiveDate, $reason, $reversesId, $actor): BalanceLedgerLine {
+                $reversed = null;
+                if ($kind === LedgerKind::Reversal) {
+                    $reversed = $reversesId === null ? null : $this->lines->find($reversesId);
+                    if (!$reversed instanceof BalanceLedgerLine || $reversed->getOwnerRef() !== $ownerId || $reversed->getScopeKey() !== $scopeKey) {
+                        throw new LedgerRefusedException('not_found');
+                    }
+                    if ($reversed->getKind() === LedgerKind::Reversal) {
+                        throw new LedgerRefusedException('not_reversible');
+                    }
+                    if ($this->lines->findReversalOf($reversed->getId()) instanceof BalanceLedgerLine) {
+                        throw new LedgerRefusedException('already_reversed');
+                    }
+                    $seconds = -$reversed->getSeconds();
+                } elseif (!$this->validSeconds($kind, $seconds)) {
+                    throw new LedgerRefusedException('invalid_seconds');
+                }
+                if ($kind === LedgerKind::Opening && $this->hasOpening($ownerId, $scopeKey)) {
+                    throw new LedgerRefusedException('opening_exists');
+                }
+                $locked = $this->lockGuard->lockingTimesheetForDate($ownerId, $scopeKey, $effectiveDate);
+                if ($locked instanceof Timesheet) {
+                    throw new PeriodLockedException($locked->getId(), $locked->getPeriodEnd(), WriteKind::Ledger);
+                }
+
+                $line = $this->append($owner, $ownerId, $scopeKey, $kind, $seconds, $effectiveDate, $reason, null, $reversed?->getId(), UserIdResolver::getId($actor));
+                $this->lines->flush();
+
+                return $line;
+            });
         } catch (UniqueConstraintViolationException) {
             // Another line was appended to the chain at the same time (unique owner, scope and previous hash): the
             // chain does not fork, this line is not written.
@@ -204,6 +217,21 @@ final readonly class BalanceLedger
         $this->lines->append($line);
 
         return $line;
+    }
+
+    /**
+     * Since 1.27.0: runs the operation holding the owner's write lock when the entry store serialises users; as it is
+     * otherwise.
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function inOwnerLock(UserInterface $owner, callable $operation): mixed
+    {
+        return $this->entries instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->entries->inUserTransaction($owner, $operation) : $operation();
     }
 
     private function validSeconds(LedgerKind $kind, int $seconds): bool

@@ -119,7 +119,7 @@ final class PrivateEntityManagerPartsTest extends FunctionalTestCase
         $private->connectionRolledBack(1);
 
         self::assertSame($live, $private->live(), 'pending inserts survive a rollback signal');
-        $private->flush();
+        $private->flush(); // @phpstan-ignore frankenphp.worker.noFlushInHandWrittenTransaction (the test plays the host's own transaction)
         $private->connectionRolledBack(1);
         self::assertNotSame($live, $private->live(), 'no pending work: replaced');
         $private->connectionRolledBack(null);

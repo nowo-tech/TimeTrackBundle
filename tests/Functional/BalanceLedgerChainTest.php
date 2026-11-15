@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Events;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\Attributes\Group;
 use ReflectionObject;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
+use function array_filter;
 use function bin2hex;
 use function hash;
 use function random_bytes;
@@ -117,9 +119,11 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
             {
             }
 
-            public function onFlush(): void
+            public function onFlush(OnFlushEventArgs $args): void
             {
-                if ($this->done) {
+                // Since 1.27.0 the add flushes pending work first: only the flush that writes this line races.
+                $lines = array_filter($args->getObjectManager()->getUnitOfWork()->getScheduledEntityInsertions(), static fn (object $entity): bool => $entity instanceof BalanceLedgerLine);
+                if ($this->done || $lines === []) {
                     return;
                 }
                 $this->done = true;
@@ -134,7 +138,9 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         } catch (LedgerRefusedException $exception) {
             self::assertStringContainsString('conflict', $exception->getMessage());
         }
-        self::assertSame(1, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_balance_ledger'), 'one start');
+        // Since 1.27.0 the add is one unit of work (under the owner's lock): the simulated competitor's row, written on
+        // this connection inside that unit, is rolled back with it; nothing of this line is written.
+        self::assertSame(0, (int) $conn->fetchOne("SELECT COUNT(*) FROM time_track_balance_ledger WHERE reason = 'mine'"), 'no fork');
     }
 
     public function testAFirstLineReadsAsNullAndHashesAsBefore(): void

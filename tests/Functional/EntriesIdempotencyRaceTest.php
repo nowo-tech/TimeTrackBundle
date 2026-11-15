@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Tests\Support\RacingCachePool;
@@ -36,17 +39,44 @@ final class EntriesIdempotencyRaceTest extends FunctionalTestCase
         $token   = (string) $auth->issueToken($this->user, ClientType::Desktop, null, [ClientScope::EntriesWrite])['token'];
         $start   = (new DateTimeImmutable('today -2 days'))->setTime(9, 0);
         $payload = ['taskId' => 'task-1', 'startedAt' => $start->format(DATE_ATOM), 'endedAt' => $start->modify('+1 hour')->format(DATE_ATOM), 'source' => 'manual'];
+        $hash    = hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload));
 
-        $pool->raced = ['hash' => hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload)), 'status' => 201, 'body' => ['entry' => ['id' => 'from-the-other-request']]];
+        // The other request committed its entry and stored its answer while this one waited for the user's lock.
+        $other = new TimeEntry($this->user, 'task-1', 'Other', null, $start->modify('-1 day'), $start->modify('-1 day +1 hour'), 3600, TimeEntrySource::Manual);
+        (new DoctrineOrmTimeEntryRepository($this->entityManager()))->save($other);
+        $pool->raced = ['hash' => $hash, 'status' => 201, 'body' => ['entry' => ['id' => $other->getId()]]];
         $body        = $this->api('POST', '/api/time-track/entries', $payload, $token, ['HTTP_IDEMPOTENCY_KEY' => 'race-1']);
         self::assertResponseStatusCodeSame(201);
-        self::assertSame(['entry' => ['id' => 'from-the-other-request']], $body);
-        self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
+        self::assertSame(['entry' => ['id' => $other->getId()]], $body);
+        self::assertSame(1, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
 
         $pool->raced = ['hash' => 'another body', 'status' => 201, 'body' => []];
         $body        = $this->api('POST', '/api/time-track/entries', $payload, $token, ['HTTP_IDEMPOTENCY_KEY' => 'race-2']);
         self::assertResponseStatusCodeSame(422);
         self::assertSame('idempotency_mismatch', $body['error'] ?? null);
-        self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
+        self::assertSame(1, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
+    }
+
+    /**
+     * Since 1.27.0 (Beacon spec 239): the 201 is stored inside the transaction; a stored 201 whose entry is not stored (the
+     * other request rolled back after storing it) is not replayed: this request writes the entry.
+     */
+    public function testAStored201WhoseEntryWasRolledBackIsNotReplayed(): void
+    {
+        $pool = self::getContainer()->get(RacingCachePool::class);
+        self::assertInstanceOf(RacingCachePool::class, $pool);
+        $pool->clear();
+        $auth = self::getContainer()->get(ClientAuthService::class);
+        self::assertInstanceOf(ClientAuthService::class, $auth);
+        $token   = (string) $auth->issueToken($this->user, ClientType::Desktop, null, [ClientScope::EntriesWrite])['token'];
+        $start   = (new DateTimeImmutable('today -2 days'))->setTime(9, 0);
+        $payload = ['taskId' => 'task-1', 'startedAt' => $start->format(DATE_ATOM), 'endedAt' => $start->modify('+1 hour')->format(DATE_ATOM), 'source' => 'manual'];
+
+        $pool->raced = ['hash' => hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload)), 'status' => 201, 'body' => ['entry' => ['id' => 'rolled-back-entry']]];
+        $body        = $this->api('POST', '/api/time-track/entries', $payload, $token, ['HTTP_IDEMPOTENCY_KEY' => 'race-3']);
+        self::assertResponseStatusCodeSame(201);
+        self::assertIsArray($body['entry'] ?? null);
+        self::assertNotSame('rolled-back-entry', $body['entry']['id'] ?? null);
+        self::assertSame(1, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
     }
 }

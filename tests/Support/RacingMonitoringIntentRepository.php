@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Closure;
 use DateTimeImmutable;
 use Doctrine\DBAL\Driver\AbstractException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -29,6 +30,9 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
     public bool $failMarkStored = false;
 
     public bool $failMarkRejected = false;
+
+    /** Since 1.27.0: runs once at the next purge (a concurrent request's intent written in between). */
+    public ?Closure $onPurge = null;
 
     public function __construct(private readonly MonitoringUploadIntentRepositoryInterface $inner)
     {
@@ -104,6 +108,12 @@ final class RacingMonitoringIntentRepository implements MonitoringUploadIntentRe
 
     public function purgeCreatedBefore(DateTimeImmutable $before, ?string $userId = null): int
     {
+        if ($this->onPurge instanceof Closure) {
+            $hook          = $this->onPurge;
+            $this->onPurge = null;
+            $hook();
+        }
+
         return $this->inner->purgeCreatedBefore($before, $userId);
     }
 }

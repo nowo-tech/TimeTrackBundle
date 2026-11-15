@@ -21,6 +21,7 @@ use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\OverlappingTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
@@ -194,6 +195,16 @@ final readonly class ManualEntryService
         $this->logger->info('TimeTrack entry created without a timer.', ['bundle' => 'time_track', 'action' => 'entry_create', 'source' => $source->value]);
 
         return $entry;
+    }
+
+    /**
+     * Since 1.27.0 (Beacon spec 239): whether the entry with this id is stored (read inside the caller's transaction:
+     * under the user's lock it tells a committed write from one that was rolled back). True when the store cannot look
+     * entries up by id.
+     */
+    public function isRecorded(string $entryId): bool
+    {
+        return !$this->entries instanceof FindableTimeEntryRepositoryInterface || $this->entries->findById($entryId) instanceof TimeEntry;
     }
 
     /**

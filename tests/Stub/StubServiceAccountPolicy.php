@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
+use Closure;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
@@ -26,9 +27,17 @@ final class StubServiceAccountPolicy implements ServiceAccountPolicyInterface
     {
     }
 
+    /** Since 1.27.0: runs once at the next question (a concurrent request in a race test). */
+    public ?Closure $onAsk = null;
+
     public function isServiceAccount(TimeTrackUserRef $account): bool
     {
         $this->asked[] = $account->id;
+        if ($this->onAsk instanceof Closure) {
+            $hook        = $this->onAsk;
+            $this->onAsk = null;
+            $hook();
+        }
 
         return str_starts_with($account->identifier, 'agent-') || in_array($account->id, $this->agentIds, true);
     }

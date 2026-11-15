@@ -97,10 +97,15 @@ final class HostTimerApiDatabaseTest extends FunctionalTestCase
         $api = $this->timerApi();
         $api->start($this->ref($this->agent), 'task-1', null, 'mcp');
 
-        // A concurrent start (client API, no account lock) inserts its row while this start flushes its own.
+        // A concurrent start (client API, no account lock) inserts its row right after this call stopped the running timer
+        // (since 1.27.0 at the flush that opens the start's unit of work; the start then finds it under the account's lock).
         $agentId                   = $this->agent->getId();
-        $this->host()->onFlushOnce = static function (OnFlushEventArgs $args) use ($agentId): void {
-            $args->getObjectManager()->getConnection()->insert('time_track_active_timers', [
+        $this->host()->onFlushOnce = static function (OnFlushEventArgs $args) use ($agentId): bool {
+            $connection = $args->getObjectManager()->getConnection();
+            if ((int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_active_timers') !== 0) {
+                return false;
+            }
+            $connection->insert('time_track_active_timers', [
                 'id'                  => Uuid::generate()->toString(),
                 'user_id'             => $agentId,
                 'task_id'             => 'task-3',
@@ -109,6 +114,8 @@ final class HostTimerApiDatabaseTest extends FunctionalTestCase
                 'started_at'          => '2026-01-01 10:00:00',
                 'last_heartbeat_at'   => '2026-01-01 10:00:00',
             ]);
+
+            return true;
         };
         $start = $api->start($this->ref($this->agent), 'task-2', null, 'mcp');
 

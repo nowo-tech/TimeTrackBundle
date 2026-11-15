@@ -16,11 +16,13 @@ use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
+use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationNotPendingException;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
 use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
@@ -162,26 +164,72 @@ final readonly class DeviceAuthorizationService
     /**
      * Approves a pending request: the host issues a credential, the device may exchange its code once.
      *
+     * Since 1.27.0 (Beacon spec 239) the request is locked and read again first (the bundle's Doctrine store): a second
+     * approval (a double submit, another tab) or an approval racing a denial or the expiry finds it no longer pending
+     * and issues nothing. Up to 1.26 each approval issued a credential, and the later one overwrote the earlier one's
+     * id, so a credential stayed issued with no device ever receiving it.
+     *
+     * @throws DeviceAuthorizationNotPendingException When the request was decided, exchanged or expired meanwhile (nothing issued)
+     *
      * @return string The credential id the host issued
      */
     public function approve(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): string
     {
-        $credentialId = $this->credentialIssuer->issueForDevice($user, $authorization->getClientType(), $authorization->getClientName(), $authorization->getScopes());
-        $authorization->approve($this->userReferences->reference($user), $credentialId);
-        $this->repository->save($authorization);
-        $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $authorization->getClientType(), $clientIp);
+        // @igor-ignore - the closure runs once inside this call, it is not stored.
+        [$current, $credentialId] = $this->decide($authorization, function (DeviceAuthorization $current) use ($user): string {
+            $credentialId = $this->credentialIssuer->issueForDevice($user, $current->getClientType(), $current->getClientName(), $current->getScopes());
+            $current->approve($this->userReferences->reference($user), $credentialId);
+
+            return $credentialId;
+        });
+        $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $current->getClientType(), $clientIp);
 
         return $credentialId;
     }
 
     /**
-     * Denies a pending request.
+     * Denies a pending request. Since 1.27.0 under the request's lock, like {@see self::approve()}.
+     *
+     * @throws DeviceAuthorizationNotPendingException When the request was decided, exchanged or expired meanwhile (nothing changed)
      */
     public function deny(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): void
     {
-        $authorization->deny($this->userReferences->reference($user));
-        $this->repository->save($authorization);
-        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $authorization->getClientType(), $clientIp);
+        // @igor-ignore - the closure runs once inside this call, it is not stored.
+        [$current] = $this->decide($authorization, function (DeviceAuthorization $current) use ($user): null {
+            $current->deny($this->userReferences->reference($user));
+
+            return null;
+        });
+        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp);
+    }
+
+    /**
+     * Since 1.27.0: one decision on the request as read under its row lock (stores with the bundle's Doctrine store; as
+     * given otherwise), refused unless still pending and unexpired; the audit runs after the commit.
+     *
+     * @template T
+     *
+     * @param callable(DeviceAuthorization): T $decision
+     *
+     * @throws DeviceAuthorizationNotPendingException
+     *
+     * @return array{0: DeviceAuthorization, 1: T}
+     */
+    private function decide(DeviceAuthorization $authorization, callable $decision): array
+    {
+        $repository = $this->repository;
+        $unit       = function () use ($repository, $authorization, $decision): array {
+            $current = $repository instanceof DoctrineOrmDeviceAuthorizationRepository ? $repository->lockById($authorization->getId()) : $authorization;
+            if (!$current instanceof DeviceAuthorization || $current->getStatus() !== DeviceAuthorizationStatus::Pending || $current->isExpired($this->clock->now())) {
+                throw new DeviceAuthorizationNotPendingException();
+            }
+            $result = $decision($current);
+            $repository->save($current);
+
+            return [$current, $result];
+        };
+
+        return $repository instanceof DoctrineOrmDeviceAuthorizationRepository ? $repository->runner()->run($unit) : $unit();
     }
 
     /**

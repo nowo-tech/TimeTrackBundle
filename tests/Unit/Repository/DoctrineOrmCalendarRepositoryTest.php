@@ -20,14 +20,19 @@ use RuntimeException;
  */
 final class DoctrineOrmCalendarRepositoryTest extends TestCase
 {
-    public function testAFailedDeleteResetsTheClosedManager(): void
+    /**
+     * Since 1.27.0 (Beacon spec 239): the delete is a unit of work of the bundle's runner; a failure is rethrown and the
+     * manager is never reset in the middle of the request (up to 1.26 the closed manager was reset through the registry).
+     */
+    public function testAFailedDeleteNeverResetsTheManager(): void
     {
         $em = $this->createMock(EntityManagerInterface::class);
-        $em->method('wrapInTransaction')->willThrowException(new RuntimeException('deadlock'));
+        $em->method('flush')->willThrowException(new RuntimeException('deadlock'));
         $em->method('isOpen')->willReturn(false);
+        $em->expects(self::never())->method('wrapInTransaction');
         $registry = $this->createMock(ManagerRegistry::class);
         $registry->method('getManagers')->willReturn(['default' => $em]);
-        $registry->expects(self::once())->method('resetManager')->with('default');
+        $registry->expects(self::never())->method('resetManager');
         $connection = new CalendarConnection(new TestUser('1', 'u@example.com'), 'org-a', CalendarProvider::Google, CalendarConnectionMode::Local, null, 'v1', new DateTimeImmutable());
 
         $this->expectExceptionObject(new RuntimeException('deadlock'));

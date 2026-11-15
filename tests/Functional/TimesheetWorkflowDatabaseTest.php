@@ -216,10 +216,12 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_entries SET duration_seconds = 3600 WHERE id = ?', [$entry->getId()]);
         $this->entityManager()->clear();
 
-        // Two approvers at once: the other one's write bumped the version first.
+        // Two approvers at once: the other one's decision committed first. Since 1.27.0 (Beacon spec 239) the row is
+        // locked and read again before the decision, so the later one finds it no longer submitted.
         $loaded = $this->timesheets->find($this->approver, $sheet->getId());
-        $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_timesheets SET version = version + 1 WHERE id = ?', [$loaded->getId()]);
-        $this->expectTimesheetError('conflict', fn (): Timesheet => $this->timesheets->approve($this->approver, $loaded->getId()));
+        $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_timesheets SET version = version + 1, status = 'rejected' WHERE id = ?", [$loaded->getId()]);
+        $this->expectTimesheetError('invalid_transition', fn (): Timesheet => $this->timesheets->approve($this->approver, $loaded->getId()));
+        $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_timesheets SET version = version + 1, status = 'submitted' WHERE id = ?", [$loaded->getId()]);
         $this->entityManager()->clear();
         $this->user     = $this->entityManager()->find(AppUser::class, $this->user->getId()) ?? throw new LogicException();
         $this->approver = $this->entityManager()->find(AppUser::class, $this->approver->getId()) ?? throw new LogicException();

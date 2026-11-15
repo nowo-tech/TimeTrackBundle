@@ -19,7 +19,10 @@ final class HostFlushListener
 
     public bool $flushOnPostFlush = false;
 
-    /** Since 1.25.0: runs once inside the next `onFlush` (e.g. a concurrent request's insert). */
+    /**
+     * Since 1.25.0: runs once inside the next `onFlush` (e.g. a concurrent request's insert). Since 1.27.0 a hook that
+     * returns false did not run yet: it stays for the next `onFlush`.
+     */
     public ?Closure $onFlushOnce = null;
 
     public function onFlush(OnFlushEventArgs $args): void
@@ -27,7 +30,9 @@ final class HostFlushListener
         if ($this->onFlushOnce instanceof Closure) {
             $hook              = $this->onFlushOnce;
             $this->onFlushOnce = null;
-            $hook($args);
+            if ($hook($args) === false) {
+                $this->onFlushOnce = $hook;
+            }
         }
         if ($this->removeOnFlush !== null) {
             $args->getObjectManager()->remove($this->removeOnFlush);

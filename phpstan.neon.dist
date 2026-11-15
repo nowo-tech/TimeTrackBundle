@@ -11,4 +11,11 @@ parameters:
         - tests/phpstan-stubs/App/Entity/User.php
     ignoreErrors: []
     reportUnmatchedIgnoredErrors: false
+    # 1.27.0 (Beacon spec 239): PhpStanFrankenPhp 1.4 worker load-readiness rules (ruleset-worker.neon is already
+    # included, so they are enabled through their parameters). Every write goes through the bundle's transaction runner.
+    frankenphp:
+        flagRollbackAfterNestedBegin: true
+        flagFlushInHandWrittenTransaction: true
+        flagUnboundedRecursion: true
+        flagFlushWithoutClosedManagerRecovery: true
     treatPhpDocTypesAsCertain: false

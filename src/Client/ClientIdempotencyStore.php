@@ -70,6 +70,14 @@ final readonly class ClientIdempotencyStore
         $this->cache->save($item);
     }
 
+    /**
+     * Since 1.27.0: drops the stored answer of a key (a write whose answer was stored inside its transaction failed).
+     */
+    public function forget(string $userId, string $key): void
+    {
+        $this->cache->deleteItem($this->itemKey($userId, $key));
+    }
+
     private function itemKey(string $userId, string $key): string
     {
         return self::PREFIX . hash('sha256', $userId . "\0" . $key);
