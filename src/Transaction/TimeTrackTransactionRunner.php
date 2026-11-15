@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Transaction;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
@@ -197,17 +198,29 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
      */
     private function onConnection(callable $operation): mixed
     {
-        $manager = $this->entityManager;
-        $before  = $this->bundleRows($manager);
+        $manager  = $this->entityManager;
+        $before   = $this->bundleRows($manager);
+        $observer = new TimeTrackFlushObserver($manager->getUnitOfWork());
+        $events   = $manager->getEventManager();
+        $events->addEventListener([Events::onFlush], $observer);
         try {
             return DoctrineTransactionRunner::forConnection($manager->getConnection(), $this->retryAfterSeconds)->run($operation);
         } catch (Throwable $failure) {
             // A manager the ORM closed in a failed flush stays closed: loud for the application (see reset()).
             if ($manager->isOpen()) {
-                $this->forgetBundleRows($manager, $before);
+                if ($observer->hostWritten) {
+                    // Audit QO-M1: a flush of the unit wrote application rows that the rollback undid while Doctrine
+                    // keeps them as written: closed (loud) rather than silently lost; replaced at the boundary.
+                    $manager->close();
+                    $this->logger?->warning('TimeTrack: a failed write rolled back changes of the application that the shared entity manager had flushed; the manager is closed until the next request.', ['bundle' => 'time_track', 'exception_class' => $failure::class]);
+                } else {
+                    $this->forgetBundleRows($manager, $before);
+                }
             }
 
             throw $failure;
+        } finally {
+            $events->removeEventListener([Events::onFlush], $observer);
         }
     }
 

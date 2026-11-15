@@ -42,6 +42,7 @@ use function array_key_exists;
 use function array_keys;
 use function array_map;
 use function array_sum;
+use function bin2hex;
 use function count;
 use function hash;
 use function in_array;
@@ -52,6 +53,7 @@ use function json_decode;
 use function max;
 use function mb_strlen;
 use function preg_match;
+use function random_bytes;
 use function strlen;
 
 use const DATE_ATOM;
@@ -356,6 +358,7 @@ final readonly class TimeTrackCalendarApiController
 
         $idempotencyKey = 'entries:' . $key;
         $stored         = false;
+        $nonce          = bin2hex(random_bytes(16));
         try {
             // GG-L1: under the user's lock, a request with the same key whose answer is already stored is replayed.
             // Since 1.27.0 (Beacon spec 239) the 201 is stored inside the transaction, before its commit, so a request
@@ -373,10 +376,12 @@ final readonly class TimeTrackCalendarApiController
                     throw new IdempotentReplayException($again['status'], $again['body']);
                 }
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-            }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash, &$stored): void {
-                $this->idempotency->save($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $entry->toArray() + ['locked' => false]]);
+            }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash, $nonce, &$stored): void {
+                // Audit QO-L2: pending until the commit; confirmed right after it (then replayed unconditionally).
+                $this->idempotency->savePending($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $entry->toArray() + ['locked' => false]], $nonce);
                 $stored = true;
             }, $billable);
+            $this->idempotency->confirm($userId, $idempotencyKey, $nonce);
 
             return $this->responseFactory->json(['entry' => $entry->toArray() + ['locked' => false]], Response::HTTP_CREATED, $request);
         } catch (IdempotentReplayException $replay) {
@@ -396,7 +401,7 @@ final readonly class TimeTrackCalendarApiController
         } catch (Throwable $failure) {
             if ($stored) {
                 // The commit failed after the answer was stored: it must never be replayed (a retry writes the entry).
-                $this->idempotency->forget($userId, $idempotencyKey);
+                $this->idempotency->forget($userId, $idempotencyKey, $nonce);
             }
 
             throw $failure;
@@ -407,17 +412,21 @@ final readonly class TimeTrackCalendarApiController
     }
 
     /**
-     * Since 1.27.0: whether a stored answer may be replayed: anything but a 201 whose entry is not stored (its request
-     * stored the answer inside its transaction, which is still open or was rolled back).
+     * Since 1.27.0: whether a stored answer may be replayed: a committed answer always (as in 1.26, also after its entry
+     * was deleted); a pending one (stored inside a transaction not confirmed yet, audit QO-L2) only when its entry is
+     * committed.
      *
-     * @param array{status: int, body: array<string, mixed>} $stored
+     * @param array{status: int, body: array<string, mixed>, pending?: string} $stored
      */
     private function isReplayable(array $stored): bool
     {
+        if (!isset($stored['pending'])) {
+            return true;
+        }
         $entry = $stored['body']['entry'] ?? null;
         $id    = is_array($entry) ? ($entry['id'] ?? null) : null;
 
-        return $stored['status'] !== Response::HTTP_CREATED || !is_string($id) || $this->entries->isRecorded($id);
+        return !is_string($id) || $this->entries->isRecorded($id);
     }
 
     /**

@@ -106,7 +106,10 @@ Load readiness (Beacon spec 239). See [HIGH-LOAD.md](HIGH-LOAD.md) and [UPGRADIN
   check caught it).
 - The `Idempotency-Key` answer of `POST entries` is stored inside the transaction (dropped when the commit fails); a stored
   201 is replayed only when its entry is committed.
-- Imports: a raced batch is read again with or without a `ManagerRegistry` (the manager stays open).
+- Imports: a raced batch is read again with or without a `ManagerRegistry` (the manager stays open); the import flushes
+  the application's pending work first, on its own (audit QO-M1).
+- Shared manager: a failed unit whose flush had written application rows closes the manager (audit QO-M1).
+- `TimerService::heartbeat()` writes on the timer read again under the account's and the timer's locks (audit QO-I4).
 - The unit-of-work boundary subscriber is registered in every mode (it was registered with the private manager only).
 
 ### Fixed
@@ -120,9 +123,18 @@ Load readiness (Beacon spec 239). See [HIGH-LOAD.md](HIGH-LOAD.md) and [UPGRADIN
 - Submit while an entry of the period was being written: the submitted hash missed the entry and the approval answered
   `stale`.
 - A retry of `POST entries` with the same `Idempotency-Key` right after the first commit wrote a second entry (agents) or
-  stored `overlap` for the key (people).
+  stored `overlap` for the key (people). The answer is stored pending inside the transaction, confirmed after the commit
+  and replayed for 24 h (also after the entry was deleted); a failed commit drops only its own pending answer (audit
+  QO-L2).
 - Two approvals of one device request issued two credentials (one orphaned); an approval could overwrite a denial.
-- Two screenshot intents for one slot (spec 199) both got an upload URL, and then neither upload was stored.
+- Two screenshot intents for one slot (spec 199) both got an upload URL, and then neither upload was stored. A retry with
+  the same key that waited for the lock replays the original intent (audit QO-L1).
+
+### Known issues
+
+- Imports check period locks without a lock (a racing submit / approval can still get an imported entry; audit QO-L3)
+  and `edit_blocked` audit rows are appended without the owner's lock (audit QO-L4): see HIGH-LOAD "Known issues"; planned
+  for 1.27.x.
 - A deadlock or lock wait timeout answered 500 with the driver's error; it now answers 503 with `Retry-After`, and the
   worker's connection is never left inside a nested transaction.
 

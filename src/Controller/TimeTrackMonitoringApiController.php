@@ -340,8 +340,12 @@ final readonly class TimeTrackMonitoringApiController
             // upload then refused the other one's slot as taken: no screenshot was stored). A lost key race is a rolled-back
             // savepoint inside that unit, never a closed entity manager.
             // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-            $outcome = $this->inUserLock($principal, function () use ($intents, $intent, $principal, $userId, $parsed, $now): string {
+            $outcome = $this->inUserLock($principal, function () use ($intents, $intent, $principal, $userId, $parsed, $now, $idempotencyHash): string {
                 $intents->purgeCreatedBefore($now->modify('-' . MonitoringSettings::INTENT_RETENTION_SECONDS . ' seconds'), $userId);
+                // Audit QO-L1: a retry with the same key that waited for the lock replays the intent the original wrote.
+                if ($intents->findByKey($userId, $idempotencyHash) instanceof MonitoringUploadIntent) {
+                    return 'lost';
+                }
                 if ($this->slotTaken($principal, $parsed['slot'], '', $now)) {
                     return 'taken';
                 }

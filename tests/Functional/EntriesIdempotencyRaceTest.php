@@ -58,8 +58,8 @@ final class EntriesIdempotencyRaceTest extends FunctionalTestCase
     }
 
     /**
-     * Since 1.27.0 (Beacon spec 239): the 201 is stored inside the transaction; a stored 201 whose entry is not stored (the
-     * other request rolled back after storing it) is not replayed: this request writes the entry.
+     * Since 1.27.0 (Beacon spec 239, audit QO-L2): the 201 is stored pending inside the transaction; a pending 201 whose
+     * entry is not stored (the other request rolled back after storing it) is not replayed: this request writes the entry.
      */
     public function testAStored201WhoseEntryWasRolledBackIsNotReplayed(): void
     {
@@ -72,7 +72,7 @@ final class EntriesIdempotencyRaceTest extends FunctionalTestCase
         $start   = (new DateTimeImmutable('today -2 days'))->setTime(9, 0);
         $payload = ['taskId' => 'task-1', 'startedAt' => $start->format(DATE_ATOM), 'endedAt' => $start->modify('+1 hour')->format(DATE_ATOM), 'source' => 'manual'];
 
-        $pool->raced = ['hash' => hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload)), 'status' => 201, 'body' => ['entry' => ['id' => 'rolled-back-entry']]];
+        $pool->raced = ['hash' => hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload)), 'status' => 201, 'body' => ['entry' => ['id' => 'rolled-back-entry']], 'pending' => 'other-request'];
         $body        = $this->api('POST', '/api/time-track/entries', $payload, $token, ['HTTP_IDEMPOTENCY_KEY' => 'race-3']);
         self::assertResponseStatusCodeSame(201);
         self::assertIsArray($body['entry'] ?? null);

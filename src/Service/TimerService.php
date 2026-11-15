@@ -599,10 +599,30 @@ final readonly class TimerService
             return null;
         }
 
-        $timer->heartbeat($isIdle, $this->clock->now());
-        $this->activeTimerRepository->save($timer);
+        $now    = $this->clock->now();
+        $timers = $this->activeTimerRepository;
+        if (!$timers instanceof DoctrineOrmActiveTimerRepository) {
+            $timer->heartbeat($isIdle, $now);
+            $timers->save($timer);
 
-        return $timer;
+            return $timer;
+        }
+
+        // Since 1.27.0 (audit QO-I4): on the timer as committed, under the user's and the timer's locks (as a note), so
+        // a heartbeat never writes back metadata loaded before a concurrent note.
+        // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+        $beat = static function () use ($timers, $timer, $isIdle, $now): ?ActiveTimer {
+            $current = $timers->lockById($timer->getId());
+            if ($current instanceof ActiveTimer) {
+                // @igor-ignore - $current is a Doctrine entity loaded for this request, not a shared service.
+                $current->heartbeat($isIdle, $now);
+                $timers->save($current);
+            }
+
+            return $current;
+        };
+
+        return $this->serialised($user, static fn (): ?ActiveTimer => $timers->runner()->run($beat));
     }
 
     /**

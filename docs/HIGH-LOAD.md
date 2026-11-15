@@ -14,6 +14,7 @@ account at once (the desktop agent, the browser extension, the web UI, an agent 
 - [Exact identifiers](#exact-identifiers)
 - [Database settings](#database-settings)
 - [Workers](#workers)
+- [Known issues](#known-issues)
 - [Tests](#tests)
 
 ## One unit of work per write
@@ -51,8 +52,11 @@ only that savepoint is rolled back, and the entity manager stays open.
   (REQ-ARCH-001 rule 6); a failed unit replaces only the private manager.
 - **Shared manager** (the default until 2.0, the 1.22 behaviour): the bundle's rows live in your manager, so a bundle
   write flushes your pending work too (first, on its own, before the bundle's unit). Since 1.27.0 a failed unit only
-  detaches the TimeTrack rows it added or changed (and the rows pointing at them); your entities stay managed. A flush
-  that failed (and so closed the manager, as Doctrine does) leaves it **closed for the rest of the request**: your next
+  detaches the TimeTrack rows it added or changed (and the rows pointing at them); your entities stay managed. When a
+  flush inside the failed unit had written rows of yours (a host port or listener persisted them during the unit), the
+  rollback undid them while Doctrine would keep them as written: the runner then **closes** the manager instead
+  (audit QO-M1), so nothing of yours is silently lost. Imports flush your pending work before they change their batch.
+  A flush that failed (and so closed the manager, as Doctrine does) leaves it **closed for the rest of the request**: your next
   flush fails loudly instead of silently writing nothing. The runner replaces it at the next request, Messenger message
   or console command boundary, so a long-running worker never serves a later request with it. **Up to 1.26 the bundle
   reset your manager in the middle of the request** after any failed TimeTrack flush (a lost start, a raced import, a
@@ -61,7 +65,13 @@ only that savepoint is rolled back, and the entity manager stays open.
 The connection is shared in both modes: when your code opens a transaction around a bundle call, the bundle's unit
 nests in it as a savepoint, and a bundle failure rolls back to that savepoint only (on DBAL 3 enable
 `use_savepoints: true`). A transient failure inside your transaction is not replayed by the bundle: it reaches you as
-`TransientStorageFailure`; retry your whole transaction.
+`TransientStorageFailure`; clear or reset your entity manager, then retry your whole transaction (after a MySQL / MariaDB
+deadlock the server rolled back all of it, also the pending work the bundle flushed for you before its unit).
+
+Inside a transaction of yours that already read data (MySQL REPEATABLE READ, PostgreSQL REPEATABLE READ / SERIALIZABLE)
+the read view predates the bundle's locks: a timesheet transition may then hash the entries without one committed just
+before its lock (the approval later answers `stale`). Call transitions outside your own transaction, or use READ
+COMMITTED.
 
 ## Transient failures: 503, conflicts: 409
 
@@ -90,7 +100,7 @@ Each one has a test that fails on 1.26.0 (`tests/Functional/LoadReadiness*Test.p
 | Two starts of one account (web, extension, desktop, `HostTimerApi`): the loser's insert hit the unique `user_id` index, closed the manager and **reset your manager** (your entities detached) | The start re-checks the running timer under the account's write lock: the loser gets `ActiveTimerConflictException` (409) with the manager open |
 | A stop while the task moved to another board (FR-008): the entry was built from the timer loaded before the delete and kept the **old board and scope** | The timer row is locked and read again before the entry is built: the time follows the moved task |
 | Two notes kept on the running timer (`timer/discard-idle` keep): the second write put back the metadata loaded before the first one committed (**first note lost**) | The timer is locked and read again before the note is appended |
-| Submit while an entry of the period was being written: the hash was taken before the submit's transaction, so the submitted period missed the entry (**approval refused as `stale`**) | Every transition takes the owner's lock, then the timesheet row's lock, re-reads the timesheet and only then hashes the entries; a decision another request committed meanwhile answers `invalid_transition` |
+| Submit while an entry of the period was being written: the hash was taken before the submit's transaction, so the submitted period missed the entry (**approval refused as `stale`**) | Every transition takes the owner's lock, then the timesheet row's lock, re-reads the timesheet and only then hashes the entries; a decision another request committed meanwhile answers `invalid_transition`. Every entry and timer writer of the bundle takes the owner's lock too, **except imports** (see [Known issues](#known-issues)) |
 | Two first views of a period: the second insert failed (`conflict`) and reset your manager | The period's row is read again under the owner's lock: both share it |
 | A retry of `POST entries` with the same `Idempotency-Key` that got the account's lock right after the commit, before the answer was stored: an agent's retry wrote a **second entry**; a person's answered `overlap` and stored it for the key | The answer is stored inside the transaction; a stored 201 is replayed only when its entry is committed |
 | Two approvals of one device request (double submit, another tab): **two credentials issued**, the first one orphaned; an approval racing a denial | The request is locked and read again: the later decision issues nothing and the page answers "expired" |
@@ -111,7 +121,8 @@ Every bundle write that locks takes its locks in this order, so two of them neve
 3. the entry rows (task and owner moves lock them by primary key, in id order, after reading the ids without a lock).
 
 Stops are written even into a locked period (late-entry semantics): they take the account's lock, never the
-timesheet's. Imports and task moves read the period locks with a shared lock (`FOR SHARE`) inside their batch.
+timesheet's. Task moves read the period locks with a shared lock (`FOR SHARE`) inside their batch. Imports read them
+without a lock, before their batch's unit (see [Known issues](#known-issues)).
 
 ## Exact identifiers
 
@@ -137,6 +148,20 @@ the ids byte for byte (`===`) before it counts, pages or groups rows, so `'42 '`
   shared manager a failed write closed. The boundary subscriber (`PrivateEntityManagerSubscriber`, every mode since
   1.27.0) calls it at the start and end of every main request, Messenger message and outermost console command.
 - No static or per-process cache was added; nothing of a request survives in a service.
+
+## Known issues
+
+To be fixed in 1.27.x (contention only, present in 1.26 too):
+
+- **Imports and period locks (audit QO-L3):** an import checks the period locks before its batch's unit and takes no
+  lock, so an import that coincides with a submit, an approval or a lock of the same owner and period can still write
+  into that period (the approval then answers `stale`, or a locked period changes without a new hash). Planned: the
+  owners' write locks in id order inside the batch's unit, and the check repeated under them. Until then, avoid running
+  imports of a period while its timesheets are being submitted or approved, or re-run the import after a `stale`.
+- **`edit_blocked` audit rows (audit QO-L4):** a refused write in a locked period (with `timesheets.audit_blocked_edits`)
+  appends its audit row without the owner's or the row's lock. When a transition of the same timesheet commits at that
+  moment, the append fails on the version or sequence key: with the shared manager the manager is closed and the caller
+  gets a 409 / 500 instead of the `period_locked` refusal. The audit chain never forks (its unique key holds).
 
 ## Tests
 

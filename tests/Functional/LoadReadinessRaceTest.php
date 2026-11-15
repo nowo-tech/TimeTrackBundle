@@ -9,6 +9,7 @@ use DateTimeImmutable;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
+use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
@@ -122,6 +123,24 @@ final class LoadReadinessRaceTest extends FunctionalTestCase
         self::assertIsArray($stored);
         self::assertStringContainsString('first', (string) ($stored['note'] ?? ''));
         self::assertStringContainsString('second', (string) ($stored['note'] ?? ''));
+    }
+
+    /**
+     * Audit QO-I4: a heartbeat writes its idle flag on the timer as committed: a note kept meanwhile by another request
+     * stays (the heartbeat rewrote the metadata it had loaded before).
+     */
+    public function testAHeartbeatKeepsANoteKeptMeanwhile(): void
+    {
+        $timer = $this->timers()->start($this->user, 'task-1', ClientType::Desktop);
+        $this->entityManager()->getConnection()->update('time_track_active_timers', ['metadata' => json_encode(['note' => 'kept'], JSON_THROW_ON_ERROR)], ['id' => $timer->getId()]);
+
+        $beat = $this->timers()->heartbeat($this->user, true);
+
+        self::assertInstanceOf(ActiveTimer::class, $beat);
+        $stored = json_decode((string) $this->entityManager()->getConnection()->fetchOne('SELECT metadata FROM time_track_active_timers WHERE id = ?', [$timer->getId()]), true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($stored);
+        self::assertSame('kept', $stored['note'] ?? null);
+        self::assertTrue($stored['isIdle'] ?? null);
     }
 
     public function testANoteKeptOnATimerStoppedMeanwhileWritesNothing(): void

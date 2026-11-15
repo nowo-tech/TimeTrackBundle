@@ -96,10 +96,17 @@ Load readiness (Beacon spec 239), no configuration change. Read [HIGH-LOAD.md](H
   rows it touched; a failed flush leaves the manager closed until the end of the request (your next flush throws
   `EntityManagerClosed`), and the bundle replaces it at the next request / message / command boundary. If your code
   catches a TimeTrack exception and goes on writing in the same request, check `isOpen()` first. With
-  `database.private_entity_manager: true` nothing of this concerns your manager (recommended under load).
+  `database.private_entity_manager: true` nothing of this concerns your manager (recommended under load). When a flush
+  inside a failed TimeTrack unit had written rows of yours (a host port or listener persisted them during the unit), the
+  manager is closed too, since the rollback undid them (audit QO-M1). Long console commands (`nowo:time-track:timesheets:auto-lock`,
+  `nowo:time-track:calendar:sync`) stop at the next write after such a failure; run them with the private manager to go on.
+- **Idempotency of `POST entries`**: a stored `201` is replayed for the whole 24 h as before (also after the entry was
+  deleted); it is stored inside the transaction as pending and confirmed after the commit.
 - **503 / 409 on the bundle's routes**: a deadlock or lock wait timeout answers `503` with `Retry-After` (it was a 500),
   a unique conflict `409`. Your clients already retry a 503 (desktop agent, extension); your own controllers that call
-  bundle services receive `Nowo\TransactionContract\TransientStorageFailure`.
+  bundle services receive `Nowo\TransactionContract\TransientStorageFailure`. Inside a transaction of yours, retry the
+  whole transaction after clearing or resetting your entity manager (a MySQL deadlock rolls back all of it, also the
+  pending work the bundle flushed before its unit).
 - **Lock order**: timer stops, notes, timesheet transitions and first views, ledger lines and screenshot intents now take
   the account's user row lock (`SELECT … FOR UPDATE` on your users table, or on `<prefix>_host_users` with
   `user_mapping: id`) before their own rows, as starts and manual entries already did. A transaction of yours that locks

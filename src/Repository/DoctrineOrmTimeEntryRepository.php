@@ -404,6 +404,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function saveAll(array $entries): void
     {
+        // Audit QO-M1: the application's pending work is flushed by the writer before it changes the batch
+        // ({@see self::flushPending()}); a failed unit whose flush wrote application rows closes the manager (runner).
         $new = array_values(array_filter($entries, fn (TimeEntry $entry): bool => !$this->entityManager->contains($entry)));
         // @igor-ignore - Closure passed to this call only and dropped after it (no state kept).
         $this->runner()->runStatements(function () use ($new): void {
@@ -415,6 +417,15 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             }
             $this->entityManager->flush();
         });
+    }
+
+    /**
+     * Since 1.27.0 (audit QO-M1): flushes what the manager holds pending (the application's work, in the shared mode) on
+     * its own, before a batch is planned and changed, so {@see self::saveAll()}'s unit writes only the batch.
+     */
+    public function flushPending(): void
+    {
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /**
