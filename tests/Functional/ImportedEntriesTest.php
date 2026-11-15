@@ -6,7 +6,6 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
-use Doctrine\Persistence\ManagerRegistry;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
@@ -278,6 +277,9 @@ final class ImportedEntriesTest extends FunctionalTestCase
         self::assertSame([1, 2, 0], [$result->updated, $result->created, $result->unchanged]);
         self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
         self::assertCount(3, $this->events);
+        // Since 1.27.0 (Beacon spec 239): the race never resets the manager, so the caller's entities stay managed and a
+        // later change of the application is written (1.26 reset the application's manager: this user was detached).
+        self::assertTrue($this->entityManager()->contains($this->user), 'the application\'s user stays managed');
         $this->entityManager()->clear();
         self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
         foreach (['e-2', 'e-3'] as $id) {
@@ -287,24 +289,27 @@ final class ImportedEntriesTest extends FunctionalTestCase
         }
     }
 
-    public function testWithoutARegistryTheRaceFailsClosed(): void
+    /**
+     * Since 1.27.0 (Beacon spec 239): the raced batch leaves the entity manager open (the new rows are written through
+     * DBAL in savepoints), so the writer reads it again even without a registry; up to 1.26 the failed flush closed the
+     * manager and only a registry reset (of the application's manager, by default) let the writer retry.
+     */
+    #[Group('shared-entity-manager')]
+    public function testWithoutARegistryTheRaceIsRetriedWithTheManagerOpen(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
 
-        // No ManagerRegistry: the failed flush leaves the entity manager closed, so the writer rethrows.
         $racing = new RacingImportedTimeEntryRepository(new DoctrineOrmTimeEntryRepository($this->entityManager()));
         $racing->staleReads(1);
-        try {
-            (new ImportedTimeEntryWriter($racing))->upsertMany([[$this->user, $this->data('e-1', seconds: 1800)], [$this->user, $this->data('e-2')]]);
-            self::fail('expected the unique violation');
-        } catch (UniqueConstraintViolationException) {
-        }
-        self::assertSame(1, $racing->saveAllCalls);
-        self::assertFalse($this->entityManager()->isOpen());
+        $result = (new ImportedTimeEntryWriter($racing))->upsertMany([[$this->user, $this->data('e-1', seconds: 1800)], [$this->user, $this->data('e-2')]]);
 
-        $this->resetEntityManager();
-        self::assertSame(3600, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds(), 'nothing was written');
-        self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
+        self::assertSame([1, 1], [$result->updated, $result->created]);
+        self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
+        self::assertTrue($this->entityManager()->isOpen());
+        self::assertTrue($this->entityManager()->contains($this->user), 'the application\'s entities stay managed');
+        $this->entityManager()->clear();
+        self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
+        self::assertNotNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
     }
 
     public function testInsideAHostTransactionTheRaceFailsClosed(): void
@@ -321,7 +326,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
         } catch (UniqueConstraintViolationException) {
             self::assertTrue($connection->isTransactionActive(), 'the host transaction is left to the host');
         } finally {
-            $connection->rollBack();
+            $connection->rollBack(); // @phpstan-ignore frankenphp.worker.noRollbackAfterNestedBegin (the test plays the host's own transaction)
         }
         self::assertSame(1, $racing->saveAllCalls);
         self::assertTrue($this->repository()->canRetryAfterFailedSave());
@@ -608,13 +613,6 @@ final class ImportedEntriesTest extends FunctionalTestCase
     public function testTheContainerWiresTheRepositoryAlias(): void
     {
         self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, self::getContainer()->get(TimeEntryRepositoryInterface::class));
-    }
-
-    private function resetEntityManager(): void
-    {
-        $registry = self::getContainer()->get('doctrine');
-        self::assertInstanceOf(ManagerRegistry::class, $registry);
-        $registry->resetManager();
     }
 
     private function writer(): ImportedTimeEntryWriter

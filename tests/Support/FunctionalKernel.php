@@ -8,6 +8,7 @@ use Doctrine\Bundle\DoctrineBundle\DependencyInjection\Configuration as Doctrine
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Nowo\FormKitBundle\NowoFormKitBundle;
 use Nowo\TimeTrackBundle\Calendar\CalendarOAuthClients;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
@@ -214,7 +215,8 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);
         $container->extension('doctrine', [
-            'dbal' => ['url' => self::databaseUrl()],
+            // 1.27.0: DBAL 3 nests transactions with savepoints only when asked (DBAL 4 always does; CI "Load readiness").
+            'dbal' => ['url' => self::databaseUrl()] + (PrivateEntityManagerPass::supportsRollbackMiddleware() ? [] : ['use_savepoints' => true]),
             'orm'  => [
                 'auto_mapping' => true,
                 'mappings'     => ['FunctionalFixtures' => [

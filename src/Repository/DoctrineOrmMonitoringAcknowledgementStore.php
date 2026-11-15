@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Repository;
 
 use Doctrine\Common\Collections\Order as SortDirection;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
-use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Entity\MonitoringAcknowledgementRecord;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgement;
@@ -29,11 +28,12 @@ final readonly class DoctrineOrmMonitoringAcknowledgementStore implements Monito
     /**
      * @param EntityManagerInterface $entityManager The bundle's entity manager
      * @param UserReferenceResolverInterface $userReferences The stored `user` of the row
-     * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
+     * @param ManagerRegistry|null $managerRegistry Unused since 1.27.0 (new rows are written in savepoints; kept for compatibility)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private UserReferenceResolverInterface $userReferences,
+        // @phpstan-ignore property.onlyWritten (kept for compatibility: a named constructor argument since 1.26)
         private ?ManagerRegistry $managerRegistry = null,
     ) {
     }
@@ -55,15 +55,9 @@ final readonly class DoctrineOrmMonitoringAcknowledgementStore implements Monito
             $acknowledgement->clientType,
             $acknowledgement->noticeSha256,
         );
-        $this->entityManager->persist($record);
-        try {
-            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
-            // @codeCoverageIgnoreStart
-        } catch (UniqueConstraintViolationException) {
-            return; // A concurrent request stored the same version between the read and the flush: the first record is kept.
-        }
-        // @codeCoverageIgnoreEnd
-        $this->entityManager->detach($record);
+        // Since 1.27.0 (Beacon spec 239): written beside the unit of work in a savepoint, so a concurrent request that stored
+        // the same version between the read and this insert costs a rolled-back savepoint, never a closed entity manager.
+        TimeTrackRows::insert($this->entityManager, $record);
     }
 
     /**

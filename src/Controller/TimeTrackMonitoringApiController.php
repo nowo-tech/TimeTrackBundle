@@ -33,6 +33,8 @@ use Nowo\TimeTrackBundle\Monitoring\MonitoringUploadSignerInterface;
 use Nowo\TimeTrackBundle\Monitoring\ScreenshotUpload;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Support\Rfc3339;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -142,6 +144,8 @@ final readonly class TimeTrackMonitoringApiController
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
         private ?UserReferenceResolverInterface $userReferences = null,
+        // Since 1.27.0 (Beacon spec 239): the user's write lock around the slot check and the new intent (null = none).
+        private ?TimeEntryRepositoryInterface $entries = null,
     ) {
         $this->clock  = $clock ?? new NativeClock();
         $this->logger = $logger ?? new NullLogger();
@@ -315,7 +319,6 @@ final readonly class TimeTrackMonitoringApiController
             if ($existing instanceof MonitoringUploadIntent) {
                 return $this->grant($principal, $this->resign($existing, $userId, $now), Response::HTTP_OK, $request);
             }
-            $intents->purgeCreatedBefore($now->modify('-' . MonitoringSettings::INTENT_RETENTION_SECONDS . ' seconds'), $userId);
             $intent = (new MonitoringUploadIntent(
                 $this->userReferences()->reference($principal->user),
                 $idempotencyHash,
@@ -332,9 +335,34 @@ final readonly class TimeTrackMonitoringApiController
                 $parsed['sha256'],
                 $now,
             ))->signUntil($now->modify('+' . MonitoringSettings::URL_TTL_SECONDS . ' seconds'));
-            try {
-                $intents->save($intent);
-            } catch (UniqueConstraintViolationException) {
+            // Since 1.27.0 (Beacon spec 239): the slot is checked again and the intent written under the user's write lock,
+            // so two intents for one slot at the same moment never both get an upload URL (up to 1.26 both did, and each
+            // upload then refused the other one's slot as taken: no screenshot was stored). A lost key race is a rolled-back
+            // savepoint inside that unit, never a closed entity manager.
+            // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+            $outcome = $this->inUserLock($principal, function () use ($intents, $intent, $principal, $userId, $parsed, $now, $idempotencyHash): string {
+                $intents->purgeCreatedBefore($now->modify('-' . MonitoringSettings::INTENT_RETENTION_SECONDS . ' seconds'), $userId);
+                // Audit QO-L1: a retry with the same key that waited for the lock replays the intent the original wrote.
+                if ($intents->findByKey($userId, $idempotencyHash) instanceof MonitoringUploadIntent) {
+                    return 'lost';
+                }
+                if ($this->slotTaken($principal, $parsed['slot'], '', $now)) {
+                    return 'taken';
+                }
+                try {
+                    $intents->save($intent);
+                } catch (UniqueConstraintViolationException) {
+                    return 'lost';
+                }
+
+                return 'created';
+            });
+            if ($outcome === 'taken') {
+                $this->auditor->monitoringRefused('duplicate', $principal->token, $request->getClientIp());
+
+                return $this->responseFactory->error('duplicate', 'This slot already has a screenshot.', Response::HTTP_CONFLICT, $request);
+            }
+            if ($outcome === 'lost') {
                 // A concurrent request with the same key won: answer as its replay.
                 $winner = $intents->findByKey($userId, $idempotencyHash);
                 if (!$winner instanceof MonitoringUploadIntent || !hash_equals($winner->getBodyHash(), $bodyHash)) {
@@ -348,6 +376,21 @@ final readonly class TimeTrackMonitoringApiController
         } catch (Throwable $exception) {
             return $this->unavailable($request, $exception);
         }
+    }
+
+    /**
+     * Since 1.27.0: runs the operation holding the user's write lock when the entry store serialises users; as it is
+     * otherwise.
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function inUserLock(ClientApiPrincipal $principal, callable $operation): mixed
+    {
+        return $this->entries instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->entries->inUserTransaction($principal->user, $operation) : $operation();
     }
 
     /**

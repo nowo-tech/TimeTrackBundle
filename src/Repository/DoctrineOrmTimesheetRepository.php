@@ -6,12 +6,15 @@ namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
 use Doctrine\Common\Collections\Order as SortDirection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
@@ -20,8 +23,8 @@ use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
+use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
-use Throwable;
 
 use function array_chunk;
 use function array_column;
@@ -46,35 +49,76 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     private const EXACT_PAGE = 50;
 
     /**
-     * Receives the entity manager (and the registry that resets it after a failed flush in worker mode).
+     * Receives the entity manager, its registry and (since 1.27.0) the bundle's transaction runner.
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
+        private ?TimeTrackTransactionRunner $runner = null,
     ) {
     }
 
     /**
-     * Persists and flushes a timesheet.
+     * Since 1.27.0: the bundle's transaction runner of this store.
      */
-    public function save(Timesheet $timesheet): void
+    public function runner(): TimeTrackTransactionRunner
     {
-        $this->entityManager->persist($timesheet);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
     }
 
     /**
-     * Runs the operation in one transaction (flushed at the end; rolled back and the manager reset on failure).
+     * Since 1.27.0 (Beacon spec 239): the timesheet row locked (`SELECT … FOR UPDATE`) and read again inside the
+     * caller's transaction (a managed instance is refreshed in place: status, hashes and version as committed); null
+     * when it is gone.
+     */
+    public function lockForTransition(string $id): ?Timesheet
+    {
+        /** @var Timesheet|null $timesheet */
+        $timesheet = $this->entityManager->createQueryBuilder()
+            ->select('t')
+            ->from(Timesheet::class, 't')
+            ->where('t.id = :id')
+            ->setParameter('id', $id)
+            ->getQuery()
+            ->setLockMode(LockMode::PESSIMISTIC_WRITE)
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+
+        return $timesheet instanceof Timesheet && $timesheet->getId() === $id ? $timesheet : null;
+    }
+
+    /**
+     * Persists and flushes a timesheet.
+     *
+     * Since 1.27.0 (Beacon spec 239) a new timesheet is written through DBAL (in a savepoint inside a transaction) and
+     * then managed, so a concurrent first view that created the period's row first makes this throw the unique
+     * violation with the entity manager still open (up to 1.26 the failed flush closed it, and the bundle reset it, the
+     * application's manager by default, in the middle of the request).
+     *
+     * @throws UniqueConstraintViolationException when the period's row exists already (a concurrent request created it)
+     */
+    public function save(Timesheet $timesheet): void
+    {
+        if ($this->entityManager->contains($timesheet)) {
+            RecoveringFlusher::flush($this->entityManager);
+
+            return;
+        }
+        $lost = TimeTrackRows::insert($this->entityManager, $timesheet, true);
+        if ($lost instanceof UniqueConstraintViolationException) {
+            throw $lost;
+        }
+    }
+
+    /**
+     * Runs the operation in one transaction, flushed at the end. Since 1.27.0 a unit of work of the bundle's runner
+     * ({@see TimeTrackTransactionRunner::run()}): one attempt, a deadlock or lock wait timeout surfaces as
+     * `TransientStorageFailure`, the connection is left at its entry level, and the application's manager is never
+     * reset (up to 1.26 `wrapInTransaction()` closed it, and the bundle then reset it in the middle of the request).
      */
     public function transactional(callable $operation): mixed
     {
-        try {
-            return $this->entityManager->wrapInTransaction(static fn (): mixed => $operation());
-        } catch (Throwable $exception) {
-            RecoveringFlusher::resetIfClosed($this->entityManager, $this->managerRegistry);
-
-            throw $exception;
-        }
+        return $this->runner()->run($operation);
     }
 
     /**
@@ -289,12 +333,14 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function purgeBefore(string $beforeDate, int $batchSize = 500): array
     {
-        $before     = Period::date($beforeDate);
-        $connection = $this->entityManager->getConnection();
-        $ledgerIds  = [];
-        $connection->beginTransaction();
-        try {
-            $ledger = $this->purgeLedgerPrefixes($before, $ledgerIds);
+        $before    = Period::date($beforeDate);
+        $ledgerIds = [];
+        $ids       = [];
+        // Since 1.27.0 one unit of work of the bundle's runner (the connection is left at its entry level after a failure).
+        // @igor-ignore - Closure passed to this call only and dropped after it (no state kept).
+        [$ledger, $events] = $this->runner()->runStatements(function () use ($before, $batchSize, &$ledgerIds, &$ids): array {
+            $ledgerIds = [];
+            $ledger    = $this->purgeLedgerPrefixes($before, $ledgerIds);
 
             /** @var list<array{id: string}> $rows */
             $rows = $this->entityManager->createQueryBuilder()
@@ -321,14 +367,9 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
                     ->setParameter('ids', $ids)
                     ->getQuery(), $this->entityManager);
             }
-            $connection->commit();
-        } catch (Throwable $exception) {
-            if ($connection->isTransactionActive()) {
-                $connection->rollBack();
-            }
 
-            throw $exception;
-        }
+            return [$ledger, $events];
+        });
         $this->detachPurged($ids, $ledgerIds);
 
         return ['timesheets' => count($ids), 'events' => $events, 'ledger' => $ledger];

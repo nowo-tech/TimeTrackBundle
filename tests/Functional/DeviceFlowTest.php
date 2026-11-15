@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
+use Doctrine\ORM\Event\OnFlushEventArgs;
 use Nowo\TimeTrackBundle\Event\ClientApiEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
+use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Twig\Environment;
 
@@ -176,6 +178,32 @@ final class DeviceFlowTest extends FunctionalTestCase
         self::assertStringNotContainsString('<script', $html);
         self::assertStringNotContainsString('style=', $html);
         self::assertSame(1, preg_match('/Time tracking apps/', $html));
+    }
+
+    /**
+     * Since 1.27.0 (Beacon spec 239): a request denied by another tab after this page loaded it is reported as expired,
+     * never approved over the denial.
+     */
+    public function testAnApprovalOfARequestDeniedMeanwhileIsReportedExpired(): void
+    {
+        $grant = $this->deviceCode();
+        $this->client->loginUser($this->user, 'main');
+        $crawler = $this->client->request('GET', '/tools/time-track/device?code=' . $grant['userCode']);
+        $crawler = $this->client->submit($crawler->filter('form')->form());
+        $form    = $crawler->filter('[data-testid="time-track-device-approve"]')->form();
+        $host    = self::getContainer()->get(HostFlushListener::class);
+        self::assertInstanceOf(HostFlushListener::class, $host);
+        // The other tab's denial commits when this approval opens its unit of work.
+        $host->onFlushOnce = static function (OnFlushEventArgs $args): void {
+            $args->getObjectManager()->getConnection()->executeStatement("UPDATE time_track_device_codes SET status = 'denied'");
+        };
+
+        $this->client->submit($form);
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('[data-testid="time-track-device-result"]');
+        self::assertSame('denied', $this->entityManager()->getConnection()->fetchOne('SELECT status FROM time_track_device_codes'));
+        self::assertNull($this->entityManager()->getConnection()->fetchOne('SELECT credential_id FROM time_track_device_codes'));
     }
 
     /**

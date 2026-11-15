@@ -3,13 +3,14 @@
 | Field | Value |
 |-------|-------|
 | Package | `nowo-tech/time-track-bundle` (`symfony-bundle`) |
-| Current audit | **1.25.0** (Unreleased, `feat/host-timer-api`), 2026-11-13, host timer API and service accounts — see [Re-audit 1.25](#re-audit-125-host-timer-api-and-service-accounts); **1.23.0** (`feat/arch-001`), 2026-11-12, framework-free ports and the private entity manager — see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager); **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
+| Current audit | **1.27.0** (Unreleased, `feat/load-readiness`), 2026-11-15, load readiness (Beacon spec 239) — see [Re-audit 1.27](#re-audit-127-load-readiness-beacon-spec-239); **1.25.0** (Unreleased, `feat/host-timer-api`), 2026-11-13, host timer API and service accounts — see [Re-audit 1.25](#re-audit-125-host-timer-api-and-service-accounts); **1.23.0** (`feat/arch-001`), 2026-11-12, framework-free ports and the private entity manager — see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager); **1.22.0** (`feat/leave-spec-204`), 2026-11-12, client leave (spec 204) — see [Re-audit 1.22](#re-audit-122-client-leave-spec-204); **1.20.0** (`feat/calendar-oauth-app-provider`), 2026-11-11, runtime OAuth apps — see [Re-audit 1.20](#re-audit-120-runtime-calendar-oauth-apps); **1.19.0** (`feat/1.19-block1`), 2026-11-11, against REQ-RUNTIME-002 (kernel reset false) — see [Re-audit 1.19](#re-audit-119-req-runtime-002-kernel-reset-false) |
 | First audit | `v1.3.3` / `d90eed2`, 2026-09-23 (findings W-01 … W-03 below) |
 | Method | Manual review of every service, listener, command and controller under `src/` (grep for `static`, mutable properties, `ResetInterface`, `exit` / `die`), Igor (`composer igor`), PHPStan with `nowo-tech/phpstan-frankenphp` `ruleset-classic` + `ruleset-worker`, and the many-request worker test |
 | **Verdict** | ✅ **Works with `FRANKENPHP_RESET_KERNEL=false`** — no service keeps request, user or tenant data; the one per-flush state is cleared by the bundle at every request, message and command boundary; the worker test passes with one kernel and two people in turn |
 
 ## Table of contents
 
+- [Re-audit 1.27 (load readiness, Beacon spec 239)](#re-audit-127-load-readiness-beacon-spec-239)
 - [Re-audit 1.26 (activity monitoring, spec 199)](#re-audit-126-activity-monitoring-spec-199)
 - [Re-audit 1.25 (host timer API and service accounts)](#re-audit-125-host-timer-api-and-service-accounts)
 - [Re-audit 1.23 (REQ-ARCH-001 ports and private entity manager)](#re-audit-123-req-arch-001-ports-and-private-entity-manager)
@@ -25,6 +26,21 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.27 (load readiness, Beacon spec 239)
+
+Scope: `Transaction\TimeTrackTransactionRunner`, `EventSubscriber\StorageFailureSubscriber`, `Doctrine\TimeTrackRows`,
+`Doctrine\RecoveringFlusher` and the write paths that now run on the runner. PHPStan with nowo-tech/phpstan-frankenphp
+1.4 and its four load-readiness flags on (no hand-written transaction, no rollback after a nested begin, no flush in a
+foreign transaction, no flush without closed-manager recovery).
+
+| Service | State | Verdict |
+|---------|-------|---------|
+| `Transaction\TimeTrackTransactionRunner` | `final readonly`: the manager, the registry, the manager name, the Retry-After hint, the backoff base, the logger | Stateless: every unit's bookkeeping (rows before the unit, observer of transaction-doctrine) is local to the call. `reset()` (`kernel.reset`, and the boundary subscriber at every main request, Messenger message and outermost command) replaces only a **shared** manager a failed TimeTrack write closed; an open manager and the private one are left alone |
+| `EventSubscriber\StorageFailureSubscriber` | `final readonly`: the client API response factory | Stateless |
+| `Doctrine\TimeTrackRows`, `Doctrine\RecoveringFlusher` | none (static helpers) | Stateless; `RecoveringFlusher` no longer resets a manager in the middle of a request |
+| `Doctrine\PrivateEntityManagerSubscriber`, `Doctrine\UnitOfWorkBoundaries` | as in 1.23 | Registered in every mode since 1.27.0 (they drive the runner's boundary reset); with the shared manager they hold no TimeTrack state |
+| Connection after a failure | the shared DBAL connection | transaction-doctrine rolls back the levels the unit opened and closes the connection only when that rollback fails: the worker's next request never inherits a nested transaction (tests: `TransactionRunnerTest`, `tests/Database`) |
 
 ## Re-audit 1.26 (activity monitoring, spec 199)
 

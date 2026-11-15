@@ -83,8 +83,10 @@ final class TimesheetsAutoLockCommand extends Command
         $failed   = 0;
         // Since 1.24.1 (audit OM TT-M1): a period that cannot be locked (e.g. `conflict` on a still-folding unique key of
         // a look-alike scope, see UPGRADING "To 1.24.1") is logged and skipped, and the run goes on and fails at the end.
-        // A failed flush resets the entity manager, so the owners are read again and the periods already handled are
-        // skipped.
+        // The owners are read again and the periods already handled are skipped. Since 1.27.0 a failed flush leaves a
+        // shared entity manager closed until the command ends (never reset mid-run; audit QO-I3): the next write then
+        // stops the run loudly. Run the command with `database.private_entity_manager: true` to go on after such a
+        // failure (the private manager replaces itself).
         $handled = [];
         do {
             $retry = false;

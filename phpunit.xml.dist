@@ -19,6 +19,11 @@
         <testsuite name="functional">
             <directory>tests/Functional</directory>
         </testsuite>
+        <!-- 1.27.0 (Beacon spec 239): lock waits and concurrent processes on a real server (TIME_TRACK_TEST_DATABASE_URL);
+             skipped on SQLite. CI job "Load readiness" runs it with fail-on-skipped. -->
+        <testsuite name="database">
+            <directory>tests/Database</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

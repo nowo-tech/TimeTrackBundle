@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Repository;
 
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
+use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 
@@ -29,22 +32,51 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         ?ClockInterface $clock = null,
+        private ?TimeTrackTransactionRunner $runner = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
+    }
+
+    /**
+     * Since 1.27.0: the bundle's transaction runner of this store.
+     */
+    public function runner(): TimeTrackTransactionRunner
+    {
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
+    }
+
+    /**
+     * Since 1.27.0 (Beacon spec 239): the request locked (`SELECT … FOR UPDATE`) and read again inside the caller's
+     * transaction (a managed instance is refreshed in place); null when it is gone.
+     */
+    public function lockById(string $id): ?DeviceAuthorization
+    {
+        /** @var DeviceAuthorization|null $authorization */
+        $authorization = $this->entityManager->createQueryBuilder()
+            ->select('d')
+            ->from(DeviceAuthorization::class, 'd')
+            ->where('d.id = :id')
+            ->setParameter('id', $id)
+            ->getQuery()
+            ->setLockMode(LockMode::PESSIMISTIC_WRITE)
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+
+        return $authorization instanceof DeviceAuthorization && $authorization->getId() === $id ? $authorization : null;
     }
 
     /** Persists and flushes a request. */
     public function save(DeviceAuthorization $authorization): void
     {
         $this->entityManager->persist($authorization);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /** Removes and flushes a request. */
     public function remove(DeviceAuthorization $authorization): void
     {
         $this->entityManager->remove($authorization);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /** Request with this device code hash. */

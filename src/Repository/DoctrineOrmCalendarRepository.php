@@ -19,8 +19,8 @@ use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Enum\CalendarSuggestionStatus;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
+use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
-use Throwable;
 
 use function array_fill_keys;
 use function array_map;
@@ -34,11 +34,12 @@ use function max;
 final readonly class DoctrineOrmCalendarRepository implements CalendarConnectionRepositoryInterface, CalendarSuggestionRepositoryInterface, CalendarRuleRepositoryInterface
 {
     /**
-     * Receives the entity manager (and the registry that resets it after a failed flush in worker mode).
+     * Receives the entity manager, its registry and (since 1.27.0) the bundle's transaction runner.
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
+        private ?TimeTrackTransactionRunner $runner = null,
     ) {
     }
 
@@ -48,7 +49,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function saveConnection(CalendarConnection $connection): void
     {
         $this->entityManager->persist($connection);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /**
@@ -153,26 +154,22 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     }
 
     /**
-     * Deletes the connection, its suggestions and the owner's rules in its scope, in one transaction.
+     * Deletes the connection, its suggestions and the owner's rules in its scope, in one transaction. Since 1.27.0 a unit
+     * of work of the bundle's runner (up to 1.26 `wrapInTransaction()`, after which a failure closed the manager and the
+     * bundle reset it, the application's by default, in the middle of the request).
      */
     public function deleteConnection(CalendarConnection $connection): void
     {
-        try {
-            // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-            $this->entityManager->wrapInTransaction(function () use ($connection): void {
-                // ORM removals (not DQL deletes), so the identity map of a worker never keeps a deleted row.
-                $suggestions = $this->entityManager->getRepository(CalendarSuggestion::class)->findBy(['connection' => $connection]);
-                // Since 1.24.1 (REQ-SEC-006): only the rules of this scope key byte for byte (never a look-alike scope's).
-                $rules = ScopeKeys::keep($this->entityManager->getRepository(CalendarRule::class)->findBy(['user' => $connection->getUser(), 'scopeKey' => $connection->getScopeKey()]), $connection->getScopeKey(), static fn (CalendarRule $rule): string => $rule->getScopeKey());
-                foreach ([...$suggestions, ...$rules, $connection] as $row) {
-                    $this->entityManager->remove($row);
-                }
-            });
-        } catch (Throwable $exception) {
-            RecoveringFlusher::resetIfClosed($this->entityManager, $this->managerRegistry);
-
-            throw $exception;
-        }
+        // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
+        ($this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry))->run(function () use ($connection): void {
+            // ORM removals (not DQL deletes), so the identity map of a worker never keeps a deleted row.
+            $suggestions = $this->entityManager->getRepository(CalendarSuggestion::class)->findBy(['connection' => $connection]);
+            // Since 1.24.1 (REQ-SEC-006): only the rules of this scope key byte for byte (never a look-alike scope's).
+            $rules = ScopeKeys::keep($this->entityManager->getRepository(CalendarRule::class)->findBy(['user' => $connection->getUser(), 'scopeKey' => $connection->getScopeKey()]), $connection->getScopeKey(), static fn (CalendarRule $rule): string => $rule->getScopeKey());
+            foreach ([...$suggestions, ...$rules, $connection] as $row) {
+                $this->entityManager->remove($row);
+            }
+        });
     }
 
     /**
@@ -208,7 +205,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
      */
     public function flushSuggestions(): void
     {
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /**
@@ -381,7 +378,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function saveRule(CalendarRule $rule): void
     {
         $this->entityManager->persist($rule);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /**
@@ -390,7 +387,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function removeRule(CalendarRule $rule): void
     {
         $this->entityManager->remove($rule);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /**

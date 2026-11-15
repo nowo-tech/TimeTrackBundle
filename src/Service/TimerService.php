@@ -41,6 +41,7 @@ use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ConditionalActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
@@ -214,14 +215,7 @@ final readonly class TimerService
             $startedAt,
         );
 
-        try {
-            $this->activeTimerRepository->save($timer);
-        } catch (UniqueConstraintViolationException $e) {
-            // Two concurrent starts both passed the getActive() check; the unique user_id index wins.
-            $this->logger->warning('TimeTrack timer start rejected: concurrent start.', $this->context('timer_start', $clientType));
-
-            throw ActiveTimerConflictException::concurrentStart($e);
-        }
+        $this->insertTimer($user, $timer, 'timer_start', $clientType);
 
         $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType, $startTime), TimeTrackEvents::TIMER_START);
         $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime]);
@@ -507,8 +501,10 @@ final readonly class TimerService
 
         if ($resolution === IdleResolution::Keep) {
             if ($note !== null) {
-                // @igor-ignore - $timer is a Doctrine entity loaded for this request, not a shared service.
-                $this->activeTimerRepository->save($timer->appendNote($note, self::NOTE_MAX_LENGTH));
+                $timer = $this->appendNote($user, $timer, $note);
+                if (!$timer instanceof ActiveTimer) {
+                    return null; // A concurrent call stopped the timer first.
+                }
             }
 
             // REQ-OBS-001: the note's length only, never its text.
@@ -603,10 +599,30 @@ final readonly class TimerService
             return null;
         }
 
-        $timer->heartbeat($isIdle, $this->clock->now());
-        $this->activeTimerRepository->save($timer);
+        $now    = $this->clock->now();
+        $timers = $this->activeTimerRepository;
+        if (!$timers instanceof DoctrineOrmActiveTimerRepository) {
+            $timer->heartbeat($isIdle, $now);
+            $timers->save($timer);
 
-        return $timer;
+            return $timer;
+        }
+
+        // Since 1.27.0 (audit QO-I4): on the timer as committed, under the user's and the timer's locks (as a note), so
+        // a heartbeat never writes back metadata loaded before a concurrent note.
+        // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+        $beat = static function () use ($timers, $timer, $isIdle, $now): ?ActiveTimer {
+            $current = $timers->lockById($timer->getId());
+            if ($current instanceof ActiveTimer) {
+                // @igor-ignore - $current is a Doctrine entity loaded for this request, not a shared service.
+                $current->heartbeat($isIdle, $now);
+                $timers->save($current);
+            }
+
+            return $current;
+        };
+
+        return $this->serialised($user, static fn (): ?ActiveTimer => $timers->runner()->run($beat));
     }
 
     /**
@@ -836,40 +852,59 @@ final readonly class TimerService
      */
     private function closeTimer(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null, array $extraEntries = [], bool $recordOwnEntry = true, array $extraMetadata = []): ?TimeEntry
     {
-        $duration = max(0, $endedAt->getTimestamp() - $timer->getStartedAt()->getTimestamp());
-
-        $entry = new TimeEntry(
-            $this->userReferences->reference($user),
-            $timer->getTaskId(),
-            $timer->getTaskTitleSnapshot(),
-            $timer->getBoardIdSnapshot(),
-            $timer->getStartedAt(),
-            $endedAt,
-            $duration,
-            $this->mapClientTypeToSource($timer->getClientType()),
-            $extraMetadata === [] ? $this->entryMetadata($this->withoutChannel($timer->getMetadata()), $note) : [...($this->entryMetadata($this->withoutChannel($timer->getMetadata()), $note) ?? []), ...$extraMetadata],
-            $endedAt,
-        );
-        $entry->assignScopeKey($this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()));
-        $this->applyBillableDefault($entry);
+        // Asked before the timer is locked: the policy is a host port and may read its own data.
         $serviceAccount = $this->isServiceAccount($user);
-        $entry->markOrigin($this->channelOf($timer), $serviceAccount);
-        foreach ($extraEntries as $extra) {
-            $extra->markOrigin($extra->channel(), $serviceAccount);
-        }
-        $entries = $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries;
+        // Since 1.27.0 (Beacon spec 239): the entry is built from the timer as read under the delete's lock, so a task
+        // move (FR-008) or a note committed after the caller loaded the timer is what the entry records.
+        $build = function (ActiveTimer $current) use ($user, $endedAt, $note, $extraEntries, $recordOwnEntry, $extraMetadata, $serviceAccount): array {
+            $duration = max(0, $endedAt->getTimestamp() - $current->getStartedAt()->getTimestamp());
+            $entry    = new TimeEntry(
+                $this->userReferences->reference($user),
+                $current->getTaskId(),
+                $current->getTaskTitleSnapshot(),
+                $current->getBoardIdSnapshot(),
+                $current->getStartedAt(),
+                $endedAt,
+                $duration,
+                $this->mapClientTypeToSource($current->getClientType()),
+                $extraMetadata === [] ? $this->entryMetadata($this->withoutChannel($current->getMetadata()), $note) : [...($this->entryMetadata($this->withoutChannel($current->getMetadata()), $note) ?? []), ...$extraMetadata],
+                $endedAt,
+            );
+            $entry->assignScopeKey($this->scopeKeyFor($user, $current->getTaskId(), $current->getBoardIdSnapshot()));
+            $this->applyBillableDefault($entry);
+            $entry->markOrigin($this->channelOf($current), $serviceAccount);
+            foreach ($extraEntries as $extra) {
+                $extra->markOrigin($extra->channel(), $serviceAccount);
+            }
+
+            return [$entry, $recordOwnEntry ? [$entry, ...$extraEntries] : $extraEntries];
+        };
 
         if ($this->activeTimerRepository instanceof ConditionalActiveTimerRepositoryInterface) {
+            $built   = null;
+            $entries = $this->timeEntryRepository;
             // 1.9.1 (CL-05): only the call that deletes the timer row records the entries, so concurrent stops record them once.
             // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-            if (!$this->activeTimerRepository->removeIfPresent($timer, function () use ($entries): void {
-                foreach ($entries as $recorded) {
-                    $this->timeEntryRepository->save($recorded);
-                }
-            })) {
+            $timers = $this->activeTimerRepository;
+            // Since 1.27.0 under the user's write lock first (stores with UserSerialisedTimeEntryRepositoryInterface): one
+            // lock order (user, then timer, then entries) for every timer write, so a stop never deadlocks with a start.
+            // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+            // (A closure, not an arrow function: $built is filled by reference.)
+            $removed = $this->serialised($user, static function () use ($timers, $timer, $build, &$built, $entries): bool {
+                // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+                return $timers->removeIfPresent($timer, static function (?ActiveTimer $current = null) use ($timer, $build, &$built, $entries): void {
+                    $built = $build($current ?? $timer);
+                    foreach ($built[1] as $recorded) {
+                        $entries->save($recorded);
+                    }
+                });
+            });
+            if (!$removed || $built === null) {
                 return null;
             }
+            [$entry, $entries] = $built;
         } else {
+            [$entry, $entries] = $build($timer);
             foreach ($entries as $recorded) {
                 $this->timeEntryRepository->save($recorded);
             }
@@ -966,6 +1001,83 @@ final readonly class TimerService
     private function serialised(UserInterface $user, callable $operation): mixed
     {
         return $this->timeEntryRepository instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->timeEntryRepository->inUserTransaction($user, $operation) : $operation();
+    }
+
+    /**
+     * Since 1.27.0 (Beacon spec 239): appends the note to the timer as committed, read again under its row lock in one
+     * unit of work of the bundle's runner, so two notes kept at the same time are both stored (up to 1.26 the second
+     * write put back the metadata it had loaded before the first one committed). Stores other than the bundle's
+     * Doctrine store keep the 1.26 behaviour.
+     *
+     * @return ActiveTimer|null The timer with the note, or null when it was stopped meanwhile
+     */
+    private function appendNote(UserInterface $user, ActiveTimer $timer, string $note): ?ActiveTimer
+    {
+        $timers = $this->activeTimerRepository;
+        if (!$timers instanceof DoctrineOrmActiveTimerRepository) {
+            $timers->save($timer->appendNote($note, self::NOTE_MAX_LENGTH));
+
+            return $timer;
+        }
+
+        // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+        $append = static function () use ($timers, $timer, $note): ?ActiveTimer {
+            $current = $timers->lockById($timer->getId());
+            if ($current instanceof ActiveTimer) {
+                // @igor-ignore - $current is a Doctrine entity loaded for this request, not a shared service.
+                $timers->save($current->appendNote($note, self::NOTE_MAX_LENGTH));
+            }
+
+            return $current;
+        };
+
+        // The user's write lock first (one lock order for every timer write), then the timer's own unit of work.
+        return $this->serialised($user, static fn (): ?ActiveTimer => $timers->runner()->run($append));
+    }
+
+    /**
+     * Since 1.27.0 (Beacon spec 239): inserts a new timer while the user has none, checked again under the user's write
+     * lock (stores with {@see UserSerialisedTimeEntryRepositoryInterface}), so two concurrent starts never reach the
+     * unique `user_id` index: the second one sees the first one's timer and is refused without a failed flush (which
+     * closed the entity manager, and up to 1.26 reset the application's manager in the middle of the request). The index
+     * stays the backstop for a writer that does not take the lock.
+     *
+     * @throws ActiveTimerConflictException When the user has a running timer (a concurrent start won)
+     */
+    private function insertTimer(UserInterface $user, ActiveTimer $timer, string $action, ClientType $clientType): void
+    {
+        try {
+            // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+            $running = $this->timeEntryRepository instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->timeEntryRepository->inUserTransaction($user, function () use ($user, $timer): ?ActiveTimer {
+                $running = $this->getActive($user);
+                if (!$running instanceof ActiveTimer) {
+                    $this->activeTimerRepository->save($timer);
+                }
+
+                return $running;
+            }) : $this->saveTimer($timer);
+        } catch (UniqueConstraintViolationException $e) {
+            // A start that does not take the user's lock inserted its timer first; the unique user_id index wins.
+            $this->logger->warning('TimeTrack timer start rejected: concurrent start.', $this->context($action, $clientType));
+
+            throw ActiveTimerConflictException::concurrentStart($e);
+        }
+        if ($running instanceof ActiveTimer) {
+            $this->logger->warning('TimeTrack timer start rejected: concurrent start.', $this->context($action, $clientType));
+
+            throw ActiveTimerConflictException::concurrentStart();
+        }
+    }
+
+    /**
+     * Saves a new timer without a lock (stores without {@see UserSerialisedTimeEntryRepositoryInterface}: the unique
+     * index decides); never a running timer.
+     */
+    private function saveTimer(ActiveTimer $timer): null
+    {
+        $this->activeTimerRepository->save($timer);
+
+        return null;
     }
 
     /**
@@ -1092,14 +1204,8 @@ final readonly class TimerService
     private function continueTimer(UserInterface $user, string $taskId, string $taskTitle, ?string $boardId, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action, ?TaskReference $task = null): ActiveTimer
     {
         $next = new ActiveTimer($this->userReferences->reference($user), $taskId, $taskTitle, $boardId, $clientType, $metadata, $startedAt);
-        try {
-            $this->activeTimerRepository->save($next);
-        } catch (UniqueConstraintViolationException $e) {
-            // A concurrent start won between the stop and the continuation (1.9.1): the entries stay, its timer runs.
-            $this->logger->warning('TimeTrack idle follow-up timer rejected: concurrent start.', $this->context($action, $clientType));
-
-            throw ActiveTimerConflictException::concurrentStart($e);
-        }
+        // A concurrent start won between the stop and the continuation (1.9.1): the entries stay, its timer runs.
+        $this->insertTimer($user, $next, $action, $clientType);
         $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task ?? new TaskReference($taskId, $taskTitle, $boardId), $clientType), TimeTrackEvents::TIMER_START);
 
         return $next;

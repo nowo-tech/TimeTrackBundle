@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Timesheet;
 use Closure;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\OptimisticLockException;
 use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsVerifyCommand;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
@@ -128,6 +129,19 @@ final class TimesheetServiceUnitTest extends TestCase
         $service                    = $this->service();
 
         $this->expectError('conflict', fn (): Timesheet => $service->view($this->owner, '7', 'org-a', Period::fromKey(TimesheetPeriodKind::Week, '2026-W45')));
+    }
+
+    /**
+     * A store without the row lock (no re-read): a concurrent decision is still detected by the optimistic version.
+     */
+    public function testAConcurrentDecisionOnAStoreWithoutTheRowLockIsAConflict(): void
+    {
+        $service = $this->service();
+        $period  = Period::fromKey(TimesheetPeriodKind::Week, '2026-W45');
+        $service->view($this->owner, '7', 'org-a', $period);
+        $this->timesheets->failSave = $this->createStub(OptimisticLockException::class);
+
+        $this->expectError('conflict', fn (): ?Timesheet => $service->autoLock($this->owner, 'org-a', $period));
     }
 
     public function testSnapshotsListUnassignedEntriesAndIgnoreOtherDays(): void

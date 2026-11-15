@@ -19,6 +19,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryOwnerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
@@ -216,6 +217,10 @@ final readonly class ImportedTimeEntryWriter
      */
     private function write(array $rows, bool $skipMismatches): ImportedTimeEntryBatchResult
     {
+        if ($this->repository instanceof DoctrineOrmTimeEntryRepository) {
+            // Since 1.27.0 (audit QO-M1): the application's pending work first, on its own, never inside the batch's unit.
+            $this->repository->flushPending();
+        }
         $plan = [];
         foreach ($rows as [$owner, $data]) {
             $user     = $this->userOf($owner);

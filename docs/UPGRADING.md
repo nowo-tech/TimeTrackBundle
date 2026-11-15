@@ -85,6 +85,46 @@
 
 ## Unreleased
 
+Load readiness (Beacon spec 239), no configuration change. Read [HIGH-LOAD.md](HIGH-LOAD.md).
+
+- **New dependencies**: nowo-tech/transaction-contract `^1.0`, nowo-tech/transaction-doctrine `^1.1`; doctrine/dbal is now
+  a direct requirement, `^3.8.2 || ^4` (what ORM 3 already allowed). On DBAL 3 enable `use_savepoints: true` so a bundle
+  failure inside your own transaction rolls back to its savepoint only.
+- **Your entity manager is never reset in the middle of a request** (default, shared mode). Up to 1.26 a failed TimeTrack
+  flush (a lost timer start, a raced import, a ledger conflict) reset your manager through the registry: every entity you
+  had loaded was detached and its later changes were silently not written. Now a failed unit detaches only the TimeTrack
+  rows it touched; a failed flush leaves the manager closed until the end of the request (your next flush throws
+  `EntityManagerClosed`), and the bundle replaces it at the next request / message / command boundary. If your code
+  catches a TimeTrack exception and goes on writing in the same request, check `isOpen()` first. With
+  `database.private_entity_manager: true` nothing of this concerns your manager (recommended under load). When a flush
+  inside a failed TimeTrack unit had written rows of yours (a host port or listener persisted them during the unit), the
+  manager is closed too, since the rollback undid them (audit QO-M1). Long console commands (`nowo:time-track:timesheets:auto-lock`,
+  `nowo:time-track:calendar:sync`) stop at the next write after such a failure; run them with the private manager to go on.
+- **Idempotency of `POST entries`**: a stored `201` is replayed for the whole 24 h as before (also after the entry was
+  deleted); it is stored inside the transaction as pending and confirmed after the commit.
+- **503 / 409 on the bundle's routes**: a deadlock or lock wait timeout answers `503` with `Retry-After` (it was a 500),
+  a unique conflict `409`. Your clients already retry a 503 (desktop agent, extension); your own controllers that call
+  bundle services receive `Nowo\TransactionContract\TransientStorageFailure`. Inside a transaction of yours, retry the
+  whole transaction after clearing or resetting your entity manager (a MySQL deadlock rolls back all of it, also the
+  pending work the bundle flushed before its unit).
+- **Lock order**: timer stops, notes, timesheet transitions and first views, ledger lines and screenshot intents now take
+  the account's user row lock (`SELECT … FOR UPDATE` on your users table, or on `<prefix>_host_users` with
+  `user_mapping: id`) before their own rows, as starts and manual entries already did. A transaction of yours that locks
+  a user row and then calls a bundle writer keeps working (same order); one that locks a TimeTrack row first and then the
+  user row may now deadlock: lock the user first.
+- **Timesheet decisions**: a decision on a timesheet another request decided meanwhile answers `invalid_transition` (the
+  row is re-read under its lock), where it could answer `conflict` before.
+- **Device approval**: `DeviceAuthorizationService::approve()` / `deny()` throw `DeviceAuthorizationNotPendingException`
+  when the request was decided, exchanged or expired meanwhile (the bundle's page shows "expired"); nothing is issued.
+- **Rows written through DBAL**: a new running timer, a period's timesheet row, acknowledgements, upload intents and
+  imported entries are inserted through DBAL in a savepoint (then managed), so Doctrine's `prePersist` / `postPersist` /
+  `onFlush` no longer see those inserts. If a listener of yours relied on them, listen to the bundle's events
+  (`TIMER_START`, `TIME_ENTRY_IMPORTED`, `TIMESHEET_*`) instead.
+- `ConditionalActiveTimerRepositoryInterface::removeIfPresent()`: a store may pass the timer read under its lock to
+  `$onRemoved` (the bundle's does); a store that passes nothing keeps working.
+- `RecoveringFlusher::resetIfClosed()` is deprecated and does nothing (removed in 2.0).
+- No schema change: the identifier columns keep the binary NO PAD collations of 1.24.1.
+
 ## To 1.26.0
 
 From **1.25.0**:

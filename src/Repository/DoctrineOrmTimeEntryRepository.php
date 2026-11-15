@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
@@ -12,6 +13,7 @@ use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
@@ -19,11 +21,11 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
+use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Psr\Log\LoggerInterface;
 use SortDirection;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Throwable;
 
 use function array_chunk;
 use function array_column;
@@ -50,13 +52,23 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
-     * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
+     * @param ManagerRegistry|null $managerRegistry The registry of that manager (the bundle's runner replaces a failed private manager through it)
+     * @param TimeTrackTransactionRunner|null $runner Since 1.27.0: the bundle's transaction runner (null = one on this manager)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?LoggerInterface $logger = null,
+        private ?TimeTrackTransactionRunner $runner = null,
     ) {
+    }
+
+    /**
+     * Since 1.27.0: the bundle's transaction runner of this store.
+     */
+    public function runner(): TimeTrackTransactionRunner
+    {
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -65,7 +77,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     public function save(TimeEntry $entry): void
     {
         $this->entityManager->persist($entry);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager);
     }
 
     /**
@@ -284,25 +296,17 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * Since the GG fixes: one transaction holding the user's row lock (`SELECT … FOR UPDATE`) around the operation.
+     * Since 1.27.0 a unit of work of the bundle's runner ({@see TimeTrackTransactionRunner::run()}: one attempt; a
+     * deadlock or lock wait timeout surfaces as `TransientStorageFailure`, the connection is left at its entry level,
+     * and the application's manager is never reset). The user's lock is the first statement of the unit.
      */
     public function inUserTransaction(object $user, callable $operation): mixed
     {
-        $connection = $this->entityManager->getConnection();
-        $connection->beginTransaction();
-        try {
+        return $this->runner()->run(function () use ($user, $operation): mixed {
             $this->lockUser($user);
-            $result = $operation();
-            $connection->commit();
 
-            return $result;
-        } catch (Throwable $exception) {
-            if ($connection->isTransactionActive()) {
-                $connection->rollBack();
-            }
-            RecoveringFlusher::resetIfClosed($this->entityManager, $this->managerRegistry);
-
-            throw $exception;
-        }
+            return $operation();
+        });
     }
 
     /**
@@ -387,18 +391,45 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     /**
      * Since 1.11: persists the entries and flushes once.
      *
+     * Since 1.27.0 (Beacon spec 239) one unit of work of the bundle's runner: the new entries are written through DBAL,
+     * each in a savepoint, and the changes of the managed ones by the flush that ends the unit. When a concurrent import
+     * took one of the new identities first, the whole unit is rolled back and the unique violation is thrown with the
+     * entity manager still open (up to 1.26 the failed flush closed it and the bundle reset it, the application's
+     * manager by default, which detached the application's entities): {@see self::canRetryAfterFailedSave()} answers
+     * true outside a transaction of the caller, and the writer reads the batch again.
+     *
      * @param list<TimeEntry> $entries
+     *
+     * @throws UniqueConstraintViolationException when a concurrent write took one of the new external identities first (nothing written)
      */
     public function saveAll(array $entries): void
     {
-        foreach ($entries as $entry) {
-            $this->entityManager->persist($entry);
-        }
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        // Audit QO-M1: the application's pending work is flushed by the writer before it changes the batch
+        // ({@see self::flushPending()}); a failed unit whose flush wrote application rows closes the manager (runner).
+        $new = array_values(array_filter($entries, fn (TimeEntry $entry): bool => !$this->entityManager->contains($entry)));
+        // @igor-ignore - Closure passed to this call only and dropped after it (no state kept).
+        $this->runner()->runStatements(function () use ($new): void {
+            foreach ($new as $entry) {
+                $lost = TimeTrackRows::insert($this->entityManager, $entry, true);
+                if ($lost instanceof UniqueConstraintViolationException) {
+                    throw $lost;
+                }
+            }
+            $this->entityManager->flush();
+        });
     }
 
     /**
-     * Since 1.11: the entity manager is open again (reset through the registry after the failed flush) and no host
+     * Since 1.27.0 (audit QO-M1): flushes what the manager holds pending (the application's work, in the shared mode) on
+     * its own, before a batch is planned and changed, so {@see self::saveAll()}'s unit writes only the batch.
+     */
+    public function flushPending(): void
+    {
+        RecoveringFlusher::flush($this->entityManager);
+    }
+
+    /**
+     * Since 1.11: the entity manager is open (since 1.27.0 a raced {@see self::saveAll()} leaves it open) and no host
      * transaction is active.
      */
     public function canRetryAfterFailedSave(): bool
@@ -633,24 +664,13 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     }
 
     /**
-     * Since 1.16: one transaction, nested into the caller's when there is one.
+     * Since 1.16: one transaction, nested into the caller's when there is one. Since 1.27.0 a unit of work of the
+     * bundle's runner, replayed after a deadlock or lock wait timeout when it is the outermost transaction
+     * ({@see TimeTrackTransactionRunner::runRetrying()}: every batch of a move reads and locks its rows again).
      */
     public function inOwnerMoveTransaction(callable $operation): mixed
     {
-        $connection = $this->entityManager->getConnection();
-        $connection->beginTransaction();
-        try {
-            $result = $operation();
-            $connection->commit();
-
-            return $result;
-        } catch (Throwable $exception) {
-            if ($connection->isTransactionActive()) {
-                $connection->rollBack();
-            }
-
-            throw $exception;
-        }
+        return $this->runner()->runRetrying($operation, statementsOnly: true);
     }
 
     /**

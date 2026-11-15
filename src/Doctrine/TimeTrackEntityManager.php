@@ -221,7 +221,8 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
     {
         $live = $this->live();
         $this->attachForeignReferences($live);
-        $live->flush();
+        // live() replaces a closed private manager at its next use, and the bundle's runner flushes through this decorator.
+        $live->flush(); // @phpstan-ignore frankenphp.worker.noFlushWithoutClosedManagerRecovery
         $this->wrote();
     }
 

@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Repository;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
-use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Support\StorageTime;
@@ -28,20 +29,27 @@ final readonly class DoctrineOrmMonitoringUploadIntentRepository implements Moni
 {
     /**
      * @param EntityManagerInterface $entityManager The bundle's entity manager
-     * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
+     * @param ManagerRegistry|null $managerRegistry Unused since 1.27.0 (new rows are written in savepoints; kept for compatibility)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
+        // @phpstan-ignore property.onlyWritten (kept for compatibility: a named constructor argument since 1.26)
         private ?ManagerRegistry $managerRegistry = null,
     ) {
     }
 
-    /** Persists, flushes and detaches a new intent. */
+    /**
+     * Writes a new intent (never managed). Since 1.27.0 (Beacon spec 239) through DBAL in a savepoint: a concurrent
+     * request that stored the same key first makes this throw the unique violation without closing the entity manager.
+     *
+     * @throws UniqueConstraintViolationException when another request stored an intent with the same key first
+     */
     public function save(MonitoringUploadIntent $intent): void
     {
-        $this->entityManager->persist($intent);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
-        $this->entityManager->detach($intent);
+        $lost = TimeTrackRows::insert($this->entityManager, $intent);
+        if ($lost instanceof UniqueConstraintViolationException) {
+            throw $lost;
+        }
     }
 
     /** The user's intent by id. */

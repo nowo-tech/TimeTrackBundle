@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Controller;
 
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
+use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationNotPendingException;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
 use Nowo\TimeTrackBundle\Form\DeviceDecisionType;
 use Nowo\TimeTrackBundle\Form\DeviceUserCodeType;
@@ -111,13 +112,18 @@ final class TimeTrackDeviceVerificationController extends AbstractController
             throw new AccessDeniedException('Invalid CSRF token.');
         }
 
-        if ($decision === 'approve') {
-            $this->deviceService->approve($authorization, $user, $request->getClientIp());
+        try {
+            if ($decision === 'approve') {
+                $this->deviceService->approve($authorization, $user, $request->getClientIp());
 
-            return $this->result('device.approved', 'success');
+                return $this->result('device.approved', 'success');
+            }
+
+            $this->deviceService->deny($authorization, $user, $request->getClientIp());
+        } catch (DeviceAuthorizationNotPendingException) {
+            // Since 1.27.0: decided, exchanged or expired by another request meanwhile (a double submit, another tab).
+            return $this->result('device.expired', 'warning');
         }
-
-        $this->deviceService->deny($authorization, $user, $request->getClientIp());
 
         return $this->result('device.denied', 'info');
     }

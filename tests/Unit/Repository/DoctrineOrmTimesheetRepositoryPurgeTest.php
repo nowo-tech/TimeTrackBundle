@@ -23,6 +23,8 @@ final class DoctrineOrmTimesheetRepositoryPurgeTest extends TestCase
         $connection->expects(self::once())->method('beginTransaction');
         $connection->expects(self::never())->method('commit');
         $connection->method('isTransactionActive')->willReturn(true);
+        // Since 1.27.0 a unit of work of the bundle's runner: entry level 0, its own level 1 rolled back once.
+        $connection->method('getTransactionNestingLevel')->willReturnOnConsecutiveCalls(0, 1, 1);
         $connection->expects(self::once())->method('rollBack');
 
         $em = $this->createMock(EntityManagerInterface::class);

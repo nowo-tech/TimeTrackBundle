@@ -15,6 +15,9 @@ services:
             - '../../Bridge/'
             - '../../Repository/'
             - '../../Doctrine/'
+            # Since 1.27.0 (Beacon spec 239): the runner and the 503 / 409 subscriber are defined by the extension.
+            - '../../Transaction/'
+            - '../../EventSubscriber/'
             - '../../Client/ClientLoginRateLimiter.php'
             - '../../Client/ClientResponseFactory.php'
             - '../../Client/DefaultClientAuthenticator.php'

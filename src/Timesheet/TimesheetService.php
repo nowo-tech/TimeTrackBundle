@@ -24,8 +24,11 @@ use Nowo\TimeTrackBundle\Exception\TimesheetException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetEventRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
@@ -51,7 +54,15 @@ use function mb_strlen;
  *
  * Every transition runs in one transaction with its audit row (hash chain) and, on approve / reopen, the ratified
  * overtime line or its reversal; the timesheet's optimistic `version` makes concurrent decisions fail (`conflict`).
- * Approve recomputes the entries hash: a change since submit answers `stale`. Nobody approves their own timesheet.
+ * Approve recomputes the entries hash: a change since submit answers `stale`.
+ *
+ * Since 1.27.0 (Beacon spec 239) a transition holds the owner's write lock (the lock every entry and timer writer of
+ * that user takes) and then the timesheet row's lock, reads the timesheet again under them (a decision another request
+ * committed meanwhile answers `invalid_transition`, not a lost update), and only then computes the entries hash and the
+ * totals: an entry written at the same moment is either committed before the hash is taken, or waits and then finds
+ * the period submitted. Up to 1.26 submit hashed the entries before its transaction, so a concurrent entry could end
+ * up in a submitted period without being in its hash (the approval then answered `stale`). A first view or submit that
+ * creates the period's row reads it again under the owner's lock, so two at once share one row. Nobody approves their own timesheet.
  * Other users' timesheets the actor may not act on answer `not_found` (no existence oracle). Events fire after commit.
  */
 final readonly class TimesheetService
@@ -87,6 +98,9 @@ final readonly class TimesheetService
         private LoggerInterface $logger = new NullLogger(),
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
         ?UserReferenceResolverInterface $userReferences = null,
+        // Since 1.27.0 (Beacon spec 239): the owner's write lock (stores with UserSerialisedTimeEntryRepositoryInterface),
+        // taken by every transition and first creation, as the entry writers take it (null = no lock, the 1.26 behaviour).
+        private ?TimeEntryRepositoryInterface $entries = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -258,14 +272,15 @@ final readonly class TimesheetService
             throw new TimesheetException('timer_running');
         }
 
-        $snapshot = $this->snapshot($timesheet);
-        $now      = $this->clock->now();
+        $now = $this->clock->now();
 
-        return $this->transition($timesheet, TimesheetAction::Submitted, $ownerId, TimesheetActorRole::Owner, $client, null, static function (Timesheet $t) use ($now, $ownerId, $snapshot): array {
+        return $this->transition($timesheet, TimesheetAction::Submitted, $ownerId, TimesheetActorRole::Owner, $client, null, function (Timesheet $t) use ($now, $ownerId): array {
+            // Since 1.27.0: the hash and totals of the entries as committed when the owner's and the row's locks are held.
+            $snapshot = $this->snapshot($t);
             $t->applySubmit($now, $ownerId, $snapshot->entriesHash, $snapshot->totals);
 
             return [$snapshot->entriesHash, $snapshot->totals];
-        });
+        }, static fn (Timesheet $t): bool => $t->getStatus()->isEditable());
     }
 
     /**
@@ -289,7 +304,7 @@ final readonly class TimesheetService
             $t->applyWithdraw($now);
 
             return [null, null];
-        });
+        }, static fn (Timesheet $t): bool => $t->getStatus() === TimesheetStatus::Submitted);
     }
 
     /**
@@ -304,24 +319,26 @@ final readonly class TimesheetService
         if ($timesheet->getStatus() !== TimesheetStatus::Submitted) {
             throw new TimesheetException('invalid_transition');
         }
-        $snapshot = $this->snapshot($timesheet);
-        if ($snapshot->entriesHash !== $timesheet->getEntriesHash()) {
-            throw new TimesheetException('stale');
-        }
         $actorRef = UserIdResolver::getId($approver);
         $now      = $this->clock->now();
         $ratified = [];
         $owner    = $timesheet->getUser();
-        $overtime = $snapshot->totals['overtimeSeconds'] ?? null;
 
-        $result = $this->transition($timesheet, TimesheetAction::Approved, $actorRef, TimesheetActorRole::Approver, $client, null, function (Timesheet $t) use ($now, $actorRef, $snapshot, $owner, $overtime, &$ratified): array {
+        $result = $this->transition($timesheet, TimesheetAction::Approved, $actorRef, TimesheetActorRole::Approver, $client, null, function (Timesheet $t) use ($now, $actorRef, $owner, &$ratified): array {
+            // Since 1.27.0: the hash re-check on the entries as committed under the owner's and the row's locks.
+            $snapshot = $this->snapshot($t);
+            if ($snapshot->entriesHash !== $t->getEntriesHash()) {
+                throw new TimesheetException('stale');
+            }
+            $overtime = $snapshot->totals['overtimeSeconds'] ?? null;
+            $ratified = [];
             $t->applyApprove($now, $actorRef, $snapshot->entriesHash, $snapshot->totals);
             if ($this->ratifyOnApproval && $this->ledger instanceof BalanceLedger && is_int($overtime) && $overtime > 0) {
                 $ratified[] = $this->ledger->ratify($owner instanceof UserInterface ? $owner : null, $t->getOwnerRef(), $t, $overtime, $actorRef);
             }
 
             return [$snapshot->entriesHash, $snapshot->totals];
-        });
+        }, static fn (Timesheet $t): bool => $t->getStatus() === TimesheetStatus::Submitted);
         $this->dispatchLines($ratified);
 
         return $result;
@@ -368,7 +385,7 @@ final readonly class TimesheetService
             $t->applyReject($now, $actorRef, $comment);
 
             return [null, null];
-        });
+        }, static fn (Timesheet $t): bool => $t->getStatus() === TimesheetStatus::Submitted);
     }
 
     /**
@@ -397,7 +414,7 @@ final readonly class TimesheetService
             $reversed = $this->ledger?->reverseRatified($owner instanceof UserInterface ? $owner : null, $t, $actorRef, $reason) ?? [];
 
             return [null, null];
-        });
+        }, static fn (Timesheet $t): bool => $t->isLocked());
         $this->dispatchLines($reversed);
 
         return $result;
@@ -414,12 +431,19 @@ final readonly class TimesheetService
             return null;
         }
         $now = $this->clock->now();
+        try {
+            return $this->transition($timesheet, TimesheetAction::AutoLocked, null, TimesheetActorRole::System, AuditClient::System, null, static function (Timesheet $t) use ($now): array {
+                $t->applyLock($now, TimesheetLockReason::Auto);
 
-        return $this->transition($timesheet, TimesheetAction::AutoLocked, null, TimesheetActorRole::System, AuditClient::System, null, static function (Timesheet $t) use ($now): array {
-            $t->applyLock($now, TimesheetLockReason::Auto);
+                return [null, null];
+            }, static fn (Timesheet $t): bool => !$t->isLocked());
+        } catch (TimesheetException $exception) {
+            if ($exception->errorCode() !== 'invalid_transition') {
+                throw $exception;
+            }
 
-            return [null, null];
-        });
+            return null; // Locked by a concurrent request meanwhile.
+        }
     }
 
     /**
@@ -434,23 +458,39 @@ final readonly class TimesheetService
     /**
      * Runs one transition: the change, the audit row and the head move in one transaction; the event after commit.
      *
-     * @param callable(Timesheet): array{0: string|null, 1: array<string, mixed>|null} $change
+     * Since 1.27.0 (Beacon spec 239): under the owner's write lock, the timesheet row is locked and read again first
+     * (stores with {@see DoctrineOrmTimesheetRepository}), `$expect` re-checks its status on that state (else
+     * `invalid_transition`), and `$change` (which computes any hash or totals) runs only then.
      *
-     * @throws TimesheetException `conflict` when a concurrent change won (optimistic lock or audit sequence)
+     * @param callable(Timesheet): array{0: string|null, 1: array<string, mixed>|null} $change
+     * @param (callable(Timesheet): bool)|null $expect Whether the transition is still allowed on the state read under the lock
+     *
+     * @throws TimesheetException `conflict` when a concurrent change won (optimistic lock or audit sequence), `invalid_transition` when a concurrent decision changed the status first
      */
-    private function transition(Timesheet $timesheet, TimesheetAction $action, ?string $actorRef, TimesheetActorRole $role, AuditClient $client, ?string $comment, callable $change): Timesheet
+    private function transition(Timesheet $timesheet, TimesheetAction $action, ?string $actorRef, TimesheetActorRole $role, AuditClient $client, ?string $comment, callable $change, ?callable $expect = null): Timesheet
     {
-        $from = $timesheet->getStatus();
-        try {
-            // @igor-ignore - the closure runs once inside this call (transaction body), it is not stored.
-            $totals = $this->timesheets->transactional(function () use ($timesheet, $action, $from, $actorRef, $role, $client, $comment, $change): ?array {
-                [$hash, $totals] = $change($timesheet);
-                // @igor-ignore - I/O delegate (audit row append); no worker state.
-                $this->auditTrail->append($timesheet, $action, $from, $timesheet->getStatus(), $actorRef, $role, $client, $this->clock->now(), $comment, $hash, $totals);
-                $this->timesheets->save($timesheet);
+        $from  = $timesheet->getStatus();
+        $owner = $timesheet->getUser();
+        // @igor-ignore - the closure runs once inside this call (transaction body), it is not stored.
+        $unit = function () use (&$timesheet, $action, &$from, $actorRef, $role, $client, $comment, $change, $expect): ?array {
+            $locked = $this->timesheets instanceof DoctrineOrmTimesheetRepository ? $this->timesheets->lockForTransition($timesheet->getId()) : $timesheet;
+            if (!$locked instanceof Timesheet) {
+                throw new TimesheetException('not_found');
+            }
+            if ($expect !== null && !$expect($locked)) {
+                throw new TimesheetException('invalid_transition');
+            }
+            $timesheet       = $locked;
+            $from            = $locked->getStatus();
+            [$hash, $totals] = $change($locked);
+            // @igor-ignore - I/O delegate (audit row append); no worker state.
+            $this->auditTrail->append($locked, $action, $from, $locked->getStatus(), $actorRef, $role, $client, $this->clock->now(), $comment, $hash, $totals);
+            $this->timesheets->save($locked);
 
-                return $totals;
-            });
+            return $totals;
+        };
+        try {
+            $totals = $this->inOwnerLock($owner, fn (): ?array => $this->timesheets->transactional($unit));
         } catch (OptimisticLockException|UniqueConstraintViolationException $e) {
             throw new TimesheetException('conflict', $e);
         }
@@ -500,15 +540,39 @@ final readonly class TimesheetService
 
     private function create(UserInterface $owner, string $scopeKey, Period $period): Timesheet
     {
-        $timesheet = new Timesheet($this->userReferences->reference($owner), UserIdResolver::getId($owner), $scopeKey, $period, $this->timezoneResolver->resolve($owner, $scopeKey), $this->clock->now());
         try {
-            $this->timesheets->save($timesheet);
+            // Since 1.27.0 (Beacon spec 239): read again under the owner's lock, so two first views (or a view and a
+            // submit) at once share one row instead of failing on the unique key (which closed the entity manager).
+            // @igor-ignore - the closure runs once inside this call, it is not stored.
+            return $this->inOwnerLock($owner, function () use ($owner, $scopeKey, $period): Timesheet {
+                $existing = $this->entries instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->timesheets->findForPeriod(UserIdResolver::getId($owner), $scopeKey, $this->periodKind, $period->start) : null;
+                if ($existing instanceof Timesheet) {
+                    return $existing;
+                }
+                $timesheet = new Timesheet($this->userReferences->reference($owner), UserIdResolver::getId($owner), $scopeKey, $period, $this->timezoneResolver->resolve($owner, $scopeKey), $this->clock->now());
+                $this->timesheets->save($timesheet);
+
+                return $timesheet;
+            });
         } catch (UniqueConstraintViolationException $e) {
-            // Two first views at once: the other request created the row.
+            // Two first views at once on a store without the owner's lock: the other request created the row.
             throw new TimesheetException('conflict', $e);
         }
+    }
 
-        return $timesheet;
+    /**
+     * Since 1.27.0: runs the operation holding the owner's write lock when the entry store serialises users (the lock
+     * every entry and timer writer of that user takes); as it is otherwise (a former person's timesheet, other stores).
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function inOwnerLock(?object $owner, callable $operation): mixed
+    {
+        return $owner !== null && $this->entries instanceof UserSerialisedTimeEntryRepositoryInterface ? $this->entries->inUserTransaction($owner, $operation) : $operation();
     }
 
     private function timerScope(UserInterface $owner, ActiveTimer $timer): ?string

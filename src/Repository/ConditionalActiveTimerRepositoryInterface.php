@@ -18,7 +18,11 @@ interface ConditionalActiveTimerRepositoryInterface extends ActiveTimerRepositor
      * Deletes the timer only while it still exists (conditional delete) and, when this call deleted it, runs
      * `$onRemoved` in the same unit of work (rolled back together when it throws).
      *
-     * @param callable(): void $onRemoved Work bound to the removal (records the time entry)
+     * Since 1.27.0 (Beacon spec 239) the store passes `$onRemoved` the timer as it was read under the delete's lock
+     * (task, board, start and metadata as committed, e.g. after a task move): the time entry is built from it, never
+     * from the copy loaded before the lock. A store that passes nothing keeps the 1.26 behaviour (the given timer).
+     *
+     * @param callable(ActiveTimer=): void $onRemoved Work bound to the removal (records the time entry)
      *
      * @return bool True when this call removed the timer and ran `$onRemoved`; false when another call removed it first
      */

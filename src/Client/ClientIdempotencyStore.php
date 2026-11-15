@@ -9,6 +9,7 @@ use Psr\Cache\CacheItemPoolInterface;
 use function hash;
 use function is_array;
 use function is_int;
+use function is_string;
 
 /**
  * Since 1.13: `Idempotency-Key` replays of the client API (contract §10.4): the same key and body from the same user
@@ -34,8 +35,10 @@ final readonly class ClientIdempotencyStore
 
     /**
      * The stored answer of the key (`{status, body}`), `false` when the key was used with another body, null when new.
+     * Since 1.27.0 an answer stored by {@see self::savePending()} and not confirmed yet also carries `pending` (the
+     * nonce of the request that stored it).
      *
-     * @return array{status: int, body: array<string, mixed>}|false|null
+     * @return array{status: int, body: array<string, mixed>, pending?: string}|false|null
      */
     public function find(string $userId, string $key, string $bodyHash): array|false|null
     {
@@ -54,7 +57,9 @@ final readonly class ClientIdempotencyStore
         /** @var array<string, mixed> $body */
         $body = $stored['body'];
 
-        return ['status' => $stored['status'], 'body' => $body];
+        $pending = $stored['pending'] ?? null;
+
+        return ['status' => $stored['status'], 'body' => $body] + (is_string($pending) ? ['pending' => $pending] : []);
     }
 
     /**
@@ -64,8 +69,55 @@ final readonly class ClientIdempotencyStore
      */
     public function save(string $userId, string $key, string $bodyHash, int $status, array $body): void
     {
+        $this->store($userId, $key, ['hash' => $bodyHash, 'status' => $status, 'body' => $body]);
+    }
+
+    /**
+     * Since 1.27.0 (audit QO-L2): stores an answer written inside a transaction that has not committed yet, marked
+     * with the nonce of the request that stored it. {@see self::confirm()} marks it committed after the commit;
+     * {@see self::forget()} drops it when the commit failed.
+     *
+     * @param array<string, mixed> $body
+     */
+    public function savePending(string $userId, string $key, string $bodyHash, int $status, array $body, string $nonce): void
+    {
+        $this->store($userId, $key, ['hash' => $bodyHash, 'status' => $status, 'body' => $body, 'pending' => $nonce]);
+    }
+
+    /**
+     * Since 1.27.0 (audit QO-L2): marks the pending answer of this request committed (replayed from then on whatever
+     * happens to the entry it names). An answer another request stored meanwhile is left alone.
+     */
+    public function confirm(string $userId, string $key, string $nonce): void
+    {
+        $item   = $this->cache->getItem($this->itemKey($userId, $key));
+        $stored = $item->isHit() ? $item->get() : null;
+        if (is_array($stored) && ($stored['pending'] ?? null) === $nonce) {
+            unset($stored['pending']);
+            $this->store($userId, $key, $stored);
+        }
+    }
+
+    /**
+     * Since 1.27.0: drops the pending answer of this request (its transaction failed). Compare-and-delete (audit
+     * QO-L2): an answer another request with the same key stored meanwhile is kept.
+     */
+    public function forget(string $userId, string $key, string $nonce): void
+    {
+        $item   = $this->cache->getItem($this->itemKey($userId, $key));
+        $stored = $item->isHit() ? $item->get() : null;
+        if (is_array($stored) && ($stored['pending'] ?? null) === $nonce) {
+            $this->cache->deleteItem($this->itemKey($userId, $key));
+        }
+    }
+
+    /**
+     * @param array<mixed> $value
+     */
+    private function store(string $userId, string $key, array $value): void
+    {
         $item = $this->cache->getItem($this->itemKey($userId, $key));
-        $item->set(['hash' => $bodyHash, 'status' => $status, 'body' => $body]);
+        $item->set($value);
         $item->expiresAfter(self::TTL_SECONDS);
         $this->cache->save($item);
     }
