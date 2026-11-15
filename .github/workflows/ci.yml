@@ -341,7 +341,7 @@ jobs:
           TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
         run: >-
           php -d memory_limit=1G vendor/bin/phpunit --no-coverage
-          --filter 'LoadReadiness|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest'
+          --filter 'LoadReadiness|AuditQo|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest'
           tests/Functional
 
       - name: The same with the private entity manager
@@ -351,7 +351,7 @@ jobs:
           TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: '1'
         run: >-
           php -d memory_limit=1G vendor/bin/phpunit --no-coverage --exclude-group shared-entity-manager
-          --filter 'LoadReadiness|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest'
+          --filter 'LoadReadiness|AuditQo|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest'
           tests/Functional
 
   rollback-clients:
