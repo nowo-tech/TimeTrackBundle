@@ -1,0 +1,5 @@
+# REQ-DEMO-015: the bundle forms are FormKit forms; the demo sets the FormKit CSS framework to `none` so they sit on
+# UiKit's form theme (twig.yaml) instead of Bootstrap. The demo itself renders no form of its own: the timesheet and the
+# timer actions are the bundle's (TimesheetFormHandler, CSRF-only POSTs).
+nowo_form_kit:
+    css_framework: none
