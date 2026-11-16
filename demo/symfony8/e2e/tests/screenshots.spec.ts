@@ -21,7 +21,7 @@ async function captureDemoFrame(page: Page, file: string): Promise<void> {
   await expect(toolbar).toBeVisible();
   const toolbarHeight = (await toolbar.boundingBox())?.height ?? 40;
   const contentBottom = await page
-    .locator('.nowo-ui-host-page')
+    .locator('main')
     .first()
     .evaluate((el) => el.getBoundingClientRect().bottom + window.scrollY);
   await page.setViewportSize({ width: WIDTH, height: Math.ceil(contentBottom + 48 + toolbarHeight) });
