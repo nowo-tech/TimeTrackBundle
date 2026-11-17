@@ -157,6 +157,10 @@ final class TimeTrackRouteLoaderTest extends TestCase
         yield 'upload without delete' => [['monitoring_upload', 'monitoring_acknowledge'], 'monitoring_screenshot_delete'];
         yield 'intent without acknowledge' => [['monitoring_screenshot_intent', 'monitoring_screenshot_delete'], 'monitoring_acknowledge'];
         yield 'calendar without revoke' => [['calendar_connections'], 'calendar_connection_revoke'];
+        yield 'timer_start without timer_stop' => [['timer_start'], 'timer_stop'];
+        yield 'timer_switch without timer_stop' => [['timer_switch'], 'timer_stop'];
+        yield 'activity without acknowledge' => [['monitoring_activity'], 'monitoring_acknowledge'];
+        yield 'timesheet_submit without withdraw' => [['timesheet_submit'], 'timesheet_withdraw'];
         yield 'entries_create without entries' => [['entries_create'], 'entries'];
     }
 
@@ -174,7 +178,7 @@ final class TimeTrackRouteLoaderTest extends TestCase
     public function testCompleteIncludeListsAreAccepted(): void
     {
         TimeTrackRouteLoader::assertIncludeDependencies([]);
-        TimeTrackRouteLoader::assertIncludeDependencies(['login', 'logout', 'me', 'entries', 'entries_create', 'calendar_connections', 'calendar_connection_revoke', 'monitoring_upload', 'monitoring_screenshot_delete', 'monitoring_acknowledge']);
+        TimeTrackRouteLoader::assertIncludeDependencies(['timer_start', 'timer_switch', 'timer_stop', 'monitoring_activity', 'timesheet_submit', 'timesheet_withdraw', 'login', 'logout', 'me', 'entries', 'entries_create', 'calendar_connections', 'calendar_connection_revoke', 'monitoring_upload', 'monitoring_screenshot_delete', 'monitoring_acknowledge']);
         self::assertSame([], array_diff(array_merge(...array_values(TimeTrackRouteLoader::INCLUDE_DEPENDENCIES)), array_keys(TimeTrackRouteLoader::clientRouteMap())));
         self::assertSame([], array_diff(array_keys(TimeTrackRouteLoader::INCLUDE_DEPENDENCIES), array_keys(TimeTrackRouteLoader::clientRouteMap())));
     }

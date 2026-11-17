@@ -103,6 +103,9 @@ the container build with a `LogicException` naming the missing key:
 | `login`, `device_token` | `logout` (a client must be able to revoke the token it was given) |
 | `monitoring_upload`, `monitoring_screenshot_intent` | `monitoring_screenshot_delete`, `monitoring_acknowledge` |
 | `calendar_connections` | `calendar_connection_revoke` |
+| `timer_start`, `timer_switch` | `timer_stop` (a running timer must be stoppable) |
+| `monitoring_activity` | `monitoring_acknowledge` |
+| `timesheet_submit` | `timesheet_withdraw` (a submitted timesheet can be withdrawn) |
 | `entries_create` | `entries` (the CORS preflight of `POST entries` is answered by the GET route) |
 
 ### Route table

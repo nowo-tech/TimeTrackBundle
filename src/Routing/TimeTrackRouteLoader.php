@@ -198,6 +198,13 @@ final class TimeTrackRouteLoader extends Loader
         'monitoring_screenshot_intent' => ['monitoring_screenshot_delete', 'monitoring_acknowledge'],
         // A connected calendar can always be disconnected.
         'calendar_connections' => ['calendar_connection_revoke'],
+        // A timer that can be started or switched can always be stopped.
+        'timer_start'  => ['timer_stop'],
+        'timer_switch' => ['timer_stop'],
+        // Activity samples are only accepted for an acknowledged monitoring notice.
+        'monitoring_activity' => ['monitoring_acknowledge'],
+        // A submitted timesheet can be withdrawn.
+        'timesheet_submit' => ['timesheet_withdraw'],
         // The CORS preflight of the POST (same path) is answered by the GET route.
         'entries_create' => ['entries'],
     ];
