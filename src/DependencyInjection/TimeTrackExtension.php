@@ -179,11 +179,13 @@ use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Security\Core\User\UserCheckerInterface;
 
+use function array_diff;
 use function array_diff_key;
 use function array_key_exists;
 use function array_merge;
 use function array_unique;
 use function array_values;
+use function implode;
 use function in_array;
 use function interface_exists;
 use function is_array;
@@ -1230,7 +1232,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}} $api */
+        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
@@ -1249,6 +1251,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         // Since 1.29 (REQ-API-001): the host API prefix and the full path prefix of the versioned client routes.
         $container->setParameter('nowo_time_track.client_api.prefix', $api['prefix']);
         $container->setParameter('nowo_time_track.client_api.v1_path_prefix', $config['route_prefix'] . $api['prefix'] . TimeTrackRouteLoader::API_SEGMENT . '/' . TimeTrackRouteLoader::API_VERSION);
+        // Since 1.30: the client routes the import publishes (empty = all); unknown keys fail the build.
+        /** @var list<string> $includeRoutes */
+        $includeRoutes = array_values(array_unique($api['routes']['include']));
+        $unknownRoutes = array_diff($includeRoutes, array_keys(TimeTrackRouteLoader::clientRouteMap()));
+        if ($unknownRoutes !== []) {
+            throw new LogicException(sprintf('Unknown client route key(s) in nowo_time_track.client_api.routes.include: %s. Valid keys: %s.', implode(', ', $unknownRoutes), implode(', ', array_keys(TimeTrackRouteLoader::clientRouteMap()))));
+        }
+        $container->setParameter('nowo_time_track.client_api.routes.include', $includeRoutes);
         $this->registerClientAccountChecker($container, $api['user_checker']);
         /** @var array{enabled: bool, routes: array<string, array{path: string, name: string}>} $clientRouting */
         $clientRouting = $config['clients'];

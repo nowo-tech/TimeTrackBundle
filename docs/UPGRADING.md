@@ -119,6 +119,7 @@ nowo_transaction_doctrine:
   (`message`: "Part of your change may have been saved. Reload before trying again."): never retry it blindly.
 - HTML pages (manage UI, device verification) now throw `HttpException(409|503)` with the storage error as previous,
   instead of `ServiceUnavailableHttpException`; match on the status, not the class, in a custom error page.
+- Optional `client_api.routes.include` (default `[]` = all routes): publish only the listed client routes, on both the unversioned and the v1 paths. Nothing changes unless you set it.
 - New `StorageFailureConflictFormatter` (tag `nowo_transaction_doctrine.conflict_response_formatter`): if you list
   TimeTrack routes in `nowo_transaction_doctrine.controller_routes`, the responder's answer for them now uses the client
   API's shape (`{"error": "unavailable", "message": …}`, CORS) instead of `{"error": "concurrency_conflict"}`.

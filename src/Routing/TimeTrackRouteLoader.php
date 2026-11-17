@@ -17,7 +17,9 @@ use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+use function array_flip;
 use function array_intersect;
+use function array_intersect_key;
 use function sprintf;
 use function str_starts_with;
 use function strlen;
@@ -138,6 +140,7 @@ final class TimeTrackRouteLoader extends Loader
      * @param bool $deviceFlowEnabled Route `device/code` and `device/token` (client_api.device_flow.enabled)
      * @param bool $deviceDefaultPage Route the default device verification page (client_api.device_flow.default_page)
      * @param string $apiPrefix Host API prefix of the versioned routes (client_api.prefix, default `/api`)
+     * @param list<string> $includeClientRoutes Since 1.30 (client_api.routes.include): the client route keys to publish, on the unversioned and the v1 paths; empty = all
      */
     public function __construct(
         private readonly bool $clientsEnabled,
@@ -147,6 +150,7 @@ final class TimeTrackRouteLoader extends Loader
         private readonly bool $deviceFlowEnabled = false,
         private readonly bool $deviceDefaultPage = false,
         private readonly string $apiPrefix = '/api',
+        private readonly array $includeClientRoutes = [],
     ) {
         parent::__construct();
         $this->attributeLoader = new ControllerAttributeRouteLoader();
@@ -171,12 +175,27 @@ final class TimeTrackRouteLoader extends Loader
         }
 
         if ($this->clientsEnabled) {
-            $clientMap = $this->deviceFlowEnabled ? self::CLIENT_ROUTES + self::DEVICE_ROUTES : self::CLIENT_ROUTES;
+            $clientMap = self::clientRouteMap($this->deviceFlowEnabled);
+            if ($this->includeClientRoutes !== []) {
+                // Since 1.30: a route that is not listed does not exist (the router answers 404), on both paths.
+                $clientMap = array_intersect_key($clientMap, array_flip($this->includeClientRoutes));
+            }
             $this->addRoutes($collection, $attributes, $this->clientRoutes, $clientMap);
             $this->addRoutes($collection, $attributes, $this->versionedRoutes($attributes, $clientMap), $clientMap);
         }
 
         return $collection;
+    }
+
+    /**
+     * Since 1.30: the client route keys that exist (the device flow routes only with the device flow); the valid values
+     * of `client_api.routes.include`.
+     *
+     * @return array<string, string> key => controller action
+     */
+    public static function clientRouteMap(bool $deviceFlowEnabled = true): array
+    {
+        return $deviceFlowEnabled ? self::CLIENT_ROUTES + self::DEVICE_ROUTES : self::CLIENT_ROUTES;
     }
 
     /**

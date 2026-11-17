@@ -9,6 +9,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 ## Table of contents
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
+  - [Publishing only some routes (`client_api.routes.include`, 1.30)](#publishing-only-some-routes-client_apiroutesinclude-130)
   - [Route table](#route-table)
   - [Alias policy](#alias-policy)
   - [Hosts must check](#hosts-must-check)
@@ -74,6 +75,25 @@ rate limits (the buckets are keyed by token and client IP, never by path), CORS 
 issued on one path works on the other. Every section below names the unversioned path; prepend `v1/` after
 `/api/time-track/` for the canonical one. The time-track-desktop and time-track-extension releases keep calling the
 unversioned paths for now.
+
+### Publishing only some routes (`client_api.routes.include`, 1.30)
+
+By default the route import (`nowo_time_track` or `nowo_time_track_api`) publishes every client route. A host that offers
+only part of the API (for example Beacon, which has no balance, calendar, entry create/edit, suggestions or timesheets)
+lists the route **keys** it wants (the first column of the route table below):
+
+```yaml
+nowo_time_track:
+    client_api:
+        routes:
+            include: [login, logout, me, tasks, timer, timer_start, timer_stop, timer_switch, heartbeat, entries]
+```
+
+The list applies to the unversioned paths and to the v1 twins alike. A route that is not listed **does not exist**: it
+has no route name and the router answers 404, whatever the feature switches say. Empty (default) = all routes, as in
+1.29. An unknown key fails the container build. The device flow routes (`device_code`, `device_token`) are listed the
+same way and still need `client_api.device_flow.enabled`. A host that hand-imports routes keeps doing so; the option
+only narrows the import.
 
 ### Route table
 
