@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.30.0] - 2026-11-18](#1300---2026-11-18)
 - [[1.29.0] - 2026-11-17](#1290---2026-11-17)
 - [[1.28.0] - 2026-11-17](#1280---2026-11-17)
 - [[1.27.0] - 2026-11-15](#1270---2026-11-15)
@@ -68,6 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+## [1.30.0] - 2026-11-18
+
+### Changed
+
+- **Transient storage failures answer 409 + `Retry-After` (was 503).** Owner platform decision (final lock conflict = 409 + `Retry-After`). `StorageFailureSubscriber` reads the status and the default `Retry-After` from nowo-tech/transaction-doctrine 1.3's shared `ConflictResponsePolicy` (service `nowo_transaction_doctrine.conflict_response_policy`, injected optionally; `new ConflictResponsePolicy()`, 409 and 1 s, when the host does not register that bundle). The client API keeps `{"error": "unavailable", "message": …}`, its CORS headers and `Cache-Control: no-store`; the HTML pages get `$policy->httpException(…)` instead of a `ServiceUnavailableHttpException`. A `ConcurrencyConflict` with `committed: true` anywhere in the chain gets the same status but **no** `Retry-After` and the message "Part of your change may have been saved. Reload before trying again.". The unique-key 409 (`{"error": "conflict"}`) is unchanged. `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503. See [UPGRADING](UPGRADING.md#to-1300).
+- `nowo-tech/transaction-doctrine` requirement raised to `^1.3`.
+
+### Added
+
+- `EventSubscriber\StorageFailureConflictFormatter`, a `ConflictResponseFormatterInterface` (tag `nowo_transaction_doctrine.conflict_response_formatter`, registered only when the interface exists): a host that lists TimeTrack routes in `nowo_transaction_doctrine.controller_routes` gets the client API's error shape (`{"error": "unavailable", "message": …}`, CORS headers) instead of the library's `{"error": "concurrency_conflict"}`. The HTML pages and other routes fall through.
 
 ## [1.29.0] - 2026-11-17
 

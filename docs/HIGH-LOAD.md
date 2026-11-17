@@ -8,7 +8,7 @@ account at once (the desktop agent, the browser extension, the web UI, an agent 
 
 - [One unit of work per write](#one-unit-of-work-per-write)
 - [Your entity manager is yours](#your-entity-manager-is-yours)
-- [Transient failures: 503, conflicts: 409](#transient-failures-503-conflicts-409)
+- [Transient failures and conflicts: 409](#transient-failures-and-conflicts-409)
 - [Races that no longer happen](#races-that-no-longer-happen)
 - [One lock order](#one-lock-order)
 - [Exact identifiers](#exact-identifiers)
@@ -73,19 +73,19 @@ the read view predates the bundle's locks: a timesheet transition may then hash 
 before its lock (the approval later answers `stale`). Call transitions outside your own transaction, or use READ
 COMMITTED.
 
-## Transient failures: 503, conflicts: 409
+## Transient failures and conflicts: 409
 
 On the bundle's routes (a controller of the bundle, or a `nowo_time_track*` route), `StorageFailureSubscriber`
 (`kernel.exception`, priority -64, after your own listeners) maps:
 
 | Failure | Answer |
 |---------|--------|
-| `Nowo\TransactionContract\TransientStorageFailure`, or a DBAL `RetryableException` (deadlock, lock wait timeout), anywhere in the exception chain | `503 Service Unavailable` with `Retry-After` (the runner's hint, 1 s) |
+| `Nowo\TransactionContract\TransientStorageFailure`, or a DBAL `RetryableException` (deadlock, lock wait timeout), anywhere in the exception chain | `409 Conflict` with `Retry-After` (the runner's hint, else the shared policy's 1 s; since 1.30.0, was 503; `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503). A `ConcurrencyConflict` with `committed: true` gets no `Retry-After` and a reload message |
 | A DBAL `UniqueConstraintViolationException` (a concurrent request wrote the same row first), anywhere in the chain | `409 Conflict` |
 
 The client API (desktop agent, browser extension, calendar, meetings, monitoring, working time, device flow) answers its
 usual error body, `{"error": "unavailable" | "conflict", "message": "…"}`, with its CORS headers and
-`Cache-Control: no-store`. The manage UI and the device verification page get a `ServiceUnavailableHttpException` /
+`Cache-Control: no-store`. The manage UI and the device verification page get a `HttpException` of the policy /
 `ConflictHttpException` rendered by your error page. The storage error stays the previous exception (for your logs):
 no SQL, no parameter reaches the client. Your own routes are never touched: your controllers that call bundle services
 receive `TransientStorageFailure` and decide.

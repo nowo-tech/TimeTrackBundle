@@ -75,6 +75,7 @@ use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureConflictFormatter;
 use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
@@ -165,6 +166,7 @@ use Nowo\TimeTrackBundle\WorkingTime\TaskTimeWorkedTimeSource;
 use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
+use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponseFormatterInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
@@ -183,6 +185,7 @@ use function array_merge;
 use function array_unique;
 use function array_values;
 use function in_array;
+use function interface_exists;
 use function is_array;
 use function is_string;
 use function rtrim;
@@ -1474,8 +1477,17 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->addTag('kernel.reset', ['method' => 'reset']);
         $container->setAlias(TimeTrackTransactionRunner::SERVICE_ID, TimeTrackTransactionRunner::class);
         $container->register(StorageFailureSubscriber::class, StorageFailureSubscriber::class)
-            ->setArguments(['$responses' => new Reference(ClientResponseFactory::class, ContainerInterface::NULL_ON_INVALID_REFERENCE)])
+            ->setArguments([
+                '$responses' => new Reference(ClientResponseFactory::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                // The shared policy (409 by default); absent when the host did not register nowo-tech/transaction-doctrine's bundle (the subscriber then uses 409 + 1 s).
+                '$policy' => new Reference('nowo_transaction_doctrine.conflict_response_policy', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ])
             ->addTag('kernel.event_subscriber');
+        if (interface_exists(ConflictResponseFormatterInterface::class)) {
+            $container->register(StorageFailureConflictFormatter::class, StorageFailureConflictFormatter::class)
+                ->setArguments(['$responses' => new Reference(ClientResponseFactory::class, ContainerInterface::NULL_ON_INVALID_REFERENCE)])
+                ->addTag(ConflictResponseFormatterInterface::TAG);
+        }
 
         $resettables = [new Reference(TimeTrackTransactionRunner::class, ContainerInterface::IGNORE_ON_UNINITIALIZED_REFERENCE)];
         if ($private) {

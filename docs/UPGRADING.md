@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.30.0](#to-1300)
 - [To 1.29.0](#to-1290)
 - [To 1.28.0](#to-1280)
 - [To 1.27.0](#to-1270)
@@ -87,6 +88,40 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.30.0
+
+From **1.29.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle nowo-tech/transaction-doctrine
+```
+
+**409 (was 503).** A transient storage failure on a TimeTrack route (deadlock, lock wait timeout, `TransientStorageFailure`)
+now answers **409 Conflict + `Retry-After`**, the status of the shared `ConflictResponsePolicy` of
+nowo-tech/transaction-doctrine 1.3 (required `^1.3`). JSON field names, CORS headers and the unique-key 409
+(`{"error": "conflict"}`) are unchanged. `nowo_transaction_doctrine.conflict_response.status: 503` keeps the old status:
+
+```yaml
+# config/packages/nowo_transaction_doctrine.yaml
+nowo_transaction_doctrine:
+    conflict_response:
+        status: 503   # 409 (default) or 503
+        retry_after: 1
+```
+
+- **Hosts that never register `Nowo\TransactionDoctrine\Symfony\NowoTransactionDoctrineBundle` move to 409 too** (the
+  bundle falls back to `new ConflictResponsePolicy()`: 409, 1 s). The only way back to 503 is to register that bundle in
+  `config/bundles.php` and set `conflict_response.status: 503`.
+- Clients that retry on 503 + `Retry-After` must also retry on 409 + `Retry-After`.
+- A write that already committed part of its work (`ConcurrencyConflict` with `committed: true`, commit detection of
+  the transaction-doctrine bundle) is answered with the same status but **without** `Retry-After`, as a reload prompt
+  (`message`: "Part of your change may have been saved. Reload before trying again."): never retry it blindly.
+- HTML pages (manage UI, device verification) now throw `HttpException(409|503)` with the storage error as previous,
+  instead of `ServiceUnavailableHttpException`; match on the status, not the class, in a custom error page.
+- New `StorageFailureConflictFormatter` (tag `nowo_transaction_doctrine.conflict_response_formatter`): if you list
+  TimeTrack routes in `nowo_transaction_doctrine.controller_routes`, the responder's answer for them now uses the client
+  API's shape (`{"error": "unavailable", "message": …}`, CORS) instead of `{"error": "concurrency_conflict"}`.
 
 ## To 1.29.0
 
