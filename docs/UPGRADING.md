@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.28.0](#to-1280)
 - [To 1.27.0](#to-1270)
 - [To 1.26.0](#to-1260)
 - [To 1.25.0](#to-1250)
@@ -85,6 +86,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.28.0
+
+From **1.27.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 **Attribute routes (REQ-SF-004), no action needed.** The routes moved from PHP code in
 `TimeTrackRouteLoader` to `#[Route]` attributes on the controllers. Keep your import as it is:

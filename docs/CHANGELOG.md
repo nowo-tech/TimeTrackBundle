@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.28.0] - 2026-11-17](#1280---2026-11-17)
 - [[1.27.0] - 2026-11-15](#1270---2026-11-15)
 - [[1.26.0] - 2026-11-14](#1260---2026-11-14)
 - [[1.25.0] - 2026-11-13](#1250---2026-11-13)
@@ -67,9 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-11-17
+
 ### Changed
 
-- Routes are declared with `#[Route]` attributes on the controllers (REQ-SF-004; owner approval 2026-11-17). The `type: nowo_time_track` route loader now reads those attributes (through an internal `ControllerAttributeRouteLoader`, so a host decorating `routing.loader.attribute` cannot change the bundle routes) and applies the configured names and paths, `route_prefix` and the feature switches, as before. Every route keeps its name, path, methods, requirements, defaults, options, host, scheme, condition and order; `tests/Integration/Routing/RouteCollectionFixtureTest.php` pins the collection against a fixture dumped from 1.27 (default configuration, client API, device flow, custom prefix / paths / names, trailing-slash prefix, functional kernel), and `tests/Fixtures/Routing/demo-symfony8.debug-router.json` is the demo `debug:router` dump. The controller classes are now router cache resources (a changed controller refreshes the routes in debug). No host change: keep the route import as it is. See [UPGRADING](UPGRADING.md#unreleased).
+- Routes are declared with `#[Route]` attributes on the controllers (REQ-SF-004; owner approval 2026-11-17). The `type: nowo_time_track` route loader now reads those attributes (through an internal `ControllerAttributeRouteLoader`, so a host decorating `routing.loader.attribute` cannot change the bundle routes) and applies the configured names and paths, `route_prefix` and the feature switches, as before. Every route keeps its name, path, methods, requirements, defaults, options, host, scheme, condition and order; `tests/Integration/Routing/RouteCollectionFixtureTest.php` pins the collection against a fixture dumped from 1.27 (default configuration, client API, device flow, custom prefix / paths / names, trailing-slash prefix, functional kernel), and `tests/Fixtures/Routing/demo-symfony8.debug-router.json` is the demo `debug:router` dump. The controller classes are now router cache resources (a changed controller refreshes the routes in debug). No host change: keep the route import as it is. See [UPGRADING](UPGRADING.md#to-1280).
 - The controller services are no longer autoconfigured (REQ-SF-004 rule 7): they are tagged `controller.service_arguments` explicitly (plus `container.service_subscriber` for `TimeTrackManageController` and `TimeTrackDeviceVerificationController`), so the host's `routing.controllers` import on Symfony >= 7.3 does not load the attribute routes.
 
 ### Documentation
@@ -1836,7 +1839,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.27.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.28.0...HEAD
+[1.28.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.24.2...v1.25.0
