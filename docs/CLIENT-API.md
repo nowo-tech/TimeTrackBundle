@@ -1,4 +1,4 @@
-# Client API reference (1.26, contract v0.3.1 + timetrack-next v1.1 + §TT-MON)
+# Client API reference (1.29, contract v0.3.1 + timetrack-next v1.1 + §TT-MON)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -8,6 +8,11 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 ## Table of contents
 
+- [Paths and versions (1.29)](#paths-and-versions-129)
+  - [Route table](#route-table)
+  - [Alias policy](#alias-policy)
+  - [Hosts must check](#hosts-must-check)
+- [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
 - [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
   - [GET me: `monitoring`](#get-me-monitoring)
   - [POST monitoring/acknowledge](#post-monitoringacknowledge)
@@ -51,6 +56,106 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
 - [Idle check](#idle-check)
+
+## Paths and versions (1.29)
+
+Since 1.29 (REQ-API-001, house rule `<prefix>/<segment>/v<N>`) every client API route is served at two paths:
+
+- **v1 (canonical):** `<route_prefix><client_api.prefix>/time-track/v1/<suffix>`, default `/api/time-track/v1/…`, route
+  name `nowo_time_track_api_v1_<key>`. The suffix is the default path after `/api/time-track` (for example `timer/start`).
+  The per-route `clients.routes.*.path` / `.name` options do not move it; `client_api.prefix` (default `/api`) and
+  `route_prefix` do. The container parameter `%nowo_time_track.client_api.v1_path_prefix%` holds the full prefix
+  (default `/api/time-track/v1`).
+- **Unversioned (legacy):** the 1.28 paths and names (`clients.routes.*`, default `/api/time-track/<suffix>`,
+  `nowo_time_track_api_<key>`), unchanged.
+
+Both routes of a pair have the same controller, methods, requirements and defaults: the same authentication, scopes,
+rate limits (the buckets are keyed by token and client IP, never by path), CORS answers and response bodies. A token
+issued on one path works on the other. Every section below names the unversioned path; prepend `v1/` after
+`/api/time-track/` for the canonical one. The time-track-desktop and time-track-extension releases keep calling the
+unversioned paths for now.
+
+### Route table
+
+`debug:router` of the functional kernel (client API and device flow on, default configuration):
+
+| Key | Methods | Unversioned path (permanent alias) and name | v1 path and name |
+|---|---|---|---|
+| `login` | POST, OPTIONS | `/api/time-track/login` `nowo_time_track_api_login` | `/api/time-track/v1/login` `nowo_time_track_api_v1_login` |
+| `logout` | POST, OPTIONS | `/api/time-track/logout` `nowo_time_track_api_logout` | `/api/time-track/v1/logout` `nowo_time_track_api_v1_logout` |
+| `me` | GET, OPTIONS | `/api/time-track/me` `nowo_time_track_api_me` | `/api/time-track/v1/me` `nowo_time_track_api_v1_me` |
+| `tasks` | GET, OPTIONS | `/api/time-track/tasks` `nowo_time_track_api_tasks` | `/api/time-track/v1/tasks` `nowo_time_track_api_v1_tasks` |
+| `timer` | GET, OPTIONS | `/api/time-track/timer` `nowo_time_track_api_timer` | `/api/time-track/v1/timer` `nowo_time_track_api_v1_timer` |
+| `timer_start` | POST, OPTIONS | `/api/time-track/timer/start` `nowo_time_track_api_timer_start` | `/api/time-track/v1/timer/start` `nowo_time_track_api_v1_timer_start` |
+| `timer_stop` | POST, OPTIONS | `/api/time-track/timer/stop` `nowo_time_track_api_timer_stop` | `/api/time-track/v1/timer/stop` `nowo_time_track_api_v1_timer_stop` |
+| `heartbeat` | POST, OPTIONS | `/api/time-track/heartbeat` `nowo_time_track_api_heartbeat` | `/api/time-track/v1/heartbeat` `nowo_time_track_api_v1_heartbeat` |
+| `entries` | GET, OPTIONS | `/api/time-track/entries` `nowo_time_track_api_entries` | `/api/time-track/v1/entries` `nowo_time_track_api_v1_entries` |
+| `timer_switch` | POST, OPTIONS | `/api/time-track/timer/switch` `nowo_time_track_api_timer_switch` | `/api/time-track/v1/timer/switch` `nowo_time_track_api_v1_timer_switch` |
+| `timer_discard_idle` | POST, OPTIONS | `/api/time-track/timer/discard-idle` `nowo_time_track_api_timer_discard_idle` | `/api/time-track/v1/timer/discard-idle` `nowo_time_track_api_v1_timer_discard_idle` |
+| `export` | GET, OPTIONS | `/api/time-track/export` `nowo_time_track_api_export` | `/api/time-track/v1/export` `nowo_time_track_api_v1_export` |
+| `workday` | GET, OPTIONS | `/api/time-track/workday` `nowo_time_track_api_workday` | `/api/time-track/v1/workday` `nowo_time_track_api_v1_workday` |
+| `workday_action` | POST, OPTIONS | `/api/time-track/workday/{action}` `nowo_time_track_api_workday_action` | `/api/time-track/v1/workday/{action}` `nowo_time_track_api_v1_workday_action` |
+| `balance` | GET, OPTIONS | `/api/time-track/balance` `nowo_time_track_api_balance` | `/api/time-track/v1/balance` `nowo_time_track_api_v1_balance` |
+| `timesheets` | GET, OPTIONS | `/api/time-track/timesheets` `nowo_time_track_api_timesheets` | `/api/time-track/v1/timesheets` `nowo_time_track_api_v1_timesheets` |
+| `timesheet_submit` | POST, OPTIONS | `/api/time-track/timesheets/{periodKey}/submit` `nowo_time_track_api_timesheet_submit` | `/api/time-track/v1/timesheets/{periodKey}/submit` `nowo_time_track_api_v1_timesheet_submit` |
+| `timesheet_withdraw` | POST, OPTIONS | `/api/time-track/timesheets/{periodKey}/withdraw` `nowo_time_track_api_timesheet_withdraw` | `/api/time-track/v1/timesheets/{periodKey}/withdraw` `nowo_time_track_api_v1_timesheet_withdraw` |
+| `calendar_connections` | GET, OPTIONS | `/api/time-track/calendar/connections` `nowo_time_track_api_calendar_connections` | `/api/time-track/v1/calendar/connections` `nowo_time_track_api_v1_calendar_connections` |
+| `calendar_connection_revoke` | DELETE, OPTIONS | `/api/time-track/calendar/connections/{id}` `nowo_time_track_api_calendar_connection_revoke` | `/api/time-track/v1/calendar/connections/{id}` `nowo_time_track_api_v1_calendar_connection_revoke` |
+| `suggestions` | GET, OPTIONS | `/api/time-track/suggestions` `nowo_time_track_api_suggestions` | `/api/time-track/v1/suggestions` `nowo_time_track_api_v1_suggestions` |
+| `suggestions_accept` | POST, OPTIONS | `/api/time-track/suggestions/accept` `nowo_time_track_api_suggestions_accept` | `/api/time-track/v1/suggestions/accept` `nowo_time_track_api_v1_suggestions_accept` |
+| `suggestions_dismiss` | POST, OPTIONS | `/api/time-track/suggestions/dismiss` `nowo_time_track_api_suggestions_dismiss` | `/api/time-track/v1/suggestions/dismiss` `nowo_time_track_api_v1_suggestions_dismiss` |
+| `suggestions_resolve_keys` | POST, OPTIONS | `/api/time-track/suggestions/resolve-keys` `nowo_time_track_api_suggestions_resolve_keys` | `/api/time-track/v1/suggestions/resolve-keys` `nowo_time_track_api_v1_suggestions_resolve_keys` |
+| `entries_create` | POST | `/api/time-track/entries` `nowo_time_track_api_entries_create` | `/api/time-track/v1/entries` `nowo_time_track_api_v1_entries_create` |
+| `entries_update` | PATCH, OPTIONS | `/api/time-track/entries/{id}` `nowo_time_track_api_entries_update` | `/api/time-track/v1/entries/{id}` `nowo_time_track_api_v1_entries_update` |
+| `me_meetings` | GET, OPTIONS | `/api/time-track/me/meetings` `nowo_time_track_client_me_meetings` | `/api/time-track/v1/me/meetings` `nowo_time_track_api_v1_me_meetings` |
+| `monitoring_acknowledge` | POST, OPTIONS | `/api/time-track/monitoring/acknowledge` `nowo_time_track_api_monitoring_acknowledge` | `/api/time-track/v1/monitoring/acknowledge` `nowo_time_track_api_v1_monitoring_acknowledge` |
+| `monitoring_screenshot_intent` | POST, OPTIONS | `/api/time-track/monitoring/screenshots/intent` `nowo_time_track_api_monitoring_screenshot_intent` | `/api/time-track/v1/monitoring/screenshots/intent` `nowo_time_track_api_v1_monitoring_screenshot_intent` |
+| `monitoring_upload` | PUT, OPTIONS | `/api/time-track/monitoring/uploads/{uploadId}` `nowo_time_track_api_monitoring_upload` | `/api/time-track/v1/monitoring/uploads/{uploadId}` `nowo_time_track_api_v1_monitoring_upload` |
+| `monitoring_screenshot_discarded` | POST, OPTIONS | `/api/time-track/monitoring/screenshots/discarded` `nowo_time_track_api_monitoring_screenshot_discarded` | `/api/time-track/v1/monitoring/screenshots/discarded` `nowo_time_track_api_v1_monitoring_screenshot_discarded` |
+| `monitoring_screenshot_delete` | DELETE, OPTIONS | `/api/time-track/monitoring/screenshots/{screenshotId}` `nowo_time_track_api_monitoring_screenshot_delete` | `/api/time-track/v1/monitoring/screenshots/{screenshotId}` `nowo_time_track_api_v1_monitoring_screenshot_delete` |
+| `monitoring_activity` | POST, OPTIONS | `/api/time-track/monitoring/activity` `nowo_time_track_api_monitoring_activity` | `/api/time-track/v1/monitoring/activity` `nowo_time_track_api_v1_monitoring_activity` |
+| `device_code` | POST, OPTIONS | `/api/time-track/device/code` `nowo_time_track_api_device_code` | `/api/time-track/v1/device/code` `nowo_time_track_api_v1_device_code` |
+| `device_token` | POST, OPTIONS | `/api/time-track/device/token` `nowo_time_track_api_device_token` | `/api/time-track/v1/device/token` `nowo_time_track_api_v1_device_token` |
+
+`entries_create` has no `OPTIONS`: the `entries` route of the same path answers the preflight (both versions).
+
+### Alias policy
+
+The unversioned paths are **permanent** aliases: installed desktop and extension clients call them, so they are never
+deprecated for removal (owner decision 2026-11-17, rule D-20261110-04 for installed clients). Keep your
+`clients.routes.*` names if your code generates URLs from them. New clients should call the v1 paths.
+
+Hosts that import the routes get both versions. A host that routes only the API can import
+`type: nowo_time_track_api` (both versions of every client route, no manage page, no device verification page). A
+`clients.routes.*` name or path equal to a v1 route's name or path (with a common method) fails the container build.
+
+### Hosts must check
+
+The bundle's Bearer check, account check, scopes, rate limits and CORS answers apply to both versions, whatever the
+host firewall. Host rules written for the unversioned paths do not follow the v1 paths on their own:
+
+- the **firewall** `pattern` of the stateless API firewall: `^/api/time-track/` covers both versions; a pattern that
+  excludes v1 or lists exact paths sends v1 to another firewall. A firewall with `ROLE_USER` in `access_control` then
+  fails closed (its own `401`), never open;
+- **`access_control`**: IP allow-lists, `requires_channel`, roles on these paths;
+- reverse **proxy / WAF / CORS / logging** rules (rate limits, CORS added at the proxy, `Authorization` redaction);
+- **custom legacy paths** (`clients.routes.*.path`): v1 stays under `%nowo_time_track.client_api.v1_path_prefix%`
+  (default `/api/time-track/v1`); add `^%nowo_time_track.client_api.v1_path_prefix%/` to those rules.
+
+## Account check on every token use (1.29)
+
+Every Bearer token use runs the Symfony user checker (`checkPreAuth()` then `checkPostAuth()`) for the token's user
+(`client_api.user_checker`, on by default). The same check runs before a token is issued: a refused account gets
+`401 invalid_credentials` at `login` and `400 access_denied` at `device/token` (the approval is consumed). It refuses
+only what the checker refuses: with Symfony's default firewall checker (`InMemoryUserChecker`) nobody is refused, the
+build logs it and `%nowo_time_track.client_api.user_checker.effective%` is false (`required: true` fails the build). A disabled, locked or expired account (any `AuthenticationException`,
+such as `DisabledException`, `LockedException`, `AccountExpiredException`, `CredentialsExpiredException`) gets the usual
+`401 invalid_token` with `WWW-Authenticate: Bearer error="invalid_token"`, audited as `request_denied` with reason
+`account_inactive`. The token is deleted by default (`revoke_tokens: true`): once the account is re-enabled the client
+signs in again. With `revoke_tokens: false` the token works again as soon as the account is re-enabled. The check runs
+after the token lookup and before the last-used update, `ClientCredentialStateInterface`, the rate limit and the scope
+check. Options:
+[CONFIGURATION](CONFIGURATION.md#client-api-129).
 
 ## Changes in 1.26 (activity monitoring, spec 199)
 
@@ -567,8 +672,9 @@ All additive: a 1.9 client keeps working unchanged; a 1.10 client detects a 1.9 
 | Credential | Host (Beacon: app password) | Created, named, listed and revoked by the user in the host | Until revoked |
 | Session token | Bundle (`ClientToken`) | Bearer the client holds, issued from a credential (`credentialId`, `scopes`, `issuedAt`); never listed on its own | `clients.token_ttl` |
 
-Every authenticated request asks the host `ClientCredentialStateInterface::isActive($token)`; deleting a credential
-calls `ClientTokenRevoker::revokeByCredential()`.
+Every authenticated request runs the user checker on the token's user (since 1.29, `client_api.user_checker`) and asks
+the host `ClientCredentialStateInterface::isActive($token)`; deleting a credential calls
+`ClientTokenRevoker::revokeByCredential()`.
 
 ## Scopes
 
@@ -587,9 +693,9 @@ grant.
 |---|---|---|
 | 400 | `invalid_request` | Missing / malformed field |
 | 400 | `metadata_not_allowed` | Free `metadata` on `timer/start` while `client_api.allow_metadata` is false |
-| 400 | `authorization_pending`, `slow_down`, `expired_token`, `access_denied` | `device/token` states |
-| 401 | `invalid_credentials` | `login` with wrong credentials |
-| 401 | `invalid_token` | Missing, unknown, expired, revoked token or inactive credential (`WWW-Authenticate: Bearer error="invalid_token"`) |
+| 400 | `authorization_pending`, `slow_down`, `expired_token`, `access_denied` | `device/token` states (`access_denied` also, since 1.29, for an account the user checker refuses at the exchange) |
+| 401 | `invalid_credentials` | `login` with wrong credentials, or (since 1.29) an account refused by the user checker |
+| 401 | `invalid_token` | Missing, unknown, expired, revoked token, inactive credential or (since 1.29) an account refused by the user checker (`WWW-Authenticate: Bearer error="invalid_token"`) |
 | 403 | `insufficient_scope` | Token lacks the endpoint scope |
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |
 | 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |

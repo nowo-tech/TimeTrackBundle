@@ -34,6 +34,10 @@ use const JSON_UNESCAPED_SLASHES;
  * before the routes moved to `#[Route]` attributes. Every route keeps its name, order, path, methods, requirements,
  * defaults, options, host, schemes and condition, with the default configuration and with custom prefixes, paths and
  * names. `TIME_TRACK_ROUTE_FIXTURE_WRITE=1` rewrites the fixture (only to record an intended change).
+ *
+ * Since 1.29 (REQ-API-001) every client route is followed, after the 1.28 routes (unchanged, in the same order), by its
+ * versioned twin `nowo_time_track_api_v1_<key>` at `<route_prefix><client_api.prefix>/time-track/v1/…`; the
+ * scenarios `api_only` (`type: nowo_time_track_api`) and `custom_api_prefix` pin the API-only import and the prefix.
  */
 final class RouteCollectionFixtureTest extends TestCase
 {
@@ -122,6 +126,16 @@ final class RouteCollectionFixtureTest extends TestCase
                 'clients'      => $clients,
                 'client_api'   => ['device_flow' => ['enabled' => true]],
             ],
+            // Since 1.29: the API-only import (no manage UI, no device verification page).
+            'api_only' => [
+                'clients'    => $clients,
+                'client_api' => ['device_flow' => ['enabled' => true]],
+            ],
+            // Since 1.29: the host API prefix of the v1 routes (the unversioned routes do not move).
+            'custom_api_prefix' => [
+                'clients'    => $clients,
+                'client_api' => ['prefix' => '/edge/api'],
+            ],
         ];
     }
 
@@ -129,7 +143,7 @@ final class RouteCollectionFixtureTest extends TestCase
     {
         $kernel = $scenario === 'functional_kernel'
             ? new FunctionalKernel()
-            : new HostRoutingKernel($this->dir . '/' . $scenario, true, self::configs()[$scenario]);
+            : new HostRoutingKernel($this->dir . '/' . $scenario, true, self::configs()[$scenario], $scenario === 'api_only' ? 'nowo_time_track_api' : 'nowo_time_track');
         $kernel->boot();
 
         try {

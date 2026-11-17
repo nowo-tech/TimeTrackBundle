@@ -85,8 +85,9 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     /**
      * @param array<string, mixed> $timeTrackConfig
+     * @param array<string, mixed> $securityConfig merged into the `security` configuration (since 1.29)
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false)
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false, private readonly array $securityConfig = [])
     {
         parent::__construct('test', $debug);
     }
@@ -120,7 +121,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize($this->securityConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -201,6 +202,8 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(RecordingTaskAccessChecker::class)->args([['task-2']])->public();
         $container->services()->alias(ServiceAccountPolicyInterface::class, StubServiceAccountPolicy::class);
         $container->services()->set(HostTimerTestController::class)->autowire()->public()->tag('controller.service_arguments');
+        // Since 1.29: the main firewall user checker (client_api.user_checker resolves security.user_checker.main).
+        $container->services()->set(SwitchableUserChecker::class)->public();
         if ($this->frozenClock) {
             // Since 1.26.0 (audit PM-L8): the monitoring tests' frozen clock.
             $container->services()->set(FrozenMonitoringClock::class)->public();
@@ -233,14 +236,16 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
                 ]] : []),
             ] + $this->nativeLazyObjects(),
         ]);
-        $container->extension('security', [
+        // Since 1.29: `$securityConfig` replaces parts of the host security configuration (audit SO probes: a firewall
+        // pattern that misses v1, access_control, Symfony's default user checker on `main`).
+        $container->extension('security', array_replace_recursive([
             'password_hashers' => [AppUser::class => 'plaintext'],
             'providers'        => ['app_users' => ['entity' => ['class' => AppUser::class, 'property' => 'email']]],
             'firewalls'        => [
                 'time_track_api' => ['pattern' => '^/api/time-track', 'security' => false],
-                'main'           => ['lazy' => true, 'provider' => 'app_users'],
+                'main'           => ['lazy' => true, 'provider' => 'app_users', 'user_checker' => SwitchableUserChecker::class],
             ],
-        ]);
+        ], $this->securityConfig));
         $container->extension('nowo_time_track', array_replace_recursive([
             'user_class' => $this->xmlHostUser ? HostUser::class : AppUser::class,
             'clients'    => [

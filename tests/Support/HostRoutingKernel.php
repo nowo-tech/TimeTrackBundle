@@ -27,7 +27,8 @@ use const PHP_VERSION_ID;
  * Host kernel for the routing test (REQ-SF-004 rule 7): its routing is the Symfony default
  * `controllers: { resource: routing.controllers }` and, when `$importBundleRoutes` is true, the documented import of
  * the bundle routes (`type: nowo_time_track` route loader). `$timeTrackConfig` is added to the `nowo_time_track`
- * configuration (the route fixture test boots it with custom prefixes, names and paths).
+ * configuration (the route fixture test boots it with custom prefixes, names and paths). `$routeType` is the import
+ * type (since 1.29 also `nowo_time_track_api`, the client API only).
  */
 final class HostRoutingKernel extends Kernel
 {
@@ -36,7 +37,7 @@ final class HostRoutingKernel extends Kernel
     /**
      * @param array<string, mixed> $timeTrackConfig merged into the `nowo_time_track` configuration (route fixture test)
      */
-    public function __construct(private readonly string $dir, private readonly bool $importBundleRoutes, private readonly array $timeTrackConfig = [])
+    public function __construct(private readonly string $dir, private readonly bool $importBundleRoutes, private readonly array $timeTrackConfig = [], private readonly string $routeType = 'nowo_time_track')
     {
         parent::__construct('test', false);
     }
@@ -122,7 +123,7 @@ final class HostRoutingKernel extends Kernel
     {
         $routes->import('routing.controllers');
         if ($this->importBundleRoutes) {
-            $routes->import('.', 'nowo_time_track');
+            $routes->import('.', $this->routeType);
         }
     }
 }

@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-17 (full `src/` recount; units added since 1.2 mapped to semantic requirement IDs)
+**Last audited**: 2026-11-17 (full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 units added)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -12,7 +12,8 @@
 | `DependencyInjection/Configuration.php` | Config tree | FR-CFG-001 |
 | `DependencyInjection/TimeTrackExtension.php` | DI extension | FR-CFG-002 |
 | `DependencyInjection/Compiler/TwigPathsPass.php` | Twig namespace | FR-TWIG-001 |
-| `Routing/TimeTrackRouteLoader.php` | Route loader | FR-ROUTE-001 |
+| `DependencyInjection/Compiler/ClientUserCheckerPass.php` | Client API (1.29 user checker) | FR-CLIENT-007 |
+| `Routing/TimeTrackRouteLoader.php` | Route loader (1.29: v1 twins, `nowo_time_track_api` type) | FR-ROUTE-001, FR-ROUTE-002, FR-ROUTE-003 |
 | `Routing/ControllerAttributeRouteLoader.php` | Controller `#[Route]` reader (internal) | FR-ROUTE-002 |
 | `Doctrine/TimeTrackMetadataListener.php` | Table prefix | FR-DOCTRINE-001 |
 | `Entity/ActiveTimer.php` | Active timer entity | FR-ENTITY-001 |
@@ -36,7 +37,7 @@
 | `Repository/DoctrineOrmTimeEntryRepository.php` | Time entry ORM | FR-REPO-002 |
 | `Repository/DoctrineOrmClientTokenRepository.php` | Client token ORM | FR-REPO-002 |
 | `Service/TimerService.php` | Timer domain service | FR-SVC-001 |
-| `Service/ClientAuthService.php` | Client auth service | FR-SVC-002 |
+| `Service/ClientAuthService.php` | Client auth service | FR-SVC-002, FR-CLIENT-007 |
 | `Service/TeamAccessGuard.php` | Manager access guard | FR-SVC-003 |
 | `Support/UserIdResolver.php` | User id helper | FR-SUP-001 |
 | `Client/ClientAuthenticatorInterface.php` | Client auth IF | FR-CLIENT-001 |
@@ -165,7 +166,8 @@
 | --- | --- | --- |
 | `Client/AlwaysActiveClientCredentialState.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientApiAuditor.php` | Client API (spec 002) | FR-CLIENT-005 |
-| `Client/ClientApiGuard.php` | Client API (spec 002) | FR-CLIENT-005 |
+| `Client/ClientAccountChecker.php` | Client API (1.29 user checker) | FR-CLIENT-007 |
+| `Client/ClientApiGuard.php` | Client API (spec 002) | FR-CLIENT-005, FR-CLIENT-007 |
 | `Client/ClientApiPrincipal.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientApiRateLimiter.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientApiSettings.php` | Client API (spec 002) | FR-CLIENT-005 |
@@ -289,7 +291,7 @@
 | `Form/DeviceUserCodeType.php` | Device authorization | FR-DEV-002 |
 | `Resources/views/time_track/device_code.html.twig` | Device authorization | FR-DEV-002 |
 | `Resources/views/time_track/device_confirm.html.twig` | Device authorization | FR-DEV-002 |
-| `Service/DeviceAuthorizationService.php` | Device authorization | FR-DEV-001 |
+| `Service/DeviceAuthorizationService.php` | Device authorization | FR-DEV-001, FR-CLIENT-007 |
 
 ## Meetings
 

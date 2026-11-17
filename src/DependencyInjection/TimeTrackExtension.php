@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarEventSource;
 use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Client\AlwaysActiveClientCredentialState;
+use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
@@ -61,6 +62,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMeetingsApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackMonitoringApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ClientUserCheckerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
@@ -124,6 +126,7 @@ use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRetentionRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
@@ -172,6 +175,7 @@ use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Security\Core\User\UserCheckerInterface;
 
 use function array_diff_key;
 use function array_key_exists;
@@ -1223,7 +1227,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}} $api */
+        /** @var array{allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
@@ -1239,6 +1243,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $loggerRef = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
 
         $container->setParameter('nowo_time_track.client_api.allow_metadata', $api['allow_metadata']);
+        // Since 1.29 (REQ-API-001): the host API prefix and the full path prefix of the versioned client routes.
+        $container->setParameter('nowo_time_track.client_api.prefix', $api['prefix']);
+        $container->setParameter('nowo_time_track.client_api.v1_path_prefix', $config['route_prefix'] . $api['prefix'] . TimeTrackRouteLoader::API_SEGMENT . '/' . TimeTrackRouteLoader::API_VERSION);
+        $this->registerClientAccountChecker($container, $api['user_checker']);
+        /** @var array{enabled: bool, routes: array<string, array{path: string, name: string}>} $clientRouting */
+        $clientRouting = $config['clients'];
+        if ($clientRouting['enabled']) {
+            // Since 1.29 (audit SO-I3): an unversioned route must not take a v1 route's name or path.
+            TimeTrackRouteLoader::assertNoVersionedCollision($clientRouting['routes'], $api['prefix'], $device['enabled']);
+        }
         $container->setParameter('nowo_time_track.client_api.device_flow.enabled', $device['enabled']);
         $container->setParameter('nowo_time_track.client_api.device_flow.default_page', $device['enabled'] && $device['default_page']);
 
@@ -1300,6 +1314,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$maxPendingPerPrefix' => $device['max_pending_per_prefix'],
                 '$maxPending'          => $device['max_pending'],
                 '$clock'               => $clockRef,
+                '$accountChecker'      => new Reference(ClientAccountChecker::class),
             ]));
 
         $container->setDefinition(ClientTaskPresenter::class, (new Definition(ClientTaskPresenter::class))
@@ -1331,6 +1346,38 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);
         $container->getDefinition(TimeTrackDeviceVerificationController::class)
             ->setArgument('$allowUnauthenticated', $security['allow_unauthenticated']);
+    }
+
+    /**
+     * Since 1.29 (`client_api.user_checker`): the account check of every Bearer token use, password login and device
+     * exchange. An explicit `service` is referenced as is; otherwise {@see ClientUserCheckerPass} resolves
+     * `security.user_checker.<firewall>` (fallback: the UserCheckerInterface alias, or no check when there is none) and
+     * flags a checker that refuses nobody (`required`). Off: no checker.
+     *
+     * @param array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool} $checker
+     */
+    private function registerClientAccountChecker(ContainerBuilder $container, array $checker): void
+    {
+        $definition = (new Definition(ClientAccountChecker::class))
+            ->setArgument('$userChecker', null)
+            ->setArgument('$tokens', new Reference(ClientTokenRepositoryInterface::class))
+            ->setArgument('$revokeTokens', $checker['revoke_tokens']);
+        // Set to true by ClientUserCheckerPass when the resolved checker can refuse someone (audit SO-M1).
+        $container->setParameter(ClientUserCheckerPass::EFFECTIVE_PARAMETER, false);
+
+        if ($checker['enabled']) {
+            $service  = $checker['service'];
+            $explicit = is_string($service) && $service !== '';
+            $definition
+                ->setArgument('$userChecker', $explicit ? new Reference($service) : new Reference(UserCheckerInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE))
+                ->addTag(ClientUserCheckerPass::TAG, ['firewall' => $checker['firewall'], 'auto' => !$explicit, 'required' => $checker['required']]);
+        }
+
+        $container->setDefinition(ClientAccountChecker::class, $definition);
+        $checkerRef = new Reference(ClientAccountChecker::class);
+        $container->getDefinition(ClientApiGuard::class)->setArgument('$accountChecker', $checkerRef);
+        // Since 1.29 (audit SO-L1): no token for a refused account (password login, device exchange).
+        $container->getDefinition(ClientAuthService::class)->setArgument('$accountChecker', $checkerRef);
     }
 
     /**

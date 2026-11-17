@@ -14,6 +14,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Client API 1.9](#client-api-19)
 - [Client API 1.10](#client-api-110)
+- [Client API 1.29](#client-api-129)
 - [Client distribution](#client-distribution)
 - [Imported entries and retention (1.11)](#imported-entries-and-retention-111)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
@@ -59,6 +60,7 @@ nowo_time_track:
 | `routes.reports.path` / `.name` | `/tools/time-track/reports` / `nowo_time_track_reports` | Reports page (GET) |
 | `routes.device_verify.path` / `.name` | `/tools/time-track/device` / `nowo_time_track_device_verify` | Default device verification page (GET, POST; only when `client_api.device_flow.enabled` and `default_page`; session-authenticated, keep it behind the host firewall) |
 | `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `timer_switch`, `timer_discard_idle`, `heartbeat`, `entries`, `export`; `device_code`, `device_token` only with the device flow; only when `clients.enabled`) |
+| `client_api.prefix` | `/api` | Since 1.29: host API prefix of the **v1** client routes, `<route_prefix><prefix>/time-track/v1/<suffix>` named `nowo_time_track_api_v1_<key>` (one per client route above; the `clients.routes.*` options configure the unversioned routes only, which stay as permanent aliases). See [CLIENT-API](CLIENT-API.md#paths-and-versions-129) |
 
 **Attribute routes and the route loader (since 1.28).** The routes are declared with `#[Route]` attributes on the
 controllers (`src/Controller/*`: methods, requirements, `_controller`, and the default path and name of each key
@@ -85,6 +87,20 @@ routes exist only where the host imports `type: nowo_time_track` (REQ-SF-004 rul
 enforced by `TimeTrackAccessCheckerInterface` (REQ-UI-002). Do not import `src/Controller/` with `type: attribute`:
 that skips `route_prefix`, the configured names and paths and the feature switches.
 
+**Versioned client API (since 1.29, REQ-API-001).** After the 1.28 routes (unchanged), the loader adds the v1 twin of
+every client route: same controller, methods, requirements and defaults, path
+`<route_prefix><client_api.prefix>/time-track/v1/<suffix>`. The import type `nowo_time_track_api` loads the client
+routes only (both versions), for hosts that route the API apart from the pages:
+
+```yaml
+nowo_time_track_api:
+    resource: .
+    type: nowo_time_track_api
+```
+
+Container parameters for firewall patterns: `%nowo_time_track.client_api.prefix%` and
+`%nowo_time_track.client_api.v1_path_prefix%` (default `/api/time-track/v1`).
+
 Hosts may also route single controller actions themselves (e.g. only the client API under their own firewall):
 
 ```yaml
@@ -92,7 +108,14 @@ nowo_time_track_api_login:
     path: /api/time-track/login
     controller: Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController::login
     methods: [POST, OPTIONS]
+nowo_time_track_api_v1_login:
+    path: /api/time-track/v1/login
+    controller: Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController::login
+    methods: [POST, OPTIONS]
 ```
+
+Hand-written routes must keep serving the unversioned paths (installed clients) and should add the v1 ones; the
+`nowo_time_track_api` import does both.
 
 ## Reports (REQ-PERF-001)
 
@@ -268,6 +291,37 @@ nowo_time_track:
             origin: '%beacon.app_url%'   # e.g. https://beacon.example.com: bare origin, no path, no trailing slash
         backdate: { max_seconds: 43200 }
         idle_check: { threshold_minutes: 15, provider: App\TimeTrack\OrganisationIdleCheck }
+```
+
+## Client API 1.29
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `client_api.prefix` | `/api` | Host API prefix of the v1 routes (`<route_prefix><prefix>/time-track/v1/…`); empty or a path starting with `/` and not ending with `/` ([Routes](#routes-req-sf-004)) |
+| `client_api.user_checker.enabled` | `true` | Run the Symfony user checker (`checkPreAuth()` + `checkPostAuth()`) for the user of every Bearer token use; a refused account gets `401 invalid_token`. `user_checker: false` is the shorthand to turn it off |
+| `client_api.user_checker.service` | `null` | Explicit `UserCheckerInterface` service id (wins over `firewall`); `user_checker: 'app.checker'` is the shorthand |
+| `client_api.user_checker.firewall` | `null` | Firewall whose checker runs (`security.user_checker.<firewall>`, including chained checkers such as UserKit's). `null`: the firewall named `main`, else the first firewall with security; none: the `UserCheckerInterface` alias, or no check. An unknown firewall fails the container build |
+| `client_api.user_checker.revoke_tokens` | `true` | Delete the refused token (Beacon `ActiveAccountClientTokens` behaviour); `false` keeps it, so it works again once the account is re-enabled |
+| `client_api.user_checker.required` | `false` | Fail the container build when the resolved checker refuses nobody: none found, Symfony's default `security.user_checker` (`InMemoryUserChecker`, which ignores entity users), or an empty `ChainUserChecker`. `false`: the build logs it and `%nowo_time_track.client_api.user_checker.effective%` is false |
+
+The check also runs before a token is issued (password login: `401 invalid_credentials`; device exchange: `400
+access_denied`). Check `bin/console debug:container security.user_checker.main`: with Symfony's default checker the
+account check refuses nobody (the build logs it; `required: true` makes it fail).
+
+The checker receives the token's user as the bundle stores it (your `user_class` entity, refreshed from the database on
+every request); a DDD host whose firewall user is a wrapper (`accepted_user_classes`) should point `service` at a checker
+that accepts the entity. It runs after the token lookup and before `client_api.credential_state`, so a host decorator
+such as Beacon's `ActiveAccountClientTokens` is no longer needed. Worker mode: the check keeps no state between requests.
+
+```yaml
+nowo_time_track:
+    client_api:
+        prefix: /api                    # → /api/time-track/v1/…
+        user_checker:
+            firewall: main              # or service: App\Security\AccountChecker
+            revoke_tokens: true
+            required: true              # fail the build if the checker refuses nobody
+        # user_checker: false           # 1.28 behaviour (no account check on token use)
 ```
 
 ## Client distribution

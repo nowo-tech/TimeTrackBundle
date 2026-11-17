@@ -94,6 +94,7 @@ services:
             $clientRoutes: '%nowo_time_track.clients.routes%'
             $manageRoutes: '%nowo_time_track.routes%'
             $routePrefix: '%nowo_time_track.route_prefix%'
+            $apiPrefix: '%nowo_time_track.client_api.prefix%'
         tags:
             - { name: routing.loader }
 
