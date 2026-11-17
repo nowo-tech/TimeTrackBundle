@@ -33,7 +33,7 @@ class: the bundle never runs its writes through a runner your application binds 
   attempts in all, with full-jitter backoff (0–50 ms, then 0–100 ms, capped at 1 s), and **only when it is the
   outermost transaction**: inside a transaction of your code the server may have rolled back your work too, so the
   failure reaches you. The batches of a task move and of an owner move use it; HTTP writes make one attempt and answer
-  503 (the client retries).
+  409 + `Retry-After` (503 with the policy opt-in; the client retries).
 - After any failure no transaction of the runner stays open: the levels it opened are rolled back, and the connection
   is closed only when that rollback fails (after a MySQL / MariaDB deadlock inside a nested flush the server drops the
   savepoints, so `ROLLBACK TO SAVEPOINT` fails with 1305). The worker's next request never inherits a nested connection.
@@ -135,12 +135,12 @@ the ids byte for byte (`===`) before it counts, pages or groups rows, so `'42 '`
 ## Database settings
 
 - Keep lock waits short for web workers: MySQL `innodb_lock_wait_timeout` 5–10 s, PostgreSQL `lock_timeout` 5–10 s. A
-  wait that times out answers 503; a replayed background batch can wait up to three times that.
+  wait that times out answers 409 + `Retry-After`; a replayed background batch can wait up to three times that.
 - DBAL 3: enable `use_savepoints: true` (DBAL 4 always uses savepoints). Without it a bundle failure inside your
   transaction marks it rollback-only.
 - PostgreSQL behind PgBouncer: transaction pooling is fine (the bundle uses no session lock).
 - Galera / Percona XtraDB Cluster: a certification failure is reported as a deadlock (1213): it is transient and
-  answers 503.
+  answers 409 + `Retry-After`.
 
 ## Workers
 
@@ -168,7 +168,7 @@ To be fixed in 1.27.x (contention only, present in 1.26 too):
 - `tests/Functional/LoadReadinessRaceTest.php`, `LoadReadinessTimesheetRaceTest.php`, `MonitoringLoadReadinessTest.php`:
   every race above played deterministically (a hook writes what a concurrent request commits at the worst moment), on
   SQLite and, in CI, on MySQL / MariaDB / PostgreSQL.
-- `tests/Database` (`--testsuite database`, `TIME_TRACK_TEST_DATABASE_URL`, skipped on SQLite): a lock wait answers 503
+- `tests/Database` (`--testsuite database`, `TIME_TRACK_TEST_DATABASE_URL`, skipped on SQLite): a lock wait answers 409
   with `Retry-After`; two processes adding ledger lines for one owner all chain; two processes starting and stopping
   timers of one account never detach your entities. CI job "Load readiness": MySQL 8.4 and PostgreSQL 16, each with
   doctrine/dbal 4 and 3, passwordless services, `--fail-on-skipped`.

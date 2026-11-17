@@ -154,9 +154,6 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
     }
 
     /**
-     * Whether a unique key refused the write (anywhere in the chain).
-     */
-    /**
      * The policy's own Retry-After, as the hint of a failure that carries none.
      */
     private function fallbackHint(): int
@@ -164,6 +161,9 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
         return ($this->policy ?? new ConflictResponsePolicy())->retryAfterSeconds;
     }
 
+    /**
+     * Whether a unique key refused the write (anywhere in the chain).
+     */
     private function isConflict(Throwable $failure): bool
     {
         for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {

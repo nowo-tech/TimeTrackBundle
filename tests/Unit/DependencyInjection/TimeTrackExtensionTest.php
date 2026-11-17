@@ -110,11 +110,18 @@ final class TimeTrackExtensionTest extends TestCase
         };
 
         self::assertSame([], $load([])->getParameter('nowo_time_track.client_api.routes.include'));
-        self::assertSame(['login', 'me'], $load(['login', 'me', 'login'])->getParameter('nowo_time_track.client_api.routes.include'));
+        self::assertSame(['login', 'logout', 'me'], $load(['login', 'logout', 'me', 'login'])->getParameter('nowo_time_track.client_api.routes.include'));
+
+        try {
+            $load(['login', 'logout', 'balanse']);
+            self::fail('Expected the unknown key to fail the build.');
+        } catch (LogicException $e) {
+            self::assertStringContainsString('balanse', $e->getMessage());
+        }
 
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('balanse');
-        $load(['login', 'balanse']);
+        $this->expectExceptionMessage('but not "logout"');
+        $load(['login', 'me']);
     }
 
     /**

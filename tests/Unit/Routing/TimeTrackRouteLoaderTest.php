@@ -5,17 +5,21 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Routing;
 
 use App\Entity\User;
+use LogicException;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Routing\ControllerAttributeRouteLoader;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+use function array_diff;
 use function array_filter;
 use function array_keys;
 use function array_map;
+use function array_merge;
 use function array_values;
 use function count;
 use function ksort;
@@ -139,6 +143,40 @@ final class TimeTrackRouteLoaderTest extends TestCase
         $all = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, false))->load('.', TimeTrackRouteLoader::API_ONLY_TYPE);
         self::assertGreaterThan(count($include) * 2, count($all->all()));
         self::assertTrue($all->get('nowo_time_track_api_balance') !== null && $all->get('nowo_time_track_api_v1_balance') !== null);
+    }
+
+    /**
+     * Audit SR-TT-L1/L2: an include list may not leave out a route that a listed route depends on.
+     *
+     * @return iterable<string, array{0: list<string>, 1: string}>
+     */
+    public static function missingDependencies(): iterable
+    {
+        yield 'login without logout' => [['login', 'me'], 'logout'];
+        yield 'device_token without logout' => [['device_token'], 'logout'];
+        yield 'upload without delete' => [['monitoring_upload', 'monitoring_acknowledge'], 'monitoring_screenshot_delete'];
+        yield 'intent without acknowledge' => [['monitoring_screenshot_intent', 'monitoring_screenshot_delete'], 'monitoring_acknowledge'];
+        yield 'calendar without revoke' => [['calendar_connections'], 'calendar_connection_revoke'];
+        yield 'entries_create without entries' => [['entries_create'], 'entries'];
+    }
+
+    /**
+     * @param list<string> $include
+     */
+    #[DataProvider('missingDependencies')]
+    public function testAnIncludeListMustKeepTheRoutesItDependsOn(array $include, string $missing): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('but not "' . $missing . '"');
+        TimeTrackRouteLoader::assertIncludeDependencies($include);
+    }
+
+    public function testCompleteIncludeListsAreAccepted(): void
+    {
+        TimeTrackRouteLoader::assertIncludeDependencies([]);
+        TimeTrackRouteLoader::assertIncludeDependencies(['login', 'logout', 'me', 'entries', 'entries_create', 'calendar_connections', 'calendar_connection_revoke', 'monitoring_upload', 'monitoring_screenshot_delete', 'monitoring_acknowledge']);
+        self::assertSame([], array_diff(array_merge(...array_values(TimeTrackRouteLoader::INCLUDE_DEPENDENCIES)), array_keys(TimeTrackRouteLoader::clientRouteMap())));
+        self::assertSame([], array_diff(array_keys(TimeTrackRouteLoader::INCLUDE_DEPENDENCIES), array_keys(TimeTrackRouteLoader::clientRouteMap())));
     }
 
     public function testAnEmptyIncludeListPublishesEveryClientRoute(): void

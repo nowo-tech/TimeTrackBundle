@@ -1258,6 +1258,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         if ($unknownRoutes !== []) {
             throw new LogicException(sprintf('Unknown client route key(s) in nowo_time_track.client_api.routes.include: %s. Valid keys: %s.', implode(', ', $unknownRoutes), implode(', ', array_keys(TimeTrackRouteLoader::clientRouteMap()))));
         }
+        TimeTrackRouteLoader::assertIncludeDependencies($includeRoutes);
         $container->setParameter('nowo_time_track.client_api.routes.include', $includeRoutes);
         $this->registerClientAccountChecker($container, $api['user_checker']);
         /** @var array{enabled: bool, routes: array<string, array{path: string, name: string}>} $clientRouting */

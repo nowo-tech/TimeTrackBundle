@@ -20,6 +20,7 @@ use Symfony\Component\Routing\RouteCollection;
 use function array_flip;
 use function array_intersect;
 use function array_intersect_key;
+use function in_array;
 use function sprintf;
 use function str_starts_with;
 use function strlen;
@@ -185,6 +186,37 @@ final class TimeTrackRouteLoader extends Loader
         }
 
         return $collection;
+    }
+
+    /** Since 1.30: routes that must be published together (key => keys it needs); see {@see self::assertIncludeDependencies()}. */
+    public const INCLUDE_DEPENDENCIES = [
+        // Tokens a client cannot revoke are not acceptable.
+        'login'        => ['logout'],
+        'device_token' => ['logout'],
+        // A worker keeps the right to delete their own screenshot; uploads are gated by the acknowledgement.
+        'monitoring_upload'            => ['monitoring_screenshot_delete', 'monitoring_acknowledge'],
+        'monitoring_screenshot_intent' => ['monitoring_screenshot_delete', 'monitoring_acknowledge'],
+        // A connected calendar can always be disconnected.
+        'calendar_connections' => ['calendar_connection_revoke'],
+        // The CORS preflight of the POST (same path) is answered by the GET route.
+        'entries_create' => ['entries'],
+    ];
+
+    /**
+     * Since 1.30 (audit SR-TT-L1/L2, called at container build): a `client_api.routes.include` list may not leave out a
+     * route that another listed route depends on.
+     *
+     * @param list<string> $include
+     */
+    public static function assertIncludeDependencies(array $include): void
+    {
+        foreach ($include as $key) {
+            foreach (self::INCLUDE_DEPENDENCIES[$key] ?? [] as $needed) {
+                if (!in_array($needed, $include, true)) {
+                    throw new LogicException(sprintf('nowo_time_track.client_api.routes.include lists "%s" but not "%s", which it depends on; add "%s" (or remove "%s").', $key, $needed, $needed, $key));
+                }
+            }
+        }
     }
 
     /**

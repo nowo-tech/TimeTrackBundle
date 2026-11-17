@@ -95,6 +95,16 @@ has no route name and the router answers 404, whatever the feature switches say.
 same way and still need `client_api.device_flow.enabled`. A host that hand-imports routes keeps doing so; the option
 only narrows the import.
 
+**Routes that depend on each other (audit SR-TT-L1/L2).** A list that leaves out a route another listed route needs fails
+the container build with a `LogicException` naming the missing key:
+
+| Listed | Also required |
+|--------|---------------|
+| `login`, `device_token` | `logout` (a client must be able to revoke the token it was given) |
+| `monitoring_upload`, `monitoring_screenshot_intent` | `monitoring_screenshot_delete`, `monitoring_acknowledge` |
+| `calendar_connections` | `calendar_connection_revoke` |
+| `entries_create` | `entries` (the CORS preflight of `POST entries` is answered by the GET route) |
+
 ### Route table
 
 `debug:router` of the functional kernel (client API and device flow on, default configuration):
@@ -723,6 +733,8 @@ grant.
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
 | 409 | `overlap` | Since 1.14: `POST entries` / an accepted suggestion overlaps a live entry or the running timer |
 | 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
+| 409 | `unavailable` | Since 1.30 (was 503): a transient storage failure (deadlock, lock wait timeout) with `Retry-After` (seconds): retry the same request. `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503 |
+| 409 | `unavailable` (no `Retry-After`) | Since 1.30: the failed write may have been partly saved (`ConcurrencyConflict` with `committed: true`); the message asks to reload. Never retry it blindly |
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 | 503 | `meetings_unavailable` | Since 1.14: the host meeting provider failed (`Retry-After: 60`) |

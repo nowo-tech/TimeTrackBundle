@@ -37,8 +37,12 @@ final readonly class StorageFailureConflictFormatter implements ConflictResponse
             return null;
         }
 
-        return $this->responses instanceof ClientResponseFactory
+        $response = $this->responses instanceof ClientResponseFactory
             ? $this->responses->error('unavailable', $context->message, $context->status, $request)
             : new JsonResponse(['error' => 'unavailable', 'message' => $context->message], $context->status);
+        // @igor-ignore - Request-scoped value (the response of this exception); no worker state.
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+
+        return $response;
     }
 }

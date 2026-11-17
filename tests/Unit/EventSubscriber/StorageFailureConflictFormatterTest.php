@@ -29,6 +29,7 @@ final class StorageFailureConflictFormatterTest extends TestCase
         $response = $formatter->format($request, $this->context(false));
         self::assertNotNull($response);
         self::assertSame(409, $response->getStatusCode());
+        self::assertSame('nosniff', $response->headers->get('X-Content-Type-Options'));
         self::assertSame('chrome-extension://functional', $response->headers->get('Access-Control-Allow-Origin'));
         $body = json_decode((string) $response->getContent(), true);
         self::assertSame(['error' => 'unavailable', 'message' => 'Retry later.'], $body);
