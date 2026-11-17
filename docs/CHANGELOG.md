@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Spec Kit baseline (REQ-SPECKIT-003): `code-inventory.md` maps all 457 production units under `src/` (392 added since 2026-11-01) to semantic requirement IDs, and `spec.md` documents device authorization, the client API, timesheets, working time, calendar, meetings, monitoring, imports, task time move, retention, ports and the private entity manager.
+
 ### Demo
 
 - The demo is built on UiKit and FormKit (REQ-DEMO-014 / REQ-DEMO-015): `templates/base.html.twig` is UiKit's admin layout with its default theme and a masthead with the active item and the theme toggle (the Tabler CDN shell, the `layouts/admin.html.twig` bridge and `demo.css` are gone), `nowo_ui_kit` uses `css_framework: custom` with `icon_set: svg_inline` and no token override, the Twig and Tiptap form themes are UiKit's `nowo_ui_layout`, and `nowo_form_kit.css_framework` is `none`. The timesheet page uses UiKit buttons. The demo requires `nowo-tech/ui-kit-bundle` `^2.52` and `nowo-tech/form-kit-bundle` `^2.23`; the README WebP screenshots are re-captured (REQ-DEMO-013). No bundle runtime change.
