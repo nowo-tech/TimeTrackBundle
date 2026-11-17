@@ -35,7 +35,7 @@ use const PHP_BINARY;
  * 1.27.0 (Beacon spec 239): lock waits and concurrent processes on a real server (MySQL 8.4, PostgreSQL 16; CI job
  * "Load readiness", run with `--fail-on-skipped`). Skipped on SQLite.
  *
- * - A lock wait answers 503 + Retry-After (1.26: the raw lock wait timeout, a 500).
+ * - A lock wait answers 409 + Retry-After (1.26: the raw lock wait timeout, a 500).
  * - Two processes adding ledger lines for one owner at once all chain (1.26: lines refused as `conflict`).
  * - Two processes starting timers for one user at once never detach the application's entities (1.26: every lost start
  *   reset the application's manager).
@@ -62,7 +62,7 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
         $this->approver = $this->createUser('boss@example.com');
     }
 
-    public function testALockWaitAnswers503WithRetryAfter(): void
+    public function testALockWaitAnswers409WithRetryAfter(): void
     {
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);
@@ -81,7 +81,7 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
             $blocker->close();
         }
 
-        self::assertResponseStatusCodeSame(503);
+        self::assertResponseStatusCodeSame(409);
         self::assertResponseHeaderSame('Retry-After', '1');
         self::assertSame('unavailable', $body['error'] ?? null);
         self::assertFalse($this->entityManager()->getConnection()->isTransactionActive(), 'the connection is back at its entry level');
