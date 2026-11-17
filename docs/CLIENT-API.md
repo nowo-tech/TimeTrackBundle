@@ -9,6 +9,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 ## Table of contents
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
+  - [Publishing only some routes (`client_api.routes.include`, 1.30)](#publishing-only-some-routes-client_apiroutesinclude-130)
   - [Route table](#route-table)
   - [Alias policy](#alias-policy)
   - [Hosts must check](#hosts-must-check)
@@ -74,6 +75,38 @@ rate limits (the buckets are keyed by token and client IP, never by path), CORS 
 issued on one path works on the other. Every section below names the unversioned path; prepend `v1/` after
 `/api/time-track/` for the canonical one. The time-track-desktop and time-track-extension releases keep calling the
 unversioned paths for now.
+
+### Publishing only some routes (`client_api.routes.include`, 1.30)
+
+By default the route import (`nowo_time_track` or `nowo_time_track_api`) publishes every client route. A host that offers
+only part of the API (for example Beacon, which has no balance, calendar, entry create/edit, suggestions or timesheets)
+lists the route **keys** it wants (the first column of the route table below):
+
+```yaml
+nowo_time_track:
+    client_api:
+        routes:
+            include: [login, logout, me, tasks, timer, timer_start, timer_stop, timer_switch, heartbeat, entries]
+```
+
+The list applies to the unversioned paths and to the v1 twins alike. A route that is not listed **does not exist**: it
+has no route name and the router answers 404, whatever the feature switches say. Empty (default) = all routes, as in
+1.29. An unknown key fails the container build. The device flow routes (`device_code`, `device_token`) are listed the
+same way and still need `client_api.device_flow.enabled`. A host that hand-imports routes keeps doing so; the option
+only narrows the import.
+
+**Routes that depend on each other (audit SR-TT-L1/L2).** A list that leaves out a route another listed route needs fails
+the container build with a `LogicException` naming the missing key:
+
+| Listed | Also required |
+|--------|---------------|
+| `login`, `device_token` | `logout` (a client must be able to revoke the token it was given) |
+| `monitoring_upload`, `monitoring_screenshot_intent` | `monitoring_screenshot_delete`, `monitoring_acknowledge` |
+| `calendar_connections` | `calendar_connection_revoke` |
+| `timer_start`, `timer_switch` | `timer_stop` (a running timer must be stoppable) |
+| `monitoring_activity` | `monitoring_acknowledge` |
+| `timesheet_submit` | `timesheet_withdraw` (a submitted timesheet can be withdrawn) |
+| `entries_create` | `entries` (the CORS preflight of `POST entries` is answered by the GET route) |
 
 ### Route table
 
@@ -703,6 +736,8 @@ grant.
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
 | 409 | `overlap` | Since 1.14: `POST entries` / an accepted suggestion overlaps a live entry or the running timer |
 | 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
+| 409 | `unavailable` | Since 1.30 (was 503): a transient storage failure (deadlock, lock wait timeout) with `Retry-After` (seconds): retry the same request. `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503 |
+| 409 | `unavailable` (no `Retry-After`) | Since 1.30: the failed write may have been partly saved (`ConcurrencyConflict` with `committed: true`); the message asks to reload. Never retry it blindly |
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 | 503 | `meetings_unavailable` | Since 1.14: the host meeting provider failed (`Retry-After: 60`) |

@@ -17,6 +17,8 @@ use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
+use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureConflictFormatter;
+use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\NoServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
@@ -39,6 +41,7 @@ use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\SecurityUser;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
+use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponseFormatterInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
@@ -90,6 +93,53 @@ final class TimeTrackExtensionTest extends TestCase
             'tabler',
             $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
         );
+    }
+
+    /**
+     * Since 1.30: client_api.routes.include reaches the route loader as a parameter; unknown keys fail the build.
+     */
+    public function testClientApiRoutesIncludeIsAParameterAndUnknownKeysFail(): void
+    {
+        $load = static function (array $include): ContainerBuilder {
+            $container = new ContainerBuilder();
+            $container->setParameter('kernel.environment', 'test');
+            $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+            (new TimeTrackExtension())->load([['user_class' => User::class, 'clients' => ['enabled' => true], 'client_api' => ['routes' => ['include' => $include]]]], $container);
+
+            return $container;
+        };
+
+        self::assertSame([], $load([])->getParameter('nowo_time_track.client_api.routes.include'));
+        self::assertSame(['login', 'logout', 'me'], $load(['login', 'logout', 'me', 'login'])->getParameter('nowo_time_track.client_api.routes.include'));
+
+        try {
+            $load(['login', 'logout', 'balanse']);
+            self::fail('Expected the unknown key to fail the build.');
+        } catch (LogicException $e) {
+            self::assertStringContainsString('balanse', $e->getMessage());
+        }
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('but not "logout"');
+        $load(['login', 'me']);
+    }
+
+    /**
+     * Since 1.30: the storage failure subscriber reads the shared conflict policy when the host has one, and the
+     * conflict formatter is tagged for the transaction-doctrine responder.
+     */
+    public function testStorageFailureListenerReadsThePolicyAndTheFormatterIsTagged(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+        (new TimeTrackExtension())->load([['user_class' => User::class, 'clients' => ['enabled' => true]]], $container);
+
+        $policy = $container->getDefinition(StorageFailureSubscriber::class)->getArgument('$policy');
+        self::assertInstanceOf(Reference::class, $policy);
+        self::assertSame('nowo_transaction_doctrine.conflict_response_policy', (string) $policy);
+        self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $policy->getInvalidBehavior());
+        self::assertArrayHasKey(ConflictResponseFormatterInterface::TAG, $container->getDefinition(StorageFailureConflictFormatter::class)->getTags());
     }
 
     /**

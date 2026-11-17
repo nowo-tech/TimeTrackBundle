@@ -69,6 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Transient storage failures answer 409 + `Retry-After` (was 503).** Owner platform decision (final lock conflict = 409 + `Retry-After`). `StorageFailureSubscriber` reads the status and the default `Retry-After` from nowo-tech/transaction-doctrine 1.3's shared `ConflictResponsePolicy` (service `nowo_transaction_doctrine.conflict_response_policy`, injected optionally; `new ConflictResponsePolicy()`, 409 and 1 s, when the host does not register that bundle). The client API keeps `{"error": "unavailable", "message": …}`, its CORS headers and `Cache-Control: no-store`; the HTML pages get `$policy->httpException(…)` instead of a `ServiceUnavailableHttpException`. A `ConcurrencyConflict` with `committed: true` anywhere in the chain gets the same status but **no** `Retry-After` and the message "Part of your change may have been saved. Reload before trying again.". The unique-key 409 (`{"error": "conflict"}`) is unchanged. `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503. See [UPGRADING](UPGRADING.md#to-1300).
+- `nowo-tech/transaction-doctrine` requirement raised to `^1.3`.
+
+### Added
+
+- **`client_api.routes.include` (Beacon request).** A list of client route keys the route import publishes, on the unversioned paths and the v1 twins alike; a route that is not listed does not exist (404 from the router). Default `[]` = every route (no BC change). Unknown keys, and lists that leave out a route another listed route needs (`login`/`device_token` need `logout`, `monitoring_upload`/`monitoring_screenshot_intent` need `monitoring_screenshot_delete` and `monitoring_acknowledge`, `calendar_connections` needs `calendar_connection_revoke`, `entries_create` needs `entries`), fail the container build. See [CLIENT-API](CLIENT-API.md#publishing-only-some-routes-client_apiroutesinclude-130).
+- `EventSubscriber\StorageFailureConflictFormatter`, a `ConflictResponseFormatterInterface` (tag `nowo_transaction_doctrine.conflict_response_formatter`, registered only when the interface exists): a host that lists TimeTrack routes in `nowo_transaction_doctrine.controller_routes` gets the client API's error shape (`{"error": "unavailable", "message": …}`, CORS headers) instead of the library's `{"error": "concurrency_conflict"}`. The HTML pages and other routes fall through.
+
 ## [1.29.0] - 2026-11-17
 
 ### Added

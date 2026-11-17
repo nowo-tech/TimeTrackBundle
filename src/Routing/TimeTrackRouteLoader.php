@@ -17,7 +17,10 @@ use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+use function array_flip;
 use function array_intersect;
+use function array_intersect_key;
+use function in_array;
 use function sprintf;
 use function str_starts_with;
 use function strlen;
@@ -138,6 +141,7 @@ final class TimeTrackRouteLoader extends Loader
      * @param bool $deviceFlowEnabled Route `device/code` and `device/token` (client_api.device_flow.enabled)
      * @param bool $deviceDefaultPage Route the default device verification page (client_api.device_flow.default_page)
      * @param string $apiPrefix Host API prefix of the versioned routes (client_api.prefix, default `/api`)
+     * @param list<string> $includeClientRoutes Since 1.30 (client_api.routes.include): the client route keys to publish, on the unversioned and the v1 paths; empty = all
      */
     public function __construct(
         private readonly bool $clientsEnabled,
@@ -147,6 +151,7 @@ final class TimeTrackRouteLoader extends Loader
         private readonly bool $deviceFlowEnabled = false,
         private readonly bool $deviceDefaultPage = false,
         private readonly string $apiPrefix = '/api',
+        private readonly array $includeClientRoutes = [],
     ) {
         parent::__construct();
         $this->attributeLoader = new ControllerAttributeRouteLoader();
@@ -171,12 +176,65 @@ final class TimeTrackRouteLoader extends Loader
         }
 
         if ($this->clientsEnabled) {
-            $clientMap = $this->deviceFlowEnabled ? self::CLIENT_ROUTES + self::DEVICE_ROUTES : self::CLIENT_ROUTES;
+            $clientMap = self::clientRouteMap($this->deviceFlowEnabled);
+            if ($this->includeClientRoutes !== []) {
+                // Since 1.30: a route that is not listed does not exist (the router answers 404), on both paths.
+                $clientMap = array_intersect_key($clientMap, array_flip($this->includeClientRoutes));
+            }
             $this->addRoutes($collection, $attributes, $this->clientRoutes, $clientMap);
             $this->addRoutes($collection, $attributes, $this->versionedRoutes($attributes, $clientMap), $clientMap);
         }
 
         return $collection;
+    }
+
+    /** Since 1.30: routes that must be published together (key => keys it needs); see {@see self::assertIncludeDependencies()}. */
+    public const INCLUDE_DEPENDENCIES = [
+        // Tokens a client cannot revoke are not acceptable.
+        'login'        => ['logout'],
+        'device_token' => ['logout'],
+        // A worker keeps the right to delete their own screenshot; uploads are gated by the acknowledgement.
+        'monitoring_upload'            => ['monitoring_screenshot_delete', 'monitoring_acknowledge'],
+        'monitoring_screenshot_intent' => ['monitoring_screenshot_delete', 'monitoring_acknowledge'],
+        // A connected calendar can always be disconnected.
+        'calendar_connections' => ['calendar_connection_revoke'],
+        // A timer that can be started or switched can always be stopped.
+        'timer_start'  => ['timer_stop'],
+        'timer_switch' => ['timer_stop'],
+        // Activity samples are only accepted for an acknowledged monitoring notice.
+        'monitoring_activity' => ['monitoring_acknowledge'],
+        // A submitted timesheet can be withdrawn.
+        'timesheet_submit' => ['timesheet_withdraw'],
+        // The CORS preflight of the POST (same path) is answered by the GET route.
+        'entries_create' => ['entries'],
+    ];
+
+    /**
+     * Since 1.30 (audit SR-TT-L1/L2, called at container build): a `client_api.routes.include` list may not leave out a
+     * route that another listed route depends on.
+     *
+     * @param list<string> $include
+     */
+    public static function assertIncludeDependencies(array $include): void
+    {
+        foreach ($include as $key) {
+            foreach (self::INCLUDE_DEPENDENCIES[$key] ?? [] as $needed) {
+                if (!in_array($needed, $include, true)) {
+                    throw new LogicException(sprintf('nowo_time_track.client_api.routes.include lists "%s" but not "%s", which it depends on; add "%s" (or remove "%s").', $key, $needed, $needed, $key));
+                }
+            }
+        }
+    }
+
+    /**
+     * Since 1.30: the client route keys that exist (the device flow routes only with the device flow); the valid values
+     * of `client_api.routes.include`.
+     *
+     * @return array<string, string> key => controller action
+     */
+    public static function clientRouteMap(bool $deviceFlowEnabled = true): array
+    {
+        return $deviceFlowEnabled ? self::CLIENT_ROUTES + self::DEVICE_ROUTES : self::CLIENT_ROUTES;
     }
 
     /**

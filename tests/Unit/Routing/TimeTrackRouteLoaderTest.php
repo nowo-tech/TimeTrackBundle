@@ -5,15 +5,22 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Routing;
 
 use App\Entity\User;
+use LogicException;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Routing\ControllerAttributeRouteLoader;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+use function array_diff;
+use function array_filter;
 use function array_keys;
+use function array_map;
+use function array_merge;
+use function array_values;
 use function count;
 use function ksort;
 use function str_starts_with;
@@ -97,6 +104,93 @@ final class TimeTrackRouteLoaderTest extends TestCase
         self::assertSame($legacy->getDefaults(), $v1->getDefaults());
         self::assertSame($legacy->getRequirements(), $v1->getRequirements());
         self::assertSame($legacy->getMethods(), $v1->getMethods());
+    }
+
+    /**
+     * Since 1.30 (client_api.routes.include): a route that is not listed does not exist, on the unversioned path and on
+     * the v1 twin alike; the default (empty) publishes all of them.
+     */
+    public function testIncludeLimitsTheClientRoutesOnBothPrefixes(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'clients' => ['enabled' => true]]]);
+        /* @var array{routes: array<string, array{path: string, name: string}>, clients: array{routes: array<string, array{path: string, name: string}>}} $config */
+        $include = ['login', 'me', 'timer_start'];
+
+        foreach (['nowo_time_track', TimeTrackRouteLoader::API_ONLY_TYPE] as $type) {
+            $loader = new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, false, '/api', $include);
+            $names  = array_keys($loader->load('.', $type)->all());
+            $client = array_values(array_filter($names, static fn (string $n): bool => str_starts_with($n, 'nowo_time_track_api')));
+
+            self::assertSame(
+                ['nowo_time_track_api_login', 'nowo_time_track_api_me', 'nowo_time_track_api_timer_start', 'nowo_time_track_api_v1_login', 'nowo_time_track_api_v1_me', 'nowo_time_track_api_v1_timer_start'],
+                $client,
+                $type,
+            );
+            foreach (['balance', 'calendar_connections', 'entries_create', 'entries_update', 'suggestions', 'timesheets', 'device_code'] as $excluded) {
+                self::assertNotContains('nowo_time_track_api_' . $excluded, $names);
+                self::assertNotContains(TimeTrackRouteLoader::V1_NAME_PREFIX . $excluded, $names);
+            }
+        }
+
+        // The router has no such route: a path match fails (404), under both prefixes.
+        $collection = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, false, '/api', $include))->load('.', TimeTrackRouteLoader::API_ONLY_TYPE);
+        $paths      = array_map(static fn ($r): string => $r->getPath(), $collection->all());
+        self::assertContains('/api/time-track/login', $paths);
+        self::assertContains('/api/time-track/v1/login', $paths);
+        self::assertNotContains('/api/time-track/balance', $paths);
+        self::assertNotContains('/api/time-track/v1/balance', $paths);
+
+        $all = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, false))->load('.', TimeTrackRouteLoader::API_ONLY_TYPE);
+        self::assertGreaterThan(count($include) * 2, count($all->all()));
+        self::assertTrue($all->get('nowo_time_track_api_balance') !== null && $all->get('nowo_time_track_api_v1_balance') !== null);
+    }
+
+    /**
+     * Audit SR-TT-L1/L2: an include list may not leave out a route that a listed route depends on.
+     *
+     * @return iterable<string, array{0: list<string>, 1: string}>
+     */
+    public static function missingDependencies(): iterable
+    {
+        yield 'login without logout' => [['login', 'me'], 'logout'];
+        yield 'device_token without logout' => [['device_token'], 'logout'];
+        yield 'upload without delete' => [['monitoring_upload', 'monitoring_acknowledge'], 'monitoring_screenshot_delete'];
+        yield 'intent without acknowledge' => [['monitoring_screenshot_intent', 'monitoring_screenshot_delete'], 'monitoring_acknowledge'];
+        yield 'calendar without revoke' => [['calendar_connections'], 'calendar_connection_revoke'];
+        yield 'timer_start without timer_stop' => [['timer_start'], 'timer_stop'];
+        yield 'timer_switch without timer_stop' => [['timer_switch'], 'timer_stop'];
+        yield 'activity without acknowledge' => [['monitoring_activity'], 'monitoring_acknowledge'];
+        yield 'timesheet_submit without withdraw' => [['timesheet_submit'], 'timesheet_withdraw'];
+        yield 'entries_create without entries' => [['entries_create'], 'entries'];
+    }
+
+    /**
+     * @param list<string> $include
+     */
+    #[DataProvider('missingDependencies')]
+    public function testAnIncludeListMustKeepTheRoutesItDependsOn(array $include, string $missing): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('but not "' . $missing . '"');
+        TimeTrackRouteLoader::assertIncludeDependencies($include);
+    }
+
+    public function testCompleteIncludeListsAreAccepted(): void
+    {
+        TimeTrackRouteLoader::assertIncludeDependencies([]);
+        TimeTrackRouteLoader::assertIncludeDependencies(['timer_start', 'timer_switch', 'timer_stop', 'monitoring_activity', 'timesheet_submit', 'timesheet_withdraw', 'login', 'logout', 'me', 'entries', 'entries_create', 'calendar_connections', 'calendar_connection_revoke', 'monitoring_upload', 'monitoring_screenshot_delete', 'monitoring_acknowledge']);
+        self::assertSame([], array_diff(array_merge(...array_values(TimeTrackRouteLoader::INCLUDE_DEPENDENCIES)), array_keys(TimeTrackRouteLoader::clientRouteMap())));
+        self::assertSame([], array_diff(array_keys(TimeTrackRouteLoader::INCLUDE_DEPENDENCIES), array_keys(TimeTrackRouteLoader::clientRouteMap())));
+    }
+
+    public function testAnEmptyIncludeListPublishesEveryClientRoute(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'clients' => ['enabled' => true]]]);
+        /* @var array{routes: array<string, array{path: string, name: string}>, clients: array{routes: array<string, array{path: string, name: string}>}} $config */
+        self::assertSame([], $config['client_api']['routes']['include']);
+        $default  = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, true))->load('.');
+        $explicit = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, true, '/api', []))->load('.');
+        self::assertSame(array_keys($default->all()), array_keys($explicit->all()));
     }
 
     /**
