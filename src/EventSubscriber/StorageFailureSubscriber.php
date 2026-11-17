@@ -21,6 +21,7 @@ use Symfony\Component\HttpKernel\KernelEvents;
 use Throwable;
 
 use function is_string;
+use function max;
 use function str_starts_with;
 
 /**
@@ -140,7 +141,9 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
     {
         for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {
             if ($current instanceof TransientStorageFailure) {
-                return $current->retryAfterSeconds() ?? $this->fallbackHint();
+                $hint = $current->retryAfterSeconds();
+
+                return $hint !== null ? max(1, $hint) : $this->fallbackHint();
             }
             if ($current instanceof RetryableException) {
                 return $this->fallbackHint();
