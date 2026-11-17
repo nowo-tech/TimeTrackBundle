@@ -11,8 +11,10 @@ use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Routing\Route;
+use Symfony\Component\Routing\RouteCollection;
 
 use function array_keys;
+use function count;
 use function ksort;
 use function str_starts_with;
 
@@ -95,6 +97,33 @@ final class TimeTrackRouteLoaderTest extends TestCase
         self::assertSame($legacy->getDefaults(), $v1->getDefaults());
         self::assertSame($legacy->getRequirements(), $v1->getRequirements());
         self::assertSame($legacy->getMethods(), $v1->getMethods());
+    }
+
+    /**
+     * Audit SO probe P4: importing both types (or any `client_api.prefix`) never yields two routes for one method and
+     * path; the second import only overwrites routes of the same name.
+     */
+    public function testBothImportsAndAnyPrefixNeverDuplicateAMethodAndPath(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'clients' => ['enabled' => true]]]);
+        /* @var array{routes: array<string, array{path: string, name: string}>, clients: array{routes: array<string, array{path: string, name: string}>}} $config */
+        foreach (['/api', '', '/x', '/api/time-track'] as $prefix) {
+            $loader = new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, true, $prefix);
+            $all    = new RouteCollection();
+            $all->addCollection($loader->load('.', 'nowo_time_track'));
+            $count = count($all->all());
+            $all->addCollection($loader->load('.', TimeTrackRouteLoader::API_ONLY_TYPE));
+
+            $seen = [];
+            foreach ($all->all() as $name => $route) {
+                foreach ($route->getMethods() as $method) {
+                    $key = $method . ' ' . $route->getPath();
+                    self::assertArrayNotHasKey($key, $seen, $prefix . ': ' . $name);
+                    $seen[$key] = $name;
+                }
+            }
+            self::assertCount($count, $all->all(), $prefix);
+        }
     }
 
     public function testVersionedPath(): void

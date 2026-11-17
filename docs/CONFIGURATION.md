@@ -302,6 +302,11 @@ nowo_time_track:
 | `client_api.user_checker.service` | `null` | Explicit `UserCheckerInterface` service id (wins over `firewall`); `user_checker: 'app.checker'` is the shorthand |
 | `client_api.user_checker.firewall` | `null` | Firewall whose checker runs (`security.user_checker.<firewall>`, including chained checkers such as UserKit's). `null`: the firewall named `main`, else the first firewall with security; none: the `UserCheckerInterface` alias, or no check. An unknown firewall fails the container build |
 | `client_api.user_checker.revoke_tokens` | `true` | Delete the refused token (Beacon `ActiveAccountClientTokens` behaviour); `false` keeps it, so it works again once the account is re-enabled |
+| `client_api.user_checker.required` | `false` | Fail the container build when the resolved checker refuses nobody: none found, Symfony's default `security.user_checker` (`InMemoryUserChecker`, which ignores entity users), or an empty `ChainUserChecker`. `false`: the build logs it and `%nowo_time_track.client_api.user_checker.effective%` is false |
+
+The check also runs before a token is issued (password login: `401 invalid_credentials`; device exchange: `400
+access_denied`). Check `bin/console debug:container security.user_checker.main`: with Symfony's default checker the
+account check refuses nobody (the build logs it; `required: true` makes it fail).
 
 The checker receives the token's user as the bundle stores it (your `user_class` entity, refreshed from the database on
 every request); a DDD host whose firewall user is a wrapper (`accepted_user_classes`) should point `service` at a checker
@@ -315,6 +320,7 @@ nowo_time_track:
         user_checker:
             firewall: main              # or service: App\Security\AccountChecker
             revoke_tokens: true
+            required: true              # fail the build if the checker refuses nobody
         # user_checker: false           # 1.28 behaviour (no account check on token use)
 ```
 

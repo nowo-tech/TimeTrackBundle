@@ -11,6 +11,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Paths and versions (1.29)](#paths-and-versions-129)
   - [Route table](#route-table)
   - [Alias policy](#alias-policy)
+  - [Hosts must check](#hosts-must-check)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
 - [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
   - [GET me: `monitoring`](#get-me-monitoring)
@@ -124,20 +125,36 @@ The unversioned paths are **permanent** aliases: installed desktop and extension
 deprecated for removal (owner decision 2026-11-17, rule D-20261110-04 for installed clients). Keep your
 `clients.routes.*` names if your code generates URLs from them. New clients should call the v1 paths.
 
-Hosts that import the routes get both versions with no change. A host that routes only the API can import
+Hosts that import the routes get both versions. A host that routes only the API can import
 `type: nowo_time_track_api` (both versions of every client route, no manage page, no device verification page). A
-firewall pattern `^/api/time-track/` covers both versions; with a custom `client_api.prefix`, use
-`%nowo_time_track.client_api.v1_path_prefix%` as well.
+`clients.routes.*` name or path equal to a v1 route's name or path (with a common method) fails the container build.
+
+### Hosts must check
+
+The bundle's Bearer check, account check, scopes, rate limits and CORS answers apply to both versions, whatever the
+host firewall. Host rules written for the unversioned paths do not follow the v1 paths on their own:
+
+- the **firewall** `pattern` of the stateless API firewall: `^/api/time-track/` covers both versions; a pattern that
+  excludes v1 or lists exact paths sends v1 to another firewall. A firewall with `ROLE_USER` in `access_control` then
+  fails closed (its own `401`), never open;
+- **`access_control`**: IP allow-lists, `requires_channel`, roles on these paths;
+- reverse **proxy / WAF / CORS / logging** rules (rate limits, CORS added at the proxy, `Authorization` redaction);
+- **custom legacy paths** (`clients.routes.*.path`): v1 stays under `%nowo_time_track.client_api.v1_path_prefix%`
+  (default `/api/time-track/v1`); add `^%nowo_time_track.client_api.v1_path_prefix%/` to those rules.
 
 ## Account check on every token use (1.29)
 
 Every Bearer token use runs the Symfony user checker (`checkPreAuth()` then `checkPostAuth()`) for the token's user
-(`client_api.user_checker`, on by default). A disabled, locked or expired account (any `AuthenticationException`,
+(`client_api.user_checker`, on by default). The same check runs before a token is issued: a refused account gets
+`401 invalid_credentials` at `login` and `400 access_denied` at `device/token` (the approval is consumed). It refuses
+only what the checker refuses: with Symfony's default firewall checker (`InMemoryUserChecker`) nobody is refused, the
+build logs it and `%nowo_time_track.client_api.user_checker.effective%` is false (`required: true` fails the build). A disabled, locked or expired account (any `AuthenticationException`,
 such as `DisabledException`, `LockedException`, `AccountExpiredException`, `CredentialsExpiredException`) gets the usual
 `401 invalid_token` with `WWW-Authenticate: Bearer error="invalid_token"`, audited as `request_denied` with reason
 `account_inactive`. The token is deleted by default (`revoke_tokens: true`): once the account is re-enabled the client
 signs in again. With `revoke_tokens: false` the token works again as soon as the account is re-enabled. The check runs
-after the token lookup and before `ClientCredentialStateInterface`, the rate limit and the scope check. Options:
+after the token lookup and before the last-used update, `ClientCredentialStateInterface`, the rate limit and the scope
+check. Options:
 [CONFIGURATION](CONFIGURATION.md#client-api-129).
 
 ## Changes in 1.26 (activity monitoring, spec 199)
@@ -676,8 +693,8 @@ grant.
 |---|---|---|
 | 400 | `invalid_request` | Missing / malformed field |
 | 400 | `metadata_not_allowed` | Free `metadata` on `timer/start` while `client_api.allow_metadata` is false |
-| 400 | `authorization_pending`, `slow_down`, `expired_token`, `access_denied` | `device/token` states |
-| 401 | `invalid_credentials` | `login` with wrong credentials |
+| 400 | `authorization_pending`, `slow_down`, `expired_token`, `access_denied` | `device/token` states (`access_denied` also, since 1.29, for an account the user checker refuses at the exchange) |
+| 401 | `invalid_credentials` | `login` with wrong credentials, or (since 1.29) an account refused by the user checker |
 | 401 | `invalid_token` | Missing, unknown, expired, revoked token, inactive credential or (since 1.29) an account refused by the user checker (`WWW-Authenticate: Bearer error="invalid_token"`) |
 | 403 | `insufficient_scope` | Token lacks the endpoint scope |
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |

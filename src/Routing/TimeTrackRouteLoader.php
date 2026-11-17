@@ -17,6 +17,7 @@ use Symfony\Component\Config\Loader\Loader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+use function array_intersect;
 use function sprintf;
 use function str_starts_with;
 use function strlen;
@@ -176,6 +177,43 @@ final class TimeTrackRouteLoader extends Loader
         }
 
         return $collection;
+    }
+
+    /**
+     * Since 1.29 (audit SO-I3, called at container build): fails when a configured unversioned client route takes the
+     * name of a v1 route, or a v1 path with an overlapping method (the first registered route would win silently).
+     *
+     * @param array<string, array{path: string, name: string}> $clientRoutes `clients.routes`
+     */
+    public static function assertNoVersionedCollision(array $clientRoutes, string $apiPrefix, bool $deviceFlowEnabled): void
+    {
+        $attributes = [];
+        $loader     = new ControllerAttributeRouteLoader();
+        foreach (self::CONTROLLERS as $controller) {
+            foreach ($loader->load($controller)->all() as $route) {
+                $attributes[(string) $route->getDefault('_controller')] = $route;
+            }
+        }
+
+        $routes = [];
+        foreach ($deviceFlowEnabled ? self::CLIENT_ROUTES + self::DEVICE_ROUTES : self::CLIENT_ROUTES as $key => $controller) {
+            if (isset($clientRoutes[$key], $attributes[$controller])) {
+                $routes[$key] = [$clientRoutes[$key], $attributes[$controller]];
+            }
+        }
+
+        foreach ($routes as $key => [$legacy, $attribute]) {
+            foreach ($routes as $v1Key => [, $v1Attribute]) {
+                $name = self::V1_NAME_PREFIX . $v1Key;
+                if ($legacy['name'] === $name) {
+                    throw new LogicException(sprintf('nowo_time_track.clients.routes.%s.name "%s" is the name of the v1 route of "%s"; choose another name.', $key, $name, $v1Key));
+                }
+                $path = self::versionedPath($apiPrefix, $v1Attribute->getPath());
+                if ($legacy['path'] === $path && array_intersect($attribute->getMethods(), $v1Attribute->getMethods()) !== []) {
+                    throw new LogicException(sprintf('nowo_time_track.clients.routes.%s.path "%s" is the path of the v1 route "%s"; choose another path.', $key, $path, $name));
+                }
+            }
+        }
     }
 
     /**

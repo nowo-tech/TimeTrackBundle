@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Service;
 
 use DateInterval;
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
@@ -78,6 +79,7 @@ final readonly class DeviceAuthorizationService
      * @param int $lookupWindowSeconds Window of the lookup limit
      * @param int $maxPendingPerPrefix Requests created per client IPv4 /24 or IPv6 /64 within the code TTL (0 = off)
      * @param int $maxPending Unexpired requests in total (0 = off)
+     * @param ClientAccountChecker|null $accountChecker Since 1.29: refuses the exchange of a refused account (`access_denied`)
      */
     public function __construct(
         private DeviceAuthorizationRepositoryInterface $repository,
@@ -93,6 +95,7 @@ final readonly class DeviceAuthorizationService
         private int $maxPendingPerPrefix = 20,
         private int $maxPending = 10000,
         ?UserReferenceResolverInterface $userReferences = null,
+        private ?ClientAccountChecker $accountChecker = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -348,6 +351,10 @@ final readonly class DeviceAuthorizationService
     private function exchange(DeviceAuthorization $authorization, ?string $clientIp): DevicePollResult
     {
         $user = $authorization->getUser();
+        // Since 1.29 (audit SO-L1): an account disabled, locked or expired after the approval gets no token.
+        if ($user instanceof UserInterface && $this->accountChecker instanceof ClientAccountChecker && !$this->accountChecker->isUserActive($user)) {
+            return $this->consumeDenied($authorization);
+        }
         if (!$user instanceof UserInterface || !$this->repository->markConsumed($authorization)) {
             return DevicePollResult::error(DevicePollResult::EXPIRED);
         }

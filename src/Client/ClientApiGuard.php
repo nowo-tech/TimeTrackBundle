@@ -68,7 +68,7 @@ final readonly class ClientApiGuard
         }
 
         $plain = self::bearerToken($request);
-        $token = $plain !== null ? $this->authService->resolveToken($plain) : null;
+        $token = $plain !== null ? $this->authService->findToken($plain) : null;
         if (!$token instanceof ClientToken) {
             if ($plain !== null) {
                 $this->auditor->denied('invalid_token', null, $request->getClientIp());
@@ -77,7 +77,7 @@ final readonly class ClientApiGuard
             return $this->invalidToken($request);
         }
 
-        /** @var UserInterface $user checked by ClientAuthService::resolveToken() */
+        /** @var UserInterface $user checked by ClientAuthService::findToken() */
         $user = $token->getUser();
 
         if ($this->accountChecker instanceof ClientAccountChecker && !$this->accountChecker->isActive($token, $user)) {
@@ -85,6 +85,9 @@ final readonly class ClientApiGuard
 
             return $this->invalidToken($request);
         }
+
+        // Since 1.29 (audit SO-I1): the last-used time is written only for an account that passed the check.
+        $this->authService->touchIfStale($token);
 
         if (!$this->credentialState->isActive($token)) {
             $this->auditor->denied('credential_inactive', $token, $request->getClientIp());

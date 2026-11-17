@@ -14,7 +14,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 /**
  * Since 1.29 (`client_api.user_checker`, Beacon C5): runs the Symfony user checker (`checkPreAuth()` then
  * `checkPostAuth()`) for the user of a Bearer token on every use, so tokens of disabled, locked or expired accounts
- * stop working at once, whatever ended the account. With `revoke_tokens` (default) the refused token is deleted, like
+ * stop working at once, whatever ended the account. The same check runs before a token is issued (password login and
+ * device exchange, audit SO-L1). With `revoke_tokens` (default) the refused token is deleted, like
  * Beacon's `ActiveAccountClientTokens`: the client signs in again once the account is re-enabled. Without a checker
  * (`client_api.user_checker: false`, or no firewall checker found) every account passes.
  *
@@ -42,6 +43,24 @@ final readonly class ClientAccountChecker
      */
     public function isActive(ClientToken $token, UserInterface $user): bool
     {
+        if ($this->isUserActive($user)) {
+            return true;
+        }
+
+        if ($this->revokeTokens && $this->tokens instanceof ClientTokenRepositoryInterface) {
+            // @igor-ignore - Repository call (I/O); no worker state.
+            $this->tokens->remove($token);
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the account may get a token (password login, device exchange) or use one: the checker's checkPreAuth()
+     * and checkPostAuth() pass (always true without a checker).
+     */
+    public function isUserActive(UserInterface $user): bool
+    {
         if (!$this->userChecker instanceof UserCheckerInterface) {
             return true;
         }
@@ -50,11 +69,6 @@ final readonly class ClientAccountChecker
             $this->userChecker->checkPreAuth($user);
             $this->userChecker->checkPostAuth($user);
         } catch (AuthenticationException) {
-            if ($this->revokeTokens && $this->tokens instanceof ClientTokenRepositoryInterface) {
-                // @igor-ignore - Repository call (I/O); no worker state.
-                $this->tokens->remove($token);
-            }
-
             return false;
         }
 

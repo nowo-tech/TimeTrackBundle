@@ -37,7 +37,7 @@
 | `Repository/DoctrineOrmTimeEntryRepository.php` | Time entry ORM | FR-REPO-002 |
 | `Repository/DoctrineOrmClientTokenRepository.php` | Client token ORM | FR-REPO-002 |
 | `Service/TimerService.php` | Timer domain service | FR-SVC-001 |
-| `Service/ClientAuthService.php` | Client auth service | FR-SVC-002 |
+| `Service/ClientAuthService.php` | Client auth service | FR-SVC-002, FR-CLIENT-007 |
 | `Service/TeamAccessGuard.php` | Manager access guard | FR-SVC-003 |
 | `Support/UserIdResolver.php` | User id helper | FR-SUP-001 |
 | `Client/ClientAuthenticatorInterface.php` | Client auth IF | FR-CLIENT-001 |
@@ -291,7 +291,7 @@
 | `Form/DeviceUserCodeType.php` | Device authorization | FR-DEV-002 |
 | `Resources/views/time_track/device_code.html.twig` | Device authorization | FR-DEV-002 |
 | `Resources/views/time_track/device_confirm.html.twig` | Device authorization | FR-DEV-002 |
-| `Service/DeviceAuthorizationService.php` | Device authorization | FR-DEV-001 |
+| `Service/DeviceAuthorizationService.php` | Device authorization | FR-DEV-001, FR-CLIENT-007 |
 
 ## Meetings
 

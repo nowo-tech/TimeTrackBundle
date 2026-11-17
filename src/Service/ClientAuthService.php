@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Service;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\Persistence\ManagerRegistry;
+use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
@@ -54,6 +55,7 @@ final readonly class ClientAuthService
      * @param ManagerRegistry|null $managerRegistry Refreshes the token user in worker mode
      * @param ClockInterface|null $clock Time source (defaults to the system clock)
      * @param LoggerInterface|null $logger Operational log (defaults to no logging)
+     * @param ClientAccountChecker|null $accountChecker Since 1.29: refuses the login of a refused account (no check when null)
      */
     public function __construct(
         private ClientAuthenticatorInterface $authenticator,
@@ -63,6 +65,7 @@ final readonly class ClientAuthService
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
         ?UserReferenceResolverInterface $userReferences = null,
+        private ?ClientAccountChecker $accountChecker = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -95,7 +98,8 @@ final readonly class ClientAuthService
     public function authenticate(string $username, string $password, ClientType $clientType): ?ClientAuthResult
     {
         $result = $this->authenticator->authenticate($username, $password);
-        if (!$result instanceof ClientAuthResult || !$result->isSuccess()) {
+        // Since 1.29 (audit SO-L1): a disabled, locked or expired account gets no token (same answer as bad credentials).
+        if (!$result instanceof ClientAuthResult || !$result->isSuccess() || !$this->accountActive($result)) {
             $this->logger->notice('TimeTrack client login failed.', $this->context('client_login', $clientType));
 
             return null;
@@ -130,6 +134,24 @@ final readonly class ClientAuthService
      */
     public function resolveToken(string $plainToken): ?ClientToken
     {
+        $entity = $this->findToken($plainToken);
+        if ($entity instanceof ClientToken) {
+            $this->touchIfStale($entity);
+        }
+
+        return $entity;
+    }
+
+    /**
+     * Since 1.29: like {@see self::resolveToken()} without the last-used update, so the API guard can run the account
+     * check first (audit SO-I1) and then call {@see self::touchIfStale()}.
+     *
+     * @param string $plainToken Token sent by the client
+     *
+     * @return ClientToken|null The token (user refreshed in worker mode), or null for an unknown or expired token
+     */
+    public function findToken(string $plainToken): ?ClientToken
+    {
         $entity = $this->tokenRepository->findValidByTokenHash(self::hashToken($plainToken));
         if (!$entity instanceof ClientToken) {
             return null;
@@ -140,7 +162,6 @@ final readonly class ClientAuthService
             return null;
         }
 
-        $this->touchIfStale($entity);
         ManagedEntityRefresher::refresh($this->managerRegistry, $user);
 
         return $entity;
@@ -219,7 +240,10 @@ final readonly class ClientAuthService
         return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
     }
 
-    private function touchIfStale(ClientToken $entity): void
+    /**
+     * Since 1.29 (public): refreshes the last-used time of a token every 5 minutes.
+     */
+    public function touchIfStale(ClientToken $entity): void
     {
         $lastUsed = $entity->getLastUsedAt();
         $now      = $this->clock->now();
@@ -230,6 +254,13 @@ final readonly class ClientAuthService
 
         $entity->touch($now);
         $this->tokenRepository->save($entity);
+    }
+
+    private function accountActive(ClientAuthResult $result): bool
+    {
+        $user = $result->getUser();
+
+        return !$this->accountChecker instanceof ClientAccountChecker || !$user instanceof UserInterface || $this->accountChecker->isUserActive($user);
     }
 
     /**
