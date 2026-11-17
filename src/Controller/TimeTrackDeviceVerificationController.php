@@ -18,6 +18,7 @@ use Symfony\Component\Form\FormFactoryInterface;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -53,6 +54,7 @@ final class TimeTrackDeviceVerificationController extends AbstractController
      * framing (`X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`: a framed page pre-filled with an attacker's code
      * would be a two-click clickjacking target) and caching.
      */
+    #[Route('/tools/time-track/device', name: 'nowo_time_track_device_verify', methods: ['GET', 'POST'])]
     public function verify(Request $request): Response
     {
         $response = $this->handle($request);

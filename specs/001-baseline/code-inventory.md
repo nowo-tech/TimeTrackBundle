@@ -13,6 +13,7 @@
 | `DependencyInjection/TimeTrackExtension.php` | DI extension | FR-CFG-002 |
 | `DependencyInjection/Compiler/TwigPathsPass.php` | Twig namespace | FR-TWIG-001 |
 | `Routing/TimeTrackRouteLoader.php` | Route loader | FR-ROUTE-001 |
+| `Routing/ControllerAttributeRouteLoader.php` | Controller `#[Route]` reader (internal) | FR-ROUTE-002 |
 | `Doctrine/TimeTrackMetadataListener.php` | Table prefix | FR-DOCTRINE-001 |
 | `Entity/ActiveTimer.php` | Active timer entity | FR-ENTITY-001 |
 | `Entity/TimeEntry.php` | Time entry entity | FR-ENTITY-002 |
@@ -620,8 +621,8 @@
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes (`src/**/*.php`) | 425 | 425 |
+| PHP classes (`src/**/*.php`) | 426 | 426 |
 | Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
-| **Total production sources** | **457** | **457** |
+| **Total production sources** | **458** | **458** |
 
-Audit command: `git ls-files src | wc -l` → 457.
+Audit command: `git ls-files src | wc -l` → 458.

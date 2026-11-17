@@ -21,6 +21,7 @@ use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Exception\TimesheetException;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
@@ -35,6 +36,7 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 
 use function array_map;
 use function hash;
@@ -54,6 +56,7 @@ use const DATE_ATOM;
  * scopes need an explicit grant. A feature that is off, a scope the user is not in and other users' data all answer
  * 404 `not_found`. Approve / reject / reopen and the ledger are web only.
  */
+#[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackWorkingTimeApiController
 {
     /** Longest balance range of one request, in days. */
@@ -89,6 +92,7 @@ final readonly class TimeTrackWorkingTimeApiController
      * `client_api.leave_provider`, also `leave` (`{type, until}` or null; medical leave as *Absent*) and no `reminder`
      * while the user is on leave; without that provider the body is the 1.21 one.
      */
+    #[Route('/api/time-track/workday', name: 'nowo_time_track_api_workday', methods: ['GET', 'OPTIONS'])]
     public function workday(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::WorkdayRead);
@@ -122,6 +126,7 @@ final readonly class TimeTrackWorkingTimeApiController
     /**
      * POST workday/{action} `{occurredAt?}` with `Idempotency-Key`: clock in / out, start / end a break.
      */
+    #[Route('/api/time-track/workday/{action}', name: 'nowo_time_track_api_workday_action', methods: ['POST', 'OPTIONS'])]
     public function workdayAction(Request $request, string $action): Response
     {
         $principal = $this->authorize($request, ClientScope::WorkdayWrite);
@@ -175,6 +180,7 @@ final readonly class TimeTrackWorkingTimeApiController
      * GET balance `?from&to&scope`: the hours balance (≤ 92 days, inside 2000–2099, ending at most 366 days after today;
      * default: the current period), with `source` and `legalRecord`.
      */
+    #[Route('/api/time-track/balance', name: 'nowo_time_track_api_balance', methods: ['GET', 'OPTIONS'])]
     public function balance(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::BalanceRead);
@@ -205,6 +211,7 @@ final readonly class TimeTrackWorkingTimeApiController
      * GET timesheets `?period&scope`: the user's timesheet of the period (`current`, `previous` or a key) with its
      * entries, totals, audit trail and allowed actions.
      */
+    #[Route('/api/time-track/timesheets', name: 'nowo_time_track_api_timesheets', methods: ['GET', 'OPTIONS'])]
     public function timesheet(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimesheetRead);
@@ -222,6 +229,7 @@ final readonly class TimeTrackWorkingTimeApiController
     /**
      * POST timesheets/{periodKey}/submit `{scope?}`: submits the period (owner only).
      */
+    #[Route('/api/time-track/timesheets/{periodKey}/submit', name: 'nowo_time_track_api_timesheet_submit', methods: ['POST', 'OPTIONS'])]
     public function timesheetSubmit(Request $request, string $periodKey): Response
     {
         return $this->transition($request, $periodKey, true);
@@ -230,6 +238,7 @@ final readonly class TimeTrackWorkingTimeApiController
     /**
      * POST timesheets/{periodKey}/withdraw `{scope?}`: withdraws a submitted period.
      */
+    #[Route('/api/time-track/timesheets/{periodKey}/withdraw', name: 'nowo_time_track_api_timesheet_withdraw', methods: ['POST', 'OPTIONS'])]
     public function timesheetWithdraw(Request $request, string $periodKey): Response
     {
         return $this->transition($request, $periodKey, false);

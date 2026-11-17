@@ -45,6 +45,7 @@ use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
 use Nowo\TimeTrackBundle\Port\Ports;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
@@ -63,6 +64,7 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -100,6 +102,7 @@ use const JSON_UNESCAPED_UNICODE;
  * `timer/start` and `endedAt` on `timer/stop` (clamped and reported), `reassign` on `timer/discard-idle`, and
  * `features` / `limits` on `me`.
  */
+#[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackClientApiController
 {
     /** Max `limit` of `GET tasks`. */
@@ -204,6 +207,7 @@ final readonly class TimeTrackClientApiController
     /**
      * POST login: issues a session token for valid credentials (throttled).
      */
+    #[Route('/api/time-track/login', name: 'nowo_time_track_api_login', methods: ['POST', 'OPTIONS'])]
     public function login(Request $request): Response
     {
         $limited = $this->preflightOrIpLimit($request);
@@ -248,6 +252,7 @@ final readonly class TimeTrackClientApiController
     /**
      * POST logout: revokes the presented token.
      */
+    #[Route('/api/time-track/logout', name: 'nowo_time_track_api_logout', methods: ['POST', 'OPTIONS'])]
     public function logout(Request $request): Response
     {
         $limited = $this->preflightOrIpLimit($request);
@@ -274,6 +279,7 @@ final readonly class TimeTrackClientApiController
      * {@see ClientUserPrivacyProviderInterface} (no key otherwise), and (1.22, spec 204) `features.leave` and
      * `links.leave` and `leave` days in `daysOff` only with a `client_api.leave_provider` (no keys otherwise).
      */
+    #[Route('/api/time-track/me', name: 'nowo_time_track_api_me', methods: ['GET', 'OPTIONS'])]
     public function me(Request $request): Response
     {
         $principal = $this->authorize($request, null);
@@ -366,6 +372,7 @@ final readonly class TimeTrackClientApiController
     /**
      * GET tasks: trackable tasks (`search`, `limit` 1-50, `offset`).
      */
+    #[Route('/api/time-track/tasks', name: 'nowo_time_track_api_tasks', methods: ['GET', 'OPTIONS'])]
     public function tasks(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TasksRead);
@@ -387,6 +394,7 @@ final readonly class TimeTrackClientApiController
     /**
      * GET timer: the active timer (204 when none).
      */
+    #[Route('/api/time-track/timer', name: 'nowo_time_track_api_timer', methods: ['GET', 'OPTIONS'])]
     public function timer(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimerRead);
@@ -406,6 +414,7 @@ final readonly class TimeTrackClientApiController
      * POST timer/start `{taskId, note?, source?, startedAt?}`: starts a timer (403 task_forbidden, 409 timer_running).
      * Since 1.10 an RFC 3339 `startedAt` backdates the start after the server clamps (reported as `startedAtResult`).
      */
+    #[Route('/api/time-track/timer/start', name: 'nowo_time_track_api_timer_start', methods: ['POST', 'OPTIONS'])]
     public function timerStart(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimerWrite);
@@ -460,6 +469,7 @@ final readonly class TimeTrackClientApiController
      * POST timer/stop `{note?, endedAt?}`: stops the active timer and returns the entry. Since 1.10 an RFC 3339
      * `endedAt` sets an earlier end after the server clamps (reported as `endedAtResult`).
      */
+    #[Route('/api/time-track/timer/stop', name: 'nowo_time_track_api_timer_stop', methods: ['POST', 'OPTIONS'])]
     public function timerStop(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimerWrite);
@@ -491,6 +501,7 @@ final readonly class TimeTrackClientApiController
      * one on the task. The task is checked first: a refused task leaves the running timer untouched. Since 1.14 the only
      * accepted `metadata` is `{origin: "meeting"}` (*Track the meeting*, Q-B22), kept on the new timer and its entry.
      */
+    #[Route('/api/time-track/timer/switch', name: 'nowo_time_track_api_timer_switch', methods: ['POST', 'OPTIONS'])]
     public function timerSwitch(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimerWrite);
@@ -544,6 +555,7 @@ final readonly class TimeTrackClientApiController
      * (1.9.1). Since 1.10 `reassign` gives the span to `taskId` (checked like `timer/start`: an unknown and a foreign
      * task both answer the same `403 task_forbidden`) and then continues, switches or stops (`then`).
      */
+    #[Route('/api/time-track/timer/discard-idle', name: 'nowo_time_track_api_timer_discard_idle', methods: ['POST', 'OPTIONS'])]
     public function timerDiscardIdle(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimerWrite);
@@ -611,6 +623,7 @@ final readonly class TimeTrackClientApiController
      * POST heartbeat (deprecated since 1.9, removed in 2.0): keeps answering with the running timer; `isIdle` is
      * ignored (idle is the user's decision on the client, see `timer/discard-idle`).
      */
+    #[Route('/api/time-track/heartbeat', name: 'nowo_time_track_api_heartbeat', methods: ['POST', 'OPTIONS'])]
     public function heartbeat(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::TimerWrite);
@@ -636,6 +649,7 @@ final readonly class TimeTrackClientApiController
      * GET entries: own time entries of a period (`from`, `to`, `limit` 1-100, `offset`). The deprecated `userId`
      * parameter keeps the 1.x team view (checked by the team guard).
      */
+    #[Route('/api/time-track/entries', name: 'nowo_time_track_api_entries', methods: ['GET', 'OPTIONS'])]
     public function entries(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::EntriesRead);
@@ -675,6 +689,7 @@ final readonly class TimeTrackClientApiController
     /**
      * GET export `?from&to&format=csv|json`: the user's own entries of the period (RGPD art. 15/20), as a download.
      */
+    #[Route('/api/time-track/export', name: 'nowo_time_track_api_export', methods: ['GET', 'OPTIONS'])]
     public function export(Request $request): Response
     {
         $principal = $this->authorize($request, ClientScope::EntriesRead);

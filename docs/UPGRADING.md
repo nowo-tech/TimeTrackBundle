@@ -86,6 +86,27 @@
 
 ## Unreleased
 
+**Attribute routes (REQ-SF-004), no action needed.** The routes moved from PHP code in
+`TimeTrackRouteLoader` to `#[Route]` attributes on the controllers. Keep your import as it is:
+
+```yaml
+# config/routes/nowo_time_track.yaml (unchanged)
+nowo_time_track:
+    resource: .
+    type: nowo_time_track
+```
+
+The loader still applies `route_prefix`, `routes.*`, `clients.routes.*` and the feature switches, and the route
+collection is the 1.27 one (names, paths, methods, requirements, defaults, order). Notes:
+
+- Do **not** replace the import with `resource: '@TimeTrackBundle/src/Controller/'` / `type: attribute` (or
+  `routing.controllers`): the attributes hold the default paths and names only, so that skips `route_prefix`, your
+  configured names and paths and the feature switches (the client API and device flow routes would always exist).
+- The controller services are no longer autoconfigured. If you decorate or extend a bundle controller and relied on
+  autoconfiguration of that bundle definition, tag your own service explicitly.
+- Routes you declare yourself for single controller actions (`controller: Nowo\TimeTrackBundle\Controller\...::action`)
+  keep working: `_controller` values are unchanged.
+
 ## To 1.27.0
 
 From **1.26.0**:

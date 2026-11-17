@@ -35,6 +35,7 @@ use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Support\Rfc3339;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -46,6 +47,7 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Throwable;
 
@@ -100,6 +102,7 @@ use function unlink;
  * Every answer carries `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff` and
  * `Vary: Authorization`. The access log line has the action, the status and the duration only.
  */
+#[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackMonitoringApiController
 {
     /** `Idempotency-Key`: 1-64 visible ASCII characters (house rule). */
@@ -155,6 +158,7 @@ final readonly class TimeTrackMonitoringApiController
      * POST monitoring/acknowledge `{policyVersion, noticeSha256, shownAt}` with an `Idempotency-Key`: 204; 409
      * `policy_changed {policyVersion}`; 422 `notice_mismatch`, `idempotency_mismatch`.
      */
+    #[Route('/api/time-track/monitoring/acknowledge', name: 'nowo_time_track_api_monitoring_acknowledge', methods: ['POST', 'OPTIONS'])]
     public function acknowledge(Request $request): Response
     {
         return $this->answer('client_monitoring_acknowledge', $request, fn (ClientApiPrincipal $principal): Response => $this->doAcknowledge($request, $principal));
@@ -163,6 +167,7 @@ final readonly class TimeTrackMonitoringApiController
     /**
      * POST monitoring/screenshots/intent: every refusal check, then 201 (200 on a replay) with a one-shot signed URL.
      */
+    #[Route('/api/time-track/monitoring/screenshots/intent', name: 'nowo_time_track_api_monitoring_screenshot_intent', methods: ['POST', 'OPTIONS'])]
     public function screenshotIntent(Request $request): Response
     {
         return $this->answer('client_monitoring_intent', $request, fn (ClientApiPrincipal $principal): Response => $this->doIntent($request, $principal));
@@ -172,6 +177,7 @@ final readonly class TimeTrackMonitoringApiController
      * PUT monitoring/uploads/{uploadId}?exp=&sig= with the raw image: 201 `{id}`; 403 `invalid_signature`; 413 / 415 /
      * 422 cap violations.
      */
+    #[Route('/api/time-track/monitoring/uploads/{uploadId}', name: 'nowo_time_track_api_monitoring_upload', methods: ['PUT', 'OPTIONS'])]
     public function upload(Request $request, string $uploadId): Response
     {
         return $this->answer('client_monitoring_upload', $request, fn (ClientApiPrincipal $principal): Response => $this->doUpload($request, $principal, $uploadId));
@@ -181,6 +187,7 @@ final readonly class TimeTrackMonitoringApiController
      * POST monitoring/screenshots/discarded `{entryId, slot, reason: "worker"}`: 204 (the slot is marked, nothing was
      * uploaded).
      */
+    #[Route('/api/time-track/monitoring/screenshots/discarded', name: 'nowo_time_track_api_monitoring_screenshot_discarded', methods: ['POST', 'OPTIONS'])]
     public function screenshotDiscarded(Request $request): Response
     {
         return $this->answer('client_monitoring_discarded', $request, fn (ClientApiPrincipal $principal): Response => $this->doDiscarded($request, $principal));
@@ -190,6 +197,7 @@ final readonly class TimeTrackMonitoringApiController
      * DELETE monitoring/screenshots/{screenshotId}: 204, or 404 when it is not the worker's. Works whatever the policy
      * says now (the worker can always discard their own screenshot).
      */
+    #[Route('/api/time-track/monitoring/screenshots/{screenshotId}', name: 'nowo_time_track_api_monitoring_screenshot_delete', methods: ['DELETE', 'OPTIONS'])]
     public function screenshotDelete(Request $request, string $screenshotId): Response
     {
         return $this->answer('client_monitoring_delete', $request, fn (ClientApiPrincipal $principal): Response => $this->doDelete($request, $principal, $screenshotId));
@@ -198,6 +206,7 @@ final readonly class TimeTrackMonitoringApiController
     /**
      * POST monitoring/activity `{items: [...]}` with an `Idempotency-Key`: 202 `{accepted, dropped}`.
      */
+    #[Route('/api/time-track/monitoring/activity', name: 'nowo_time_track_api_monitoring_activity', methods: ['POST', 'OPTIONS'])]
     public function activity(Request $request): Response
     {
         return $this->answer('client_monitoring_activity', $request, fn (ClientApiPrincipal $principal): Response => $this->doActivity($request, $principal));

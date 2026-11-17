@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\Routing;
 
+use App\Entity\User;
+use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
+use Nowo\TimeTrackBundle\Routing\ControllerAttributeRouteLoader;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Routing\Route;
+
+use function ksort;
 
 final class TimeTrackRouteLoaderTest extends TestCase
 {
@@ -82,5 +88,53 @@ final class TimeTrackRouteLoaderTest extends TestCase
         $hostPage = (new TimeTrackRouteLoader(true, $api, $manage, '', true, false))->load('.');
         self::assertInstanceOf(Route::class, $hostPage->get('api_device_code'));
         self::assertNull($hostPage->get('device_verify'));
+    }
+
+    /**
+     * REQ-SF-004 (1.28): the default path and name of every `#[Route]` attribute are the configuration defaults of its
+     * key, and every attribute route is loaded (none is left out of the loader maps).
+     */
+    public function testControllerAttributesMatchTheConfigurationDefaults(): void
+    {
+        $config = (new Processor())->processConfiguration(new Configuration(), [[
+            'user_class' => User::class,
+            'clients'    => ['enabled' => true, 'user_provider' => 'app_users'],
+            'client_api' => ['device_flow' => ['enabled' => true]],
+        ]]);
+        /** @var array{routes: array<string, array{path: string, name: string}>, clients: array{routes: array<string, array{path: string, name: string}>}} $config */
+        $loaded = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, true))->load('.');
+
+        $attributes      = [];
+        $attributeLoader = new ControllerAttributeRouteLoader();
+        foreach (TimeTrackRouteLoader::CONTROLLERS as $controller) {
+            foreach ($attributeLoader->load($controller)->all() as $name => $route) {
+                $attributes[$name] = $route->getPath();
+            }
+        }
+
+        $routes = [];
+        foreach ($loaded->all() as $name => $route) {
+            $routes[$name] = $route->getPath();
+        }
+        ksort($attributes);
+        ksort($routes);
+
+        self::assertCount(38, $routes);
+        self::assertSame($attributes, $routes);
+        self::assertNotEmpty($loaded->getResources(), 'The controller classes are router cache resources.');
+    }
+
+    public function testEveryClientRouteCarriesThePlaceholderRequirements(): void
+    {
+        $collection = (new TimeTrackRouteLoader(true, ['me' => ['path' => '/me', 'name' => 'me'], 'workday_action' => ['path' => '/w/{action}', 'name' => 'w']], [], '/x'))->load('.');
+
+        $me = $collection->get('me');
+        $w  = $collection->get('w');
+        self::assertInstanceOf(Route::class, $me);
+        self::assertInstanceOf(Route::class, $w);
+        self::assertSame(TimeTrackRouteLoader::REQUIREMENTS, $me->getRequirements());
+        self::assertSame(TimeTrackRouteLoader::REQUIREMENTS, $w->getRequirements());
+        self::assertSame('/x/w/{action}', $w->getPath());
+        self::assertSame([], $collection->getAliases());
     }
 }

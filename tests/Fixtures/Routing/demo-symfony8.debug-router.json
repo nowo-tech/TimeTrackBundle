@@ -1,0 +1,899 @@
+{
+    "nowo_time_track_index": {
+        "path": "/tools/time-track",
+        "pathRegex": "{^/tools/time\\-track$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|POST",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackManageController::index"
+        },
+        "requirements": {
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_reports": {
+        "path": "/tools/time-track/reports",
+        "pathRegex": "{^/tools/time\\-track/reports$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackManageController::reports"
+        },
+        "requirements": {
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_device_verify": {
+        "path": "/tools/time-track/device",
+        "pathRegex": "{^/tools/time\\-track/device$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|POST",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackDeviceVerificationController::verify"
+        },
+        "requirements": {
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_login": {
+        "path": "/api/time-track/login",
+        "pathRegex": "{^/api/time\\-track/login$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::login"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_logout": {
+        "path": "/api/time-track/logout",
+        "pathRegex": "{^/api/time\\-track/logout$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::logout"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_me": {
+        "path": "/api/time-track/me",
+        "pathRegex": "{^/api/time\\-track/me$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::me"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_tasks": {
+        "path": "/api/time-track/tasks",
+        "pathRegex": "{^/api/time\\-track/tasks$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::tasks"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timer": {
+        "path": "/api/time-track/timer",
+        "pathRegex": "{^/api/time\\-track/timer$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timer"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timer_start": {
+        "path": "/api/time-track/timer/start",
+        "pathRegex": "{^/api/time\\-track/timer/start$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStart"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timer_stop": {
+        "path": "/api/time-track/timer/stop",
+        "pathRegex": "{^/api/time\\-track/timer/stop$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_heartbeat": {
+        "path": "/api/time-track/heartbeat",
+        "pathRegex": "{^/api/time\\-track/heartbeat$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_entries": {
+        "path": "/api/time-track/entries",
+        "pathRegex": "{^/api/time\\-track/entries$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::entries"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timer_switch": {
+        "path": "/api/time-track/timer/switch",
+        "pathRegex": "{^/api/time\\-track/timer/switch$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerSwitch"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timer_discard_idle": {
+        "path": "/api/time-track/timer/discard-idle",
+        "pathRegex": "{^/api/time\\-track/timer/discard\\-idle$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerDiscardIdle"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_export": {
+        "path": "/api/time-track/export",
+        "pathRegex": "{^/api/time\\-track/export$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::export"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_workday": {
+        "path": "/api/time-track/workday",
+        "pathRegex": "{^/api/time\\-track/workday$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackWorkingTimeApiController::workday"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_workday_action": {
+        "path": "/api/time-track/workday/{action}",
+        "pathRegex": "{^/api/time\\-track/workday/(?P<action>clock-in|break-start|break-end|clock-out)$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackWorkingTimeApiController::workdayAction"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_balance": {
+        "path": "/api/time-track/balance",
+        "pathRegex": "{^/api/time\\-track/balance$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackWorkingTimeApiController::balance"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timesheets": {
+        "path": "/api/time-track/timesheets",
+        "pathRegex": "{^/api/time\\-track/timesheets$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackWorkingTimeApiController::timesheet"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timesheet_submit": {
+        "path": "/api/time-track/timesheets/{periodKey}/submit",
+        "pathRegex": "{^/api/time\\-track/timesheets/(?P<periodKey>current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2})/submit$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackWorkingTimeApiController::timesheetSubmit"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_timesheet_withdraw": {
+        "path": "/api/time-track/timesheets/{periodKey}/withdraw",
+        "pathRegex": "{^/api/time\\-track/timesheets/(?P<periodKey>current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2})/withdraw$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackWorkingTimeApiController::timesheetWithdraw"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_calendar_connections": {
+        "path": "/api/time-track/calendar/connections",
+        "pathRegex": "{^/api/time\\-track/calendar/connections$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::connections"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_calendar_connection_revoke": {
+        "path": "/api/time-track/calendar/connections/{id}",
+        "pathRegex": "{^/api/time\\-track/calendar/connections/(?P<id>[A-Za-z0-9-]{1,36})$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "DELETE|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::connectionRevoke"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_suggestions": {
+        "path": "/api/time-track/suggestions",
+        "pathRegex": "{^/api/time\\-track/suggestions$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::suggestions"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_suggestions_accept": {
+        "path": "/api/time-track/suggestions/accept",
+        "pathRegex": "{^/api/time\\-track/suggestions/accept$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::accept"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_suggestions_dismiss": {
+        "path": "/api/time-track/suggestions/dismiss",
+        "pathRegex": "{^/api/time\\-track/suggestions/dismiss$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::dismiss"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_suggestions_resolve_keys": {
+        "path": "/api/time-track/suggestions/resolve-keys",
+        "pathRegex": "{^/api/time\\-track/suggestions/resolve\\-keys$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::resolveKeys"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_entries_create": {
+        "path": "/api/time-track/entries",
+        "pathRegex": "{^/api/time\\-track/entries$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::createEntry"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_entries_update": {
+        "path": "/api/time-track/entries/{id}",
+        "pathRegex": "{^/api/time\\-track/entries/(?P<id>[A-Za-z0-9-]{1,36})$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "PATCH|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackCalendarApiController::updateEntry"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_client_me_meetings": {
+        "path": "/api/time-track/me/meetings",
+        "pathRegex": "{^/api/time\\-track/me/meetings$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "GET|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMeetingsApiController::meetings"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_monitoring_acknowledge": {
+        "path": "/api/time-track/monitoring/acknowledge",
+        "pathRegex": "{^/api/time\\-track/monitoring/acknowledge$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::acknowledge"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_monitoring_screenshot_intent": {
+        "path": "/api/time-track/monitoring/screenshots/intent",
+        "pathRegex": "{^/api/time\\-track/monitoring/screenshots/intent$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::screenshotIntent"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_monitoring_upload": {
+        "path": "/api/time-track/monitoring/uploads/{uploadId}",
+        "pathRegex": "{^/api/time\\-track/monitoring/uploads/(?P<uploadId>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "PUT|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::upload"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_monitoring_screenshot_discarded": {
+        "path": "/api/time-track/monitoring/screenshots/discarded",
+        "pathRegex": "{^/api/time\\-track/monitoring/screenshots/discarded$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::screenshotDiscarded"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_monitoring_screenshot_delete": {
+        "path": "/api/time-track/monitoring/screenshots/{screenshotId}",
+        "pathRegex": "{^/api/time\\-track/monitoring/screenshots/(?P<screenshotId>[A-Za-z0-9_-]{1,64})$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "DELETE|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::screenshotDelete"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_monitoring_activity": {
+        "path": "/api/time-track/monitoring/activity",
+        "pathRegex": "{^/api/time\\-track/monitoring/activity$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_device_code": {
+        "path": "/api/time-track/device/code",
+        "pathRegex": "{^/api/time\\-track/device/code$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientDeviceController::code"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    },
+    "nowo_time_track_api_device_token": {
+        "path": "/api/time-track/device/token",
+        "pathRegex": "{^/api/time\\-track/device/token$}sDu",
+        "host": "ANY",
+        "hostRegex": "",
+        "scheme": "ANY",
+        "method": "POST|OPTIONS",
+        "class": "Symfony\\Component\\Routing\\Route",
+        "defaults": {
+            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientDeviceController::token"
+        },
+        "requirements": {
+            "action": "clock-in|break-start|break-end|clock-out",
+            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+            "id": "[A-Za-z0-9-]{1,36}",
+            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "screenshotId": "[A-Za-z0-9_-]{1,64}",
+            "_locale": "en|es"
+        },
+        "options": {
+            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+            "utf8": true
+        }
+    }
+}

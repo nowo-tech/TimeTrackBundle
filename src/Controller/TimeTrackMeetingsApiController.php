@@ -19,6 +19,7 @@ use Nowo\TimeTrackBundle\Meeting\MeetingRequestException;
 use Nowo\TimeTrackBundle\Meeting\MeetingResponder;
 use Nowo\TimeTrackBundle\Meeting\MeetingSettings;
 use Nowo\TimeTrackBundle\Meeting\MeetingSyncStatus;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -26,6 +27,7 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Throwable;
 
 use function count;
@@ -46,6 +48,7 @@ use function max;
  * fails. The bundle stores, caches and logs nothing of a meeting: the access log line has the status, the count and
  * the duration only.
  */
+#[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackMeetingsApiController
 {
     private ClockInterface $clock;
@@ -74,6 +77,7 @@ final readonly class TimeTrackMeetingsApiController
     /**
      * GET me/meetings.
      */
+    #[Route('/api/time-track/me/meetings', name: 'nowo_time_track_client_me_meetings', methods: ['GET', 'OPTIONS'])]
     public function meetings(Request $request): Response
     {
         $started  = hrtime(true);
