@@ -201,6 +201,8 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(RecordingTaskAccessChecker::class)->args([['task-2']])->public();
         $container->services()->alias(ServiceAccountPolicyInterface::class, StubServiceAccountPolicy::class);
         $container->services()->set(HostTimerTestController::class)->autowire()->public()->tag('controller.service_arguments');
+        // Since 1.29: the main firewall user checker (client_api.user_checker resolves security.user_checker.main).
+        $container->services()->set(SwitchableUserChecker::class)->public();
         if ($this->frozenClock) {
             // Since 1.26.0 (audit PM-L8): the monitoring tests' frozen clock.
             $container->services()->set(FrozenMonitoringClock::class)->public();
@@ -238,7 +240,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
             'providers'        => ['app_users' => ['entity' => ['class' => AppUser::class, 'property' => 'email']]],
             'firewalls'        => [
                 'time_track_api' => ['pattern' => '^/api/time-track', 'security' => false],
-                'main'           => ['lazy' => true, 'provider' => 'app_users'],
+                'main'           => ['lazy' => true, 'provider' => 'app_users', 'user_checker' => SwitchableUserChecker::class],
             ],
         ]);
         $container->extension('nowo_time_track', array_replace_recursive([

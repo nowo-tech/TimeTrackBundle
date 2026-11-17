@@ -87,6 +87,44 @@
 
 ## Unreleased
 
+From **1.28.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+**Versioned client API (REQ-API-001), no action needed.** Every client API route is now also served under
+`/api/time-track/v1/…` (named `nowo_time_track_api_v1_<key>`). Your unversioned paths and route names
+(`clients.routes.*`) are unchanged and stay as **permanent** aliases, because installed desktop and extension clients
+call them; keep generating URLs from the names you use. Notes:
+
+- The v1 path is `<route_prefix><client_api.prefix>/time-track/v1/<suffix>`; `client_api.prefix` defaults to `/api`.
+  The per-route `clients.routes.*.path` options move only the unversioned routes.
+- A firewall pattern `^/api/time-track/` already covers both versions. With another `client_api.prefix`, add
+  `^%nowo_time_track.client_api.v1_path_prefix%/`.
+- If you route the API by hand (Beacon `config/routes.yaml`), keep those routes and add the v1 ones, or replace them
+  with the import `type: nowo_time_track_api` (both versions of every client route, no manage pages).
+- Do not move the clients yet: time-track-desktop and time-track-extension keep calling the unversioned paths.
+
+**Secure default: `client_api.user_checker` (Beacon C5).** Every Bearer token use now runs your firewall's user
+checker (`security.user_checker.main`, else the first firewall with security) with `checkPreAuth()` and
+`checkPostAuth()`. Tokens of disabled, locked or expired accounts get `401 invalid_token` and are deleted, so the client
+signs in again after the account is re-enabled. If your checker refuses users that should keep using the client API,
+point the bundle at another checker, keep the tokens, or turn it off:
+
+```yaml
+nowo_time_track:
+    client_api:
+        user_checker: false                     # 1.28 behaviour: no account check on token use
+        # user_checker: App\Security\ApiUserChecker   # another checker service
+        # user_checker: { firewall: api }          # the checker of another firewall
+        # user_checker: { revoke_tokens: false }   # refuse, but keep the token for when the account is re-enabled
+```
+
+The checker receives the token's user as stored by the bundle (your `user_class` entity). A host that already decorates
+`ClientTokenRepositoryInterface` to drop tokens of inactive accounts (Beacon `ActiveAccountClientTokens`) can remove
+that decorator, or keep it: both checks pass for active accounts.
+
 ## To 1.28.0
 
 From **1.27.0**:

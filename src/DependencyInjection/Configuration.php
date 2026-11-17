@@ -16,9 +16,12 @@ use function array_key_exists;
 use function class_exists;
 use function in_array;
 use function is_array;
+use function is_bool;
 use function is_string;
 use function preg_match;
 use function str_contains;
+use function str_ends_with;
+use function str_starts_with;
 use function trim;
 
 /**
@@ -603,6 +606,41 @@ final class Configuration implements ConfigurationInterface
                     ->info('Client API 1.9 (contract v0.2): host interfaces, CORS, metadata, rate limits, audit and device flow. Needs clients.enabled.')
                     ->addDefaultsIfNotSet()
                     ->children()
+                        ->scalarNode('prefix')
+                            ->info('Since 1.29 (REQ-API-001): host API prefix of the versioned client routes, served at <route_prefix><prefix>/time-track/v1/… (default /api → /api/time-track/v1/…). The unversioned clients.routes.* paths stay as permanent aliases. Empty string or a path starting with "/" and not ending with "/".')
+                            ->defaultValue('/api')
+                            ->validate()
+                                ->ifTrue(static fn (mixed $v): bool => !is_string($v) || ($v !== '' && (!str_starts_with($v, '/') || str_ends_with($v, '/') || preg_match('#\s#', $v) === 1)))
+                                ->thenInvalid('client_api.prefix must be empty or a path starting with "/" and not ending with "/": %s')
+                            ->end()
+                        ->end()
+                        ->arrayNode('user_checker')
+                            ->info('Since 1.29 (Beacon C5): run a Symfony user checker (checkPreAuth + checkPostAuth) for the user of every Bearer token use; a disabled, locked or expired account gets 401 invalid_token. On by default. `false` turns it off; a string is the checker service id.')
+                            ->addDefaultsIfNotSet()
+                            ->beforeNormalization()
+                                ->ifTrue(static fn (mixed $v): bool => is_bool($v))
+                                ->then(static fn (bool $v): array => ['enabled' => $v])
+                            ->end()
+                            ->beforeNormalization()
+                                ->ifString()
+                                ->then(static fn (string $v): array => ['service' => $v])
+                            ->end()
+                            ->children()
+                                ->booleanNode('enabled')->defaultTrue()->end()
+                                ->scalarNode('service')
+                                    ->info('Explicit user checker service id (Symfony UserCheckerInterface); wins over firewall. Null = security.user_checker.<firewall> (see firewall); none found = no check.')
+                                    ->defaultNull()
+                                ->end()
+                                ->scalarNode('firewall')
+                                    ->info('Firewall whose user checker (security.user_checker.<firewall>, incl. chained checkers such as UserKit) runs. Null = the firewall named "main" when present, else the first firewall with security enabled.')
+                                    ->defaultNull()
+                                ->end()
+                                ->booleanNode('revoke_tokens')
+                                    ->info('Delete the refused token (Beacon ActiveAccountClientTokens behaviour): the client signs in again after the account is re-enabled. false keeps it, so the token works again once the account is re-enabled.')
+                                    ->defaultTrue()
+                                ->end()
+                            ->end()
+                        ->end()
                         ->arrayNode('allowed_origins')
                             ->info('Exact CORS origins: chrome-extension://<id>, moz-extension://<uuid>, extension://<id> (Edge). No wildcard. The desktop app sends no Origin.')
                             ->scalarPrototype()

@@ -20,8 +20,9 @@ use function trim;
 
 /**
  * Stateless request checks of the client API (contract v0.2 §3/§4/§6), in this order: per-IP rate limit, Bearer
- * token, per-request credential state ({@see ClientCredentialStateInterface}), per-token rate limit, scope. Never
- * reads or writes the session. Every refusal is audited ({@see ClientApiAuditor::denied()}).
+ * token, account status of the token user (since 1.29, {@see ClientAccountChecker}, `client_api.user_checker`),
+ * per-request credential state ({@see ClientCredentialStateInterface}), per-token rate limit, scope. Never reads or
+ * writes the session. Every refusal is audited ({@see ClientApiAuditor::denied()}).
  */
 final readonly class ClientApiGuard
 {
@@ -35,6 +36,7 @@ final readonly class ClientApiGuard
         private ClientApiSettingsProviderInterface $settingsProvider,
         private ClientCredentialStateInterface $credentialState,
         private ClientApiAuditor $auditor,
+        private ?ClientAccountChecker $accountChecker = null,
     ) {
     }
 
@@ -75,6 +77,15 @@ final readonly class ClientApiGuard
             return $this->invalidToken($request);
         }
 
+        /** @var UserInterface $user checked by ClientAuthService::resolveToken() */
+        $user = $token->getUser();
+
+        if ($this->accountChecker instanceof ClientAccountChecker && !$this->accountChecker->isActive($token, $user)) {
+            $this->auditor->denied('account_inactive', $token, $request->getClientIp());
+
+            return $this->invalidToken($request);
+        }
+
         if (!$this->credentialState->isActive($token)) {
             $this->auditor->denied('credential_inactive', $token, $request->getClientIp());
 
@@ -94,9 +105,6 @@ final readonly class ClientApiGuard
                 'WWW-Authenticate' => sprintf('Bearer error="insufficient_scope", scope="%s"', $scope->value),
             ]);
         }
-
-        /** @var UserInterface $user checked by ClientAuthService::resolveToken() */
-        $user = $token->getUser();
 
         return new ClientApiPrincipal($user, $token);
     }

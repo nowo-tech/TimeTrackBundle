@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle;
 
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ClientUserCheckerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TwigPathsPass;
@@ -27,6 +28,8 @@ final class TimeTrackBundle extends Bundle
     {
         $container->addCompilerPass(new TwigPathsPass());
         $container->addCompilerPass(new TimeTrackPortsPass());
+        // Since 1.29: client_api.user_checker → security.user_checker.<firewall>.
+        $container->addCompilerPass(new ClientUserCheckerPass());
         // Since 1.23.0: before DoctrineBundle's MiddlewaresPass (the rollback middleware of the private entity manager).
         $container->addCompilerPass(new PrivateEntityManagerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 10);
     }
