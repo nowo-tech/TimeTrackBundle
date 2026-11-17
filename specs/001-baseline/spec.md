@@ -80,6 +80,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-TWIG-001**: `TwigPathsPass` registers bundle views namespace.
 - **FR-TWIG-002**: `TimeTrackTwigExtension` exposes the Web UI globals (`templates.layout`, `templates.css_framework`) to the bundle templates (REQ-UI-001).
 - **FR-ROUTE-001**: `TimeTrackRouteLoader` (`type: nowo_time_track`) MUST expose configurable manage and API routes.
+- **FR-ROUTE-002** (1.28, REQ-SF-004): the routes MUST be declared with `#[Route]` attributes on the controllers; `TimeTrackRouteLoader` reads them through the internal `ControllerAttributeRouteLoader` and applies the configured names, paths, `route_prefix` and feature switches, keeping the 1.27 collection (fixture `tests/Fixtures/Routing/route-collections.json`). The controllers MUST NOT be autoconfigured (rule 7).
 
 ### Persistence
 
@@ -234,7 +235,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 ## Success Criteria
 
-- **SC-001**: 457/457 production files mapped in [`code-inventory.md`](code-inventory.md).
+- **SC-001**: 458/458 production files mapped in [`code-inventory.md`](code-inventory.md).
 - **SC-002**: Documented routes match `Configuration` defaults and route loader.
 - **SC-003**: PHPUnit + PHPStan pass; demo timer flow works with TaskBoard.
 - **SC-004**: Client API returns 409 on double-start and 401 on invalid token.

@@ -67,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Routes are declared with `#[Route]` attributes on the controllers (REQ-SF-004; owner approval 2026-11-17). The `type: nowo_time_track` route loader now reads those attributes (through an internal `ControllerAttributeRouteLoader`, so a host decorating `routing.loader.attribute` cannot change the bundle routes) and applies the configured names and paths, `route_prefix` and the feature switches, as before. Every route keeps its name, path, methods, requirements, defaults, options, host, scheme, condition and order; `tests/Integration/Routing/RouteCollectionFixtureTest.php` pins the collection against a fixture dumped from 1.27 (default configuration, client API, device flow, custom prefix / paths / names, trailing-slash prefix, functional kernel), and `tests/Fixtures/Routing/demo-symfony8.debug-router.json` is the demo `debug:router` dump. The controller classes are now router cache resources (a changed controller refreshes the routes in debug). No host change: keep the route import as it is. See [UPGRADING](UPGRADING.md#unreleased).
+- The controller services are no longer autoconfigured (REQ-SF-004 rule 7): they are tagged `controller.service_arguments` explicitly (plus `container.service_subscriber` for `TimeTrackManageController` and `TimeTrackDeviceVerificationController`), so the host's `routing.controllers` import on Symfony >= 7.3 does not load the attribute routes.
+
 ### Documentation
 
 - Spec Kit baseline (REQ-SPECKIT-003): `code-inventory.md` maps all 457 production units under `src/` (392 added since 2026-11-01) to semantic requirement IDs, and `spec.md` documents device authorization, the client API, timesheets, working time, calendar, meetings, monitoring, imports, task time move, retention, ports and the private entity manager.

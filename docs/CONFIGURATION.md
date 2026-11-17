@@ -6,7 +6,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 
 - [Required](#required)
 - [Integration](#integration)
-- [Routes (REQ-SF-004 exemption)](#routes-req-sf-004-exemption)
+- [Routes (REQ-SF-004)](#routes-req-sf-004)
 - [Reports (REQ-PERF-001)](#reports-req-perf-001)
 - [Web UI and templates (REQ-UI-001 / REQ-UI-003)](#web-ui-and-templates-req-ui-001--req-ui-003)
   - [Deprecated `templates.*` keys (1.x, removed in 2.0)](#deprecated-templates-keys-1x-removed-in-20)
@@ -42,7 +42,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | `database.entity_manager` | `default` | Doctrine entity manager the bundle tables are mapped on and written through |
 | `database.private_entity_manager` | `false` | Since 1.23.0 (REQ-ARCH-001 rule 6): `true` writes and reads the bundle rows through a **private** entity manager created on the connection and mapping of `database.entity_manager`, so the bundle never flushes, clears or closes that manager (yours). Same tables and connection: a transaction you open includes the bundle's rows (savepoints). Dropped and recreated at every request, Messenger message and outermost console command, and when a failed write closed it; with doctrine/dbal 4 also after a rollback undid its rows. `false` keeps the 1.22 behaviour (deprecated: the only mode in 2.0). See [UPGRADING](UPGRADING.md#private-entity-manager-databaseprivate_entity_manager) |
 
-## Routes (REQ-SF-004 exemption)
+## Routes (REQ-SF-004)
 
 The routes are opt-in: the host imports them once (the Flex recipe writes `config/routes/nowo_time_track.yaml`):
 
@@ -60,15 +60,30 @@ nowo_time_track:
 | `routes.device_verify.path` / `.name` | `/tools/time-track/device` / `nowo_time_track_device_verify` | Default device verification page (GET, POST; only when `client_api.device_flow.enabled` and `default_page`; session-authenticated, keep it behind the host firewall) |
 | `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `timer_switch`, `timer_discard_idle`, `heartbeat`, `entries`, `export`; `device_code`, `device_token` only with the device flow; only when `clients.enabled`) |
 
-**Why a route loader instead of `#[Route]` (documented exemption from REQ-SF-004 rule 1).** Every route **name and
-path** is host configuration (`routes.*`, `clients.routes.*`, `route_prefix`), and the client API routes exist only
-when `clients.enabled` is true. Static `#[Route]` attributes cannot carry per-host names, and hosts already depend on
-the configured names (`path('nowo_time_track_index')`, the browser extension and desktop app call the configured API
-paths). `Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader` (type `nowo_time_track`) therefore builds the routes
-from the configuration; names, paths and methods are unchanged since 1.0. The other REQ-SF-004 rules hold:
-controllers are services with constructor injection and no `#[AsController]`, no YAML/XML route files ship with the
-bundle, access is enforced by `TimeTrackAccessCheckerInterface` (REQ-UI-002), and the controllers carry no `#[Route]`,
-so the host's `routing.controllers` import never loads them (rule 7, `tests/Unit/Routing/HostRoutingControllersTest.php`).
+**Attribute routes and the route loader (since 1.28).** The routes are declared with `#[Route]` attributes on the
+controllers (`src/Controller/*`: methods, requirements, `_controller`, and the default path and name of each key
+above). `Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader` (type `nowo_time_track`, the import above, unchanged)
+reads those attributes and applies the configuration:
+
+- the configured **name** and **path** of every route (`routes.*`, `clients.routes.*`; the defaults equal the
+  attribute values);
+- `route_prefix`, prepended to every path **as is** (no slash normalisation: `/tenant/` + `/tools/time-track` gives
+  `/tenant//tools/time-track`, as in 1.27);
+- the feature switches: client API routes only with `clients.enabled`, `device_code` / `device_token` only with
+  `client_api.device_flow.enabled`, `device_verify` only with the device flow and `default_page`.
+
+Every route keeps the 1.27 name, path, methods, requirements (every client API route carries the five placeholder
+requirements of `TimeTrackRouteLoader::REQUIREMENTS`), defaults, options, host, scheme, condition and order, with the
+default configuration and with custom prefixes, paths and names: `tests/Integration/Routing/RouteCollectionFixtureTest.php`
+compares the collection with the fixture dumped from 1.27 (`tests/Fixtures/Routing/route-collections.json`).
+
+The controllers are services with constructor injection and no `#[AsController]`, registered explicitly
+(`controller.service_arguments`, plus `container.service_subscriber` for the two `AbstractController` pages) and
+**not autoconfigured**, so on Symfony >= 7.3 the host's default `routing.controllers` import never loads them; the
+routes exist only where the host imports `type: nowo_time_track` (REQ-SF-004 rule 7,
+`tests/Unit/Routing/HostRoutingControllersTest.php`). No YAML/XML route files ship with the bundle, and access is
+enforced by `TimeTrackAccessCheckerInterface` (REQ-UI-002). Do not import `src/Controller/` with `type: attribute`:
+that skips `route_prefix`, the configured names and paths and the feature switches.
 
 Hosts may also route single controller actions themselves (e.g. only the client API under their own firewall):
 

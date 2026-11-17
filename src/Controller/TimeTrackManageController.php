@@ -21,6 +21,7 @@ use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormView;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -60,6 +61,7 @@ final class TimeTrackManageController extends AbstractController
     /**
      * Timer page: active timer, trackable tasks and the start / stop forms; POST runs the action and redirects.
      */
+    #[Route('/tools/time-track', name: 'nowo_time_track_index', methods: ['GET', 'POST'])]
     public function index(Request $request): Response
     {
         $this->denyUnlessGrantedAccess();
@@ -123,6 +125,7 @@ final class TimeTrackManageController extends AbstractController
     /**
      * Reports page: one page of the time entries of the period (`from`, `to`, `page`).
      */
+    #[Route('/tools/time-track/reports', name: 'nowo_time_track_reports', methods: ['GET'])]
     public function reports(Request $request): Response
     {
         $this->denyUnlessGrantedAccess();

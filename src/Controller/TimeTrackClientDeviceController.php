@@ -10,9 +10,11 @@ use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 use function is_array;
@@ -25,6 +27,7 @@ use function str_contains;
  * Device flow endpoints of the client API (contract v0.2 §2): `POST device/code` and `POST device/token`. Stateless,
  * no Bearer, limited per IP (`client_api.rate_limit.device_per_ip`).
  */
+#[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackClientDeviceController
 {
     /**
@@ -44,6 +47,7 @@ final readonly class TimeTrackClientDeviceController
     /**
      * POST device/code `{clientType: desktop|extension, clientName, scopes?}`: starts a device authorization.
      */
+    #[Route('/api/time-track/device/code', name: 'nowo_time_track_api_device_code', methods: ['POST', 'OPTIONS'])]
     public function code(Request $request): Response
     {
         $early = $this->preflightOrLimit($request);
@@ -89,6 +93,7 @@ final readonly class TimeTrackClientDeviceController
      * POST device/token `{deviceCode}`: `authorization_pending`, `slow_down`, `expired_token`, `access_denied` (400)
      * or `{token, expiresAt, scopes}` (200, once).
      */
+    #[Route('/api/time-track/device/token', name: 'nowo_time_track_api_device_token', methods: ['POST', 'OPTIONS'])]
     public function token(Request $request): Response
     {
         $early = $this->preflightOrLimit($request);

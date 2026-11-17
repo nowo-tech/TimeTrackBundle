@@ -27,6 +27,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -42,6 +43,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
 use stdClass;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\DependencyInjection\SecurityExtension;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
@@ -53,6 +55,7 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_column;
+use function is_subclass_of;
 
 final class TimeTrackExtensionTest extends TestCase
 {
@@ -87,6 +90,27 @@ final class TimeTrackExtensionTest extends TestCase
             'tabler',
             $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
         );
+    }
+
+    /**
+     * REQ-SF-004 rule 7 (1.28): the controllers carry #[Route] attributes, so none may be autoconfigured (Symfony >= 7.3
+     * would tag it routing.controller and the host's `routing.controllers` import would load it); each one is tagged
+     * controller.service_arguments explicitly, and the AbstractController subclasses container.service_subscriber.
+     */
+    public function testControllersAreNotAutoconfigured(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.environment', 'test');
+        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
+
+        (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
+
+        foreach (TimeTrackRouteLoader::CONTROLLERS as $controller) {
+            $definition = $container->getDefinition($controller);
+            self::assertFalse($definition->isAutoconfigured(), $controller);
+            self::assertTrue($definition->hasTag('controller.service_arguments'), $controller);
+            self::assertSame(is_subclass_of($controller, AbstractController::class), $definition->hasTag('container.service_subscriber'), $controller);
+        }
     }
 
     public function testLoadWiresTheUserReferencePortIntoTheServicesThatStoreTheUser(): void

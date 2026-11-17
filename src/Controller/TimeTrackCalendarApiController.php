@@ -24,6 +24,7 @@ use Nowo\TimeTrackBundle\Exception\IdempotentReplayException;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
@@ -35,6 +36,7 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Throwable;
 
 use function array_is_list;
@@ -66,6 +68,7 @@ use const DATE_ATOM;
  * explicit grant. A feature that is off, a scope that is not the user's and other users' resources answer 404. No event
  * title ever reaches a response: only task ids, times and keyed ids.
  */
+#[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackCalendarApiController
 {
     /** `refresh=1` of `GET suggestions`: once per window per token. */
@@ -105,6 +108,7 @@ final readonly class TimeTrackCalendarApiController
     /**
      * GET calendar/connections `?scope`: the user's connections in the scope and the host *Connect* link per provider.
      */
+    #[Route('/api/time-track/calendar/connections', name: 'nowo_time_track_api_calendar_connections', methods: ['GET', 'OPTIONS'])]
     public function connections(Request $request): Response
     {
         return $this->noStore($this->doConnections($request));
@@ -135,6 +139,7 @@ final readonly class TimeTrackCalendarApiController
      * DELETE calendar/connections/{id}: revokes one of the user's connections (host token and grant first, then the
      * connection, its suggestions and the user's rules in its scope).
      */
+    #[Route('/api/time-track/calendar/connections/{id}', name: 'nowo_time_track_api_calendar_connection_revoke', methods: ['DELETE', 'OPTIONS'])]
     public function connectionRevoke(Request $request, string $id): Response
     {
         return $this->noStore($this->doConnectionRevoke($request, $id));
@@ -157,6 +162,7 @@ final readonly class TimeTrackCalendarApiController
      * GET suggestions `?scope&from&to&refresh`: pending suggestions grouped (dailies) and single, ended in the last
      * `calendar.lookback_days`. `refresh=1` syncs the user's server-mode connections first (once per 5 minutes).
      */
+    #[Route('/api/time-track/suggestions', name: 'nowo_time_track_api_suggestions', methods: ['GET', 'OPTIONS'])]
     public function suggestions(Request $request): Response
     {
         return $this->noStore($this->doSuggestions($request));
@@ -205,6 +211,7 @@ final readonly class TimeTrackCalendarApiController
      * POST suggestions/accept `{ids | groupKey, taskId?, note?}` (scopes `suggestions:write` and `entries:write`): one
      * `calendar` entry per occurrence; per-occurrence outcomes `{id, entryId?, error?}`.
      */
+    #[Route('/api/time-track/suggestions/accept', name: 'nowo_time_track_api_suggestions_accept', methods: ['POST', 'OPTIONS'])]
     public function accept(Request $request): Response
     {
         return $this->noStore($this->doAccept($request));
@@ -241,6 +248,7 @@ final readonly class TimeTrackCalendarApiController
     /**
      * POST suggestions/dismiss `{ids | groupKey}`: the dismissed ids.
      */
+    #[Route('/api/time-track/suggestions/dismiss', name: 'nowo_time_track_api_suggestions_dismiss', methods: ['POST', 'OPTIONS'])]
     public function dismiss(Request $request): Response
     {
         return $this->noStore($this->doDismiss($request));
@@ -270,6 +278,7 @@ final readonly class TimeTrackCalendarApiController
      * POST suggestions/resolve-keys `{scopeKey?, keys}` (local mode): `{matches: {key: {taskId, title, boardId,
      * trackable}}}`. Keys only reach the server (≤ 50, each ≤ 32 characters); 60 calls per minute per token.
      */
+    #[Route('/api/time-track/suggestions/resolve-keys', name: 'nowo_time_track_api_suggestions_resolve_keys', methods: ['POST', 'OPTIONS'])]
     public function resolveKeys(Request $request): Response
     {
         return $this->noStore($this->doResolveKeys($request));
@@ -308,6 +317,7 @@ final readonly class TimeTrackCalendarApiController
      * entry; 409 `period_locked` / `period_submitted` / `overlap`; 422 for the times; 403 `task_forbidden`. Since 1.21 an
      * absent or null `billable` takes the host default.
      */
+    #[Route('/api/time-track/entries', name: 'nowo_time_track_api_entries_create', methods: ['POST'])]
     public function createEntry(Request $request): Response
     {
         return $this->noStore($this->doCreateEntry($request));
@@ -436,6 +446,7 @@ final readonly class TimeTrackCalendarApiController
      * `period_submitted`; 403 `forbidden` (a host `edit` access-check listener said no). Audited by
      * {@see TimeEntryBillableService}.
      */
+    #[Route('/api/time-track/entries/{id}', name: 'nowo_time_track_api_entries_update', methods: ['PATCH', 'OPTIONS'])]
     public function updateEntry(Request $request, string $id): Response
     {
         return $this->noStore($this->doUpdateEntry($request, $id));

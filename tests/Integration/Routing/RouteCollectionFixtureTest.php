@@ -89,8 +89,8 @@ final class RouteCollectionFixtureTest extends TestCase
 
         return [
             // Clients disabled: the manage UI routes only.
-            'default' => [],
-            'clients_enabled' => ['clients' => $clients],
+            'default'             => [],
+            'clients_enabled'     => ['clients' => $clients],
             'clients_device_flow' => [
                 'clients'    => $clients,
                 'client_api' => ['device_flow' => ['enabled' => true]],
