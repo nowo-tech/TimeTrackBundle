@@ -25,6 +25,7 @@ use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryOwnerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
@@ -39,6 +40,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 use function array_chunk;
 use function array_map;
+use function array_reverse;
 use function count;
 use function in_array;
 use function is_string;
@@ -46,8 +48,10 @@ use function mb_check_encoding;
 use function mb_substr;
 use function preg_match;
 use function str_starts_with;
+use function strcmp;
 use function strlen;
 use function strtolower;
+use function uksort;
 
 /**
  * Since 1.11: writes imported time entries ({@see TimeEntrySource::Import}), idempotently by
@@ -221,6 +225,71 @@ final readonly class ImportedTimeEntryWriter
             // Since 1.27.0 (audit QO-M1): the application's pending work first, on its own, never inside the batch's unit.
             $this->repository->flushPending();
         }
+        // Since 1.31.0 (audit QO-L3): the plan (existing rows, period locks) and the write run under the owners' write
+        // locks, so a submit, approval or lock of the same owner cannot commit between the lock check and the write.
+        // @igor-ignore - the closure runs once inside this call, it is not stored.
+        [$results, $events, $counts, $write] = $this->underOwnerLocks($rows, fn (): array => $this->planAndSave($rows, $skipMismatches));
+        foreach ($events as $event) {
+            $this->eventDispatcher?->dispatch($event, TimeTrackEvents::TIME_ENTRY_IMPORTED);
+        }
+        if ($write !== []) {
+            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked'], 'mismatched' => $counts['mismatched']]);
+        }
+        if ($counts['mismatched'] > 0) {
+            // Audit HM-L5: a skipped row is a refusal; counts only, never ids.
+            $this->logger->warning('TimeTrack imported entries skipped: another owner holds them.', ['bundle' => 'nowo_time_track', 'mismatched' => $counts['mismatched']]);
+        }
+
+        return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged'], $counts['locked'], $counts['mismatched']);
+    }
+
+    /**
+     * Since 1.31.0 (audit QO-L3): runs the batch holding the write lock of every user it names, in id order (the
+     * documented lock order: the owner's row first), when the period locks are on and the store serialises users
+     * ({@see UserSerialisedTimeEntryRepositoryInterface}); as it is otherwise. Rows of a person with no account have no
+     * user row to lock: the guard's ownerless rule reads them without a lock (HIGH-LOAD "Known issues").
+     *
+     * @template T
+     *
+     * @param list<array{0: ImportedTimeEntryClaim|ImportedTimeEntryPerson|UserInterface, 1: ImportedTimeEntryData}> $rows
+     * @param callable(): T $unit
+     *
+     * @return T
+     */
+    private function underOwnerLocks(array $rows, callable $unit): mixed
+    {
+        $store = $this->repository;
+        if (!$store instanceof UserSerialisedTimeEntryRepositoryInterface || $this->periodLockGuard?->isEnabled() !== true) {
+            return $unit();
+        }
+        $users = [];
+        foreach ($rows as [$owner]) {
+            $user = $this->userOf($owner);
+            if ($user instanceof UserInterface) {
+                $users[UserIdResolver::getId($user)] = $user;
+            }
+        }
+        // Compared as strings (a numeric id key would otherwise sort as a number): the same order for every importer.
+        uksort($users, static fn (int|string $a, int|string $b): int => strcmp((string) $a, (string) $b));
+        $run = $unit;
+        foreach (array_reverse($users) as $user) {
+            $inner = $run;
+            // @igor-ignore - Closure chained for this call only and dropped after it (no state kept).
+            $run = static fn (): mixed => $store->inUserTransaction($user, $inner);
+        }
+
+        return $run();
+    }
+
+    /**
+     * Plans the batch against the stored rows and the period locks, then saves what changes.
+     *
+     * @param list<array{0: ImportedTimeEntryClaim|ImportedTimeEntryPerson|UserInterface, 1: ImportedTimeEntryData}> $rows validated rows
+     *
+     * @return array{0: list<ImportedTimeEntryResult>, 1: list<TimeEntryImportedEvent>, 2: array{created: int, updated: int, unchanged: int, locked: int, mismatched: int}, 3: list<TimeEntry>}
+     */
+    private function planAndSave(array $rows, bool $skipMismatches): array
+    {
         $plan = [];
         foreach ($rows as [$owner, $data]) {
             $user     = $this->userOf($owner);
@@ -299,18 +368,8 @@ final readonly class ImportedTimeEntryWriter
             // @igor-ignore - I/O delegate (repository / writer call); no worker state.
             $this->repository->saveAll($write);
         }
-        foreach ($events as $event) {
-            $this->eventDispatcher?->dispatch($event, TimeTrackEvents::TIME_ENTRY_IMPORTED);
-        }
-        if ($write !== []) {
-            $this->logger->info('TimeTrack imported entries written.', ['bundle' => 'nowo_time_track', 'created' => $counts['created'], 'updated' => $counts['updated'], 'unchanged' => $counts['unchanged'], 'locked' => $counts['locked'], 'mismatched' => $counts['mismatched']]);
-        }
-        if ($counts['mismatched'] > 0) {
-            // Audit HM-L5: a skipped row is a refusal; counts only, never ids.
-            $this->logger->warning('TimeTrack imported entries skipped: another owner holds them.', ['bundle' => 'nowo_time_track', 'mismatched' => $counts['mismatched']]);
-        }
 
-        return new ImportedTimeEntryBatchResult($results, $counts['created'], $counts['updated'], $counts['unchanged'], $counts['locked'], $counts['mismatched']);
+        return [$results, $events, $counts, $write];
     }
 
     /**

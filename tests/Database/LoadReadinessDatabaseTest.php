@@ -7,11 +7,16 @@ namespace Nowo\TimeTrackBundle\Tests\Database;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Tools\DsnParser;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
+use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Functional\FunctionalTestCase;
@@ -19,6 +24,8 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
+use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 
 use function array_map;
 use function fclose;
@@ -32,7 +39,7 @@ use const DATE_ATOM;
 use const PHP_BINARY;
 
 /**
- * 1.27.0 (Beacon spec 239): lock waits and concurrent processes on a real server (MySQL 8.4, PostgreSQL 16; CI job
+ * 1.27.0 (Beacon spec 239): lock waits and concurrent processes on a real server (MySQL 8.4, MariaDB 11.4, PostgreSQL 16; CI job
  * "Load readiness", run with `--fail-on-skipped`). Skipped on SQLite.
  *
  * - A lock wait answers 409 + Retry-After (1.26: the raw lock wait timeout, a 500).
@@ -84,11 +91,52 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(409);
         self::assertResponseHeaderSame('Retry-After', '1');
         self::assertSame('unavailable', $body['error'] ?? null);
+        self::assertSame('CONFLICT_001', $body['code'] ?? null, 'REQ-RUNTIME-003 rule 6: nothing committed');
         self::assertFalse($this->entityManager()->getConnection()->isTransactionActive(), 'the connection is back at its entry level');
         self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
 
         $this->api('POST', '/api/time-track/entries', $payload, $token, ['HTTP_IDEMPOTENCY_KEY' => 'lock-1']);
         self::assertResponseStatusCodeSame(201, 'the retry succeeds');
+    }
+
+    /**
+     * QO-L3 (1.31.0): while an import plans (reads the stored rows, checks the period locks) and writes, another
+     * connection cannot take the owner's row lock: the import holds it, so a submit or approval of that owner waits.
+     */
+    public function testAnImportHoldsTheOwnersWriteLockWhilePlanningAndWriting(): void
+    {
+        $other = $this->otherConnection();
+        $held  = [];
+        $id    = $this->user->getId();
+        $probe = static function () use ($other, $id): bool {
+            try {
+                $other->executeQuery('SELECT id FROM app_user WHERE id = ? FOR UPDATE NOWAIT', [$id]);
+
+                return false;
+            } catch (DbalException) {
+                return true; // The lock is held by the import.
+            }
+        };
+        $scopes = $this->createStub(TimesheetScopeProviderInterface::class);
+        $scopes->method('scopeKeyForTask')->willReturnCallback(static function () use ($probe, &$held): string {
+            $held[] = $probe();
+
+            return '';
+        });
+        $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
+        $guard = self::getContainer()->get(PeriodLockGuard::class);
+        self::assertInstanceOf(PeriodLockGuard::class, $guard);
+        $start = new DateTimeImmutable('2026-03-02 09:00:00');
+
+        try {
+            (new ImportedTimeEntryWriter($repository, periodLockGuard: $guard, scopeProvider: $scopes))
+                ->upsert($this->user, new ImportedTimeEntryData('clickup:wave', 'e-1', 'task-1', 'T', 'board-1', $start, $start->modify('+1 hour'), 3600));
+            self::assertSame([true], $held, 'the owner row was locked while the import planned');
+            self::assertFalse($probe(), 'and free again once it committed');
+        } finally {
+            $other->close();
+        }
     }
 
     public function testTwoProcessesAddingLedgerLinesForOneOwnerAllChain(): void

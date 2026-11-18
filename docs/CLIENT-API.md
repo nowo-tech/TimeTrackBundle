@@ -720,7 +720,8 @@ grant.
 
 ## Errors
 
-`{"error": "<code>", "message": "<English text>"}`.
+`{"error": "<code>", "message": "<English text>"}`. Since 1.31 a lock-conflict answer (`unavailable`) has a third key,
+`"code": "CONFLICT_001" | "CONFLICT_002"` (additive; see [CONCURRENCY](CONCURRENCY.md#conflict-codes)).
 
 | Status | `error` | When |
 |---|---|---|
@@ -736,8 +737,9 @@ grant.
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
 | 409 | `overlap` | Since 1.14: `POST entries` / an accepted suggestion overlaps a live entry or the running timer |
 | 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
-| 409 | `unavailable` | Since 1.30 (was 503): a transient storage failure (deadlock, lock wait timeout) with `Retry-After` (seconds): retry the same request. `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503 |
-| 409 | `unavailable` (no `Retry-After`) | Since 1.30: the failed write may have been partly saved (`ConcurrencyConflict` with `committed: true`); the message asks to reload. Never retry it blindly |
+| 409 | `unavailable` + `code: CONFLICT_001` | Since 1.30 (was 503): a transient storage failure (deadlock, lock wait timeout) with `Retry-After` (seconds): retry the same request. `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503 |
+| 409 | `unavailable` + `code: CONFLICT_002` (no `Retry-After`) | Since 1.30 (the `code` since 1.31): the failed write may have been partly saved (`ConcurrencyConflict` with `committed: true`); the message asks to reload. Never retry it blindly |
+| 500 | — | Since 1.31 a unique-key violation is no longer answered `409 conflict`; the bundle resolves its own "only one" races (`timer_running`, `duplicate`, …) |
 | 409 | `timer_running` | `timer/start` while a timer runs; `timer/discard-idle` `split` / `reassign` when a concurrent start took the slot first (1.9.1) |
 | 429 | `rate_limited` | Rate limit hit (`Retry-After` seconds) |
 | 503 | `meetings_unavailable` | Since 1.14: the host meeting provider failed (`Retry-After: 60`) |

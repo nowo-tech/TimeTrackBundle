@@ -89,6 +89,26 @@
 
 ## Unreleased
 
+Minor release (planned 1.31.0), REQ-RUNTIME-003. Raise `nowo-tech/transaction-doctrine` to `^1.5` (the bundle requires it).
+
+- **Conflict codes (additive).** A lock-conflict answer of the client API now has a third key,
+  `{"error": "unavailable", "message": "…", "code": "CONFLICT_001" | "CONFLICT_002"}`. `error`, `message`, the status
+  and `Retry-After` are unchanged: `CONFLICT_001` (nothing committed) retries after `Retry-After`; `CONFLICT_002` (part
+  committed, no `Retry-After`) must read again before repeating. The HTML pages' `HttpException` has the header
+  `X-Conflict-Code`. A client that ignores unknown keys needs no change.
+- **A unique violation is not a 409 any more.** Up to 1.30.0 `StorageFailureSubscriber` answered any
+  `UniqueConstraintViolationException` in the chain as `{"error": "conflict"}` (409). It no longer touches it: the
+  bundle resolves its own "only one" races (running timer, period row, imports, acknowledgements, upload intents) or
+  answers a domain result with its own key (`timer_running`, `invalid_transition`, `duplicate`, the timesheet and ledger
+  `conflict`). A violation caused by your code or your listeners reaches your error handling (500). If you relied on the
+  409, catch the exception where you cause it, or add your own `kernel.exception` listener for your routes.
+- **503 stays available.** `nowo_transaction_doctrine.conflict_response.status: 503` still switches every conflict
+  answer back to 503 (the codes stay).
+- **Imports take owner locks with timesheets on.** An import of users now holds each owner's write lock (in id order)
+  while it plans and writes, so it waits for a submit or approval of the same owner (and the other way round); a long
+  import batch of one owner holds that owner's other writes for its duration (keep batches small, at most 500 rows).
+- No schema change.
+
 ## To 1.30.0
 
 From **1.29.0**:

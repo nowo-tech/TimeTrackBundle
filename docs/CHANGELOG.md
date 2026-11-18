@@ -70,6 +70,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Conflict codes (REQ-RUNTIME-003 rule 6).** Every lock-conflict answer carries the platform's code: `CONFLICT_001` (nothing committed, with `Retry-After`) or `CONFLICT_002` (part committed, no `Retry-After`; read again, do not repeat). Client API body `{"error": "unavailable", "message": …, "code": "CONFLICT_00n"}` (additive: `error` and `message` are unchanged), also through `StorageFailureConflictFormatter`; the HTML pages get the header `X-Conflict-Code`. A lost savepoint with no deadlock behind it (commit outcome unknown) is `CONFLICT_002`. `ClientResponseFactory::error()` takes an optional `$extra` array of body keys.
+- `TaskTimeMover::moveTasks()`: a transient failure after an earlier batch (or timer move) of the same call was committed is rethrown as a `ConcurrencyConflict` with `committed: true` (`CONFLICT_002`); the move is idempotent, run it again to finish.
+- `docs/CONCURRENCY.md`: write-path table, codes, host options and residual risks.
+- CI: MariaDB 11.4 (DBAL 4 and 3) in the required "Load readiness" job, next to MySQL 8.4 and PostgreSQL 16; `tests/Functional/ConcurrencyWaveTest.php` and an import-lock test in `tests/Database`.
+
+### Changed
+
+- Requires nowo-tech/transaction-doctrine ^1.5 (was ^1.3): `ConflictCode`, serialization failures replayed by default, the conflict code in the shared responder.
+- **A unique-key violation is no longer mapped to 409 by `StorageFailureSubscriber`** (1.27.0 to 1.30.0 answered `{"error": "conflict"}` for any `UniqueConstraintViolationException` in the chain). It is not a lock conflict: the bundle resolves its expected "only one" races where they happen (the running timer, the period's row, imports, acknowledgements, upload intents) or answers a domain result with its own key (`timer_running`, `invalid_transition`, `duplicate`, the ledger and timesheet `conflict`), never `CONFLICT_*`; any other violation is a real error (500) for your error handling. See [UPGRADING](UPGRADING.md#unreleased).
+- An import (`ImportedTimeEntryWriter::upsertMany()` and the `upsert*()` calls) with timesheets on plans and writes under the write lock of every owner of its batch, in id order (the documented lock order), and checks the period locks under them.
+- The `edit_blocked` audit row of a refused write takes the timesheet row's lock, reads the row, the last event and the head again, and only then appends (rate limit checked again under the lock).
+
+### Fixed
+
+- **Imports and period locks (audit QO-L3, known issue of 1.30.0):** an import took no lock, so one that coincided with a submit, approval or lock of the same owner and period could write into that period (the approval then answered `stale`, or a locked period changed without a new hash).
+- **`edit_blocked` rows and raced refusals (audit QO-L4, known issue of 1.30.0):** a refused write in a locked period appended its audit row without the row's lock; when a transition of the same timesheet committed at that moment the append failed on the version or sequence key and the caller got a 409 or 500 (shared manager) instead of the `period_locked` refusal. The refusal is now always the answer.
+
 ## [1.30.0] - 2026-11-17
 
 ### Changed

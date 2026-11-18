@@ -14,6 +14,10 @@ use Nowo\TimeTrackBundle\Repository\TaskTimeMoveRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TaskTimerMoveRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TransactionContract\TransientStorageFailure;
+use Nowo\TransactionDoctrine\TransientFailureClassifier;
+use Nowo\TransactionDoctrine\TransientFailureKind;
+use Nowo\TransactionDoctrine\WriteUnit\ConcurrencyConflict;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -92,6 +96,7 @@ final readonly class TaskTimeMover
      * @throws InvalidArgumentException when an argument breaks a rule (nothing written)
      * @throws LogicException when a store lacks the capability (nothing written)
      * @throws TaskTimeMoveEventException when a {@see TimeTrackEvents::TASK_TIME_MOVED} listener threw (everything else was done)
+     * @throws TransientStorageFailure when a batch failed transiently; a {@see ConcurrencyConflict} with `committed: true` (conflict code `CONFLICT_002`) when an earlier batch of the call had already been committed
      */
     public function moveTasks(array $taskIds, ?string $targetBoardId, ?string $targetScopeKey, ?string $actorId = null, ?string $fromBoardId = null): TaskTimeMoveResult
     {
@@ -110,18 +115,24 @@ final readonly class TaskTimeMover
         }
 
         $failure = null;
-        foreach (array_chunk($taskIds, self::TASK_CHUNK) as $chunk) {
-            // Timers first: a timer that stops after this writes its entry with the new board.
-            $timersBatch = new TaskTimeMoveResult(timersMoved: $timers->moveTimersToBoard($chunk, $targetBoardId, $fromBoardId));
-            $total       = $total->merge($timersBatch);
-            $failure     = $this->report($timersBatch, $chunk, $targetBoardId, $targetScopeKey, $actorId, $failure);
-            $after       = '';
-            do {
-                // @igor-ignore - I/O delegate (repository call); no worker state.
-                [$batch, $after, $read] = $entries->inTaskMoveTransaction(fn (): array => $this->batch($entries, $chunk, $after, $targetBoardId, $targetScopeKey, $fromBoardId));
-                $total                  = $total->merge($batch);
-                $failure                = $this->report($batch, $chunk, $targetBoardId, $targetScopeKey, $actorId, $failure);
-            } while ($read);
+        try {
+            foreach (array_chunk($taskIds, self::TASK_CHUNK) as $chunk) {
+                // Timers first: a timer that stops after this writes its entry with the new board.
+                $timersBatch = new TaskTimeMoveResult(timersMoved: $timers->moveTimersToBoard($chunk, $targetBoardId, $fromBoardId));
+                $total       = $total->merge($timersBatch);
+                $failure     = $this->report($timersBatch, $chunk, $targetBoardId, $targetScopeKey, $actorId, $failure);
+                $after       = '';
+                do {
+                    // @igor-ignore - I/O delegate (repository call); no worker state.
+                    [$batch, $after, $read] = $entries->inTaskMoveTransaction(fn (): array => $this->batch($entries, $chunk, $after, $targetBoardId, $targetScopeKey, $fromBoardId));
+                    $total                  = $total->merge($batch);
+                    $failure                = $this->report($batch, $chunk, $targetBoardId, $targetScopeKey, $actorId, $failure);
+                } while ($read);
+            }
+        } catch (TransientStorageFailure $transient) {
+            // Rule 6 of REQ-RUNTIME-003: an earlier batch (or timer move) of this call is committed, so the answer is
+            // CONFLICT_002 (read again, do not repeat blindly); the move itself is idempotent, run it again to finish.
+            throw $total->moved > 0 || $total->timersMoved > 0 ? $this->afterCommit($transient) : $transient;
         }
 
         if ($total->hasChanges()) {
@@ -133,6 +144,17 @@ final readonly class TaskTimeMover
         }
 
         return $total;
+    }
+
+    /**
+     * The same transient failure as a {@see ConcurrencyConflict} marked committed: nothing is lost, but part of the move is saved.
+     */
+    private function afterCommit(TransientStorageFailure $failure): ConcurrencyConflict
+    {
+        $cause = $failure->getPrevious() ?? $failure;
+        $kind  = (new TransientFailureClassifier())->classify($cause) ?? TransientFailureKind::Retryable;
+
+        return new ConcurrencyConflict(1, $kind, $failure->retryAfterSeconds(), $cause, true);
     }
 
     /**

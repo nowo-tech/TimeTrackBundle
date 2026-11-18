@@ -32,7 +32,7 @@ final class StorageFailureConflictFormatterTest extends TestCase
         self::assertSame('nosniff', $response->headers->get('X-Content-Type-Options'));
         self::assertSame('chrome-extension://functional', $response->headers->get('Access-Control-Allow-Origin'));
         $body = json_decode((string) $response->getContent(), true);
-        self::assertSame(['error' => 'unavailable', 'message' => 'Retry later.'], $body);
+        self::assertSame(['error' => 'unavailable', 'message' => 'Retry later.', 'code' => 'CONFLICT_001'], $body);
     }
 
     public function testItFallsBackToAPlainBodyAndKeepsThePolicyStatus(): void
@@ -42,7 +42,7 @@ final class StorageFailureConflictFormatterTest extends TestCase
 
         $response = (new StorageFailureConflictFormatter())->format($request, $this->context(true, 503));
         self::assertSame(503, $response?->getStatusCode());
-        self::assertSame(['error' => 'unavailable', 'message' => 'Retry later.'], json_decode((string) $response->getContent(), true));
+        self::assertSame(['error' => 'unavailable', 'message' => 'Retry later.', 'code' => 'CONFLICT_002'], json_decode((string) $response->getContent(), true));
     }
 
     public function testOtherRoutesAndTheHtmlPagesFallThrough(): void
