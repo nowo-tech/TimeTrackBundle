@@ -178,7 +178,6 @@ the worker sees it first, and nothing is a score. Productivity scoring and keyst
 
 | Item | What it is | Why it helps | Privacy and DPIA |
 | --- | --- | --- | --- |
-| **Activity summary for the worker** | The worker's own share of time per application from 1.26 data, shown to them first | Helps the worker fill their timesheet | Same opt-in and DPIA; never a score, never compared with others |
 | **Assisted timesheet drafts** | Deterministic rules (calendar, meetings, Git keys) propose entries the worker confirms | Less typing at the end of the week | Only from data the worker already shared; nothing saved without confirmation |
 
 ---
