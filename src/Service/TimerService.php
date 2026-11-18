@@ -344,7 +344,7 @@ final readonly class TimerService
 
     /**
      * Since 1.25.0 (Beacon spec 234 FR-023 / FR-024, {@see HostTimerApi}): starts a timer now on a task and, when the
-     * account already has one running, stops that one first (ClickUp behaviour) and returns its entry. Only the account's
+     * account already has one running, stops that one first and returns its entry. Only the account's
      * own timer is ever stopped: an agent's call cannot stop a person's timer.
      *
      * The task and the period lock are checked before anything is stopped, so a refused start leaves the running timer
