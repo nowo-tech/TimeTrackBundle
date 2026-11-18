@@ -71,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Demo: `demo/symfony8/composer.lock` now installs nowo-tech/transaction-doctrine 1.6.0. The locks of 1.30.0 and 1.31.0 resolved nowo-tech/transaction-doctrine 1.1.0, which the bundle already required (^1.5): the demo installs from its lock, so it would fail with class not found on the first lock conflict (`ConflictCode`). The bundle's composer.json constraint was already right; hosts are not affected.
+
 ## [1.31.0] - 2026-11-18
 
 ### Added
