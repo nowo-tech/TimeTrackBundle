@@ -895,7 +895,7 @@ The rules:
   `TaskNotTrackableException`, so the caller cannot tell "not allowed" from "does not exist"; the period lock throws
   `PeriodLockedException` / `PeriodSubmittedException`.
 - **One running timer per account.** `start()` on an account whose timer runs stops that timer first and returns its
-  entry in `stopped` (ClickUp behaviour). That entry is marked `closed_by: replaced` in its metadata
+  entry in `stopped` (starting a new timer replaces the running one). That entry is marked `closed_by: replaced` in its metadata
   (`TimeEntry::closedBy()`, `TimerEntrySnapshot::$closedBy`; reserved, a client or a manual entry cannot set it). The
   access check, the task and the period lock all run before anything is stopped, so a start refused for one of those
   reasons leaves the running timer untouched. Only the actor's own timer is ever read, started or stopped, so an
