@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5ca70b3cbc8c5410da733e14fc109f64",
+    "content-hash": "eed42378f8c823609fcab844ef889de1",
     "packages": [
         {
             "name": "doctrine/collections",
@@ -1125,16 +1125,16 @@
         },
         {
             "name": "nowo-tech/transaction-doctrine",
-            "version": "v1.3.0",
+            "version": "v1.5.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nowo-tech/transaction-doctrine.git",
-                "reference": "dbc197e9335e8cc53c3f1ea4ebcadc1eda950979"
+                "reference": "5b1369c60fe1ee3cd5b7e4f0dce458e3dac8fdc2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nowo-tech/transaction-doctrine/zipball/dbc197e9335e8cc53c3f1ea4ebcadc1eda950979",
-                "reference": "dbc197e9335e8cc53c3f1ea4ebcadc1eda950979",
+                "url": "https://api.github.com/repos/nowo-tech/transaction-doctrine/zipball/5b1369c60fe1ee3cd5b7e4f0dce458e3dac8fdc2",
+                "reference": "5b1369c60fe1ee3cd5b7e4f0dce458e3dac8fdc2",
                 "shasum": ""
             },
             "require": {
@@ -1178,6 +1178,7 @@
                 "doctrine/orm": "For DoctrineTransactionRunner::forEntityManager() and write units on entity managers",
                 "doctrine/persistence": "To reset a closed entity manager through a ManagerRegistry (required by WriteUnit)",
                 "nowo-tech/ui-kit-bundle": "The conflict page extends UiKit's error page when UiKit is installed",
+                "psr/event-dispatcher": "To dispatch WriteUnitRetryEvent before each write-unit replay (Symfony's event_dispatcher)",
                 "symfony/clock": "To pause between write-unit attempts through the Symfony clock (testable)",
                 "symfony/http-kernel": "For the optional NowoTransactionDoctrineBundle (#[AsWriteUnit], 409 conflict responder, worker hygiene)",
                 "symfony/messenger": "For WriteUnitMiddleware (replays a consumed message after a lock conflict)",
@@ -1229,8 +1230,8 @@
                 "issues": "https://github.com/nowo-tech/transaction-doctrine/issues",
                 "source": "https://github.com/nowo-tech/transaction-doctrine"
             },
-            "time": "2026-11-17T15:10:39+00:00",
-            "published-time": "2026-11-17T15:23:13+00:00"
+            "time": "2026-11-18T12:10:08+00:00",
+            "published-time": "2026-11-18T12:12:21+00:00"
         },
         {
             "name": "nowo-tech/ui-kit-bundle",

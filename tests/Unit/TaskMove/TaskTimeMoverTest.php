@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\TaskMove;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Driver\AbstractException;
+use Doctrine\DBAL\Exception\DeadlockException;
 use InvalidArgumentException;
 use LogicException;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
@@ -18,6 +20,10 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetRepository;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TransactionContract\TransientStorageFailure;
+use Nowo\TransactionDoctrine\ConflictCode;
+use Nowo\TransactionDoctrine\TransientFailureKind;
+use Nowo\TransactionDoctrine\WriteUnit\ConcurrencyConflict;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\MockObject\Stub;
@@ -122,6 +128,50 @@ final class TaskTimeMoverTest extends TestCase
         self::assertSame(['b' => TaskTimeKeptReason::Anonymised], $result->kept);
         self::assertSame(['b'], $result->keptIds(TaskTimeKeptReason::Anonymised));
         self::assertSame([], $result->keptIds(TaskTimeKeptReason::SourcePeriodLocked));
+    }
+
+    public function testALaterBatchFailingAfterAnEarlierOneCommittedIsAConflict002(): void
+    {
+        $at   = new DateTimeImmutable('2026-01-01 10:00:00');
+        $rows = [['id' => 'a', 'taskId' => 'task', 'boardId' => 'old', 'scopeKey' => 's', 'seconds' => 60, 'startedAt' => $at, 'personRef' => null, 'userId' => null, 'anonymisedAt' => null]];
+        /** @var MockObject&TaskTimeMoveRepositoryInterface&TimeEntryRepositoryInterface $entries */
+        $entries = $this->createMockForIntersectionOfInterfaces([TimeEntryRepositoryInterface::class, TaskTimeMoveRepositoryInterface::class]);
+        $calls   = 0;
+        $entries->method('inTaskMoveTransaction')->willReturnCallback(static function (callable $operation) use (&$calls): mixed {
+            if (++$calls === 2) {
+                throw new TransientStorageFailure(3, TransientStorageFailure::DEFAULT_MESSAGE, new DeadlockException(new class('Deadlock') extends AbstractException {}, null));
+            }
+
+            return $operation();
+        });
+        $entries->method('findForTaskMove')->willReturn($rows);
+        $entries->method('applyTaskMove')->willReturn(1);
+
+        try {
+            (new TaskTimeMover($entries, $this->timers()))->moveTasks(['task'], 'new', 't');
+            self::fail('The second batch failed.');
+        } catch (ConcurrencyConflict $conflict) {
+            self::assertTrue($conflict->committed, 'the first batch is saved');
+            self::assertSame(ConflictCode::Committed, ConflictCode::forFailure($conflict));
+            self::assertSame(TransientFailureKind::Deadlock, $conflict->kind);
+            self::assertSame(3, $conflict->retryAfterSeconds());
+        }
+    }
+
+    public function testTheFirstBatchFailingStaysAPlainTransientFailureWithCode001(): void
+    {
+        /** @var MockObject&TaskTimeMoveRepositoryInterface&TimeEntryRepositoryInterface $entries */
+        $entries = $this->createMockForIntersectionOfInterfaces([TimeEntryRepositoryInterface::class, TaskTimeMoveRepositoryInterface::class]);
+        $failure = new TransientStorageFailure();
+        $entries->method('inTaskMoveTransaction')->willThrowException($failure);
+
+        try {
+            (new TaskTimeMover($entries, $this->timers()))->moveTasks(['task'], 'new', 't');
+            self::fail('The first batch failed.');
+        } catch (TransientStorageFailure $caught) {
+            self::assertSame($failure, $caught);
+            self::assertSame(ConflictCode::RetrySafe, ConflictCode::forFailure($caught));
+        }
     }
 
     public function testResultsAddUp(): void

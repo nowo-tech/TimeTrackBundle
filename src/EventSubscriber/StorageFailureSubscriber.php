@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\EventSubscriber;
 
 use Doctrine\DBAL\Exception\RetryableException;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TransactionContract\TransientStorageFailure;
+use Nowo\TransactionDoctrine\ConflictCode;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponsePolicy;
 use Nowo\TransactionDoctrine\WriteUnit\ConcurrencyConflict;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -15,7 +15,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Throwable;
@@ -32,12 +31,17 @@ use function str_starts_with;
  *   `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503) with `Retry-After` (the runner's hint, else
  *   the policy's). A {@see ConcurrencyConflict} that already committed (`committed: true`) gets the same status but
  *   **no** `Retry-After` and a "reload" message: a blind retry could repeat the part that was saved;
- * - conflict (a unique key refused the write of a concurrent request): `409 Conflict`.
+ *
+ * Since 1.31.0 (REQ-RUNTIME-003 rule 6) every such answer carries the platform's conflict code ({@see ConflictCode}):
+ * `CONFLICT_001` when nothing was committed (with `Retry-After`), `CONFLICT_002` when part of the write may have been
+ * (no `Retry-After`: read again, do not repeat). A unique-key violation is NOT a lock conflict and is no longer mapped
+ * to 409 here: the bundle resolves its expected "only one" races where they happen (a domain answer with its own
+ * error key, never `CONFLICT_*`), and any other violation is a real error left to the application (500).
  *
  * The client API (desktop agent, browser extension, calendar, meetings, monitoring, working time) answers its usual
- * error body, `{"error": "unavailable" | "conflict", "message": …}`, with its CORS headers and `Cache-Control: no-store`;
- * the HTML pages (manage UI, device verification) get an {@see HttpException} of the policy /
- * {@see ConflictHttpException}, rendered by the application's error page. The storage error stays the previous
+ * error body, `{"error": "unavailable", "message": …, "code": "CONFLICT_00n"}`, with its CORS headers and
+ * `Cache-Control: no-store`; the HTML pages (manage UI, device verification) get an {@see HttpException} of the policy
+ * (header `X-Conflict-Code`), rendered by the application's error page. The storage error stays the previous
  * exception (for the logs): no SQL or parameter reaches the client.
  *
  * Only the bundle's routes: a controller of the bundle (the host may rename the routes) or a `nowo_time_track*` route.
@@ -83,7 +87,7 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
     }
 
     /**
-     * Maps a transient storage failure to 503 and a unique-key conflict to 409 on the bundle's routes.
+     * Maps a transient storage failure to the conflict answer (409 by default, with its CONFLICT code) on the bundle's routes.
      */
     public function onKernelException(ExceptionEvent $event): void
     {
@@ -94,44 +98,29 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
 
         $failure = $event->getThrowable();
         $hint    = $this->retryAfter($failure);
-        if ($hint !== null) {
-            $policy    = $this->policy ?? new ConflictResponsePolicy();
-            $committed = self::committed($failure);
-            $message   = $committed ? self::PARTIAL_MESSAGE : self::UNAVAILABLE_MESSAGE;
-            if (self::wantsJson($request)) {
-                $event->setResponse($this->json($request, 'unavailable', $message, $policy->status, $committed ? [] : $policy->headers($hint)));
-
-                return;
-            }
-            $event->setThrowable($committed
-                ? new HttpException($policy->status, $message, $failure)
-                : $policy->httpException($message, $failure, $hint));
-
+        if ($hint === null) {
             return;
         }
 
-        if ($this->isConflict($failure)) {
-            if (self::wantsJson($request)) {
-                $event->setResponse($this->json($request, 'conflict', 'A concurrent request changed the same data. Reload and retry.', Response::HTTP_CONFLICT));
+        $policy    = $this->policy ?? new ConflictResponsePolicy();
+        $code      = ConflictCode::forFailure($failure);
+        $committed = !$code->retrySafe();
+        $message   = $committed ? self::PARTIAL_MESSAGE : self::UNAVAILABLE_MESSAGE;
+        if (self::wantsJson($request)) {
+            $event->setResponse($this->json($request, 'unavailable', $message, $policy->status, $committed ? [] : $policy->headers($hint), $code));
 
-                return;
-            }
-            $event->setThrowable(new ConflictHttpException('A concurrent request changed the same data. Reload and retry.', $failure));
+            return;
         }
+        $headers = ['X-Conflict-Code' => $code->value] + ($committed ? [] : $policy->headers($hint));
+        $event->setThrowable(new HttpException($policy->status, $message, $failure, $headers));
     }
 
     /**
-     * Whether the chain holds a {@see ConcurrencyConflict} whose attempt already committed (no safe retry).
+     * Whether the failure is a {@see ConflictCode::Committed} one: a {@see ConcurrencyConflict} whose attempt already committed, or a lost savepoint with no deadlock behind it (no safe retry).
      */
     public static function committed(Throwable $failure): bool
     {
-        for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {
-            if ($current instanceof ConcurrencyConflict && $current->committed) {
-                return true;
-            }
-        }
-
-        return false;
+        return !ConflictCode::forFailure($failure)->retrySafe();
     }
 
     /**
@@ -159,20 +148,6 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
     private function fallbackHint(): int
     {
         return ($this->policy ?? new ConflictResponsePolicy())->retryAfterSeconds;
-    }
-
-    /**
-     * Whether a unique key refused the write (anywhere in the chain).
-     */
-    private function isConflict(Throwable $failure): bool
-    {
-        for ($current = $failure; $current instanceof Throwable; $current = $current->getPrevious()) {
-            if ($current instanceof UniqueConstraintViolationException) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -211,11 +186,11 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
     /**
      * @param array<string, string> $headers
      */
-    private function json(Request $request, string $error, string $message, int $status, array $headers = []): JsonResponse
+    private function json(Request $request, string $error, string $message, int $status, array $headers, ConflictCode $code): JsonResponse
     {
         $response = $this->responses instanceof ClientResponseFactory
-            ? $this->responses->error($error, $message, $status, $request, $headers)
-            : new JsonResponse(['error' => $error, 'message' => $message], $status, $headers);
+            ? $this->responses->error($error, $message, $status, $request, $headers, ['code' => $code->value])
+            : new JsonResponse(['error' => $error, 'message' => $message, 'code' => $code->value], $status, $headers);
         // @igor-ignore - Request-scoped value (the response of this exception); no worker state.
         $response->headers->set('Cache-Control', 'no-store, private');
         // @igor-ignore - Request-scoped value (the response of this exception); no worker state.

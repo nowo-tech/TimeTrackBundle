@@ -4,6 +4,9 @@ Since 1.27.0 (Beacon spec 239) the bundle is built for many concurrent requests 
 worker mode with the kernel **not** reset between requests, RoadRunner, Messenger consumers, and several clients of one
 account at once (the desktop agent, the browser extension, the web UI, an agent through `HostTimerApi`).
 
+The write-path table, the conflict codes (`CONFLICT_001` / `CONFLICT_002`), the host options and the residual risks are
+in [CONCURRENCY](CONCURRENCY.md); this page keeps the mechanics and the history of each fix.
+
 ## Table of contents
 
 - [One unit of work per write](#one-unit-of-work-per-write)
@@ -81,12 +84,13 @@ On the bundle's routes (a controller of the bundle, or a `nowo_time_track*` rout
 | Failure | Answer |
 |---------|--------|
 | `Nowo\TransactionContract\TransientStorageFailure`, or a DBAL `RetryableException` (deadlock, lock wait timeout), anywhere in the exception chain | `409 Conflict` with `Retry-After` (the runner's hint, else the shared policy's 1 s; since 1.30.0, was 503; `nowo_transaction_doctrine.conflict_response.status: 503` keeps 503). A `ConcurrencyConflict` with `committed: true` gets no `Retry-After` and a reload message |
-| A DBAL `UniqueConstraintViolationException` (a concurrent request wrote the same row first), anywhere in the chain | `409 Conflict` |
+| A DBAL `UniqueConstraintViolationException` | **Not mapped** since 1.31.0 (1.27.0 to 1.30.0: `409 {"error": "conflict"}`). A unique violation is not a lock conflict; the bundle resolves its expected "only one" races itself (see [CONCURRENCY](CONCURRENCY.md#what-is-not-a-conflict)) and any other one is a real error |
 
 The client API (desktop agent, browser extension, calendar, meetings, monitoring, working time, device flow) answers its
-usual error body, `{"error": "unavailable" | "conflict", "message": "…"}`, with its CORS headers and
-`Cache-Control: no-store`. The manage UI and the device verification page get a `HttpException` of the policy /
-`ConflictHttpException` rendered by your error page. The storage error stays the previous exception (for your logs):
+usual error body, `{"error": "unavailable", "message": "…", "code": "CONFLICT_001"}` (since 1.31.0 `code` is
+`CONFLICT_001` when nothing was committed and `CONFLICT_002`, without `Retry-After`, when part was), with its CORS
+headers and `Cache-Control: no-store`. The manage UI and the device verification page get an `HttpException` of the
+policy (header `X-Conflict-Code`) rendered by your error page. The storage error stays the previous exception (for your logs):
 no SQL, no parameter reaches the client. Your own routes are never touched: your controllers that call bundle services
 receive `TransientStorageFailure` and decide.
 
@@ -100,7 +104,7 @@ Each one has a test that fails on 1.26.0 (`tests/Functional/LoadReadiness*Test.p
 | Two starts of one account (web, extension, desktop, `HostTimerApi`): the loser's insert hit the unique `user_id` index, closed the manager and **reset your manager** (your entities detached) | The start re-checks the running timer under the account's write lock: the loser gets `ActiveTimerConflictException` (409) with the manager open |
 | A stop while the task moved to another board (FR-008): the entry was built from the timer loaded before the delete and kept the **old board and scope** | The timer row is locked and read again before the entry is built: the time follows the moved task |
 | Two notes kept on the running timer (`timer/discard-idle` keep): the second write put back the metadata loaded before the first one committed (**first note lost**) | The timer is locked and read again before the note is appended |
-| Submit while an entry of the period was being written: the hash was taken before the submit's transaction, so the submitted period missed the entry (**approval refused as `stale`**) | Every transition takes the owner's lock, then the timesheet row's lock, re-reads the timesheet and only then hashes the entries; a decision another request committed meanwhile answers `invalid_transition`. Every entry and timer writer of the bundle takes the owner's lock too, **except imports** (see [Known issues](#known-issues)) |
+| Submit while an entry of the period was being written: the hash was taken before the submit's transaction, so the submitted period missed the entry (**approval refused as `stale`**) | Every transition takes the owner's lock, then the timesheet row's lock, re-reads the timesheet and only then hashes the entries; a decision another request committed meanwhile answers `invalid_transition`. Every entry and timer writer of the bundle takes the owner's lock too, imports included since 1.31.0 (audit QO-L3) |
 | Two first views of a period: the second insert failed (`conflict`) and reset your manager | The period's row is read again under the owner's lock: both share it |
 | A retry of `POST entries` with the same `Idempotency-Key` that got the account's lock right after the commit, before the answer was stored: an agent's retry wrote a **second entry**; a person's answered `overlap` and stored it for the key | The answer is stored inside the transaction; a stored 201 is replayed only when its entry is committed |
 | Two approvals of one device request (double submit, another tab): **two credentials issued**, the first one orphaned; an approval racing a denial | The request is locked and read again: the later decision issues nothing and the page answers "expired" |
@@ -121,8 +125,10 @@ Every bundle write that locks takes its locks in this order, so two of them neve
 3. the entry rows (task and owner moves lock them by primary key, in id order, after reading the ids without a lock).
 
 Stops are written even into a locked period (late-entry semantics): they take the account's lock, never the
-timesheet's. Task moves read the period locks with a shared lock (`FOR SHARE`) inside their batch. Imports read them
-without a lock, before their batch's unit (see [Known issues](#known-issues)).
+timesheet's. Task moves read the period locks with a shared lock (`FOR SHARE`) inside their batch. Since 1.31.0 an import plans
+and writes under the write lock of every owner of its batch, in id order (the owner's row first, as every other writer),
+and reads the period locks under them; the `edit_blocked` audit row of a refusal is appended under the timesheet row's
+lock (owner, then timesheet).
 
 ## Exact identifiers
 
@@ -151,17 +157,18 @@ the ids byte for byte (`===`) before it counts, pages or groups rows, so `'42 '`
 
 ## Known issues
 
-To be fixed in 1.27.x (contention only, present in 1.26 too):
+None open. Closed in 1.31.0 (they were planned for 1.27.x):
 
-- **Imports and period locks (audit QO-L3):** an import checks the period locks before its batch's unit and takes no
-  lock, so an import that coincides with a submit, an approval or a lock of the same owner and period can still write
-  into that period (the approval then answers `stale`, or a locked period changes without a new hash). Planned: the
-  owners' write locks in id order inside the batch's unit, and the check repeated under them. Until then, avoid running
-  imports of a period while its timesheets are being submitted or approved, or re-run the import after a `stale`.
+- **Imports and period locks (audit QO-L3):** an import checked the period locks before its batch's unit and took no
+  lock, so an import that coincided with a submit, an approval or a lock of the same owner and period could write into
+  that period (the approval then answered `stale`, or a locked period changed without a new hash). Now the plan and the
+  write run under the owners' write locks in id order and the check is made under them. Rows of a person with no account
+  have no user row to lock (see [CONCURRENCY](CONCURRENCY.md#residual-risks)).
 - **`edit_blocked` audit rows (audit QO-L4):** a refused write in a locked period (with `timesheets.audit_blocked_edits`)
-  appends its audit row without the owner's or the row's lock. When a transition of the same timesheet commits at that
-  moment, the append fails on the version or sequence key: with the shared manager the manager is closed and the caller
-  gets a 409 / 500 instead of the `period_locked` refusal. The audit chain never forks (its unique key holds).
+  appended its audit row without the row's lock; when a transition of the same timesheet committed at that moment the
+  append failed on the version or sequence key and, with the shared manager, the caller got a 409 / 500 instead of the
+  `period_locked` refusal. Now the timesheet row is locked and read again first (and the rate limit checked under the
+  lock), so the refusal is always the answer.
 
 ## Tests
 
@@ -170,7 +177,9 @@ To be fixed in 1.27.x (contention only, present in 1.26 too):
   SQLite and, in CI, on MySQL / MariaDB / PostgreSQL.
 - `tests/Database` (`--testsuite database`, `TIME_TRACK_TEST_DATABASE_URL`, skipped on SQLite): a lock wait answers 409
   with `Retry-After`; two processes adding ledger lines for one owner all chain; two processes starting and stopping
-  timers of one account never detach your entities. CI job "Load readiness": MySQL 8.4 and PostgreSQL 16, each with
-  doctrine/dbal 4 and 3, passwordless services, `--fail-on-skipped`.
+  timers of one account never detach your entities; an import holds the owner's lock while it plans and writes. CI job
+  "Load readiness": MySQL 8.4, MariaDB 11.4 and PostgreSQL 16, each with doctrine/dbal 4 and 3, passwordless services,
+  `--fail-on-skipped`.
+- `tests/Functional/ConcurrencyWaveTest.php`: the two 1.30.0 known issues (QO-L3, QO-L4) played deterministically.
 - `tests/Functional/TransactionRunnerTest.php`, `TransactionRunnerPrivateTest.php`, `TimeTrackRowsTest.php`: the
   runner and the savepoint inserts in both entity manager modes.

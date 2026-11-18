@@ -290,6 +290,9 @@ jobs:
           - { name: 'PostgreSQL 16', url: 'postgresql://postgres@127.0.0.1:5432/tt?serverVersion=16&charset=utf8', dbal: '' }
           - { name: 'MySQL 8.4, DBAL 3', url: 'mysql://root@127.0.0.1:3306/tt?serverVersion=8.4.0&charset=utf8mb4', dbal: '^3.8.2' }
           - { name: 'PostgreSQL 16, DBAL 3', url: 'postgresql://postgres@127.0.0.1:5432/tt?serverVersion=16&charset=utf8', dbal: '^3.8.2' }
+          # 1.31.0 (REQ-RUNTIME-003): MariaDB 11.x next to MySQL 8.4 and PostgreSQL 16.
+          - { name: 'MariaDB 11.4', url: 'mysql://root@127.0.0.1:3307/tt?serverVersion=11.4.0-MariaDB&charset=utf8mb4', dbal: '' }
+          - { name: 'MariaDB 11.4, DBAL 3', url: 'mysql://root@127.0.0.1:3307/tt?serverVersion=11.4.0-MariaDB&charset=utf8mb4', dbal: '^3.8.2' }
     services:
       mysql:
         image: mysql:8.4
@@ -299,6 +302,15 @@ jobs:
         ports: ['3306:3306']
         options: >-
           --health-cmd "mysqladmin ping -h127.0.0.1 -uroot --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: tt
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
           --health-interval 5s --health-timeout 5s --health-retries 30
       postgres:
         image: postgres:16-alpine

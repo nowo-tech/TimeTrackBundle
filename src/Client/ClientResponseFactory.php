@@ -72,10 +72,11 @@ final readonly class ClientResponseFactory
      *
      * @param string $code Machine-readable code (`invalid_token`, `insufficient_scope`, `task_forbidden`, `timer_running`, `rate_limited`, ...)
      * @param array<string, string> $headers Extra headers (e.g. `Retry-After`, `WWW-Authenticate`)
+     * @param array<string, string> $extra Extra body keys, added after `error` and `message` (since 1.31.0: `code` of a conflict answer)
      */
-    public function error(string $code, string $message, int $status, ?Request $request = null, array $headers = []): JsonResponse
+    public function error(string $code, string $message, int $status, ?Request $request = null, array $headers = [], array $extra = []): JsonResponse
     {
-        $response = $this->json(['error' => $code, 'message' => $message], $status, $request);
+        $response = $this->json(['error' => $code, 'message' => $message] + $extra, $status, $request);
         foreach ($headers as $name => $value) {
             // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
             $response->headers->set($name, $value);

@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\EventSubscriber;
 
 use Doctrine\DBAL\Driver\AbstractException;
 use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
@@ -18,7 +19,6 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -27,8 +27,9 @@ use Throwable;
 use function json_decode;
 
 /**
- * 1.27.0 (Beacon spec 239): 409 + Retry-After (the shared policy's status; 503 opt-in) for transient storage failures and 409 for unique conflicts, on the
- * bundle's routes only, with no storage detail in the answer.
+ * 1.27.0 (Beacon spec 239): 409 + Retry-After (the shared policy's status; 503 opt-in) for transient storage failures, on the
+ * bundle's routes only, with no storage detail in the answer. 1.31.0 (REQ-RUNTIME-003): CONFLICT_001 / CONFLICT_002 on
+ * every answer; a unique violation is left alone (it is not a lock conflict).
  */
 final class StorageFailureSubscriberTest extends TestCase
 {
@@ -54,6 +55,7 @@ final class StorageFailureSubscriberTest extends TestCase
         $body = json_decode((string) $response->getContent(), true);
         self::assertIsArray($body);
         self::assertSame('unavailable', $body['error']);
+        self::assertSame('CONFLICT_001', $body['code']);
         self::assertStringNotContainsString('SELECT', (string) $response->getContent());
     }
 
@@ -79,16 +81,19 @@ final class StorageFailureSubscriberTest extends TestCase
         self::assertSame('1', $event->getResponse()?->headers->get('Retry-After'));
     }
 
-    public function testAUniqueConflictOfTheApiIs409(): void
+    public function testAUniqueViolationIsNotAConflictAndIsLeftToTheApplication(): void
     {
-        $event = $this->dispatch($this->unique(), ['_controller' => self::API]);
+        $unique = $this->unique();
+        $event  = $this->dispatch($unique, ['_controller' => self::API]);
+        self::assertNull($event->getResponse());
+        self::assertSame($unique, $event->getThrowable());
 
-        $response = $event->getResponse();
-        self::assertNotNull($response);
-        self::assertSame(409, $response->getStatusCode());
-        $body = json_decode((string) $response->getContent(), true);
-        self::assertIsArray($body);
-        self::assertSame('conflict', $body['error']);
+        $wrapped = new LogicException('domain', 0, $unique);
+        $event   = $this->dispatch($wrapped, ['_controller' => self::PAGE]);
+        self::assertNull($event->getResponse());
+        self::assertSame($wrapped, $event->getThrowable());
+
+        self::assertNull($this->dispatch($unique, ['_route' => 'nowo_time_track_index'], json: true)->getResponse());
     }
 
     public function testThePagesGetHttpExceptionsWithTheStorageErrorAsPrevious(): void
@@ -100,18 +105,12 @@ final class StorageFailureSubscriberTest extends TestCase
         self::assertInstanceOf(HttpException::class, $exception);
         self::assertSame('3', (string) ($exception->getHeaders()['Retry-After'] ?? ''));
         self::assertSame($failure, $exception->getPrevious());
-
-        $unique = $this->unique();
-        $event  = $this->dispatch(new LogicException('domain', 0, $unique), ['_controller' => self::PAGE]);
-        self::assertInstanceOf(ConflictHttpException::class, $event->getThrowable());
+        self::assertSame('CONFLICT_001', $exception->getHeaders()['X-Conflict-Code'] ?? null);
     }
 
     public function testAPageAskedForJsonGetsJson(): void
     {
         $event = $this->dispatch(new TransientStorageFailure(2), ['_controller' => self::PAGE], json: true);
-        self::assertSame(409, $event->getResponse()?->getStatusCode());
-
-        $event = $this->dispatch($this->unique(), ['_route' => 'nowo_time_track_index'], json: true);
         self::assertSame(409, $event->getResponse()?->getStatusCode());
     }
 
@@ -135,7 +134,7 @@ final class StorageFailureSubscriberTest extends TestCase
     {
         $policy = new ConflictResponsePolicy(ConflictResponsePolicy::STATUS_SERVICE_UNAVAILABLE, 4);
 
-        $event    = $this->dispatch(new TransientStorageFailure(null), ['_controller' => self::API], policy: $policy);
+        $event    = $this->dispatch(new TransientStorageFailure(), ['_controller' => self::API], policy: $policy);
         $response = $event->getResponse();
         self::assertSame(503, $response?->getStatusCode());
         self::assertSame('4', $response->headers->get('Retry-After'));
@@ -145,9 +144,6 @@ final class StorageFailureSubscriberTest extends TestCase
         self::assertInstanceOf(HttpException::class, $page);
         self::assertSame(503, $page->getStatusCode());
         self::assertSame('9', (string) ($page->getHeaders()['Retry-After'] ?? ''));
-
-        // The unique-key answer is unchanged.
-        self::assertSame(409, $this->dispatch($this->unique(), ['_controller' => self::API], policy: $policy)->getResponse()?->getStatusCode());
     }
 
     public function testACommittedConflictHasNoRetryAfterOnJsonAndHtml(): void
@@ -161,6 +157,7 @@ final class StorageFailureSubscriberTest extends TestCase
         $body = json_decode((string) $response->getContent(), true);
         self::assertIsArray($body);
         self::assertSame('unavailable', $body['error']);
+        self::assertSame('CONFLICT_002', $body['code']);
         self::assertStringContainsString('Reload', $body['message']);
         self::assertSame('chrome-extension://functional', $response->headers->get('Access-Control-Allow-Origin'));
 
@@ -168,11 +165,28 @@ final class StorageFailureSubscriberTest extends TestCase
         self::assertInstanceOf(HttpException::class, $page);
         self::assertSame(409, $page->getStatusCode());
         self::assertArrayNotHasKey('Retry-After', $page->getHeaders());
+        self::assertSame('CONFLICT_002', $page->getHeaders()['X-Conflict-Code'] ?? null);
         self::assertSame($conflict, $page->getPrevious());
 
         // Not committed: the retry is invited.
         $open = new ConcurrencyConflict(3, TransientFailureKind::Deadlock, 5, $this->deadlock(), false);
         self::assertSame('5', $this->dispatch($open, ['_controller' => self::API])->getResponse()?->headers->get('Retry-After'));
+    }
+
+    public function testALostSavepointWithNoDeadlockBehindItIsCommittedUnknownAndGetsCode002(): void
+    {
+        // Rule 6: the outcome of the commit is unknown (MySQL 1305 naming a SAVEPOINT, nothing transient behind it):
+        // CONFLICT_002 and no Retry-After.
+        $driver = new class('SAVEPOINT DOCTRINE_2 does not exist', '42000', 1305) extends AbstractException {};
+        $lost   = new TransientStorageFailure(2, TransientStorageFailure::DEFAULT_MESSAGE, new DriverException($driver, null));
+        self::assertTrue(StorageFailureSubscriber::committed($lost));
+
+        $response = $this->dispatch($lost, ['_controller' => self::API])->getResponse();
+        self::assertSame(409, $response?->getStatusCode());
+        self::assertFalse($response->headers->has('Retry-After'));
+        $body = json_decode((string) $response->getContent(), true);
+        self::assertIsArray($body);
+        self::assertSame('CONFLICT_002', $body['code']);
     }
 
     public function testThePolicysRetryAfterIsTheFallbackHint(): void
