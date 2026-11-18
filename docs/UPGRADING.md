@@ -3,6 +3,7 @@
 ## Table of contents
 
 - [Unreleased](#unreleased)
+- [To 1.31.0](#to-1310)
 - [To 1.30.0](#to-1300)
 - [To 1.29.0](#to-1290)
 - [To 1.28.0](#to-1280)
@@ -88,6 +89,14 @@
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
 ## Unreleased
+
+## To 1.31.0
+
+From **1.30.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Minor release (planned 1.31.0), REQ-RUNTIME-003. Raise `nowo-tech/transaction-doctrine` to `^1.5` (the bundle requires it).
 

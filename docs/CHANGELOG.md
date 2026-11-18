@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.31.0] - 2026-11-18](#1310---2026-11-18)
 - [[1.30.0] - 2026-11-17](#1300---2026-11-17)
 - [[1.29.0] - 2026-11-17](#1290---2026-11-17)
 - [[1.28.0] - 2026-11-17](#1280---2026-11-17)
@@ -70,6 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-11-18
+
 ### Added
 
 - **Conflict codes (REQ-RUNTIME-003 rule 6).** Every lock-conflict answer carries the platform's code: `CONFLICT_001` (nothing committed, with `Retry-After`) or `CONFLICT_002` (part committed, no `Retry-After`; read again, do not repeat). Client API body `{"error": "unavailable", "message": …, "code": "CONFLICT_00n"}` (additive: `error` and `message` are unchanged), also through `StorageFailureConflictFormatter`; the HTML pages get the header `X-Conflict-Code`. A lost savepoint with no deadlock behind it (commit outcome unknown) is `CONFLICT_002`. `ClientResponseFactory::error()` takes an optional `$extra` array of body keys.
@@ -80,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Requires nowo-tech/transaction-doctrine ^1.5 (was ^1.3): `ConflictCode`, serialization failures replayed by default, the conflict code in the shared responder.
-- **A unique-key violation is no longer mapped to 409 by `StorageFailureSubscriber`** (1.27.0 to 1.30.0 answered `{"error": "conflict"}` for any `UniqueConstraintViolationException` in the chain). It is not a lock conflict: the bundle resolves its expected "only one" races where they happen (the running timer, the period's row, imports, acknowledgements, upload intents) or answers a domain result with its own key (`timer_running`, `invalid_transition`, `duplicate`, the ledger and timesheet `conflict`), never `CONFLICT_*`; any other violation is a real error (500) for your error handling. See [UPGRADING](UPGRADING.md#unreleased).
+- **A unique-key violation is no longer mapped to 409 by `StorageFailureSubscriber`** (1.27.0 to 1.30.0 answered `{"error": "conflict"}` for any `UniqueConstraintViolationException` in the chain). It is not a lock conflict: the bundle resolves its expected "only one" races where they happen (the running timer, the period's row, imports, acknowledgements, upload intents) or answers a domain result with its own key (`timer_running`, `invalid_transition`, `duplicate`, the ledger and timesheet `conflict`), never `CONFLICT_*`; any other violation is a real error (500) for your error handling. See [UPGRADING](UPGRADING.md#to-1310).
 - An import (`ImportedTimeEntryWriter::upsertMany()` and the `upsert*()` calls) with timesheets on plans and writes under the write lock of every owner of its batch, in id order (the documented lock order), and checks the period locks under them.
 - The `edit_blocked` audit row of a refused write takes the timesheet row's lock, reads the row, the last event and the head again, and only then appends (rate limit checked again under the lock).
 
@@ -1879,7 +1882,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.30.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.31.0...HEAD
+[1.31.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.27.0...v1.28.0
