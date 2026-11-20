@@ -194,11 +194,12 @@ public function revoke(string $id, Request $request, ClientTokenRevoker $revoker
 - **Audit:** a revocation dispatches `nowo_time_track.client_api` with action `session_revoked` (user = the owner,
   `credentialId`, `clientType`, reason `owner` or `other`). A listener that throws is logged; the revocation stands.
   Logs carry the action and the client type only.
-- **Storage:** one `DELETE` statement on the configured TimeTrack manager (a savepoint inside your open transaction with
-  the private manager). It flushes, clears, resets and loads nothing in any entity manager, so it is safe in a
-  FrankenPHP worker with kernel reset off and next to your own pending changes. A lock conflict (deadlock, lock wait
-  timeout) propagates as the storage exception with nothing committed: `ConflictCode::forFailure()` (transaction-doctrine)
-  gives `CONFLICT_001` — answer `409` with `Retry-After` and retry. Inside your own transaction your commit decides.
+- **Storage:** one `DELETE` statement on the configured TimeTrack manager, through the bundle's transaction runner
+  (statements only; a savepoint inside your open transaction). It flushes, clears, resets and loads nothing in any
+  entity manager, so it is safe in a FrankenPHP worker with kernel reset off and next to your own pending changes. A lock conflict (deadlock, lock wait
+  timeout) throws `Nowo\TransactionContract\TransientStorageFailure` (with a Retry-After hint) and nothing is
+  committed: `ConflictCode::forFailure()` (transaction-doctrine) gives `CONFLICT_001` — answer `409` with `Retry-After`
+  and retry. Inside your own transaction your commit decides.
 - **Custom stores:** `revokeById()` needs a store implementing `ClientSessionRepositoryInterface` (the Doctrine store
   does); otherwise it throws `LogicException`.
 

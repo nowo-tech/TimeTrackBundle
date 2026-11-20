@@ -229,7 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   may not revoke all answer `ClientSessionRevocation::NotFound`. A revocation is audited as `session_revoked`
   (`ClientApiAuditAction::SessionRevoked`, user = the owner, reason `owner` or `other`). One `DELETE` statement: no
   flush, clear or reset of any entity manager, nothing loaded into one; two concurrent revocations revoke once; a lock
-  conflict propagates with nothing committed (`CONFLICT_001`). New `ValueObject\ClientSessionId`,
+  conflict throws `TransientStorageFailure` with nothing committed (`CONFLICT_001`). New `ValueObject\ClientSessionId`,
   `Enum\ClientSessionRevocation`, `Repository\ClientSessionRepositoryInterface` (implemented by the Doctrine token
   store), `Dto\ClientSessionRecord` and `ClientApiAuditor::recordForUserId()`. The host-flush probe names
   `revokeById()` for a `ClientToken` delete written by the application's own manager.

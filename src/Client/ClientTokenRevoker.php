@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Repository\ClientSessionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\ClientSessionId;
+use Nowo\TransactionContract\TransientStorageFailure;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -88,15 +89,16 @@ final readonly class ClientTokenRevoker
      * is logged and does not undo it.
      *
      * The write is one `DELETE` statement (nothing is flushed, cleared or reset; no entity is loaded into any manager).
-     * Two concurrent calls for one session: one gets `Revoked`, the other `NotFound`. A lock conflict (deadlock, lock
-     * wait timeout) propagates as the storage exception with nothing committed (REQ-RUNTIME-003 rule 6:
-     * `CONFLICT_001`, retry safe); inside the host's open transaction the host's commit or rollback decides, as with any
-     * other write of the bundle.
+     * Two concurrent calls for one session: one gets `Revoked`, the other `NotFound`. With the Doctrine store a lock
+     * conflict (deadlock, lock wait timeout) propagates as `Nowo\TransactionContract\TransientStorageFailure` (Retry-After
+     * hint) with nothing committed (REQ-RUNTIME-003 rule 6: `CONFLICT_001`, retry safe); inside the host's open
+     * transaction the host's commit or rollback decides, as with any other write of the bundle.
      *
      * @param ClientSessionId|string $sessionId The session id (`ClientToken::getId()`)
      * @param UserInterface $actor The user asking (owner or admin)
      *
      * @throws LogicException when the configured token store cannot look up sessions by id
+     * @throws TransientStorageFailure when the storage failed transiently (deadlock, lock wait timeout): nothing was committed, retry
      */
     public function revokeById(ClientSessionId|string $sessionId, UserInterface $actor): ClientSessionRevocation
     {

@@ -8,7 +8,6 @@ use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
-use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Tools\DsnParser;
@@ -16,6 +15,7 @@ use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
@@ -29,6 +29,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
+use Nowo\TransactionContract\TransientStorageFailure;
 use Nowo\TransactionDoctrine\ConflictCode;
 
 use function array_map;
@@ -214,14 +215,16 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
         $failure = null;
         try {
             $revoker->revokeById($id, $this->user);
-        } catch (DbalException $exception) {
+        } catch (TransientStorageFailure $exception) {
             $failure = $exception;
         } finally {
             $blocker->rollBack(); // @phpstan-ignore frankenphp.worker.noRollbackAfterNestedBegin (the test plays another request's transaction)
             $blocker->close();
         }
 
-        self::assertInstanceOf(LockWaitTimeoutException::class, $failure, 'the lock wait surfaces as the storage exception');
+        self::assertInstanceOf(TransientStorageFailure::class, $failure, 'the lock wait surfaces as a transient failure on every platform');
+        self::assertFalse(StorageFailureSubscriber::committed($failure), 'a bundle route would answer 409 + Retry-After');
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive(), 'the connection is back at its entry level');
         self::assertSame(ConflictCode::RetrySafe, ConflictCode::forFailure($failure));
         self::assertSame('CONFLICT_001', ConflictCode::forFailure($failure)->value);
         self::assertTrue($this->entityManager()->isOpen(), 'the application\'s manager is left open');

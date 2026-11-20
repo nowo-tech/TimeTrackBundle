@@ -318,11 +318,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
                 ->setArgument('$managerRegistry', $private ? new Reference(TimeTrackManagerRegistry::class) : new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
-            if ($repoClass !== DoctrineOrmClientTokenRepository::class) {
-                // Since 1.27.0 (Beacon spec 239): the bundle's own transaction runner, by its concrete class.
-                // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
-                $repoDefinition->setArgument('$runner', new Reference(TimeTrackTransactionRunner::class));
-            }
+            // Since 1.27.0 (Beacon spec 239): the bundle's own transaction runner, by its concrete class (the client token
+            // store since 1.34.0: its revocation by id).
+            // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
+            $repoDefinition->setArgument('$runner', new Reference(TimeTrackTransactionRunner::class));
             if ($repoClass === DoctrineOrmTimeEntryRepository::class) {
                 // Since the delta GG-D-2 fix: warns when a user row cannot be locked.
                 // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
