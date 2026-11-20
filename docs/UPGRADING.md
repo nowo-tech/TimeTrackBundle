@@ -127,9 +127,11 @@ From **1.32.1**:
 composer update nowo-tech/time-track-bundle nowo-tech/transaction-doctrine
 ```
 
-Requires `nowo-tech/transaction-doctrine` `^1.9`. No schema change and no behaviour change: every notice below is an
+Requires `nowo-tech/transaction-doctrine` `^1.9.1`. No schema change and no behaviour change: every notice below is an
 `E_USER_DEPRECATED` (`trigger_deprecation()`), collected by your deprecation log or the profiler, and host mode writes
 exactly what it wrote in 1.32. Nothing is needed to keep working; the notices list what 2.0 changes for you.
+The private_entity_manager, CORS `*` and Tauri notices are raised when the container is built (cache warmup / the
+container deprecations log), not per request.
 
 ### The private entity manager notice
 

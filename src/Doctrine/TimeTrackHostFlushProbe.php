@@ -34,6 +34,7 @@ use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
 use Nowo\TransactionDoctrine\HostFlushProbe;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Contracts\Service\ResetInterface;
 use Throwable;
 
@@ -68,8 +69,8 @@ use function trigger_deprecation;
  *
  * Read-only: it never flushes (other than the TimeTrack flush it wraps), clears, closes, resets or detaches anything
  * (REQ-RUNTIME-003), and a failure of its own (a deprecation handler that throws) never fails a write. Its state (what
- * was already reported, whether a TimeTrack flush is running) is emptied at every request, message and command boundary
- * and at `kernel.reset`, so a FrankenPHP worker with kernel reset off reports each unit of work afresh. The shared probe
+ * was already reported, whether a TimeTrack flush is running) is emptied at the start of every main request, at
+ * every request, message and command end and at `kernel.reset`, so a FrankenPHP worker with kernel reset off reports each unit of work afresh. The shared probe
  * is reset by transaction-doctrine's own boundary listener when its bundle is registered; without it this service keeps
  * a probe of its own and resets it with itself.
  *
@@ -178,12 +179,10 @@ final class TimeTrackHostFlushProbe implements ResetInterface
      */
     public function around(EntityManagerInterface $entityManager, callable $flush): void
     {
-        try {
-            $this->probe->beforeHostFlush($entityManager, self::BUNDLE, [TimeTrackManagerRegistry::ENTITY_NAMESPACE, TimeTrackManagerRegistry::USER_REF_NAMESPACE]);
-        } catch (Throwable) {
-            // A notice never stops a write (a deprecation handler that throws, an unexpected unit of work): the flush
-            // below runs exactly as it did before 1.33.
-        }
+        // Since transaction-doctrine 1.9.1 the shared probe never throws (a deprecation handler that throws, an unexpected
+        // unit of work: logged, nothing reported), so a notice never stops a write: the flush below runs exactly as it
+        // did before 1.33.
+        $this->probe->beforeHostFlush($entityManager, self::BUNDLE, [TimeTrackManagerRegistry::ENTITY_NAMESPACE, TimeTrackManagerRegistry::USER_REF_NAMESPACE]);
         // @igor-ignore - per unit of work, back to its value when the flush ends; emptied by reset() at every boundary
         ++$this->bundleFlushes;
         try {
@@ -247,6 +246,17 @@ final class TimeTrackHostFlushProbe implements ResetInterface
     public function onBoundary(): void
     {
         $this->reset();
+    }
+
+    /**
+     * A main request starts: what an earlier request reported (or left running) when its `kernel.terminate` never ran
+     * cannot suppress this request's notices. Sub-requests keep the state of their main request.
+     */
+    public function onKernelRequest(RequestEvent $event): void
+    {
+        if ($event->isMainRequest()) {
+            $this->reset();
+        }
     }
 
     /**

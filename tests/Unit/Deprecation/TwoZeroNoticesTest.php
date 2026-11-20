@@ -59,6 +59,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_filter;
@@ -127,7 +130,7 @@ final class TwoZeroNoticesTest extends TestCase
         self::assertSame([['event' => 'onFlush', 'method' => 'onFlush', 'lazy' => true, 'entity_manager' => 'default']], $probe->getTag('doctrine.event_listener'));
         self::assertSame([['method' => 'reset']], $probe->getTag('kernel.reset'));
         $boundaries = array_map(static fn (array $tag): mixed => $tag['event'], $probe->getTag('kernel.event_listener'));
-        self::assertSame(['kernel.terminate', 'console.terminate', 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'Symfony\\Component\\Messenger\\Event\\WorkerMessageFailedEvent'], $boundaries);
+        self::assertSame(['kernel.request', 'kernel.terminate', 'console.terminate', 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'Symfony\\Component\\Messenger\\Event\\WorkerMessageFailedEvent'], $boundaries);
         foreach (self::FLUSHERS as $id) {
             self::assertEquals(new Reference(TimeTrackHostFlushProbe::class), $container->getDefinition($id)->getArgument('$hostFlushProbe'), $id);
         }
@@ -217,6 +220,29 @@ final class TwoZeroNoticesTest extends TestCase
         $broken = $this->createStub(EntityManagerInterface::class);
         $broken->method('getUnitOfWork')->willThrowException(new RuntimeException('unexpected'));
         self::assertSame([], $this->deprecations(static fn () => $probe->onFlush(new OnFlushEventArgs($broken))));
+    }
+
+    public function testAMainRequestStartEmptiesWhatAnEarlierRequestReportedButASubRequestKeepsIt(): void
+    {
+        $user       = new TestUser('42', 'ana@example.com');
+        $entry      = new TimeEntry($user, 'task-1', 'Task', null, new DateTimeImmutable('-2 hours'), new DateTimeImmutable('-1 hour'), 3600, TimeEntrySource::Web);
+        $unitOfWork = $this->createStub(UnitOfWork::class);
+        $unitOfWork->method('getScheduledEntityInsertions')->willReturn([]);
+        $unitOfWork->method('getScheduledEntityUpdates')->willReturn([$entry]);
+        $unitOfWork->method('getScheduledEntityDeletions')->willReturn([]);
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('getUnitOfWork')->willReturn($unitOfWork);
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $probe  = new TimeTrackHostFlushProbe();
+        $flush  = static fn () => $probe->onFlush(new OnFlushEventArgs($entityManager));
+
+        self::assertCount(1, $this->deprecations($flush));
+        // The request ended without kernel.terminate (no boundary ran): still reported once, and only once.
+        self::assertSame([], $this->deprecations($flush));
+        $probe->onKernelRequest(new RequestEvent($kernel, new Request(), HttpKernelInterface::SUB_REQUEST));
+        self::assertSame([], $this->deprecations($flush), 'a sub-request is the same unit of work');
+        $probe->onKernelRequest(new RequestEvent($kernel, new Request(), HttpKernelInterface::MAIN_REQUEST));
+        self::assertCount(1, $this->deprecations($flush), 'the next main request reports afresh');
     }
 
     public function testAServiceKnownOnlyAtRuntimeIsReportedWhenCreated(): void

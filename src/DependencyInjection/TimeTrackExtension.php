@@ -439,6 +439,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$userClass', $userClass)
             ->addTag('doctrine.event_listener', ['event' => 'onFlush', 'method' => 'onFlush', 'lazy' => true, 'entity_manager' => $emName])
             ->addTag('kernel.reset', ['method' => 'reset'])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 2048])
             ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'onBoundary', 'priority' => -1024])
             ->addTag('kernel.event_listener', ['event' => 'console.terminate', 'method' => 'onBoundary', 'priority' => -1024])
             ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'method' => 'onBoundary', 'priority' => -1024])
