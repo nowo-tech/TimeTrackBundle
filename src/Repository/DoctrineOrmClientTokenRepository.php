@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Psr\Clock\ClockInterface;
@@ -26,11 +27,13 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
      * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
      * @param ClockInterface|null $clock Time source of the expiry checks (defaults to the system clock)
+     * @param TimeTrackHostFlushProbe|null $hostFlushProbe 1.33.0: the probe of the shared manager (null with the private one)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         ?ClockInterface $clock = null,
+        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
     }
@@ -41,7 +44,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
     public function save(ClientToken $token): void
     {
         $this->entityManager->persist($token);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
     }
 
     /**
@@ -50,7 +53,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
     public function remove(ClientToken $token): void
     {
         $this->entityManager->remove($token);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
     }
 
     /**

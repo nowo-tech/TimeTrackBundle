@@ -14,6 +14,7 @@ use Doctrine\ORM\Query;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
@@ -55,6 +56,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?TimeTrackTransactionRunner $runner = null,
+        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
     ) {
     }
 
@@ -63,7 +65,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
      */
     public function runner(): TimeTrackTransactionRunner
     {
-        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
     }
 
     /**
@@ -100,7 +102,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     public function save(Timesheet $timesheet): void
     {
         if ($this->entityManager->contains($timesheet)) {
-            RecoveringFlusher::flush($this->entityManager);
+            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
 
             return;
         }

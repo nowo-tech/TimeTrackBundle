@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 1.33 (host-flush probe)](#re-audit-133-host-flush-probe)
 - [Re-audit 1.27 (load readiness, Beacon spec 239)](#re-audit-127-load-readiness-beacon-spec-239)
 - [Re-audit 1.26 (activity monitoring, spec 199)](#re-audit-126-activity-monitoring-spec-199)
 - [Re-audit 1.25 (host timer API and service accounts)](#re-audit-125-host-timer-api-and-service-accounts)
@@ -26,6 +27,16 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.33 (host-flush probe)
+
+Scope: `Doctrine\TimeTrackHostFlushProbe` (registered only with `database.private_entity_manager: false`).
+
+| Service | State | Cleared |
+|---|---|---|
+| `Doctrine\TimeTrackHostFlushProbe` | `$reported` (notices already triggered in this unit of work), `$bundleFlushes` (TimeTrack flushes running, back to its value when each ends), and, without nowo-tech/transaction-doctrine's bundle, its own `HostFlushProbe` (classes already reported) | `onBoundary()` on `kernel.terminate`, `console.terminate`, Messenger `WorkerMessageHandledEvent` / `WorkerMessageFailedEvent` (priority -1024), and `kernel.reset`; the shared probe is also reset by transaction-doctrine's boundary listener when its bundle is registered. Test: `HostFlushProbeTest::testEachRequestReportsTheApplicationsPendingChangeAgain` (five requests through `http_kernel` without the services resetter, five notices) |
+
+The probe is read-only: it never flushes, clears, closes, resets or detaches the application's manager.
 
 ## Re-audit 1.27 (load readiness, Beacon spec 239)
 

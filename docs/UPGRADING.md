@@ -2,7 +2,12 @@
 
 ## Table of contents
 
+- [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
+- [To 1.33.0](#to-1330)
+  - [The private entity manager notice](#the-private-entity-manager-notice)
+  - [Reading the host-flush probe as a migration list](#reading-the-host-flush-probe-as-a-migration-list)
+  - [Other notices of what 2.0 removes](#other-notices-of-what-20-removes)
 - [To 1.32.1](#to-1321)
 - [To 1.32.0](#to-1320)
 - [To 1.31.0](#to-1310)
@@ -90,7 +95,150 @@
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
+## Preparing for 2.0
+
+2.0 contains only the breaks announced in 1.x as deprecations; nothing else changes without a notice first. From 1.33
+every one of them triggers a runtime deprecation notice when your application uses it, so an application whose
+deprecation log is free of `nowo-tech/time-track-bundle` notices on the last 1.x minor upgrades without code changes:
+
+| 1.x | 2.0 | Notice since |
+|---|---|---|
+| `database.private_entity_manager: false` (the 1.x default) | removed: the private entity manager is the only mode | 1.33 (container build) + the host-flush probe |
+| The 15 host port interfaces with a 1.23 twin, the profile extras and the entry store interfaces ([list](#framework-free-host-ports-optional-until-20)) | removed: implement the twin | 1.33 (container build) |
+| `getUser()` / `getViewer()` of the timer, idle, access-check and list-query events, `ClientAuthResult::getUser()` | removed: `userRef()` / `viewerRef()` | 1.33 (when called) |
+| `RecoveringFlusher::resetIfClosed()` | removed (a no-op since 1.27.0) | 1.33 (when called) |
+| `POST /api/time-track/heartbeat`, `GET /api/time-track/entries?userId=` | removed | 1.33 (per request) |
+| `"*"` in `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true` (the 1.x default) | removed: exact origins only | 1.33 (container build, client API on) |
+| `clients.cors_allow_any_extension_origin`, the `templates.*` keys, `security.manager_can_edit_entries` | removed | when set (1.5 / 1.8 / 1.9) |
+| `@NowoTimeTrackBundle/layout.html.twig`, `_legacy_layout.html.twig` | removed: the UiKit layout | 1.33 / 1.8 (when rendered) |
+
+The installed-client API aliases stay in 2.0: they are not deprecated.
+
+The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and higher are backported to the last 1.x
+minor; Low ones are fixed in 2.x only (upgrade to get them).
+
 ## Unreleased
+
+## To 1.33.0
+
+From **1.32.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle nowo-tech/transaction-doctrine
+```
+
+Requires `nowo-tech/transaction-doctrine` `^1.9.1`. No schema change and no behaviour change: every notice below is an
+`E_USER_DEPRECATED` (`trigger_deprecation()`), collected by your deprecation log or the profiler, and host mode writes
+exactly what it wrote in 1.32. Nothing is needed to keep working; the notices list what 2.0 changes for you.
+The private_entity_manager, CORS `*` and Tauri notices are raised when the container is built (cache warmup / the
+container deprecations log), not per request.
+
+### The private entity manager notice
+
+With `nowo_time_track.database.private_entity_manager` unset or `false` every container build reports:
+
+> Since nowo-tech/time-track-bundle 1.33: nowo_time_track.database.private_entity_manager is false (the 1.x default):
+> every TimeTrack write flushes your entity manager "default", including what your application left pending in it.
+> 2.0 removes the option: the private entity manager becomes the only mode, and TimeTrack writes never flush, clear or
+> close your manager. Opt in now with "nowo_time_track: { database: { private_entity_manager: true } }" once the
+> host-flush probe notices ("flushed by NowoTimeTrackBundle", "with its own entity manager", "point at a
+> Nowo\TimeTrackBundle") are gone; see UPGRADING "To 1.33.0".
+
+To opt in now (the 2.0 behaviour, available since 1.23.0):
+
+```yaml
+nowo_time_track:
+    database:
+        private_entity_manager: true
+```
+
+Read [Private entity manager](#private-entity-manager-databaseprivate_entity_manager) first, and turn it on once the
+probe below reports nothing for a full deploy cycle of your test suite and production traffic. With it on, the notice
+and the probe are gone (the probe is not even registered).
+
+### Reading the host-flush probe as a migration list
+
+While the shared manager is on, the bundle reports three kinds of notices, each at most once per class (and kind of
+write) per request, Messenger message or console command; a FrankenPHP worker with kernel reset off reports every
+request afresh. The probe only reads Doctrine's unit of work: it never flushes, clears, closes, resets or detaches
+anything, and a deprecation handler that throws never fails a write.
+
+1. **Your changes that a TimeTrack write flushed** (nowo-tech/transaction-doctrine's shared probe, right before each
+   TimeTrack flush of your manager: timers, entries, tokens, device codes, timesheets, ledger lines, calendar rows):
+
+   > Your pending changes to App\Entity\Invoice were flushed by NowoTimeTrackBundle; 2.0 no longer does.
+
+   Your code left `App\Entity\Invoice` changes pending and relied (knowingly or not) on a TimeTrack call to write
+   them. In 2.0 they stay pending and are lost at the end of the request unless you flush them. Fix: call
+   `$entityManager->flush()` yourself where you change them (before or after the TimeTrack call). A row of yours
+   persisted inside a TimeTrack event listener is reported the same way.
+
+2. **TimeTrack rows your own manager wrote** (a flush TimeTrack did not run that inserts, updates or deletes them):
+
+   > Since nowo-tech/time-track-bundle 1.33: Your application inserted Nowo\TimeTrackBundle\Entity\TimeEntry rows with
+   > its own entity manager, outside a TimeTrack write. In 2.0 TimeTrack reads and writes its rows only through its
+   > private entity manager, and the instances its services return are not in yours: create entries with
+   > Nowo\TimeTrackBundle\Service\ManualEntryService::create() (or
+   > Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter::upsert() for rows of an external source) (then set
+   > "nowo_time_track.database.private_entity_manager: true").
+
+   In 2.0 a change you make to an entry, timer or token that a TimeTrack service returned is no longer written by your
+   flush (the instance belongs to TimeTrack's manager): it is silently lost. The notice names the class, the kind of
+   write and, where the bundle has one, what to use instead:
+
+   | Class and write | Use instead |
+   |---|---|
+   | `TimeEntry` insert | `ManualEntryService::create()`; `ImportedTimeEntryWriter::upsert()` for rows of an external source |
+   | `TimeEntry` update | `TimeEntryBillableService::changeById()` (billable flag); `TimeEntryRepositoryInterface::save()` with an entry loaded through TimeTrack |
+   | `TimeEntry` delete | `ImportedTimeEntryDeleter::delete()` / `ImportedTimeEntryWriter::remove()`; `FormerPersonTimeEntries::release()` for a person |
+   | `ActiveTimer` insert / update / delete | `TimerService` (`start()`, `switchTo()`, `keepAlive()`, `resolveIdle()`, `stop()`) |
+   | `ClientToken` delete | `ClientTokenRevoker::revokeByCredential()` (no operation ends one session by its id yet) |
+   | `DeviceAuthorization` update | `DeviceAuthorizationService` (`approve()`, `deny()`) |
+   | `Timesheet` update, `TimesheetEvent` insert | `TimesheetService` (`submit()`, `withdraw()`, `approve()`, `reject()`, `reopen()`) |
+   | `BalanceLedgerLine` insert | `BalanceLedger::add()` |
+   | `CalendarConnection`, `CalendarRule`, `CalendarSuggestion` | `CalendarConnectionService`, `CalendarRuleService`, `CalendarSuggestionService` |
+   | anything else | no operation yet: write through TimeTrack's services and repositories with rows loaded through them, and pass ids, not your instances |
+
+   A flush that deletes one of your users (`user_class`) is not inspected for TimeTrack row updates: the bundle settles
+   that user's loaded entries in it itself.
+
+3. **Your rows that point at a TimeTrack instance** (the same flush inserts an entity of yours, or changes one of its
+   to-one associations, that references a TimeTrack row):
+
+   > Since nowo-tech/time-track-bundle 1.33: Your application inserted App\Entity\TimerAutoStop rows that point at a
+   > Nowo\TimeTrackBundle\Entity\TimeEntry instance ("entry"). In 2.0 the Nowo\TimeTrackBundle\Entity\TimeEntry
+   > instances TimeTrack's services return belong to its private entity manager, which yours does not know (it would
+   > try to insert them): reference the row by id with your manager instead
+   > ("getReference(Nowo\TimeTrackBundle\Entity\TimeEntry::class, $id)"), then set
+   > "nowo_time_track.database.private_entity_manager: true".
+
+   Fix: `new TimerAutoStop($user, $entityManager->getReference(TimeEntry::class, $entry->getId()), …)`. An instance you
+   loaded with your own manager stays valid in 2.0; the notice cannot tell the two apart, so check where it comes from.
+
+Collect the notices from your deprecation log (`var/log/*.log` with the `php` channel, the profiler's "Deprecations"
+tab, or your test suite's deprecation report) and treat each distinct message as one item to migrate. When none is
+left, turn the private manager on.
+
+### Other notices of what 2.0 removes
+
+- **Port interfaces:** a service of yours that implements one of the deprecated port interfaces is reported once per
+  container build ("The service "app.x" (App\X) implements the deprecated ..., which 2.0 removes: implement ...
+  instead and keep it configured as ..."); see [Framework-free host ports](#framework-free-host-ports-optional-until-20).
+  A profile provider on a deprecated extra (locale, days off, privacy) and a custom time entry store on
+  `ImportedTimeEntryRepositoryInterface` / `FilteredImportedTimeEntryRepositoryInterface` /
+  `EntryOwnersRepositoryInterface` are reported too. A service built by a factory is reported when it is created.
+- **Event and result members:** `getUser()` / `getViewer()` of `TimerStartEvent`, `TimerStopEvent`,
+  `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`, `TaskEffortAccessCheckEvent`, `TimesheetAccessCheckEvent`,
+  `TimeEntryListQueryEvent`, and `ClientAuthResult::getUser()`, report a notice when called; read `userRef()` /
+  `viewerRef()` (or `getUserId()` / `getViewerId()`).
+- **`RecoveringFlusher::resetIfClosed()`** reports a notice: drop the call.
+- **Client API:** each `POST heartbeat` and each `GET entries` with `userId` reports a notice (update the client; the
+  1.9+ extension and desktop agent no longer send either). With the client API on, `"*"` in
+  `clients.cors_allowed_origins` and `client_api.allow_tauri_webview_origins` unset or `true` report one notice per
+  container build; set `client_api.allow_tauri_webview_origins: false` and list exact origins in
+  `client_api.allowed_origins`.
+- **Templates:** a template that extends `@NowoTimeTrackBundle/layout.html.twig` (`{% extends nowo_time_track_layout %}`
+  with the 1.x default) reports a Twig deprecation; extend `nowo_ui_layout.admin` or your own layout.
 
 ## To 1.32.1
 

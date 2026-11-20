@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Events;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TransactionContract\TransactionRunnerInterface;
 use Nowo\TransactionContract\TransientStorageFailure;
@@ -75,6 +76,8 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
      * @param int|null $retryAfterSeconds Retry-After hint of the TransientStorageFailure; null for none
      * @param int $backoffBaseMilliseconds Upper bound of the first backoff of {@see self::runRetrying()} (0 = no wait)
      * @param LoggerInterface|null $logger Warns when a closed shared manager is replaced at a boundary
+     * @param TimeTrackHostFlushProbe|null $hostFlushProbe 1.33.0: the probe of the shared manager's flushes (null with the
+     *                                                     private manager)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
@@ -83,6 +86,7 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
         private ?int $retryAfterSeconds = 1,
         private int $backoffBaseMilliseconds = self::BACKOFF_BASE_MILLISECONDS,
         private ?LoggerInterface $logger = null,
+        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
     ) {
     }
 
@@ -93,7 +97,7 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
     {
         $manager = $this->entityManager;
         // Pending work first, on its own: a failed TimeTrack unit never rolls it back behind the manager's back.
-        $manager->flush();
+        $this->flush($manager);
         if ($manager instanceof TimeTrackEntityManager) {
             // TimeTrack's own manager: transaction-doctrine's ORM runner (a storage failure closes and replaces it, a
             // refusal forgets only what the run touched). The application's manager is not involved.
@@ -103,9 +107,9 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
         // The application's manager (shared): transaction-doctrine's ORM runner would close and reset it (or clear it)
         // after a storage failure, detaching the application's entities behind its back. The unit runs in a
         // connection-level transaction instead, and only the TimeTrack rows it touched are forgotten.
-        return $this->onConnection(static function () use ($operation, $manager): mixed {
+        return $this->onConnection(function () use ($operation, $manager): mixed {
             $result = $operation();
-            $manager->flush();
+            $this->flush($manager);
 
             return $result;
         });
@@ -222,6 +226,20 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
         } finally {
             $events->removeEventListener([Events::onFlush], $observer);
         }
+    }
+
+    /**
+     * Flushes the manager; with the shared one through the host-flush probe (1.33.0, REQ-ARCH-001 rule 6 deprecation
+     * layer: the application's pending changes it writes are reported first).
+     */
+    private function flush(EntityManagerInterface $manager): void
+    {
+        if ($this->hostFlushProbe instanceof TimeTrackHostFlushProbe) {
+            $this->hostFlushProbe->around($manager, static fn () => $manager->flush());
+
+            return;
+        }
+        $manager->flush();
     }
 
     /**
