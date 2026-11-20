@@ -160,6 +160,59 @@ invalid_token`.
 **`ClientTokenRevoker::revokeByCredential(string $credentialId, ?UserInterface $user = null): int`** — call it when the
 user deletes the credential (immediate end of every session issued from it; audited as `credential_revoked`).
 
+**`ClientTokenRevoker::revokeById(ClientSessionId|string $sessionId, UserInterface $actor): ClientSessionRevocation`** (1.34.0) —
+"sign out this device": ends one session (`ClientToken::getId()`, a UUID) at once; its Bearer token answers `401` on the
+next request. Use it instead of deleting `time_track_client_tokens` rows yourself.
+
+```php
+use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
+use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
+use Nowo\TimeTrackBundle\ValueObject\ClientSessionId;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+
+#[Route('/account/sessions/{id}/revoke', methods: ['POST'])]
+#[IsGranted('IS_AUTHENTICATED')] // revokeById() needs a user: never pass a null getUser() (TypeError, 500)
+public function revoke(string $id, Request $request, ClientTokenRevoker $revoker): Response
+{
+    if (!$this->isCsrfTokenValid('revoke-session-' . $id, (string) $request->request->get('_token'))) {
+        throw $this->createAccessDeniedException();
+    }
+    $user = $this->getUser();
+    if (!$user instanceof UserInterface) {
+        throw $this->createNotFoundException();
+    }
+    $result = $revoker->revokeById($id, $user); // or ClientSessionId::fromString($id)
+
+    return $result === ClientSessionRevocation::Revoked
+        ? $this->redirectToRoute('account_sessions')
+        : throw $this->createNotFoundException(); // unknown, already revoked or not yours: one answer
+}
+```
+
+- **Who may revoke:** the session owner, and users with one of `security.admin_roles` (role names, no hierarchy). Then
+  `nowo_time_track.client_session.access_check` (`ClientSessionAccessCheckEvent`, action `revoke`) is dispatched for an
+  existing session with that decision: `grant()` (e.g. a support role of the owner's organisation) or `deny()` (e.g.
+  an admin of another tenant). The event carries `actorRef()` (`TimeTrackUserRef`), `getSessionId()`, `getOwnerId()`,
+  `getCredentialId()` and `getClientType()`; never the token.
+- **Result:** `Revoked` when this call ended the session; `NotFound` otherwise — no such id, a malformed id, already
+  revoked (also by a concurrent call) or not allowed. Not allowed is never told apart, so a caller learns nothing about
+  someone else's session. Calling it again is safe.
+- **Audit:** a revocation dispatches `nowo_time_track.client_api` with action `session_revoked` (user = the owner,
+  `credentialId`, `clientType`, reason `owner` or `other`). A listener that throws is logged; the revocation stands.
+  Logs carry the action and the client type only.
+- **Storage:** one `DELETE` statement on the configured TimeTrack manager, through the bundle's transaction runner
+  (statements only; a savepoint inside your open transaction). It flushes, clears, resets and loads nothing in any
+  entity manager, so it is safe in a FrankenPHP worker with kernel reset off and next to your own pending changes. A lock conflict (deadlock, lock wait
+  timeout) throws `Nowo\TransactionContract\TransientStorageFailure` (with a Retry-After hint) and nothing is
+  committed: `ConflictCode::forFailure()` (transaction-doctrine) gives `CONFLICT_001` — answer `409` with `Retry-After`
+  and retry.
+- **Inside your own transaction:** your commit decides whether the session is gone, but `revokeById()` has already
+  returned `Revoked` and dispatched `session_revoked` before you commit. If you roll back, the session works again
+  while the audit record stays: call it after your commit, or record the rollback in your audit store.
+- **Custom stores:** `revokeById()` needs a store implementing `ClientSessionRepositoryInterface` (the Doctrine store
+  does); otherwise it throws `LogicException`.
+
 **`TaskAccessCheckerInterface::canTrack(UserInterface $user, string $taskId): bool`** — per `timer/start` and
 `timer/switch`. Deny by default; return true only when the user may track the task now (Beacon:
 `project.tasks.track_time` on the task's project). Missing and foreign tasks both answer `403 task_forbidden`.
@@ -209,7 +262,7 @@ so two concurrent `timer/stop` / `timer/switch` calls record one entry. A store 
 
 **Audit** — listen to `nowo_time_track.client_api` (`ClientApiEvent`: `action`, `userId`, `credentialId`,
 `clientType`, `ipPrefix` /24 or /64, `reason`, `occurredAt`; never the token). Actions: `token_issued`,
-`token_revoked`, `credential_revoked`, `device_approved`, `device_denied`, `request_denied` (throttled per credential).
+`token_revoked`, `credential_revoked`, `session_revoked` (1.34.0), `device_approved`, `device_denied`, `request_denied` (throttled per credential).
 
 **Cron** — `nowo:time-track:client-tokens:purge` also deletes expired device requests.
 

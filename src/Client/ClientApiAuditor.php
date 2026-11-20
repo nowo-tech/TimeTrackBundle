@@ -55,9 +55,20 @@ final readonly class ClientApiAuditor
      */
     public function record(ClientApiAuditAction $action, ?object $user, ?string $credentialId, ?ClientType $clientType, ?string $clientIp, ?string $reason = null): void
     {
+        $this->recordForUserId($action, $user !== null ? $this->userId($user) : null, $credentialId, $clientType, $clientIp, $reason);
+    }
+
+    /**
+     * Since 1.34.0: {@see self::record()} with the user's id instead of the user object (a row read as scalars).
+     *
+     * @param string|null $userId Id of the user the action concerns (null when unknown)
+     * @param string|null $clientIp Full client IP (only its /24 or /64 prefix leaves this method)
+     */
+    public function recordForUserId(ClientApiAuditAction $action, ?string $userId, ?string $credentialId, ?ClientType $clientType, ?string $clientIp, ?string $reason = null): void
+    {
         $event = new ClientApiEvent(
             $action,
-            $user !== null ? $this->userId($user) : null,
+            $userId,
             $credentialId,
             $clientType?->value,
             IpPrefix::of($clientIp),

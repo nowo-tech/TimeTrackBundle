@@ -79,7 +79,7 @@ final readonly class Uuid implements Stringable
     private function isValid(string $value): bool
     {
         return (bool) preg_match(
-            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iD',
             $value,
         );
     }

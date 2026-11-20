@@ -4,6 +4,7 @@
 
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
+- [To 1.34.0](#to-1340)
 - [To 1.33.0](#to-1330)
 - [To 1.33.0](#to-1330-1)
   - [The private entity manager notice](#the-private-entity-manager-notice)
@@ -120,6 +121,33 @@ minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
 
+## To 1.34.0
+
+From **1.33.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Nothing to change. New: **`ClientTokenRevoker::revokeById(ClientSessionId|string $sessionId, UserInterface $actor): ClientSessionRevocation`**
+ends one client session (one desktop or extension login) by its id — see [USAGE](USAGE.md#host-integration-client-api-19).
+If your application deleted `time_track_client_tokens` rows itself (with its own entity manager, or SQL), call it
+instead: the 1.33 host-flush probe now names it for a `ClientToken` delete.
+
+- Authorised for the session owner and `security.admin_roles`; a listener of
+  `nowo_time_track.client_session.access_check` (`ClientSessionAccessCheckEvent`, action `revoke`) can grant or deny.
+- A session the actor may not revoke answers `ClientSessionRevocation::NotFound`, the same as an unknown or already
+  revoked id: map it to `404`.
+- A store that decorates `ClientTokenRepositoryInterface` keeps working; `revokeById()` uses the new
+  `ClientSessionRepositoryInterface` (the Doctrine store implements it). A custom `CredentialClientTokenRepositoryInterface`
+  without it makes `revokeById()` throw a `LogicException` (`revokeByCredential()` is unchanged).
+- New audit action `session_revoked` on `nowo_time_track.client_api`: an audit store that switches on the action
+  values should accept it.
+- Called inside a transaction your application opened, `revokeById()` returns `Revoked` and dispatches
+  `session_revoked` before your commit: a rollback brings the session back, the audit record stays. Call it after
+  your commit when that matters.
+- `ValueObject\Uuid::fromString()` (and so `ClientSessionId`) no longer accepts a UUID followed by a newline.
+
 ## To 1.33.0
 
 From **1.32.1**:
@@ -201,7 +229,7 @@ anything, and a deprecation handler that throws never fails a write.
    | `TimeEntry` update | `TimeEntryBillableService::changeById()` (billable flag); `TimeEntryRepositoryInterface::save()` with an entry loaded through TimeTrack |
    | `TimeEntry` delete | `ImportedTimeEntryDeleter::delete()` / `ImportedTimeEntryWriter::remove()`; `FormerPersonTimeEntries::release()` for a person |
    | `ActiveTimer` insert / update / delete | `TimerService` (`start()`, `switchTo()`, `keepAlive()`, `resolveIdle()`, `stop()`) |
-   | `ClientToken` delete | `ClientTokenRevoker::revokeByCredential()` (no operation ends one session by its id yet) |
+   | `ClientToken` delete | `ClientTokenRevoker::revokeById()` for one session (since 1.34.0); `ClientTokenRevoker::revokeByCredential()` for every session of a credential |
    | `DeviceAuthorization` update | `DeviceAuthorizationService` (`approve()`, `deny()`) |
    | `Timesheet` update, `TimesheetEvent` insert | `TimesheetService` (`submit()`, `withdraw()`, `approve()`, `reject()`, `reopen()`) |
    | `BalanceLedgerLine` insert | `BalanceLedger::add()` |
