@@ -1,26 +1,36 @@
 {#
-  TimeTrack 1.13 showcase: the bundle's configurable components inside the demo layout (no template override).
+  TimeTrack 1.13 showcase: the bundle's configurable components inside the demo platform shell (no template override).
 #}
-{% extends nowo_ui_layout.admin %}
+{% extends 'base.html.twig' %}
 
-{% block nowo_ui_document_title %}{{ 'timesheet.title'|trans({'%period%': timesheet.period.key}, 'NowoTimeTrackBundle') }}{% endblock %}
+{% block nowo_ui_document_title %}{{ 'timesheet.title'|trans({'%period%': timesheet.period.key}, 'NowoTimeTrackBundle') }} — Symfony 8{% endblock %}
 
-{% block nowo_ui_content %}
-    <div data-testid="demo-timesheet">
-        {# Flash messages (already translated) are rendered by the UiKit admin layout. #}
-        <nav class="nowo-ui-card__toolbar" aria-label="Periods">
+{% block nowo_ui_page_header %}
+    {% set _toolbar %}
+        <nav class="nowo-ui-row-actions" aria-label="Periods">
             <a class="nowo-ui-btn nowo-ui-btn--sm nowo-ui-btn--outline" href="{{ path('app_timesheet', {period: previous}) }}">&larr; {{ previous }}</a>
             <a class="nowo-ui-btn nowo-ui-btn--sm nowo-ui-btn--outline" href="{{ path('app_timesheet') }}">{{ 'demo.timesheet.current'|trans }}</a>
             <a class="nowo-ui-btn nowo-ui-btn--sm nowo-ui-btn--outline" href="{{ path('app_timesheet', {period: next}) }}">{{ next }} &rarr;</a>
         </nav>
-        {{ nowo_time_track_component('TimeTrack:TimesheetWeekGrid', {timesheet: timesheet, viewer: app.user, options: {
-            action_urls: {submit: path('app_timesheet_action', {action: 'submit'}), withdraw: path('app_timesheet_action', {action: 'withdraw'})},
-            density: 'compact',
-        }}) }}
-        {% if report %}
-            <div>
+    {% endset %}
+    {{ include(nowo_ui_partial('page_header'), {title: 'timesheet.title'|trans({'%period%': timesheet.period.key}, 'NowoTimeTrackBundle'), toolbar: _toolbar}) }}
+{% endblock %}
+
+{% block nowo_ui_content %}
+    {# Flash messages (already translated) are rendered by the shell under the page header. #}
+    {% embed '@NowoUiKit/demo_platform/_section.html.twig' with {title: 'demo.nav.timesheet'|trans, kind: 'table', testid: 'demo-timesheet', timesheet: timesheet} %}
+        {% block section_body %}
+            {{ nowo_time_track_component('TimeTrack:TimesheetWeekGrid', {timesheet: timesheet, viewer: app.user, options: {
+                action_urls: {submit: path('app_timesheet_action', {action: 'submit'}), withdraw: path('app_timesheet_action', {action: 'withdraw'})},
+                density: 'compact',
+            }}) }}
+        {% endblock %}
+    {% endembed %}
+    {% if report %}
+        {% embed '@NowoUiKit/demo_platform/_section.html.twig' with {title: 'Balance', kind: 'detail', report: report} %}
+            {% block section_body %}
                 {{ nowo_time_track_component('TimeTrack:BalanceCard', {report: report, options: {range: 'week'}}) }}
-            </div>
-        {% endif %}
-    </div>
+            {% endblock %}
+        {% endembed %}
+    {% endif %}
 {% endblock %}

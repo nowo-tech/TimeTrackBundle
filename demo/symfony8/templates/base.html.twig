@@ -1,24 +1,20 @@
-{#- REQ-DEMO-014: the demo shell is UiKit's admin layout with UiKit's default theme (nowo-ui.css from the bundle's own
-    asset package, no CSS framework, no CDN, inline SVG icons). The TimeTrack and TaskBoard pages render in it too
-    (nowo_ui_kit.layouts.admin). -#}
-{% extends '@NowoUiKit/layout/admin.html.twig' %}
+{#- REQ-DEMO-014: the demo runs inside UiKit's shared demo platform shell (@NowoUiKit/demo_platform/layout.html.twig):
+    the same top bar, aside, content width, theme and footer as every other nowo-tech bundle demo. This file only
+    declares the demo (nowo_ui_demo_platform). The TimeTrack and TaskBoard pages render in it too
+    (nowo_ui_kit.layouts). -#}
+{% extends '@NowoUiKit/demo_platform/layout.html.twig' %}
+{% set nowo_ui_demo_platform = {
+    bundle: 'TimeTrack',
+    home_route: 'nowo_time_track_index',
+    repository: 'https://github.com/nowo-tech/TimeTrackBundle',
+    translation_domain: false,
+    auth: {},
+    nav: [
+        {label: 'nav.board'|trans({}, 'NowoTaskBoardBundle'), route: 'nowo_task_board_index', active: ['nowo_task_board_*'], section: 'TaskBoard'},
+        {label: 'nav.timer'|trans({}, 'NowoTimeTrackBundle'), route: 'nowo_time_track_index', active: ['nowo_time_track_index'], section: 'TimeTrack'},
+        {label: 'nav.reports'|trans({}, 'NowoTimeTrackBundle'), route: 'nowo_time_track_reports', section: 'TimeTrack'},
+        {label: 'demo.nav.timesheet'|trans, route: 'app_timesheet', active: ['app_timesheet*'], section: 'TimeTrack'},
+    ],
+} %}
 
-{% block nowo_ui_document_title %}{% block title %}TimeTrack Demo{% endblock %}{% endblock %}
-
-{% block nowo_ui_navigation %}
-    {% set _route = app.request.attributes.get('_route')|default('') %}
-    <header class="nowo-ui-header" data-testid="demo-masthead">
-        <a class="nowo-ui-brand" href="{{ path('nowo_time_track_index') }}">TimeTrack Bundle Demo</a>
-        <nav class="nowo-ui-menu" aria-label="Demo">
-            <a class="nowo-ui-link" href="{{ path('nowo_task_board_index') }}"{% if _route starts with 'nowo_task_board' %} aria-current="page"{% endif %}>{{ 'nav.board'|trans({}, 'NowoTaskBoardBundle') }}</a>
-            <a class="nowo-ui-link" href="{{ path('nowo_time_track_index') }}"{% if _route == 'nowo_time_track_index' %} aria-current="page"{% endif %}>{{ 'nav.timer'|trans({}, 'NowoTimeTrackBundle') }}</a>
-            <a class="nowo-ui-link" href="{{ path('nowo_time_track_reports') }}"{% if _route == 'nowo_time_track_reports' %} aria-current="page"{% endif %}>{{ 'nav.reports'|trans({}, 'NowoTimeTrackBundle') }}</a>
-            <a class="nowo-ui-link" href="{{ path('app_timesheet') }}"{% if _route starts with 'app_timesheet' %} aria-current="page"{% endif %}>{{ 'demo.nav.timesheet'|trans }}</a>
-        </nav>
-        <div class="nowo-ui-header__end">
-            {{ include('@NowoUiKitBundle/partials/_theme_toggle.html.twig', { compact: true }, false) }}
-        </div>
-    </header>
-{% endblock %}
-
-{% block nowo_ui_content %}{% block body %}{% endblock %}{% endblock %}
+{% block nowo_ui_document_title %}{% block title %}TimeTrack Demo{% endblock %} — Symfony 8{% endblock %}

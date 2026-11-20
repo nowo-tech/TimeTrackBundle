@@ -3,6 +3,8 @@
 # SVG (no icon font from a CDN).
 nowo_ui_kit:
     css_framework: custom
+    base_stylesheet: true
     icon_set: svg_inline
     layouts:
         admin: base.html.twig
+        guest: base.html.twig

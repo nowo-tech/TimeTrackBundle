@@ -1,0 +1,14 @@
+{#- REQ-UI-001: bridge between the TaskBoard manage pages and the demo platform shell (nowo_task_board.templates.layout).
+    The pages' stylesheets and javascripts blocks are mapped onto the shell's style and script blocks; body / nowo_ui_content are the shell's own. -#}
+{% extends 'base.html.twig' %}
+
+{% block nowo_ui_styles %}
+    {{ parent() }}
+    {% block stylesheets %}{% endblock %}
+{% endblock %}
+
+{% block nowo_ui_scripts %}
+    {{ parent() }}
+    {% block javascripts %}{% endblock %}
+{% endblock %}
+
