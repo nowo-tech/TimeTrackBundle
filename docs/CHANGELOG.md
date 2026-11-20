@@ -76,6 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Requires `nowo-tech/transaction-doctrine` ^1.8.1 (fixes GHSA-9wh3-m3m5-jffx and GHSA-65w2-9r4h-848g); root and demo locks updated to v1.8.1.
 
+### Fixed
+
+- Configuration tree split so the bundle compiles on PHP 8.3+ thread stacks of 512 KiB (FrankenPHP Alpine images): `Configuration::getConfigTreeBuilder()` was one fluent chain that needed more than 512 KiB of stack to compile ("Maximum call stack size ... reached during compilation"). It is now built by one private method per section, with the same builder calls in the same order, so the tree, its defaults, validation and reference dumps are unchanged. A test compiles the sources and builds the tree under a 512 KiB stack.
+
 ## [1.32.0] - 2026-11-20
 
 ### Changed
