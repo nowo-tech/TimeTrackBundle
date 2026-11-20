@@ -85,6 +85,7 @@ use function preg_match;
 use function preg_replace;
 use function sprintf;
 use function strtolower;
+use function trigger_deprecation;
 use function trim;
 
 use const DATE_ATOM;
@@ -621,7 +622,8 @@ final readonly class TimeTrackClientApiController
 
     /**
      * POST heartbeat (deprecated since 1.9, removed in 2.0): keeps answering with the running timer; `isIdle` is
-     * ignored (idle is the user's decision on the client, see `timer/discard-idle`).
+     * ignored (idle is the user's decision on the client, see `timer/discard-idle`). 1.33.0: triggers a deprecation
+     * notice.
      */
     #[Route('/api/time-track/heartbeat', name: 'nowo_time_track_api_heartbeat', methods: ['POST', 'OPTIONS'])]
     public function heartbeat(Request $request): Response
@@ -631,6 +633,8 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
+        // 1.33.0: the server-side notice of the client call 2.0 removes (once per request).
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'A client called "POST /api/time-track/heartbeat" (deprecated since 1.9): 2.0 removes it. Update the client: the 1.9+ browser extension and desktop agent no longer call it (idle is answered with "timer/discard-idle").');
         $timer    = $this->timerService->keepAlive($principal->user);
         $response = $timer instanceof ActiveTimer
             ? $this->responseFactory->json([
@@ -647,7 +651,7 @@ final readonly class TimeTrackClientApiController
 
     /**
      * GET entries: own time entries of a period (`from`, `to`, `limit` 1-100, `offset`). The deprecated `userId`
-     * parameter keeps the 1.x team view (checked by the team guard).
+     * parameter keeps the 1.x team view (checked by the team guard); 1.33.0: it triggers a deprecation notice.
      */
     #[Route('/api/time-track/entries', name: 'nowo_time_track_api_entries', methods: ['GET', 'OPTIONS'])]
     public function entries(Request $request): Response
@@ -663,6 +667,10 @@ final readonly class TimeTrackClientApiController
         $targetUserId = $request->query->getString('userId') ?: null;
         $user         = $principal->user;
 
+        if ($targetUserId !== null) {
+            // 1.33.0: the server-side notice of the parameter 2.0 removes (once per request).
+            trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'A client called "GET /api/time-track/entries" with "userId" (deprecated since 1.9): 2.0 removes the parameter and the endpoint returns the caller\'s own entries only. Update the client; read other people\'s entries in the web reports.');
+        }
         if ($targetUserId !== null && $targetUserId !== UserIdResolver::getId($user)) {
             if (!$this->teamAccessGuard->canViewUserEntries($user, $targetUserId)) {
                 $this->auditor->denied('forbidden', $principal->token, $request->getClientIp());

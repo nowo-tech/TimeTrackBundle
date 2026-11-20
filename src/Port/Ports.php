@@ -48,6 +48,8 @@ use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarSourceInterface;
 
 use function get_debug_type;
 use function sprintf;
+use function str_starts_with;
+use function trigger_deprecation;
 
 /**
  * Picks the interface the bundle asks a host service through (1.23.0, REQ-ARCH-001 rule 3):
@@ -103,10 +105,31 @@ final class Ports
 
         [$legacy, $twin] = self::PORTS[$name];
         if ($service instanceof $legacy) {
+            self::deprecateLegacy(null, $service::class, $legacy, $twin, TimeTrackPortsPass::SLOTS[$name][1]);
+
             return $service;
         }
 
         return self::gate($name, $service) ?? throw new LogicException(sprintf('The TimeTrack %s service "%s" must implement "%s" (or the deprecated "%s").', $name, get_debug_type($service), $twin, $legacy));
+    }
+
+    /**
+     * 1.33.0 (REQ-BC-001): a host service that still implements one of the deprecated port interfaces (removed in 2.0)
+     * triggers one notice when the container is built (or, for a service whose class the build cannot know, when it is
+     * created: once per container). The bundle's own default services are not reported.
+     *
+     * @param string|null $serviceId the service id, when known
+     * @param string $class the service's class
+     * @param string $legacy the deprecated interface it implements
+     * @param string $twin the framework-free interface to implement instead
+     * @param string $option the configuration that names the service
+     */
+    public static function deprecateLegacy(?string $serviceId, string $class, string $legacy, string $twin, string $option): void
+    {
+        if (str_starts_with($class, 'Nowo\\TimeTrackBundle\\') && !str_starts_with($class, 'Nowo\\TimeTrackBundle\\Tests\\')) {
+            return;
+        }
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'The service %s implements the deprecated %s, which 2.0 removes: implement %s instead and keep it configured as %s (a service may implement both while you migrate; drop the deprecated one before 2.0). See UPGRADING "Framework-free host ports".', $serviceId !== null ? sprintf('"%s" (%s)', $serviceId, $class) : $class, $legacy, $twin, $option);
     }
 
     /**

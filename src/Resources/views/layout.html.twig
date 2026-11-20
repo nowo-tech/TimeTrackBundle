@@ -7,6 +7,8 @@
 #}
 {% extends nowo_ui_layout.admin %}
 
+{% deprecated 'Since nowo-tech/time-track-bundle 1.33: the template "@NowoTimeTrackBundle/layout.html.twig" (the 1.x default layout, Twig global nowo_time_track_layout) is deprecated since 1.8 and 2.0 removes it: extend nowo_ui_layout.admin (or your own layout) and use the UiKit blocks (nowo_ui_document_title, nowo_ui_styles, nowo_ui_content, nowo_ui_scripts).' %}
+
 {% block nowo_ui_document_title %}{% block title %}{{ 'page.timer'|trans({}, 'NowoTimeTrackBundle') }}{% endblock %}{% endblock %}
 
 {% block nowo_ui_styles %}

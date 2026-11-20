@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (1.33.0)](#added-1330)
+  - [Changed (1.33.0)](#changed-1330)
+  - [Deprecated (1.33.0)](#deprecated-1330)
 - [[1.32.1] - 2026-11-20](#1321---2026-11-20)
 - [[1.32.0] - 2026-11-20](#1320---2026-11-20)
 - [[1.31.0] - 2026-11-18](#1310---2026-11-18)
@@ -72,6 +75,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
 
 ## [Unreleased]
+
+### Added (1.33.0)
+
+- **Host-flush probe (REQ-ARCH-001 rule 6 deprecation layer).** With the shared manager
+  (`database.private_entity_manager` unset or `false`), every TimeTrack flush of it (`RecoveringFlusher::flush()` in
+  the entry, timer, token, device, timesheet, ledger and calendar stores, the batch save of imported entries, and
+  `TimeTrackTransactionRunner::run()`) first asks nowo-tech/transaction-doctrine's `HostFlushProbe` which entity classes
+  of the application it is about to write, and triggers one `E_USER_DEPRECATED` per class per request, message or
+  command: "Your pending changes to App\X were flushed by NowoTimeTrackBundle; 2.0 no longer does." A flush the
+  application runs itself reports, once per class and kind of write, the TimeTrack rows it inserts, updates or deletes
+  (naming the bundle operation or repository to use instead where one exists: `ManualEntryService::create()`,
+  `TimerService`, `ClientTokenRevoker::revokeByCredential()`, ...) and its own rows that point at a TimeTrack instance
+  (reference them by id). Read-only: nothing is flushed, cleared, closed, reset or detached by it, a deprecation handler
+  that throws never fails a write, and host mode writes exactly what it wrote in 1.32. Its state is emptied at every
+  request, message and command boundary and at `kernel.reset` (FrankenPHP worker mode with kernel reset off included).
+  Not registered with the private manager. See [UPGRADING](UPGRADING.md#to-1330).
+- `RecoveringFlusher::flush()` takes an optional third argument, the probe (`@internal` use by the bundle's stores).
+
+### Changed (1.33.0)
+
+- Requires `nowo-tech/transaction-doctrine` `^1.9` (the shared host-flush probe).
+
+### Deprecated (1.33.0)
+
+Every item below was already deprecated (removed in 2.0); 1.33.0 adds the runtime notice it lacked.
+
+- **`database.private_entity_manager: false` (unset included):** one notice per container build. 2.0 removes the
+  option and keeps only the private entity manager; opt in now with
+  `nowo_time_track: { database: { private_entity_manager: true } }`.
+- **The 15 host port interfaces with a 1.23 twin** (task, team, user reference, timesheet scope and approver, calendar
+  task key and credentials, meetings, workday, idle check, client credential issuer, task access, profile, working
+  calendar, worked time), the profile extras (`ClientUserLocaleProviderInterface`, `ClientUserDaysOffProviderInterface`,
+  `ClientUserPrivacyProviderInterface`) and the entry store interfaces (`ImportedTimeEntryRepositoryInterface`,
+  `FilteredImportedTimeEntryRepositoryInterface`, `EntryOwnersRepositoryInterface`): a host service that still
+  implements one triggers a notice when the container is built (or, for a factory-built service, when it is created).
+  The bundle's own defaults are not reported.
+- **`getUser()` / `getViewer()` of `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`,
+  `TimeEntryAccessCheckEvent`, `TaskEffortAccessCheckEvent`, `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent` and
+  `ClientAuthResult::getUser()`** trigger a notice when called (read `userRef()` / `viewerRef()`).
+- **`RecoveringFlusher::resetIfClosed()`** (a no-op since 1.27.0) triggers a notice.
+- **Client API:** `POST heartbeat` and `GET entries?userId=` trigger a notice per request; with the client API on,
+  `"*"` in `clients.cors_allowed_origins` and `client_api.allow_tauri_webview_origins` unset or `true` trigger one per
+  container build. The installed-client API aliases are not deprecated (they stay in 2.0).
+- **`@NowoTimeTrackBundle/layout.html.twig`** (the 1.x layout shim) triggers a Twig deprecation when a template
+  extends it. The `templates.*` keys and `clients.cors_allow_any_extension_origin` keep their configuration notices.
 
 ## [1.32.1] - 2026-11-20
 

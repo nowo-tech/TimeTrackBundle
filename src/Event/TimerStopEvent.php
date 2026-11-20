@@ -13,6 +13,8 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
+use function trigger_deprecation;
+
 /**
  * Dispatched after a timer was stopped and recorded as a time entry. Since 1.10 it is also dispatched for the entry
  * an idle span is reassigned to (`timer/discard-idle` action `reassign`), so listeners that add up time per task
@@ -35,10 +37,12 @@ final class TimerStopEvent extends Event
     /**
      * Timer owner.
      *
-     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
+     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0 (1.33.0: triggers a deprecation notice).
      */
     public function getUser(): UserInterface
     {
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'Nowo\\TimeTrackBundle\\Event\\TimerStopEvent::getUser() is deprecated since 1.23.0 and 2.0 removes it: read userRef() instead (or the 1.18 getUserId()).');
+
         return $this->user;
     }
 

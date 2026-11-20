@@ -10,6 +10,8 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
+use function trigger_deprecation;
+
 /**
  * Since 1.13 (owner decision 2026-11-05, audit GB-M3): whether a user may see the **all-users** total of logged time on
  * a task (`loggedSeconds` of the client API). Denied by default: everybody sees only their own total; the host grants
@@ -31,10 +33,12 @@ final class TaskEffortAccessCheckEvent extends Event
     /**
      * User asking.
      *
-     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
+     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0 (1.33.0: triggers a deprecation notice).
      */
     public function getUser(): UserInterface
     {
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'Nowo\\TimeTrackBundle\\Event\\TaskEffortAccessCheckEvent::getUser() is deprecated since 1.23.0 and 2.0 removes it: read userRef() instead (or the 1.18 getUserId()).');
+
         return $this->user;
     }
 

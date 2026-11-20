@@ -11,6 +11,8 @@ use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
+use function trigger_deprecation;
+
 /**
  * Outcome of a client login: the authenticated user (with the host credential it used and the scopes it grants), or
  * a failure.
@@ -80,10 +82,12 @@ final readonly class ClientAuthResult
     /**
      * Authenticated user (null on failure).
      *
-     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
+     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0 (1.33.0: triggers a deprecation notice).
      */
     public function getUser(): ?UserInterface
     {
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'Nowo\\TimeTrackBundle\\Client\\ClientAuthResult::getUser() is deprecated since 1.23.0 and 2.0 removes it: read userRef() instead.');
+
         return $this->user;
     }
 

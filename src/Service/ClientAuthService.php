@@ -258,7 +258,8 @@ final readonly class ClientAuthService
 
     private function accountActive(ClientAuthResult $result): bool
     {
-        $user = $result->getUser();
+        // 1.33.0: not the deprecated getUser() (it triggers a notice).
+        $user = $result->isSuccess() ? $result->requireUser() : null;
 
         return !$this->accountChecker instanceof ClientAccountChecker || !$user instanceof UserInterface || $this->accountChecker->isUserActive($user);
     }

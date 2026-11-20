@@ -5,11 +5,25 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\DependencyInjection\Compiler;
 
 use LogicException;
+use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientUserDaysOffSourceInterface;
+use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientUserLocaleSourceInterface;
+use Nowo\TimeTrackBundle\Client\ClientUserPrivacyProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientUserPrivacySourceInterface;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\BatchTaskDirectoryInterface;
+use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface;
 use Nowo\TimeTrackBundle\Port\BatchTaskDirectoryGate;
 use Nowo\TimeTrackBundle\Port\Ports;
+use Nowo\TimeTrackBundle\Repository\EntryOwnerRefsRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryStoreInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -41,8 +55,11 @@ use function sprintf;
  * points at the built-in resolver, the slot is pointed at the twin's gate. Defining both to different services fails
  * the build (keep the 1.23 one).
  *
- * Deprecations of the old interfaces reach the application through their `@deprecated` tag (Symfony's
- * DebugClassLoader, in debug mode), not from this pass. Runs before optimization.
+ * Since 1.33.0 (REQ-BC-001) a host service behind a slot that still implements the deprecated interface triggers one
+ * notice at build time ({@see Ports::deprecateLegacy()}), and so does a host profile provider that implements a deprecated
+ * extra (locale, days off, privacy) or a host time entry store on the deprecated store interfaces. A service whose class
+ * the build cannot know is reported by {@see Ports::port()} when it is created. The bundle's own defaults are never
+ * reported. Runs before optimization.
  *
  * @internal
  */
@@ -53,6 +70,24 @@ final class TimeTrackPortsPass implements CompilerPassInterface
 
     /** Service id prefix of the gates and runtime factories this pass registers. */
     public const GATE_PREFIX = 'nowo_time_track.port_gate.';
+
+    /**
+     * 1.33.0: deprecated extras of a profile provider and of a time entry store => [1.23 twin, what names the service].
+     *
+     * @var array<string, array<class-string, array{0: class-string, 1: string}>>
+     */
+    public const EXTRAS = [
+        'profile_provider' => [
+            ClientUserLocaleProviderInterface::class  => [ClientUserLocaleSourceInterface::class, 'nowo_time_track.client_api.profile_provider'],
+            ClientUserDaysOffProviderInterface::class => [ClientUserDaysOffSourceInterface::class, 'nowo_time_track.client_api.profile_provider'],
+            ClientUserPrivacyProviderInterface::class => [ClientUserPrivacySourceInterface::class, 'nowo_time_track.client_api.profile_provider'],
+        ],
+        'entry_store' => [
+            FilteredImportedTimeEntryRepositoryInterface::class => [FilteredImportedTimeEntryStoreInterface::class, 'the ' . TimeEntryRepositoryInterface::class . ' alias'],
+            ImportedTimeEntryRepositoryInterface::class         => [ImportedTimeEntryStoreInterface::class, 'the ' . TimeEntryRepositoryInterface::class . ' alias'],
+            EntryOwnersRepositoryInterface::class               => [EntryOwnerRefsRepositoryInterface::class, 'the ' . TimeEntryRepositoryInterface::class . ' alias'],
+        ],
+    ];
 
     /**
      * Port => [slot id, configuration option named in errors].
@@ -84,11 +119,35 @@ final class TimeTrackPortsPass implements CompilerPassInterface
     {
         $this->wireUserReferenceTwin($container);
 
+        // The extras first: wire() may move a slot's own definition behind a gate.
+        $this->deprecateExtras($container, 'profile_provider', self::SLOTS['profile_provider'][0]);
+        $this->deprecateExtras($container, 'entry_store', TimeEntryRepositoryInterface::class);
         foreach (self::SLOTS as $name => [$slot, $option]) {
             if (!$container->hasAlias($slot) && !$container->hasDefinition($slot)) {
                 continue;
             }
             $this->wire($container, $name, $slot, $option);
+        }
+    }
+
+    /**
+     * 1.33.0: one notice per deprecated extra interface a host service behind the slot implements (class known at build).
+     */
+    private function deprecateExtras(ContainerBuilder $container, string $kind, string $slot): void
+    {
+        if (!$container->hasAlias($slot) && !$container->hasDefinition($slot)) {
+            return;
+        }
+        $target = $this->resolve($container, $slot);
+        $class  = $this->classOf($container, $target);
+        if ($class === null) {
+            return;
+        }
+        foreach (self::EXTRAS[$kind] as $legacy => [$twin, $option]) {
+            // The filtered store interface extends the plain one: one notice for both.
+            if (is_a($class, $legacy, true) && ($legacy !== ImportedTimeEntryRepositoryInterface::class || !is_a($class, FilteredImportedTimeEntryRepositoryInterface::class, true))) {
+                Ports::deprecateLegacy($target, $class, $legacy, $twin, $option);
+            }
         }
     }
 
@@ -104,6 +163,9 @@ final class TimeTrackPortsPass implements CompilerPassInterface
         $target                 = $this->resolve($container, $slot);
         $class                  = $this->classOf($container, $target);
         if ($class !== null && is_a($class, $legacy, true)) {
+            $batch = $name === 'task_provider' && is_a($class, BatchTaskProviderInterface::class, true);
+            Ports::deprecateLegacy($target, $class, $batch ? BatchTaskProviderInterface::class : $legacy, $batch ? BatchTaskDirectoryInterface::class : $twin, $option);
+
             return;
         }
         if ($class !== null && !is_a($class, $twin, true)) {

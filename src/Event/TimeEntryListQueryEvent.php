@@ -11,6 +11,8 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
+use function trigger_deprecation;
+
 /**
  * Lets listeners set the user ids whose entries a viewer sees in a period (team reports).
  */
@@ -41,10 +43,12 @@ final class TimeEntryListQueryEvent extends Event
     /**
      * User asking for the entries.
      *
-     * @deprecated since 1.23.0, use {@see self::viewerRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0.
+     * @deprecated since 1.23.0, use {@see self::viewerRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0 (1.33.0: triggers a deprecation notice).
      */
     public function getViewer(): UserInterface
     {
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'Nowo\\TimeTrackBundle\\Event\\TimeEntryListQueryEvent::getViewer() is deprecated since 1.23.0 and 2.0 removes it: read viewerRef() instead (or the 1.18 getViewerId()).');
+
         return $this->viewer;
     }
 
