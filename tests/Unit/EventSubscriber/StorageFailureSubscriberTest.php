@@ -14,6 +14,8 @@ use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
 use Nowo\TransactionContract\TransientStorageFailure;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponsePolicy;
 use Nowo\TransactionDoctrine\TransientFailureKind;
+use Nowo\TransactionDoctrine\WriteUnit\CommitLedger;
+use Nowo\TransactionDoctrine\WriteUnit\CommitMark;
 use Nowo\TransactionDoctrine\WriteUnit\ConcurrencyConflict;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -189,6 +191,42 @@ final class StorageFailureSubscriberTest extends TestCase
         self::assertSame('CONFLICT_002', $body['code']);
     }
 
+    public function testACommitEarlierInTheRequestGivesCode002WithoutRetryAfterOnJsonAndHtml(): void
+    {
+        $ledger = new CommitLedger();
+        $mark   = new CommitMark($ledger);
+        $ledger->record(); // the host committed after the request's mark, before the conflict
+
+        $event    = $this->dispatch(new TransientStorageFailure(5, TransientStorageFailure::DEFAULT_MESSAGE, $this->deadlock()), ['_controller' => self::API, CommitMark::REQUEST_ATTRIBUTE => $mark]);
+        $response = $event->getResponse();
+        self::assertNotNull($response);
+        self::assertSame(409, $response->getStatusCode());
+        self::assertFalse($response->headers->has('Retry-After'));
+        $body = json_decode((string) $response->getContent(), true);
+        self::assertIsArray($body);
+        self::assertSame('CONFLICT_002', $body['code']);
+        self::assertStringContainsString('Reload', $body['message']);
+
+        $event = $this->dispatch(new TransientStorageFailure(5, TransientStorageFailure::DEFAULT_MESSAGE, $this->deadlock()), ['_controller' => self::PAGE, CommitMark::REQUEST_ATTRIBUTE => $mark]);
+        $page  = $event->getThrowable();
+        self::assertInstanceOf(HttpException::class, $page);
+        self::assertSame('CONFLICT_002', $page->getHeaders()['X-Conflict-Code'] ?? null);
+        self::assertArrayNotHasKey('Retry-After', $page->getHeaders());
+    }
+
+    public function testARequestMarkWithNoCommitKeepsCode001WithRetryAfter(): void
+    {
+        $mark  = new CommitMark(new CommitLedger());
+        $event = $this->dispatch(new TransientStorageFailure(5, TransientStorageFailure::DEFAULT_MESSAGE, $this->deadlock()), ['_controller' => self::API, CommitMark::REQUEST_ATTRIBUTE => $mark]);
+
+        $response = $event->getResponse();
+        self::assertNotNull($response);
+        self::assertSame('5', $response->headers->get('Retry-After'));
+        $body = json_decode((string) $response->getContent(), true);
+        self::assertIsArray($body);
+        self::assertSame('CONFLICT_001', $body['code']);
+    }
+
     public function testThePolicysRetryAfterIsTheFallbackHint(): void
     {
         $event = $this->dispatch($this->deadlock(), ['_route' => 'nowo_time_track_api_timer_start'], json: true, policy: new ConflictResponsePolicy(409, 6));
@@ -196,7 +234,7 @@ final class StorageFailureSubscriberTest extends TestCase
     }
 
     /**
-     * @param array<string, string> $attributes
+     * @param array<string, mixed> $attributes
      */
     private function dispatch(Throwable $failure, array $attributes, bool $json = false, bool $responses = true, ?ConflictResponsePolicy $policy = null): ExceptionEvent
     {

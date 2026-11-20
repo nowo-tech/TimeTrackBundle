@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- REQ-RUNTIME-003 rule 6 (request-level detection): `StorageFailureSubscriber` takes the conflict code from `ConflictCode::forRequest()` instead of `forFailure()`. A commit made earlier in the same request by the host or another bundle (the request's `CommitMark`) now gives `CONFLICT_002` with no `Retry-After`; without a mark the failure alone decides, as before. `nowo-tech/transaction-doctrine` requirement raised from `^1.5` to `^1.6` (not 1.8.0).
 - CI: new `deps-floor` job (as in BreadcrumbKit). It checks that the demo lock installs every nowo-tech requirement of the bundle (`.scripts/check-demo-lock.py`), then downgrades nowo-tech/transaction-* to the lowest versions composer.json allows (`composer update 'nowo-tech/transaction-*' --prefer-lowest`) and runs PHPStan and the tests there, so a call to a newer API than the constraint allows fails the pull request.
 
 ### Fixed

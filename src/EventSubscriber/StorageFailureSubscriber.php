@@ -34,7 +34,10 @@ use function str_starts_with;
  *
  * Since 1.31.0 (REQ-RUNTIME-003 rule 6) every such answer carries the platform's conflict code ({@see ConflictCode}):
  * `CONFLICT_001` when nothing was committed (with `Retry-After`), `CONFLICT_002` when part of the write may have been
- * (no `Retry-After`: read again, do not repeat). A unique-key violation is NOT a lock conflict and is no longer mapped
+ * (no `Retry-After`: read again, do not repeat). Since the next release the code comes from {@see ConflictCode::forRequest()}
+ * (nowo-tech/transaction-doctrine ^1.6): a commit made earlier in the same request by the host or another bundle (the
+ * request's `CommitMark`, taken at `kernel.request` when transaction-doctrine's `commit_detection` is on) also gives
+ * `CONFLICT_002`; without a mark the failure alone decides. A unique-key violation is NOT a lock conflict and is no longer mapped
  * to 409 here: the bundle resolves its expected "only one" races where they happen (a domain answer with its own
  * error key, never `CONFLICT_*`), and any other violation is a real error left to the application (500).
  *
@@ -103,7 +106,7 @@ final readonly class StorageFailureSubscriber implements EventSubscriberInterfac
         }
 
         $policy    = $this->policy ?? new ConflictResponsePolicy();
-        $code      = ConflictCode::forFailure($failure);
+        $code      = ConflictCode::forRequest($request, $failure);
         $committed = !$code->retrySafe();
         $message   = $committed ? self::PARTIAL_MESSAGE : self::UNAVAILABLE_MESSAGE;
         if (self::wantsJson($request)) {
