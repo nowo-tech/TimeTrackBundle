@@ -143,6 +143,10 @@ instead: the 1.33 host-flush probe now names it for a `ClientToken` delete.
   without it makes `revokeById()` throw a `LogicException` (`revokeByCredential()` is unchanged).
 - New audit action `session_revoked` on `nowo_time_track.client_api`: an audit store that switches on the action
   values should accept it.
+- Called inside a transaction your application opened, `revokeById()` returns `Revoked` and dispatches
+  `session_revoked` before your commit: a rollback brings the session back, the audit record stays. Call it after
+  your commit when that matters.
+- `ValueObject\Uuid::fromString()` (and so `ClientSessionId`) no longer accepts a UUID followed by a newline.
 
 ## To 1.33.0
 

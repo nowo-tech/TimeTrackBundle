@@ -168,14 +168,21 @@ next request. Use it instead of deleting `time_track_client_tokens` rows yoursel
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
 use Nowo\TimeTrackBundle\ValueObject\ClientSessionId;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/account/sessions/{id}/revoke', methods: ['POST'])]
+#[IsGranted('IS_AUTHENTICATED')] // revokeById() needs a user: never pass a null getUser() (TypeError, 500)
 public function revoke(string $id, Request $request, ClientTokenRevoker $revoker): Response
 {
     if (!$this->isCsrfTokenValid('revoke-session-' . $id, (string) $request->request->get('_token'))) {
         throw $this->createAccessDeniedException();
     }
-    $result = $revoker->revokeById($id, $this->getUser()); // or ClientSessionId::fromString($id)
+    $user = $this->getUser();
+    if (!$user instanceof UserInterface) {
+        throw $this->createNotFoundException();
+    }
+    $result = $revoker->revokeById($id, $user); // or ClientSessionId::fromString($id)
 
     return $result === ClientSessionRevocation::Revoked
         ? $this->redirectToRoute('account_sessions')
@@ -199,7 +206,10 @@ public function revoke(string $id, Request $request, ClientTokenRevoker $revoker
   entity manager, so it is safe in a FrankenPHP worker with kernel reset off and next to your own pending changes. A lock conflict (deadlock, lock wait
   timeout) throws `Nowo\TransactionContract\TransientStorageFailure` (with a Retry-After hint) and nothing is
   committed: `ConflictCode::forFailure()` (transaction-doctrine) gives `CONFLICT_001` — answer `409` with `Retry-After`
-  and retry. Inside your own transaction your commit decides.
+  and retry.
+- **Inside your own transaction:** your commit decides whether the session is gone, but `revokeById()` has already
+  returned `Revoked` and dispatched `session_revoked` before you commit. If you roll back, the session works again
+  while the audit record stays: call it after your commit, or record the rollback in your audit store.
 - **Custom stores:** `revokeById()` needs a store implementing `ClientSessionRepositoryInterface` (the Doctrine store
   does); otherwise it throws `LogicException`.
 

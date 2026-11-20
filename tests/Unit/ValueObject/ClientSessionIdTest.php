@@ -30,6 +30,11 @@ final class ClientSessionIdTest extends TestCase
         ClientSessionId::fromString('6f1c4c62');
     }
 
+    public function testATrailingNewlineIsRefused(): void
+    {
+        self::assertNull(ClientSessionId::tryFromString("6f1c4c62-1e86-4a5e-9a51-0d0e0b6a6f00\n"), 'audit XL-6: `$` alone would accept a trailing newline');
+    }
+
     public function testTheRevocationResult(): void
     {
         self::assertTrue(ClientSessionRevocation::Revoked->isRevoked());

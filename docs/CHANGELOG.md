@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [[Unreleased]](#unreleased)
   - [Added (Unreleased)](#added-unreleased)
+  - [Fixed (Unreleased)](#fixed-unreleased)
 - [[1.33.0] - 2026-11-20](#1330---2026-11-20)
   - [Added (1.33.0)](#added-1330)
   - [Changed (1.33.0)](#changed-1330)
@@ -233,6 +234,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Enum\ClientSessionRevocation`, `Repository\ClientSessionRepositoryInterface` (implemented by the Doctrine token
   store), `Dto\ClientSessionRecord` and `ClientApiAuditor::recordForUserId()`. The host-flush probe names
   `revokeById()` for a `ClientToken` delete written by the application's own manager.
+
+### Fixed (Unreleased)
+
+- `ValueObject\Uuid` no longer accepts a UUID followed by a trailing newline (the pattern's `$` now matches the very
+  end only).
 
 ## [1.33.0] - 2026-11-20
 
