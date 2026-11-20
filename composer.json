@@ -35,7 +35,7 @@
         "doctrine/orm": "^3.7",
         "nowo-tech/form-kit-bundle": "^2.14",
         "nowo-tech/transaction-contract": "^1.0",
-        "nowo-tech/transaction-doctrine": "^1.6",
+        "nowo-tech/transaction-doctrine": "^1.8.1",
         "nowo-tech/ui-kit-bundle": "^2.29",
         "psr/clock": "^1.0",
         "psr/log": "^1.1 || ^2.0 || ^3.0",
