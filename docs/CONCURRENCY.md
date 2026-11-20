@@ -18,7 +18,7 @@ runner, the lock order, what happens to your entity manager, the races fixed in 
 ## Write paths
 
 Every transaction below is a unit of the bundle's runner (`nowo_time_track.transaction_runner`, built on
-nowo-tech/transaction-doctrine ^1.5): one attempt for an HTTP write, replayed up to three attempts in all (outermost
+nowo-tech/transaction-doctrine ^1.6): one attempt for an HTTP write, replayed up to three attempts in all (outermost
 transaction only) for background batches. "Owner lock" is `SELECT … FOR UPDATE` on the account's user row, always the
 first lock of a unit ([One lock order](HIGH-LOAD.md#one-lock-order)).
 
@@ -40,10 +40,15 @@ Side effects (timer, entry, timesheet, ledger and import events, a revocation) r
 
 ## Conflict codes
 
-Since **1.31.0**, with nowo-tech/transaction-doctrine ^1.5. A lock conflict (deadlock, lock wait timeout,
+Since **1.31.0**, with nowo-tech/transaction-doctrine ^1.5 (request-level detection since the next release, ^1.6). A lock conflict (deadlock, lock wait timeout,
 serialization failure, a lost savepoint after an implicit commit) that reaches the kernel on a bundle route is answered
 by `StorageFailureSubscriber`, and by transaction-doctrine's responder on any route where the exception is a
 `ConcurrencyConflict`; the bundle's `StorageFailureConflictFormatter` gives the client API its usual body.
+
+Request-level detection (transaction-doctrine ^1.6): the code comes from `ConflictCode::forRequest($request, $failure)`, so
+a commit made earlier in the same request by the host or another bundle (the request's `CommitMark`, taken at
+`kernel.request` when the host's `nowo_transaction_doctrine.commit_detection` is on) also answers `CONFLICT_002`, with
+no `Retry-After`; with no mark the failure alone decides, as before.
 
 | Code | When | Status | `Retry-After` | Client should |
 | --- | --- | --- | --- | --- |
@@ -63,7 +68,7 @@ manage UI and the device verification page get an `HttpException` with the same 
 
 Code that calls the bundle directly receives `Nowo\TransactionContract\TransientStorageFailure` (a
 `ConcurrencyConflict` after a replayed batch); `Nowo\TransactionDoctrine\ConflictCode::forFailure($failure)` gives the
-code.
+code (`forRequest($request, $failure)` also sees a commit made earlier in the request).
 
 ## What is not a conflict
 
