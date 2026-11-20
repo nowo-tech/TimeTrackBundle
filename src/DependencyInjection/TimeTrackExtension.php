@@ -105,6 +105,7 @@ use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarRuleRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarSuggestionRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\ClientSessionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
@@ -338,6 +339,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         }
         // Bulk revocation by credential: a separate alias so host decorators of ClientTokenRepositoryInterface keep working.
         $container->setAlias(CredentialClientTokenRepositoryInterface::class, DoctrineOrmClientTokenRepository::class);
+        // 1.34.0: one session by its id (ClientTokenRevoker::revokeById()), a separate alias for the same reason.
+        $container->setAlias(ClientSessionRepositoryInterface::class, DoctrineOrmClientTokenRepository::class);
 
         $container->setDefinition(TimeTrackMetadataListener::class, (new Definition(TimeTrackMetadataListener::class))
             ->setArgument('$entriesTableName', $entriesTable)

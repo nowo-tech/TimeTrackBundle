@@ -8,10 +8,13 @@ use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Tools\DsnParser;
+use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
+use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
@@ -26,6 +29,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
+use Nowo\TransactionDoctrine\ConflictCode;
 
 use function array_map;
 use function fclose;
@@ -46,6 +50,8 @@ use const PHP_BINARY;
  * - Two processes adding ledger lines for one owner at once all chain (1.26: lines refused as `conflict`).
  * - Two processes starting timers for one user at once never detach the application's entities (1.26: every lost start
  *   reset the application's manager).
+ * - 1.34.0: two processes revoking the same client sessions by id revoke each once; a revocation behind a row lock
+ *   fails with nothing committed (CONFLICT_001) and the retry revokes.
  */
 final class LoadReadinessDatabaseTest extends FunctionalTestCase
 {
@@ -161,6 +167,70 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
             self::assertSame(0, $report['detached'], 'a lost start never resets the application\'s manager');
         }
         self::assertLessThanOrEqual(1, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_active_timers'));
+    }
+
+    /**
+     * 1.34.0 (REQ-RUNTIME-003): two processes revoking the same sessions by id at once — each session is revoked exactly
+     * once, the loser answers not_found (no error, nothing detached from the application's manager).
+     */
+    public function testTwoProcessesRevokingTheSameSessionsRevokeEachOnce(): void
+    {
+        $auth = self::getContainer()->get(ClientAuthService::class);
+        self::assertInstanceOf(ClientAuthService::class, $auth);
+        for ($i = 0; $i < 20; ++$i) {
+            $auth->issueToken($this->user, ClientType::Desktop, 'app-password-' . $i);
+        }
+
+        $reports = $this->workers('revoke', 20, 2);
+
+        $revoked = 0;
+        foreach ($reports as $report) {
+            self::assertSame([], $report['errors'], (string) json_encode($report));
+            self::assertSame(0, $report['detached']);
+            self::assertSame(20, $report['ok'] + ($report['refused']['not_found'] ?? 0));
+            $revoked += $report['ok'];
+        }
+        self::assertSame(20, $revoked, 'every session revoked exactly once');
+        self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_client_tokens'));
+    }
+
+    /**
+     * 1.34.0 (REQ-RUNTIME-003 rule 6): a revocation that waits on a locked session row fails with nothing committed
+     * (CONFLICT_001, retry safe), the token still works, and the retry revokes it.
+     */
+    public function testARevocationBehindALockFailsWithNothingCommittedAndTheRetryRevokes(): void
+    {
+        $auth = self::getContainer()->get(ClientAuthService::class);
+        self::assertInstanceOf(ClientAuthService::class, $auth);
+        $revoker = self::getContainer()->get(ClientTokenRevoker::class);
+        self::assertInstanceOf(ClientTokenRevoker::class, $revoker);
+        $token = (string) $auth->issueToken($this->user, ClientType::Desktop, 'app-password-lock')['token'];
+        $id    = (string) $this->entityManager()->getConnection()->fetchOne('SELECT id FROM time_track_client_tokens');
+        $this->shortLockWait($this->entityManager()->getConnection());
+
+        $blocker = $this->otherConnection();
+        $blocker->beginTransaction();
+        $blocker->executeQuery('SELECT id FROM time_track_client_tokens WHERE id = ? FOR UPDATE', [$id]);
+        $failure = null;
+        try {
+            $revoker->revokeById($id, $this->user);
+        } catch (DbalException $exception) {
+            $failure = $exception;
+        } finally {
+            $blocker->rollBack(); // @phpstan-ignore frankenphp.worker.noRollbackAfterNestedBegin (the test plays another request's transaction)
+            $blocker->close();
+        }
+
+        self::assertInstanceOf(LockWaitTimeoutException::class, $failure, 'the lock wait surfaces as the storage exception');
+        self::assertSame(ConflictCode::RetrySafe, ConflictCode::forFailure($failure));
+        self::assertSame('CONFLICT_001', ConflictCode::forFailure($failure)->value);
+        self::assertTrue($this->entityManager()->isOpen(), 'the application\'s manager is left open');
+        $this->api('GET', '/api/time-track/me', null, $token);
+        self::assertResponseStatusCodeSame(200, 'nothing was committed: the session still works');
+
+        self::assertSame(ClientSessionRevocation::Revoked, $revoker->revokeById($id, $this->user), 'the retry succeeds');
+        $this->api('GET', '/api/time-track/me', null, $token);
+        self::assertResponseStatusCodeSame(401);
     }
 
     /**

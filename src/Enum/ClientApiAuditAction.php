@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Enum;
 
+use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Event\ClientApiEvent;
 
 /**
@@ -46,4 +47,11 @@ enum ClientApiAuditAction: string
 
     /** Since 1.26: a monitoring request was refused (the reason is the refusal code); throttled like request_denied. */
     case MonitoringRefused = 'monitoring_refused';
+
+    /**
+     * Since 1.34.0: one session token was revoked by its id by its owner or an admin
+     * ({@see ClientTokenRevoker::revokeById()}); the user is the owner, the reason
+     * `owner` or `other` (who acted).
+     */
+    case SessionRevoked = 'session_revoked';
 }

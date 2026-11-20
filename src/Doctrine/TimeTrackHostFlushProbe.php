@@ -116,7 +116,7 @@ final class TimeTrackHostFlushProbe implements ResetInterface
         ],
         ClientToken::class => [
             self::INSERT => 'sessions are issued by the client login and the device flow only',
-            self::DELETE => 'end the sessions of a credential with ' . ClientTokenRevoker::class . '::revokeByCredential() (no TimeTrack operation ends one session by its id yet)',
+            self::DELETE => 'end one session with ' . ClientTokenRevoker::class . '::revokeById() (since 1.34.0), every session of a credential with ' . ClientTokenRevoker::class . '::revokeByCredential()',
         ],
         DeviceAuthorization::class => [
             self::UPDATE => 'decide device requests with ' . DeviceAuthorizationService::class . ' (approve(), deny())',

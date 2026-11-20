@@ -9,9 +9,11 @@ declare(strict_types=1);
  * {"ok": n, "refused": {code: n}, "errors": {class: n}, "detached": n}.
  *
  * Usage: php tests/Database/worker.php <action> <count> <ownerId> [<approverId>]
+ * Actions: `ledger`, `start`, `revoke` (1.34.0: revoke every stored client session by its id, as the owner).
  */
 
 use Doctrine\ORM\EntityManagerInterface;
+use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
@@ -44,7 +46,8 @@ $scopes    = $container->get(FixedScopeProvider::class);
 $approvers = $container->get(StubTimesheetApproverProvider::class);
 $ledger    = $container->get(BalanceLedger::class);
 $timers    = $container->get(TimerService::class);
-if (!$em instanceof EntityManagerInterface || !$scopes instanceof FixedScopeProvider || !$approvers instanceof StubTimesheetApproverProvider || !$ledger instanceof BalanceLedger || !$timers instanceof TimerService) {
+$revoker   = $container->get(ClientTokenRevoker::class);
+if (!$em instanceof EntityManagerInterface || !$scopes instanceof FixedScopeProvider || !$approvers instanceof StubTimesheetApproverProvider || !$ledger instanceof BalanceLedger || !$timers instanceof TimerService || !$revoker instanceof ClientTokenRevoker) {
     throw new LogicException('The functional kernel lacks a service of the worker.');
 }
 $owner    = $em->find(AppUser::class, (int) $ownerId);
@@ -57,8 +60,20 @@ $approvers->approvers = ['org-a' => [$approverId => [$ownerId]]];
 
 $report = ['ok' => 0, 'refused' => [], 'errors' => [], 'detached' => 0];
 fgets(\STDIN); // The start signal.
+// 1.34.0 `revoke`: every process revokes the same sessions (ids read once, before the loop), in the same order.
+$sessions = $action === 'revoke' ? array_map(strval(...), $em->getConnection()->fetchFirstColumn('SELECT id FROM time_track_client_tokens ORDER BY id')) : [];
 for ($i = 0; $i < (int) $count; ++$i) {
     try {
+        if ($action === 'revoke') {
+            if ($revoker->revokeById($sessions[$i] ?? '', $owner)->isRevoked()) {
+                ++$report['ok'];
+            } else {
+                $report['refused']['not_found'] = ($report['refused']['not_found'] ?? 0) + 1;
+            }
+            $report['detached'] += $em->contains($owner) ? 0 : 1;
+
+            continue;
+        }
         if ($action === 'ledger') {
             $ledger->add($approver, $owner, 'org-a', LedgerKind::Adjustment, 60, '2026-10-01', 'worker ' . getmypid() . ' line ' . $i);
         } elseif ($action === 'start') {
