@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-17 (full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 units added)
+**Last audited**: 2026-11-20 (v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -452,6 +452,7 @@
 | `Doctrine/TimeTrackSavepoint.php` | Transactions, locks and savepoints | FR-TX-002 |
 | `Doctrine/UnitOfWorkBoundaries.php` | Transactions, locks and savepoints | FR-TX-002 |
 | `EventSubscriber/StorageFailureSubscriber.php` | Transactions, locks and savepoints | FR-TX-004 |
+| `EventSubscriber/StorageFailureConflictFormatter.php` | Transactions, locks and savepoints | FR-TX-004 |
 | `Transaction/TimeTrackFlushObserver.php` | Transactions, locks and savepoints | FR-TX-001 |
 | `Transaction/TimeTrackTransactionRunner.php` | Transactions, locks and savepoints | FR-TX-001 |
 
@@ -623,8 +624,8 @@
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes (`src/**/*.php`) | 426 | 426 |
+| PHP classes (`src/**/*.php`) | 429 | 429 |
 | Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
-| **Total production sources** | **458** | **458** |
+| **Total production sources** | **461** | **461** |
 
-Audit command: `git ls-files src | wc -l` → 458.
+Audit command: `git ls-files src | wc -l` → 461.
