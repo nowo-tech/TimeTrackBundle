@@ -5,6 +5,7 @@
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
 - [To 1.33.0](#to-1330)
+- [To 1.33.0](#to-1330-1)
   - [The private entity manager notice](#the-private-entity-manager-notice)
   - [Reading the host-flush probe as a migration list](#reading-the-host-flush-probe-as-a-migration-list)
   - [Other notices of what 2.0 removes](#other-notices-of-what-20-removes)
@@ -118,6 +119,14 @@ The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and 
 minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
+
+## To 1.33.0
+
+From **1.32.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 ## To 1.33.0
 
