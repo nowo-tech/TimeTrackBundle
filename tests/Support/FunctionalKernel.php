@@ -227,6 +227,12 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
                     'is_bundle' => false,
                     'dir'       => __DIR__ . '/../Fixtures/FunctionalEntity',
                     'prefix'    => 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\FunctionalEntity',
+                ], 'ProbeFixtures' => [
+                    // 1.33.0: a host entity that points at a TimeTrack row (host-flush probe tests).
+                    'type'      => 'attribute',
+                    'is_bundle' => false,
+                    'dir'       => __DIR__ . '/../Fixtures/ProbeEntity',
+                    'prefix'    => 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\ProbeEntity',
                 ]] + ($this->xmlHostUser ? ['DddHost' => [
                     // Since 1.19 (REQ-ARCH-001): a DDD host's user_class, plain PHP mapped in XML.
                     'type'      => 'xml',

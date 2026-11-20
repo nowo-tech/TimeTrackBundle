@@ -10,6 +10,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -30,6 +31,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?TimeTrackTransactionRunner $runner = null,
+        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
     ) {
     }
 
@@ -46,7 +48,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
     public function save(ActiveTimer $timer): void
     {
         if ($this->entityManager->contains($timer)) {
-            RecoveringFlusher::flush($this->entityManager);
+            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
 
             return;
         }
@@ -62,7 +64,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
     public function remove(ActiveTimer $timer): void
     {
         $this->entityManager->remove($timer);
-        RecoveringFlusher::flush($this->entityManager);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
     }
 
     /**
@@ -130,7 +132,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
      */
     public function runner(): TimeTrackTransactionRunner
     {
-        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
     }
 
     /**

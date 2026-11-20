@@ -70,6 +70,7 @@ use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerMiddleware;
 use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerSubscriber;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
@@ -166,6 +167,7 @@ use Nowo\TimeTrackBundle\WorkingTime\TaskTimeWorkedTimeSource;
 use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
+use Nowo\TransactionDoctrine\HostFlushProbe;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponseFormatterInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\FileLocator;
@@ -192,6 +194,7 @@ use function is_array;
 use function is_string;
 use function rtrim;
 use function sprintf;
+use function trigger_deprecation;
 
 /**
  * Loads the bundle services and parameters and prepends the Doctrine mapping, UiKit and FormKit defaults.
@@ -200,6 +203,22 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 {
     /** Since 1.23.0: the source manager of the private entity manager (set only with the option on). */
     public const PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER = 'nowo_time_track.private_entity_manager.source';
+
+    /** 1.33.0: the package and version of the runtime notices of what 2.0 removes or flips. */
+    public const DEPRECATION_PACKAGE = 'nowo-tech/time-track-bundle';
+
+    public const DEPRECATION_SINCE = '1.33';
+
+    /**
+     * 1.33.0 (REQ-ARCH-001 rule 6): the notice of `database.private_entity_manager` unset or false (`%s` = the manager).
+     */
+    public const PRIVATE_ENTITY_MANAGER_NOTICE = 'nowo_time_track.database.private_entity_manager is false (the 1.x default): every TimeTrack write flushes your entity manager "%s", including what your application left pending in it. 2.0 removes the option: the private entity manager becomes the only mode, and TimeTrack writes never flush, clear or close your manager. Opt in now with "nowo_time_track: { database: { private_entity_manager: true } }" once the host-flush probe notices ("flushed by NowoTimeTrackBundle", "with its own entity manager", "point at a Nowo\\TimeTrackBundle") are gone; see UPGRADING "To 1.33.0".';
+
+    /** 1.33.0: the notice of `"*"` in `clients.cors_allowed_origins` (deprecated since 1.9, removed in 2.0). */
+    public const CORS_WILDCARD_NOTICE = 'nowo_time_track.clients.cors_allowed_origins contains "*" (any origin outside prod): 2.0 removes the wildcard and allows exact origins only. List each extension origin instead, e.g. "nowo_time_track: { client_api: { allowed_origins: [\'chrome-extension://<extension-id>\'] } }".';
+
+    /** 1.33.0: the notice of `client_api.allow_tauri_webview_origins` unset or true (false in 2.0, then removed). */
+    public const TAURI_WEBVIEW_ORIGINS_NOTICE = 'nowo_time_track.client_api.allow_tauri_webview_origins is true (the 1.x default): the client API accepts the Tauri webview origins (tauri://localhost, http(s)://tauri.localhost) of the 1.x desktop agent. 2.0 removes the option and these origins (the 1.9+ desktop app sends no Origin). Opt in now with "nowo_time_track: { client_api: { allow_tauri_webview_origins: false } }".';
 
     /**
      * Registers the parameters, repositories, access checker, client services and Twig globals from the configuration.
@@ -279,6 +298,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $emRef       = new Reference($private ? TimeTrackEntityManager::class : sprintf('doctrine.orm.%s_entity_manager', $emName));
         $registryRef = $private ? new Reference(TimeTrackManagerRegistry::class) : new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE);
         $this->registerTransactions($container, $emRef, $registryRef, $emName, $private);
+        if (!$private) {
+            // 1.33.0 (REQ-ARCH-001 rule 6 deprecation layer): 2.0 keeps only the private manager. The notice once per
+            // container build, and the host-flush probe on every TimeTrack flush of the shared manager (its output is the
+            // host's migration list).
+            trigger_deprecation(self::DEPRECATION_PACKAGE, self::DEPRECATION_SINCE, self::PRIVATE_ENTITY_MANAGER_NOTICE, $emName);
+            $this->registerHostFlushProbe($container, $emName, (string) $config['user_class']);
+        }
+        $this->deprecateClientOrigins($config);
 
         foreach ([
             DoctrineOrmTimeEntryRepository::class           => TimeEntryRepositoryInterface::class,
@@ -387,11 +414,79 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerBillable($container);
         $this->registerServiceAccounts($container, $config['service_account_policy'] ?? null);
 
+        if (!$private) {
+            $this->wireHostFlushProbe($container);
+        }
+
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
                 ->setArgument('$layoutTemplate', $config['templates']['layout'])
                 ->setArgument('$cssFramework', $config['templates']['css_framework'])
                 ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
+        }
+    }
+
+    /**
+     * 1.33.0 (REQ-ARCH-001 rule 6 deprecation layer): the host-flush probe of the shared manager (registered only with
+     * `database.private_entity_manager: false`): it runs before every TimeTrack flush of that manager, and listens to the
+     * manager's own flushes (`onFlush`). Emptied at `kernel.reset` and at every request, message and command boundary
+     * (worker mode with kernel reset off).
+     */
+    private function registerHostFlushProbe(ContainerBuilder $container, string $emName, string $userClass): void
+    {
+        $container->setDefinition(TimeTrackHostFlushProbe::class, (new Definition(TimeTrackHostFlushProbe::class))
+            ->setArgument('$probe', new Reference(HostFlushProbe::SERVICE_ID, ContainerInterface::NULL_ON_INVALID_REFERENCE))
+            ->setArgument('$userClass', $userClass)
+            ->addTag('doctrine.event_listener', ['event' => 'onFlush', 'method' => 'onFlush', 'lazy' => true, 'entity_manager' => $emName])
+            ->addTag('kernel.reset', ['method' => 'reset'])
+            ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'onBoundary', 'priority' => -1024])
+            ->addTag('kernel.event_listener', ['event' => 'console.terminate', 'method' => 'onBoundary', 'priority' => -1024])
+            ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'method' => 'onBoundary', 'priority' => -1024])
+            ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageFailedEvent', 'method' => 'onBoundary', 'priority' => -1024]));
+    }
+
+    /**
+     * 1.33.0: every store and the runner that flush the shared manager get the host-flush probe.
+     */
+    private function wireHostFlushProbe(ContainerBuilder $container): void
+    {
+        foreach ([
+            TimeTrackTransactionRunner::class,
+            DoctrineOrmTimeEntryRepository::class,
+            DoctrineOrmActiveTimerRepository::class,
+            DoctrineOrmClientTokenRepository::class,
+            DoctrineOrmDeviceAuthorizationRepository::class,
+            DoctrineOrmTimesheetRepository::class,
+            DoctrineOrmBalanceLedgerRepository::class,
+            DoctrineOrmCalendarRepository::class,
+        ] as $id) {
+            if ($container->hasDefinition($id)) {
+                // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
+                $container->getDefinition($id)->setArgument('$hostFlushProbe', new Reference(TimeTrackHostFlushProbe::class));
+            }
+        }
+    }
+
+    /**
+     * 1.33.0: the client API origins 2.0 removes (deprecated since 1.9), when the client API is on: `"*"` in
+     * `clients.cors_allowed_origins`, and `client_api.allow_tauri_webview_origins` unset or true.
+     *
+     * @param array<string, mixed> $config the processed configuration
+     */
+    private function deprecateClientOrigins(array $config): void
+    {
+        /** @var array{enabled: bool, cors_allowed_origins: list<string>} $clients */
+        $clients = $config['clients'];
+        if (!$clients['enabled']) {
+            return;
+        }
+        if (in_array('*', $clients['cors_allowed_origins'], true)) {
+            trigger_deprecation(self::DEPRECATION_PACKAGE, self::DEPRECATION_SINCE, self::CORS_WILDCARD_NOTICE);
+        }
+        /** @var array{allow_tauri_webview_origins: bool} $api */
+        $api = $config['client_api'];
+        if ($api['allow_tauri_webview_origins']) {
+            trigger_deprecation(self::DEPRECATION_PACKAGE, self::DEPRECATION_SINCE, self::TAURI_WEBVIEW_ORIGINS_NOTICE);
         }
     }
 

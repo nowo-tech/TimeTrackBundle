@@ -13,6 +13,7 @@ use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -54,12 +55,14 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
      * @param ManagerRegistry|null $managerRegistry The registry of that manager (the bundle's runner replaces a failed private manager through it)
      * @param TimeTrackTransactionRunner|null $runner Since 1.27.0: the bundle's transaction runner (null = one on this manager)
+     * @param TimeTrackHostFlushProbe|null $hostFlushProbe 1.33.0: the probe of the shared manager (null with the private one)
      */
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?LoggerInterface $logger = null,
         private ?TimeTrackTransactionRunner $runner = null,
+        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
     ) {
     }
 
@@ -68,7 +71,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function runner(): TimeTrackTransactionRunner
     {
-        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
     }
 
     /**
@@ -77,7 +80,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     public function save(TimeEntry $entry): void
     {
         $this->entityManager->persist($entry);
-        RecoveringFlusher::flush($this->entityManager);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
     }
 
     /**
@@ -415,7 +418,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                     throw $lost;
                 }
             }
-            $this->entityManager->flush();
+            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
         });
     }
 
@@ -425,7 +428,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function flushPending(): void
     {
-        RecoveringFlusher::flush($this->entityManager);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
     }
 
     /**
