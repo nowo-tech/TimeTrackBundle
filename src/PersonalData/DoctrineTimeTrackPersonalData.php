@@ -13,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Doctrine\OwnerIdColumn;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
@@ -130,7 +131,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             'monitoringAcknowledgements' => $this->ownedRows(MonitoringAcknowledgementRecord::class, $userId, ['policyVersion', 'clientType', 'noticeSha256', 'acknowledgedAt']),
             'monitoringUploads'          => $this->ownedRows(MonitoringUploadIntent::class, $userId, ['entryId', 'slot', 'takenAt', 'status', 'policyVersion', 'blurred', 'mime', 'bytes', 'width', 'height', 'screenshotId', 'createdAt']),
             'timesheets'                 => $this->ownedRows(Timesheet::class, $userId, ['id', 'scopeKey', 'periodKind', 'periodStart', 'periodEnd', 'timezone', 'status', 'lockedAt', 'lockReason', 'submittedAt', 'decidedAt', 'decisionComment', 'totals', 'createdAt', 'updatedAt']),
-        ] + ($this->calendars?->export($userId) ?? []);
+        ] + $this->calendarSections($userId);
     }
 
     /**
@@ -185,13 +186,39 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             // Owner decisions 1 and 5 (pending; recommended): TimeEntryErasure::Anonymise is the default (interface);
             // FreeText clears text in every period, locked or submitted ones included (the timesheet hash excludes
             // text). Alternatives: FreeText as the default; FreeText skipping entries of locked/submitted periods.
-            ($entries === TimeEntryErasure::Anonymise ? $store->anonymiseOwner($userId, $now) : 0) + $store->anonymisePerson($personRef, $now),
+            ($entries === TimeEntryErasure::Anonymise && $this->stores(TimeEntry::class, $userId) ? $store->anonymiseOwner($userId, $now) : 0) + $store->anonymisePerson($personRef, $now),
             $entries === TimeEntryErasure::FreeText ? $this->clearFreeText($userId) : 0,
             // Owner decision 4 (pending; recommended): timesheets and the audit trail are kept (GDPR art. 17.3.b);
             // calendar connections are only counted, CalendarConnectionService::revokeAllFor() revokes them.
             // Alternative: revoke the calendar connections here too.
             count($this->ownedIds(CalendarConnection::class, $userId)),
         );
+    }
+
+    /**
+     * Whether the owner column of the entity can hold the id (an id it cannot hold owns no row and never reaches the SQL).
+     *
+     * @param class-string $class
+     */
+    private function stores(string $class, string $userId): bool
+    {
+        return OwnerIdColumn::accepts($this->entityManager, $class, $userId);
+    }
+
+    /**
+     * The calendar sections of the export (none when calendars are not wired).
+     *
+     * @return array<string, mixed>
+     */
+    private function calendarSections(string $userId): array
+    {
+        if (!$this->calendars instanceof CalendarPersonalDataExporter) {
+            return [];
+        }
+
+        return $this->stores(CalendarConnection::class, $userId)
+            ? $this->calendars->export($userId)
+            : ['calendarConnections' => [], 'calendarRules' => [], 'calendarSuggestions' => []];
     }
 
     /**
@@ -263,6 +290,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function ownedRows(string $class, string $userId, array $fields): array
     {
+        if (!$this->stores($class, $userId)) {
+            return [];
+        }
         $select = ['x.id AS rowId', 'IDENTITY(x.user) AS ownerId'];
         foreach ($fields as $field) {
             $select[] = 'x.' . $field . ' AS ' . $field;
@@ -307,6 +337,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function ownedIds(string $class, string $userId): array
     {
+        if (!$this->stores($class, $userId)) {
+            return [];
+        }
         $rows = $this->entityManager->createQueryBuilder()
             ->select('x.id AS id', 'IDENTITY(x.user) AS ownerId')
             ->from($class, 'x')
@@ -341,6 +374,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function deleteOwned(string $class, string $userId): int
     {
+        if (!$this->stores($class, $userId)) {
+            return 0;
+        }
         $deleted = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
             ->delete($class, 'x')
             ->where('IDENTITY(x.user) = :owner')
@@ -361,6 +397,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function clearFreeText(string $userId): int
     {
+        if (!$this->stores(TimeEntry::class, $userId)) {
+            return 0;
+        }
         $cleared = 0;
         $after   = '';
         do {

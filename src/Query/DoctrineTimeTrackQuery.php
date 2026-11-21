@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Doctrine\OwnerIdColumn;
 use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
@@ -24,6 +25,7 @@ use Nowo\TimeTrackBundle\Timer\TimerSnapshot;
 use Psr\Clock\ClockInterface;
 use SortDirection;
 
+use function array_filter;
 use function array_map;
 use function array_values;
 use function count;
@@ -191,7 +193,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function runningOf(string $ownerId): ?RunningTimerView
     {
-        if (!$this->isOwnerId($ownerId)) {
+        if (!$this->isOwnerId(ActiveTimer::class, $ownerId)) {
             return null;
         }
         $rows = $this->entityManager->createQueryBuilder()
@@ -236,7 +238,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function sessionsOf(string $ownerId, bool $includeExpired = false): array
     {
-        if (!$this->isOwnerId($ownerId)) {
+        if (!$this->isOwnerId(ClientToken::class, $ownerId)) {
             return [];
         }
         $query = $this->entityManager->createQueryBuilder()
@@ -277,7 +279,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function deviceSignInsOf(string $ownerId): array
     {
-        if (!$this->isOwnerId($ownerId)) {
+        if (!$this->isOwnerId(DeviceAuthorization::class, $ownerId)) {
             return [];
         }
         $rows = $this->entityManager->createQueryBuilder()
@@ -367,7 +369,13 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
     {
         $query = $this->entityManager->createQueryBuilder()->from(TimeEntry::class, 'e');
         if ($criteria->ownerIds !== null) {
-            $query->andWhere('IDENTITY(e.user) IN (:owners)')->setParameter('owners', $criteria->ownerIds);
+            // An id the owner column cannot hold owns nothing (and never reaches the SQL: PostgreSQL rejects it).
+            $owners = array_values(array_filter($criteria->ownerIds, fn (string $id): bool => OwnerIdColumn::accepts($this->entityManager, TimeEntry::class, $id)));
+            if ($owners === []) {
+                $query->andWhere('e.id IS NULL');
+            } else {
+                $query->andWhere('IDENTITY(e.user) IN (:owners)')->setParameter('owners', $owners);
+            }
         } else {
             $query->andWhere('e.user IS NOT NULL');
         }
@@ -469,9 +477,12 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
         );
     }
 
-    private function isOwnerId(string $ownerId): bool
+    /**
+     * @param class-string $class
+     */
+    private function isOwnerId(string $class, string $ownerId): bool
     {
-        return $ownerId !== '' && DoctrineUserReferenceResolver::isExactId($ownerId);
+        return $ownerId !== '' && DoctrineUserReferenceResolver::isExactId($ownerId) && OwnerIdColumn::accepts($this->entityManager, $class, $ownerId);
     }
 
     private function assertLimit(int $limit, int $max): void

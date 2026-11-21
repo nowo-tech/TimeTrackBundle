@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Doctrine\OwnerIdColumn;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
@@ -121,7 +122,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
      */
     public function removeByUserId(string $userId): int
     {
-        if ($userId === '' || !DoctrineUserReferenceResolver::isExactId($userId)) {
+        if ($userId === '' || !DoctrineUserReferenceResolver::isExactId($userId) || !OwnerIdColumn::accepts($this->entityManager, ClientToken::class, $userId)) {
             return 0;
         }
         $query = $this->entityManager->createQueryBuilder()

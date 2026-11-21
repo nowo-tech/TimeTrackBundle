@@ -230,6 +230,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     from / to, overlap range, sources, service accounts, excluded ids). Returns `Query\TimeEntryRecord`: the
     `TimeEntryView` plus note, description, billable flag, metadata and creation time. Every string filter compares byte
     for byte (rows are checked again in PHP before a page is cut); only entries that still have an owner are listed.
+    An id the owner column cannot hold (e.g. `'nobody'` with integer user ids) owns nothing and never reaches the SQL.
   - `Query\RunningTimerQueryInterface`: `runningOf($userId)` and `startedBefore($time)` (keyset) → `RunningTimerView`.
   - `Query\ClientAccessQueryInterface`: `sessionsOf($userId)` → `ClientSessionView`, `deviceSignInsOf($userId)` →
     `DeviceSignInView` (never a token hash or a device code).
