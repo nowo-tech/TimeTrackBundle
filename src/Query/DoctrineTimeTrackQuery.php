@@ -116,8 +116,9 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             $rows = $this->sortedEntryQuery($criteria, $sort)->setFirstResult($read)->setMaxResults($batch)->getQuery()->getArrayResult();
             $read += $batch;
             foreach ($rows as $row) {
+                // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
                 if (!$this->matches($criteria, $row)) {
-                    continue;
+                    continue; // @codeCoverageIgnore
                 }
                 if ($skipped < $offset) {
                     ++$skipped;
@@ -155,8 +156,9 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 ->getArrayResult();
             foreach ($rows as $row) {
                 $afterEntryId = $this->string($row['id']);
+                // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
                 if (!$this->matches($criteria, $row)) {
-                    continue;
+                    continue; // @codeCoverageIgnore
                 }
                 $kept[] = $this->record($row);
                 if (count($kept) === $limit) {
@@ -250,8 +252,9 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
 
         $views = [];
         foreach ($query->getQuery()->getArrayResult() as $row) {
+            // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
             if ($this->owner($row) !== $ownerId) {
-                continue;
+                continue; // @codeCoverageIgnore
             }
             $scopes  = is_array($row['scopes']) ? ClientScope::normalize($row['scopes']) : ClientScope::defaults();
             $views[] = new ClientSessionView(
@@ -289,8 +292,9 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
 
         $views = [];
         foreach ($rows as $row) {
+            // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
             if ($this->owner($row) !== $ownerId) {
-                continue;
+                continue; // @codeCoverageIgnore
             }
             $status  = $row['status'];
             $views[] = new DeviceSignInView(

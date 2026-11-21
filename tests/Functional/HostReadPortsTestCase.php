@@ -45,8 +45,10 @@ use function array_keys;
 use function array_map;
 use function bin2hex;
 use function gc_collect_cycles;
+use function is_object;
 use function json_encode;
 use function memory_get_usage;
+use function method_exists;
 use function random_bytes;
 use function sprintf;
 use function str_repeat;
@@ -381,11 +383,23 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $this->entry($ana, 'task-1', '2026-11-02 09:00', 60);
         $this->entry($bob, 'task-2', '2026-11-02 09:00', 30);
         $this->bundleManager()->clear();
-        // The test kernel's logger keeps every record (Doctrine logs each query): emptied per call, as a host's handler would.
-        $logger = self::getContainer()->get('logger');
+        // The debug test kernel keeps every log record, query and stopwatch period (Doctrine's debug middleware): emptied
+        // per call, as a production kernel (no debug) or the profiler's reset would; the ports themselves keep nothing.
+        $container = self::getContainer();
+        $logger    = $container->get('logger');
         self::assertInstanceOf(RecordingLogger::class, $logger);
-        $step = function (int $i) use ($ana, $bob, $logger): void {
+        $debug = [];
+        foreach (['doctrine.debug_data_holder', 'debug.stopwatch'] as $id) {
+            $service = $container->has($id) ? $container->get($id) : null;
+            if (is_object($service) && method_exists($service, 'reset')) {
+                $debug[] = $service->reset(...);
+            }
+        }
+        $step = function (int $i) use ($ana, $bob, $logger, $debug): void {
             $logger->records = [];
+            foreach ($debug as $reset) {
+                $reset();
+            }
             $user    = $i % 2 === 0 ? $ana : $bob;
             $records = $this->query()->list(TimeEntryCriteria::ofOwner($this->idOf($user)));
             self::assertCount(1, $records);

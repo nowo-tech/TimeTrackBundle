@@ -283,8 +283,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 ->getArrayResult();
             foreach ($batch as $row) {
                 $after = is_scalar($row['rowId']) ? (string) $row['rowId'] : $after;
+                // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
                 if (!is_scalar($row['ownerId']) || (string) $row['ownerId'] !== $userId) {
-                    continue;
+                    continue; // @codeCoverageIgnore
                 }
                 $out = [];
                 foreach ($fields as $field) {
