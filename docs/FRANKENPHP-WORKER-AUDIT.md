@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 1.35 (read and personal-data ports)](#re-audit-135-read-and-personal-data-ports)
 - [Re-audit 1.33 (host-flush probe)](#re-audit-133-host-flush-probe)
 - [Re-audit 1.27 (load readiness, Beacon spec 239)](#re-audit-127-load-readiness-beacon-spec-239)
 - [Re-audit 1.26 (activity monitoring, spec 199)](#re-audit-126-activity-monitoring-spec-199)
@@ -27,6 +28,20 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.35 (read and personal-data ports)
+
+Scope: `Query\DoctrineTimeTrackQuery` (`TimeEntryQueryInterface`, `RunningTimerQueryInterface`,
+`ClientAccessQueryInterface`), `PersonalData\DoctrineTimeTrackPersonalData` and `ClientTokenRevoker::revokeAllForUser()`.
+
+| Service | State | Cleared |
+|---|---|---|
+| `Query\DoctrineTimeTrackQuery` | none (readonly: the bundle's entity manager and an optional clock) | nothing to clear; every call builds its own query builders and selects scalars, so no entity enters any manager |
+| `PersonalData\DoctrineTimeTrackPersonalData` | none (readonly collaborators) | nothing to clear; the erasure is one unit of the bundle's runner, opened and closed within the call; rows of the user that the manager had loaded are detached, the manager is never flushed, cleared or reset |
+
+Test: `HostReadPortsTestCase::testRepeatedCallsForTwoUsersInOneKernelKeepNoState` (350 alternating calls for two
+users in one kernel, on the standard and the id / XML / private-manager host: results per user, memory growth under
+256 KB, empty identity map).
 
 ## Re-audit 1.33 (host-flush probe)
 

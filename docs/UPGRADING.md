@@ -121,6 +121,17 @@ minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
 
+Nothing to change: every addition is optional and backwards compatible.
+
+- A host that writes DQL over `TimeEntry`, `ActiveTimer`, `ClientToken`, `DeviceAuthorization` or the monitoring
+  entities can move to the read ports (`Query\TimeEntryQueryInterface`, `RunningTimerQueryInterface`,
+  `ClientAccessQueryInterface`) and the personal-data port (`PersonalData\TimeTrackPersonalDataInterface`). See USAGE
+  "Read ports and personal data (1.35)".
+- An erasure flow that deletes `ActiveTimer` rows should stop the timer first and then call `erase()`: the port refuses
+  while a timer runs, so the time in progress is saved.
+- A host that replaces the client token store and wants `ClientTokenRevoker::revokeAllForUser()` implements
+  `Repository\UserClientTokenRepositoryInterface` on it (otherwise that one method throws `LogicException`).
+
 ## To 1.34.0
 
 From **1.33.0**:
