@@ -147,13 +147,17 @@ final class ScopeKeys
     /**
      * Since 1.36.0 (Beacon spec 250): the tenant scope of a new entry or timer without a task. A requested key must be
      * one of the user's scopes byte for byte (`===`); without one, the user's current scope (the provider's first).
-     * Without a scope provider there is no scope, and a requested key cannot be checked, so it is refused.
+     * Without a scope provider there is no scope, and a requested key cannot be checked, so it is refused. Since audit
+     * YM-L2 a user with no usable scope under a scope provider is refused too: the entry would be its owner's only.
      *
-     * @throws InvalidArgumentException When the requested key is not one of the user's scopes (callers answer "not trackable")
+     * @throws InvalidArgumentException When the requested key is not one of the user's scopes, or a scope provider gives the user none (callers answer "not trackable")
      */
     public static function forEntryWithoutTask(?TimesheetScopeProviderInterface $provider, UserInterface $user, ?string $requested, LoggerInterface $logger): ?string
     {
         $keys = self::ofUser($provider, $user, $logger);
+        if ($provider instanceof TimesheetScopeProviderInterface && $keys === []) {
+            throw new InvalidArgumentException('The user has no usable scope for an entry without a task.');
+        }
         if ($requested === null) {
             return $keys[0] ?? null;
         }

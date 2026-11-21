@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Command;
 
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Repository\ScopeBackfillRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
@@ -19,6 +20,8 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+use function array_filter;
+use function array_values;
 use function count;
 use function end;
 use function is_string;
@@ -83,10 +86,13 @@ final class BackfillEntryScopeCommand extends Command
             if ($entries === []) {
                 break;
             }
+            $read  = count($entries);
             $last  = end($entries);
             $after = $last->getId();
             $keys  = [];
-            foreach ($this->scopeProvider->scopeKeysForEntries($entries) as $entryId => $scopeKey) {
+            // Since 1.36.0 (audit YM-L2): never an entry without a task; the provider places entries by task.
+            $entries = array_values(array_filter($entries, static fn (TimeEntry $entry): bool => $entry->hasTask()));
+            foreach ($entries === [] ? [] : $this->scopeProvider->scopeKeysForEntries($entries) as $entryId => $scopeKey) {
                 // Since 1.24.1 (REQ-SEC-006): a key a look-alike could stand for is never stored (the entry stays unplaced).
                 if (is_string($scopeKey) && strlen($scopeKey) <= TimesheetScope::MAX_KEY_LENGTH && ScopeKeys::isUsable($scopeKey)) {
                     $keys[(string) $entryId] = $scopeKey;
@@ -100,7 +106,7 @@ final class BackfillEntryScopeCommand extends Command
                 }
             }
             $placed += $dryRun ? count($keys) : ($keys === [] ? 0 : $this->repository->assignScopeKeys($keys));
-        } while (count($entries) === $batch);
+        } while ($read === $batch);
 
         $this->logger->info('TimeTrack entry scope back-fill finished.', ['bundle' => 'time_track', 'action' => 'entries_backfill_scope', 'placed' => $placed, 'unplaced' => $left, 'locked' => $locked, 'dry_run' => $dryRun]);
         $io->success(sprintf('%s %d entr%s; %d left without a scope; %d left in a locked or submitted period.', $dryRun ? 'Would place' : 'Placed', $placed, $placed === 1 ? 'y' : 'ies', $left, $locked));

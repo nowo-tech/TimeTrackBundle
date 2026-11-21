@@ -7,6 +7,8 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Repository\ScopeBackfillRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -35,9 +37,10 @@ final class EntriesWithoutTaskOptionOffTest extends FunctionalTestCase
         $managerA = $this->createUser('manager-a@example.com', ['ROLE_ADMIN']);
         $scopes   = self::getContainer()->get(FixedScopeProvider::class);
         self::assertInstanceOf(FixedScopeProvider::class, $scopes);
-        $scopes->memberships = [(string) $this->user->getId() => ['org-a'], (string) $managerB->getId() => ['org-b'], (string) $managerA->getId() => ['org-a']];
+        $scopes->memberships = [(string) $this->user->getId() => ['org-a', 'org-b'], (string) $managerB->getId() => ['org-b'], (string) $managerA->getId() => ['org-a']];
 
         $inA      = $this->save((new TimeEntry($this->user, null, '', null, new DateTimeImmutable('-3 hours'), new DateTimeImmutable('-2 hours'), 3600, TimeEntrySource::Manual))->describe('ACME')->assignScopeKey('org-a'));
+        $inB      = $this->save((new TimeEntry($this->user, null, '', null, new DateTimeImmutable('-9 hours'), new DateTimeImmutable('-8 hours'), 3600, TimeEntrySource::Manual))->describe('Other customer')->assignScopeKey('org-b'));
         $noScope  = $this->save((new TimeEntry($this->user, null, '', null, new DateTimeImmutable('-5 hours'), new DateTimeImmutable('-4 hours'), 3600, TimeEntrySource::Manual))->describe('ACME'));
         $withTask = $this->save((new TimeEntry($this->user, 'task-1', 'Task', 'board-1', new DateTimeImmutable('-7 hours'), new DateTimeImmutable('-6 hours'), 3600, TimeEntrySource::Web))->assignScopeKey('org-a'));
 
@@ -48,17 +51,29 @@ final class EntriesWithoutTaskOptionOffTest extends FunctionalTestCase
         $to     = new DateTimeImmutable('+1 day');
         $target = (string) $this->user->getId();
 
+        // Two scopes: each manager lists and counts only their own scope's entry without a task.
         $page = $timers->listEntriesPage($managerB, $from, $to, 1, 10, $target);
-        self::assertSame([$withTask->getId()], $this->ids($page->entries));
-        self::assertSame(1, $page->total, 'the count leaves it out too');
-        self::assertSame([$withTask->getId()], $this->ids($timers->listEntries($managerB, $from, $to, $target)));
-        self::assertSame($this->ids([$inA, $withTask]), $this->ids($timers->listEntriesPage($managerA, $from, $to, 1, 10, $target)->entries));
-        self::assertSame($this->ids([$inA, $noScope, $withTask]), $this->ids($timers->listEntriesPage($this->user, $from, $to, 1, 10)->entries));
+        self::assertSame($this->ids([$inB, $withTask]), $this->ids($page->entries));
+        self::assertSame(2, $page->total, 'the count leaves the other scope out too');
+        self::assertSame($this->ids([$inB, $withTask]), $this->ids($timers->listEntries($managerB, $from, $to, $target)));
+        $pageA = $timers->listEntriesPage($managerA, $from, $to, 1, 10, $target);
+        self::assertSame([$this->ids([$inA, $withTask]), 2], [$this->ids($pageA->entries), $pageA->total]);
+        self::assertSame($this->ids([$inA, $inB, $noScope, $withTask]), $this->ids($timers->listEntriesPage($this->user, $from, $to, 1, 10)->entries));
+
+        // A user with no entry without a task: the EXISTS read keeps the 1.35 listing (audit YM-M1).
+        $other     = $this->createUser('other@example.com');
+        $otherTask = $this->save((new TimeEntry($other, 'task-2', 'Task', 'board-1', new DateTimeImmutable('-3 hours'), new DateTimeImmutable('-2 hours'), 3600, TimeEntrySource::Web))->assignScopeKey('org-a'));
+        self::assertSame([$otherTask->getId()], $this->ids($timers->listEntriesPage($managerB, $from, $to, 1, 10, (string) $other->getId())->entries));
+
+        // The back-fill never asks the provider for an entry without a task (audit YM-L2).
+        $store = self::getContainer()->get(TimeEntryRepositoryInterface::class);
+        self::assertInstanceOf(ScopeBackfillRepositoryInterface::class, $store);
+        self::assertNotContains($noScope->getId(), $this->ids($store->findScopelessAfter('', 100)));
 
         $guard = self::getContainer()->get(TeamAccessGuard::class);
         self::assertInstanceOf(TeamAccessGuard::class, $guard);
         self::assertSame([false, false, true, false, true, true], [
-            $guard->isEditGranted($managerB, $inA),
+            $guard->isEditGranted($managerB, $inA) || !$guard->isEditGranted($managerB, $inB),
             $guard->isBillableEditGranted($managerB, $inA),
             $guard->isEditGranted($managerA, $inA),
             $guard->isEditGranted($managerA, $noScope),

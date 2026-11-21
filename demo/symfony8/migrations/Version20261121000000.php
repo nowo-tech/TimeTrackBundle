@@ -21,7 +21,7 @@ final class Version20261121000000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        $this->addSql('ALTER TABLE time_track_active_timers ADD description LONGTEXT DEFAULT NULL, ADD scope_key VARCHAR(64) DEFAULT NULL, CHANGE task_id task_id VARCHAR(36) DEFAULT NULL');
+        $this->addSql('ALTER TABLE time_track_active_timers ADD description LONGTEXT DEFAULT NULL, ADD scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL DEFAULT NULL, CHANGE task_id task_id VARCHAR(36) DEFAULT NULL');
         $this->addSql('ALTER TABLE time_track_entries CHANGE task_id task_id VARCHAR(36) DEFAULT NULL');
     }
 

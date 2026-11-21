@@ -12,7 +12,8 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 interface ScopeBackfillRepositoryInterface
 {
     /**
-     * Up to `$limit` entries with a null `scope_key` and an id after `$afterId`, by id.
+     * Up to `$limit` entries with a null `scope_key` and an id after `$afterId`, by id. Since 1.36.0 entries without a
+     * task are left out: they got their scope when they were written (the command skips any it is given).
      *
      * @return list<TimeEntry>
      */

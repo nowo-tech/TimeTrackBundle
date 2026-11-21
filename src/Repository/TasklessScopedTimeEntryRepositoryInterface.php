@@ -26,4 +26,10 @@ interface TasklessScopedTimeEntryRepositoryInterface
      * Number of entries of the listing.
      */
     public function countListing(TimeEntryListing $listing): int;
+
+    /**
+     * Whether the listing (its owners, ownerless scopes, period and sources) reaches any entry without a task. False lets
+     * the caller keep its faster listing, which is then exactly the same.
+     */
+    public function hasEntriesWithoutTask(TimeEntryListing $listing): bool;
 }

@@ -134,19 +134,15 @@ is rewritten. Run `doctrine:migrations:diff`, or apply the reference SQL of your
 (replace `users` with your user table on SQLite, and the foreign key name if yours differs; the demo ships the MySQL one
 as `demo/symfony8/migrations/Version20261121000000.php`). On a large MySQL table the `ALTER` rebuilds the table: plan
 the window. The rollback refuses while a running timer or an entry has no task: it never deletes tracked time.
-On MySQL / MariaDB, give the new `time_track_active_timers.scope_key` the exact collation of the other `scope_key`
-columns (as in 1.24.1; `utf8mb4_nopad_bin` on MariaDB, `utf8mb4_bin` on MySQL before 8.0.17), or
-`doctrine:migrations:diff` proposes it:
-
-```sql
-ALTER TABLE time_track_active_timers MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL DEFAULT NULL;
-```
+The new `time_track_active_timers.scope_key` gets the exact (binary, NO PAD) collation of the other `scope_key` columns
+(as in 1.24.1): `utf8mb4_0900_bin` in the MySQL script; use `utf8mb4_nopad_bin` on MariaDB and `utf8mb4_bin` on MySQL
+before 8.0.17.
 
 <details><summary>MySQL 8 / MariaDB 10.6+ (docs/sql/1.36.0/mysql-up.sql)</summary>
 
 ```sql
 -- TimeTrackBundle 1.36.0, MySQL 8 / MariaDB 10.6+ (default table prefix). Entries and running timers without a task (entries.allow_without_task): task_id becomes nullable, and running timers get description and scope_key. No row is rewritten. Each statement is one atomic change.
-ALTER TABLE time_track_active_timers ADD description LONGTEXT DEFAULT NULL, ADD scope_key VARCHAR(64) DEFAULT NULL, CHANGE task_id task_id VARCHAR(36) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD description LONGTEXT DEFAULT NULL, ADD scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL DEFAULT NULL, CHANGE task_id task_id VARCHAR(36) DEFAULT NULL;
 ALTER TABLE time_track_entries CHANGE task_id task_id VARCHAR(36) DEFAULT NULL;
 ```
 

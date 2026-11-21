@@ -154,6 +154,22 @@ final class EntriesWithoutTaskTest extends TestCase
             }
         }
 
+        // Audit YM-L2: under a scope provider, a user with no scope is refused (the entry would be its owner's only).
+        $nobody = new TestUser('nobody', 'nobody@example.com');
+        try {
+            $service->start($nobody, null, ClientType::Web);
+            self::fail('expected a refusal for a user without a scope');
+        } catch (TaskNotTrackableException) {
+            self::assertNull($service->getActive($nobody));
+        }
+        $manual = new ManualEntryService($service, $this->entries, $this->timers, new TaskProviderTaskAccessChecker(new StubTaskProvider()), clock: $this->clock, scopeProvider: $this->scopes);
+        try {
+            $manual->create($nobody, null, new DateTimeImmutable('2026-11-21 08:00'), new DateTimeImmutable('2026-11-21 09:00'), TimeEntrySource::Manual);
+            self::fail('expected a refusal for a user without a scope');
+        } catch (ManualEntryException $e) {
+            self::assertSame(ManualEntryException::NOT_TRACKABLE, $e->getMessage());
+        }
+
         // Without a scope provider (single tenant): no scope, and a requested one cannot be checked.
         $single = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), new InMemoryTimeEntryRepository(), $this->dispatcher, $this->clock, allowWithoutTask: true);
         self::assertNull($single->start($this->user, null, ClientType::Web)->getScopeKey());

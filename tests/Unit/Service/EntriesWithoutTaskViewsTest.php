@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Service;
 
 use DateTimeImmutable;
+use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Dto\TimeEntryView;
@@ -84,7 +85,11 @@ final class EntriesWithoutTaskViewsTest extends TestCase
         self::assertSame([], ScopeKeys::ofUser(null, $user, new NullLogger()));
         self::assertNull(ScopeKeys::forEntryWithoutTask(null, $user, null, new NullLogger()));
         self::assertSame(['org-a'], ScopeKeys::ofUser(new FixedScopeProvider(['user-1' => ['org-a', "org-b\u{200B}"]]), $user, new NullLogger()), 'an unusable host key is left out');
-        self::assertNull(ScopeKeys::forEntryWithoutTask(new FixedScopeProvider(), $user, null, new NullLogger()), 'a user in no scope gets none');
+        try {
+            ScopeKeys::forEntryWithoutTask(new FixedScopeProvider(['user-1' => ["org-b\u{200B}"]]), $user, null, new NullLogger());
+            self::fail('audit YM-L2: a user with no usable scope under a scope provider is refused');
+        } catch (InvalidArgumentException) {
+        }
 
         $listing = new TimeEntryListing(['user-1'], new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'), true, false, null, 'viewer', ['org-a']);
         self::assertSame([true, true, false, false, false], [

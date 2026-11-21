@@ -614,7 +614,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * Since 1.13: entries without a scope after an id (back-fill keyset). Since 1.15 only entries with a user: the scope
-     * provider places entries by their owner, and an ownerless entry belongs to no timesheet.
+     * provider places entries by their owner, and an ownerless entry belongs to no timesheet. Since 1.36.0 only entries
+     * with a task: an entry without one got its scope when it was written, and the provider places entries by task.
      */
     public function findScopelessAfter(string $afterId, int $limit): array
     {
@@ -624,6 +625,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->from(TimeEntry::class, 'e')
             ->where('e.scopeKey IS NULL')
             ->andWhere('e.user IS NOT NULL')
+            ->andWhere('e.taskId IS NOT NULL')
             ->andWhere('e.id > :after')
             ->setParameter('after', $afterId)
             ->orderBy('e.id', SortDirection::Ascending)
@@ -1126,6 +1128,22 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         } while (count($batch) === self::EXACT_BATCH);
 
         return $count;
+    }
+
+    /**
+     * Since 1.36.0 (audit YM-M1): whether the listing reaches any entry without a task at all (one row read, by the
+     * listing's owners, ownerless scopes, period and sources). False: the listing is exactly the 1.35 one.
+     */
+    public function hasEntriesWithoutTask(TimeEntryListing $listing): bool
+    {
+        $rows = $this->ownerlessPeriodQuery($listing->userIds, $listing->includeOwnerless ? $listing->ownerlessScopeKeys : [], $listing->from, $listing->to, $listing->includeImported)
+            ->select('e.id')
+            ->andWhere('e.taskId IS NULL')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getArrayResult();
+
+        return $rows !== [];
     }
 
     /**

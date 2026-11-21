@@ -894,6 +894,11 @@ final readonly class TimerService
      * or off (coordinator decision 2026-11-22): rows written while it was on are never opened across scopes; without
      * such rows the listing is the 1.35 one. Asked per call (never memoised: worker mode).
      *
+     * Audit YM-M1 (no regression for hosts that never stored such rows): with the option off no entry without a task can
+     * be written, so one EXISTS read on the Doctrine store decides; when the listing reaches none, null keeps the 1.35
+     * (faster) listing, which is then exactly the same. With the option on the exact listing always runs (a row may be
+     * written meanwhile).
+     *
      * @param array{userIds: list<string>, includeImported: bool, includeOwnerless: bool, ownerlessScopeKeys: list<string>|null} $query
      */
     private function tasklessListing(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, array $query): ?TimeEntryListing
@@ -903,7 +908,12 @@ final readonly class TimerService
             return null;
         }
 
-        return new TimeEntryListing($query['userIds'], $from, $to, $query['includeImported'], $query['includeOwnerless'], $query['ownerlessScopeKeys'], $viewerId, ScopeKeys::ofUser($this->scopeProvider, $viewer, $this->logger));
+        $listing = new TimeEntryListing($query['userIds'], $from, $to, $query['includeImported'], $query['includeOwnerless'], $query['ownerlessScopeKeys'], $viewerId, ScopeKeys::ofUser($this->scopeProvider, $viewer, $this->logger));
+        if (!$this->allowWithoutTask && $this->timeEntryRepository instanceof TasklessScopedTimeEntryRepositoryInterface && !$this->timeEntryRepository->hasEntriesWithoutTask($listing)) {
+            return null;
+        }
+
+        return $listing;
     }
 
     private function clampPage(int $page, int $total, int $perPage): int

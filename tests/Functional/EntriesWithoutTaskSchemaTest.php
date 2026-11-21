@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
+use Doctrine\DBAL\Platforms\MariaDBPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\Tools\SchemaTool;
@@ -139,6 +140,8 @@ final class EntriesWithoutTaskSchemaTest extends FunctionalTestCase
     {
         $conn = $this->entityManager()->getConnection();
         foreach ($this->statements($file) as $statement) {
+            // The MySQL scripts name MySQL 8's binary collation; MariaDB's is utf8mb4_nopad_bin (as the 1.36.0 header says).
+            $statement = $conn->getDatabasePlatform() instanceof MariaDBPlatform ? str_replace('utf8mb4_0900_bin', 'utf8mb4_nopad_bin', $statement) : $statement;
             $conn->executeStatement(str_replace('REFERENCES users (id)', 'REFERENCES app_user (id)', $statement));
         }
     }

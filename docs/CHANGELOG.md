@@ -241,7 +241,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     an entry only within their own tenant scopes: `TeamAccessGuard::isWithinTenant()`, re-checked after the listeners,
     and in listings an SQL condition plus a PHP `===` re-check before the page is cut
     (`Repository\TasklessScopedTimeEntryRepositoryInterface`, `TimeEntryListing`). Never through task or board keys: the
-    task id is NULL, so no query by task or board reaches it.
+    task id is NULL, so no query by task or board reaches it. The rule applies with the option off too (stored rows are
+    never opened across scopes; with none in a listing, one EXISTS read keeps the 1.35 listing). Under a scope provider a
+    user with no usable scope cannot write such an entry, and the scope back-fill skips them.
   - Events: `TimerStartedWithoutTaskEvent` (`nowo_time_track.timer.start_without_task`, ids only) instead of
     `TIMER_START`; `TimerStopEvent`, `TimeEntryCreatedEvent` and `TimeEntryAccessCheckEvent` gain `getTaskId(): ?string`.
   - Entities and views: `TimeEntry` / `ActiveTimer` `hasTask()` and `taskIdOrNull()` (`getTaskId()` keeps its `string`
