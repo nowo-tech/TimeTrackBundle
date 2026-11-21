@@ -131,14 +131,11 @@ final class ClientApiV1AliasTest extends FunctionalTestCase
         self::assertSame($expected, $actual, 'every client route is in the table, by both paths');
     }
 
-    /**
-     * @param 'POST|OPTIONS'|string $methods
-     */
     #[DataProvider('routes')]
     public function testBothPathsAnswerTheSame(string $legacyName, string $legacyPath, string $v1Name, string $v1Path, string $methods): void
     {
-        $legacyUri = self::uri($legacyPath);
-        $v1Uri     = self::uri($v1Path);
+        $legacyUri = $this->uri($legacyPath);
+        $v1Uri     = $this->uri($v1Path);
 
         if (in_array('OPTIONS', explode('|', $methods), true)) {
             $origin = ['HTTP_ORIGIN' => 'chrome-extension://functional'];
@@ -184,7 +181,7 @@ final class ClientApiV1AliasTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(401);
     }
 
-    private static function uri(string $path): string
+    private function uri(string $path): string
     {
         foreach (self::PLACEHOLDERS as $placeholder => $value) {
             $path = str_replace($placeholder, $value, $path);

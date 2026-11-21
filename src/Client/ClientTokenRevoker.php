@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ClientSessionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\ClientSessionId;
 use Nowo\TransactionContract\TransientStorageFailure;
@@ -131,6 +132,31 @@ final readonly class ClientTokenRevoker
         $this->logger->info('TimeTrack client session revoked.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'client' => $session->clientType->value]);
 
         return ClientSessionRevocation::Revoked;
+    }
+
+    /**
+     * Since 1.35.0: ends every client session of a user ("sign out everywhere": every app must sign in again) and returns
+     * how many were ended. The host authorises the call, as for {@see self::revokeByCredential()}. One `DELETE` statement
+     * (nothing is flushed, cleared or reset); a lock conflict propagates as `TransientStorageFailure` with nothing committed.
+     *
+     * @param string $userId The user id (as `TimeTrackUserRef::$id`), compared byte for byte
+     *
+     * @throws LogicException when the configured token store cannot delete a user's sessions
+     * @throws TransientStorageFailure when the storage failed transiently: nothing was committed, retry
+     */
+    public function revokeAllForUser(string $userId): int
+    {
+        if (!$this->tokens instanceof UserClientTokenRepositoryInterface) {
+            throw new LogicException('The TimeTrack token store does not implement ' . UserClientTokenRepositoryInterface::class . ': it cannot revoke every session of a user.');
+        }
+        // @igor-ignore - Request-scoped value or I/O delegate (repository call); no worker state.
+        $count = $this->tokens->removeByUserId($userId);
+        if ($count > 0) {
+            $this->auditor?->recordForUserId(ClientApiAuditAction::SessionRevoked, $userId, null, null, null, 'all');
+        }
+        $this->logger->info('TimeTrack client sessions of a user revoked.', ['bundle' => 'time_track', 'action' => 'client_sessions_revoke_all', 'count' => $count]);
+
+        return $count;
     }
 
     private function sessionStore(): ClientSessionRepositoryInterface

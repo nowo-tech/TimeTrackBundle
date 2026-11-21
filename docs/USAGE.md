@@ -9,6 +9,7 @@
 - [Host integration (client API 1.9)](#host-integration-client-api-19)
 - [Imported entries (1.11)](#imported-entries-111)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
+- [Read ports and personal data (1.35)](#read-ports-and-personal-data-135)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
@@ -471,6 +472,120 @@ $eraser->erase($user, $actor);               // throws on a veto; your eraser bl
 Limits: it is not atomic, so if the erase fails the timer stays stopped (the time is safe). A timer started between the stop and the eraser is still deleted by an
 eraser that deletes `ActiveTimer` rows. `stop()` adds no `closed_by` mark, which suits a user who is not being deleted. A `TIMER_STOP` listener that throws stops
 the erasure before it starts.
+
+## Read ports and personal data (1.35)
+
+DDD-host checklist B7: a host lists, counts, exports and erases TimeTrack data through ports that take ids and return
+views, so it writes no DQL over the bundle's entities. Every port below is a public service, works with both user
+mappings (`relation` and `id`) and with the private entity manager, and keeps nothing between calls (worker mode). None
+of them applies an access rule: your permission port decides what a viewer may read, then passes the owner ids and
+scope keys.
+
+### Entries: `Query\TimeEntryQueryInterface`
+
+```php
+use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Query\TimeEntryCriteria;
+use Nowo\TimeTrackBundle\Query\TimeEntrySort;
+
+// A member's last 30 days in two tenants, on one task, newest first.
+$criteria = new TimeEntryCriteria(ownerIds: [$userId], scopeKeys: ['org-a', 'org-b'], taskIds: [$taskId], startedFrom: $from, startedTo: $to);
+$page     = $entries->list($criteria, TimeEntrySort::StartedAtDescending, limit: 100, offset: 0);
+$total    = $entries->count($criteria);
+$seconds  = $entries->totalSeconds($criteria);
+
+// An overlap check before a correction: entries that overlap 09:30–12:30, leaving out the entry being corrected.
+$clash = $entries->count(new TimeEntryCriteria(ownerIds: [$userId], overlapFrom: $start, overlapTo: $end, excludeEntryIds: [$entryId]));
+
+// Batch jobs and exports: keyset pages by id.
+$after = '';
+while ([] !== $rows = $entries->listAfter(TimeEntryCriteria::ofOwner($userId), $after, 500)) {
+    foreach ($rows as $record) {
+        $after = $record->entry->id;
+    }
+}
+
+$record = $entries->find($entryId); // one entry by its exact id, or null
+```
+
+- **Keyed.** A criteria needs owner ids, scope keys, task ids or board ids (`InvalidArgumentException` otherwise). Other
+  filters: `startedFrom` / `startedTo` (both inclusive), `overlapFrom` + `overlapTo` (ends after the first, starts before
+  the second: touching entries do not overlap), `sources` (`TimeEntrySource` cases), `serviceAccount`, `excludeEntryIds`.
+  At most 1 000 values per list; an empty list matches nothing.
+- **Exact.** Ids, scope keys, task and board ids compare byte for byte: rows are checked again in PHP before a page is
+  cut, so on a case-insensitive MySQL collation `TASK-1` neither lists nor shifts the pages of `task-1`. A value with a
+  leading or trailing blank or an invisible character is refused.
+- **Owned entries only.** An anonymised entry, a former person's entry and a deleted user's entry have no owner: read
+  them through `FormerPersonTimeEntries` ([Entries with no user](#entries-with-no-user-115)).
+- **Views.** `TimeEntryRecord` holds the `TimeEntryView` the events carry (ids, task, board, scope, times, source,
+  channel, service-account mark) plus the note, the description, the billable flag, the stored metadata and the creation
+  time. Nothing is hydrated, so nothing enters an entity manager. The task title is the stored snapshot: mask titles of
+  imported entries as the bundle's surfaces do (`TimerService::hiddenTaskEntryIds()`).
+- **Paging.** `list()` takes 1–1 000 rows and an offset; deep offsets read every matching row before them, so prefer
+  `listAfter()` for exports and jobs. `count()` and `totalSeconds()` read the key columns in batches.
+
+### Running timers: `Query\RunningTimerQueryInterface`
+
+```php
+$running = $timers->runningOf($userId);                         // RunningTimerView|null: TimerSnapshot + ownerId + lastHeartbeatAt
+$page    = $timers->startedBefore($cutOff, $afterTimerId, 200); // e.g. a forgotten-timer job, keyset by timer id
+```
+
+Stopping a timer stays with the timer services (`HostTimerApi`, `TimerService`); id-based operations come in 1.36.
+
+### Client sessions and device sign-ins: `Query\ClientAccessQueryInterface`
+
+```php
+$sessions = $clientAccess->sessionsOf($userId);              // ClientSessionView list, newest first, unexpired
+$all      = $clientAccess->sessionsOf($userId, true);        // expired ones the purge has not removed too
+$devices  = $clientAccess->deviceSignInsOf($userId);         // DeviceSignInView list
+$revoker->revokeById($sessionId, $actor);                    // sign out one device (1.34)
+$revoker->revokeAllForUser($userId);                         // sign out everywhere (1.35): returns how many
+```
+
+Views never hold a token hash or a device code. `revokeAllForUser()` is authorised by the host, like
+`revokeByCredential()`, and records `session_revoked` with the reason `all` on the client API audit event.
+
+### Personal data: `PersonalData\TimeTrackPersonalDataInterface`
+
+```php
+use Nowo\TimeTrackBundle\PersonalData\TimeEntryErasure;
+
+$sections = $personalData->export($userId);   // GDPR arts. 15 / 20, JSON-ready
+$result   = $personalData->erase($userId);    // GDPR art. 17, the bundle's rule: anonymise
+$result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep the owner, clear the free text
+```
+
+- **Export** sections: `entries` (every owned entry), `formerPersonEntries` (entries left under the user's former
+  reference `user:<id>`), `runningTimer`, `clientSessions`, `deviceSignIns`, `monitoringAcknowledgements`,
+  `monitoringUploads`, `timesheets`, `balanceLedgerLines` (balance movements: kind, seconds, reason),
+  `timesheetEvents` (the audit trail of the user's own timesheets, comments included), `calendarConnections`,
+  `calendarRules`, `calendarSuggestions`. Dates are RFC 3339 strings; no token hash, device code or calendar credential.
+  Pass cells through `TimeEntryCsv::cell()` for a CSV. Most sections select scalars; `formerPersonEntries` and the
+  calendar sections load entities into the bundle's entity manager (dropped at the request boundary with the private
+  manager; with the shared one they stay managed until you clear it). Nothing is written.
+- **Erasure** deletes the client sessions, device sign-ins, monitoring upload intents and monitoring acknowledgements, and
+  treats the entries as you choose:
+  - `TimeEntryErasure::Anonymise` (default, as `FormerPersonTimeEntries::anonymiseUser()`): the time stays, the person
+    goes. The entries lose their owner and free text and leave the user's worked time, balance and timesheets.
+  - `TimeEntryErasure::FreeText`: the description and `metadata.note` of each owned entry are cleared, the owner and
+    your other metadata keys stay. For a host that keeps an anonymised account row.
+  In both modes the entries under `user:<id>` are anonymised, **no entry is deleted and no time changes** (owner rule),
+  and a locked or submitted period does not block it (the timesheet hash covers ids, tasks, times and sources only).
+- **Kept:** timesheets and their audit trail (the working-time register, GDPR art. 17.3.b) and calendar connections:
+  call `CalendarConnectionService::revokeAllFor()`, which revokes the host grant before deleting them
+  (`TimeTrackErasureResult::$calendarConnectionsKept` counts them, and a warning is logged when it is not 0). Evidence files of activity monitoring live in your
+  store: delete them there.
+- **A running timer refuses the erasure** (`PersonalDataErasureRefusedException`, code `timer_running`, nothing written):
+  stop it first (`HostTimerApi::stop()` or `TimerService::stopForUserDeletion()`), so the time in progress is saved and
+  cannot bring the person back afterwards. A timer started after the erasure is a new one.
+- **One unit:** one transaction of the bundle's runner (a savepoint inside yours), bulk statements only: no entity
+  manager is flushed, cleared or reset, so it fits an erasure chain that must not flush. Idempotent; a lock conflict
+  surfaces as `TransientStorageFailure` with nothing committed (retry).
+- An id with a leading or trailing blank or an invisible character is refused (`invalid_user_id`). Rows are matched by
+  owner and checked again byte for byte before they are deleted or anonymised (by id): on a case-insensitive collation
+  of your string user ids, `erase('ABC')` never touches `abc`'s rows. An id the owner column cannot hold (`'nobody'`
+  with integer ids) owns nothing.
 
 ## Task time follows a board move (Unreleased)
 
@@ -1254,6 +1369,10 @@ TimeTrackBundle is a **bounded context with its own model and persistence**: it 
 `CalendarConnection`, `CalendarSuggestion`, `CalendarRule`, and since 1.26 `MonitoringAcknowledgementRecord` and
 `MonitoringUploadIntent`) and ships its own web UI and client API. Your domain does
 not extend anything from it (no traits, no mapped superclasses).
+
+Your application layer reads it through ports that take ids and return views (since 1.35: entries, running timers,
+client sessions, personal-data export and erasure; see [Read ports and personal data](#read-ports-and-personal-data-135)),
+so no DQL of yours depends on the bundle's schema.
 
 ### What stays in your domain
 

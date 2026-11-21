@@ -221,6 +221,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Read ports for hosts (DDD-host checklist B7).** A host lists and counts TimeTrack data by ids and gets views back,
+  without DQL over the bundle's entities. Public services, both user mappings, the private entity manager, worker-safe:
+  - `Query\TimeEntryQueryInterface`: `find()`, `list()` (sort, limit, offset), `listAfter()` (keyset by id), `count()`
+    and `totalSeconds()` over a keyed `Query\TimeEntryCriteria` (owner ids, scope keys, task ids, board ids; started
+    from / to, overlap range, sources, service accounts, excluded ids). Returns `Query\TimeEntryRecord`: the
+    `TimeEntryView` plus note, description, billable flag, metadata and creation time. Every string filter compares byte
+    for byte (rows are checked again in PHP before a page is cut); only entries that still have an owner are listed.
+    An id the owner column cannot hold (e.g. `'nobody'` with integer user ids) owns nothing and never reaches the SQL.
+  - `Query\RunningTimerQueryInterface`: `runningOf($userId)` and `startedBefore($time)` (keyset) → `RunningTimerView`.
+  - `Query\ClientAccessQueryInterface`: `sessionsOf($userId)` → `ClientSessionView`, `deviceSignInsOf($userId)` →
+    `DeviceSignInView` (never a token hash or a device code).
+- **Personal data by user id.** `PersonalData\TimeTrackPersonalDataInterface::export($userId)` (GDPR arts. 15 / 20:
+  entries, former-person entries, running timer, sessions, device sign-ins, monitoring acknowledgements and uploads,
+  timesheets, balance ledger lines, the audit trail of the user's timesheets, calendar data) and `erase($userId, TimeEntryErasure)` (art. 17: deletes sessions, device sign-ins and the
+  monitoring rows; anonymises the entries by default, or clears only their free text with `TimeEntryErasure::FreeText`;
+  never deletes an entry or changes its time; keeps timesheets and calendar connections). One transaction, bulk
+  statements, no flush; refused with `PersonalDataErasureRefusedException` (`timer_running`) while the user's timer runs.
+  Rows are written by id after a byte-for-byte owner check; a warning is logged when calendar connections remain.
+- `ClientTokenRevoker::revokeAllForUser($userId)`: sign out every client session of a user (store capability
+  `Repository\UserClientTokenRepositoryInterface`, kept apart so decorators of the other token interfaces keep compiling).
+
+### Fixed
+
+- `FormerPersonTimeEntryRepositoryInterface::anonymiseOwner()` (Doctrine store, since 1.15; used by
+  `FormerPersonTimeEntries::anonymiseUser()`) checks the owner again byte for byte before it anonymises an entry: with
+  the relation mapping and string user ids on a case-insensitive collation (MySQL / MariaDB default), anonymising
+  `ABC` also anonymised the entries of `abc` (audit YI L1). Integer ids and `user_mapping: id` (binary collation) were
+  not affected.
+
 ### Changed
 
 - demo: the demo runs inside UiKit's demo platform shell (`@NowoUiKit/demo_platform/layout.html.twig`, UiKit ^2.60): shared top bar, aside navigation and section cards, no demo masthead markup; the Web Debug Toolbar and the CDN hot-reload scripts are off in the demo and its README screenshots. Demo only, no release.
