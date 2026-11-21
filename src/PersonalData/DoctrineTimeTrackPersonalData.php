@@ -212,13 +212,10 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function calendarSections(string $userId): array
     {
-        if (!$this->calendars instanceof CalendarPersonalDataExporter) {
-            return [];
-        }
+        // No calendar exporter (direct construction): no calendar section; an id the owner column cannot hold: empty ones.
+        $empty = $this->calendars instanceof CalendarPersonalDataExporter ? ['calendarConnections' => [], 'calendarRules' => [], 'calendarSuggestions' => []] : [];
 
-        return $this->stores(CalendarConnection::class, $userId)
-            ? $this->calendars->export($userId)
-            : ['calendarConnections' => [], 'calendarRules' => [], 'calendarSuggestions' => []];
+        return $this->calendars instanceof CalendarPersonalDataExporter && $this->stores(CalendarConnection::class, $userId) ? $this->calendars->export($userId) : $empty;
     }
 
     /**

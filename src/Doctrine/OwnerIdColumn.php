@@ -42,7 +42,7 @@ final class OwnerIdColumn
         $value = (int) $userId;
 
         // A 19-digit value beyond PHP_INT_MAX saturates the cast: the round trip tells it apart.
-        $max = self::INTEGER_MAX[$type] ?? PHP_INT_MAX;
+        $max = self::INTEGER_MAX[$type];
 
         return (string) $value === $userId && $value <= $max && $value >= -$max - 1;
     }
