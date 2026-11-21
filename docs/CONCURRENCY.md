@@ -34,9 +34,12 @@ first lock of a unit ([One lock order](HIGH-LOAD.md#one-lock-order)).
 | Task time moves (`TaskTimeMover::moveTasks()`) | One unit per batch of entries (and one statement for the timers of a chunk), replayed after a lock conflict | Entries locked by primary key in id order; moves are idempotent | 409 + `CONFLICT_001` when nothing was moved yet; **`CONFLICT_002`** (a committed `ConcurrencyConflict`) when an earlier batch is saved: run the move again to finish |
 | Device flow (approve, deny), screenshot intents, acknowledgements | One unit; the request row (or the owner lock) is locked and read again | Row lock; unique key plus savepoint insert (the first record is kept) | 409 + `CONFLICT_001`; a second intent for one slot is the domain answer `duplicate` (409, its own key) |
 | Calendar suggestions accepted as entries (`entries` with `Idempotency-Key` too) | One transaction per occurrence under the owner lock; the suggestion is read again, the entry and the accepted status commit together | Owner lock; a concurrent accept or dismiss wins | 409 + `CONFLICT_001`; the loser's outcome is `not_found` |
+| Personal-data erasure (`TimeTrackPersonalDataInterface::erase()`, 1.35.0) | One statement-only unit (a savepoint inside the host's transaction): the running-timer check, the deletes and the entry pass commit together; no entity manager is flushed | Deletes are single statements by owner; the free-text pass locks the owner's entries by primary key in id order, batch by batch, and writes only rows still owned and not anonymised; anonymising reuses the former-person statements; idempotent | `TransientStorageFailure` with nothing committed (409 + `CONFLICT_001` on a bundle route): replay. A running timer is the domain refusal `timer_running` |
+| Sign out everywhere (`ClientTokenRevoker::revokeAllForUser()`, 1.35.0) | One statement-only unit | A single `DELETE` by owner; idempotent | `TransientStorageFailure`, nothing committed |
 | Retention purge, console commands | Statement-only units in batches | Idempotent batches | Console error: run it again |
 
-Side effects (timer, entry, timesheet, ledger and import events, a revocation) run after the outermost commit.
+Side effects (timer, entry, timesheet, ledger and import events, a revocation) run after the outermost commit. The read
+ports of 1.35.0 (`Query\*`) take no lock and write nothing.
 
 ## Conflict codes
 

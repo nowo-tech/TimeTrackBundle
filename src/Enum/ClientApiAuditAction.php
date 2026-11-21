@@ -51,7 +51,8 @@ enum ClientApiAuditAction: string
     /**
      * Since 1.34.0: one session token was revoked by its id by its owner or an admin
      * ({@see ClientTokenRevoker::revokeById()}); the user is the owner, the reason
-     * `owner` or `other` (who acted).
+     * `owner` or `other` (who acted). Since 1.35.0 also every session of a user at once
+     * ({@see ClientTokenRevoker::revokeAllForUser()}), reason `all`.
      */
     case SessionRevoked = 'session_revoked';
 }

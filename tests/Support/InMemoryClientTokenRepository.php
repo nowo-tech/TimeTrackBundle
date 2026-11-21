@@ -9,12 +9,13 @@ use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Repository\ClientSessionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\UserClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
 
 use function array_values;
 
-final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterface, CredentialClientTokenRepositoryInterface, ClientSessionRepositoryInterface
+final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterface, CredentialClientTokenRepositoryInterface, ClientSessionRepositoryInterface, UserClientTokenRepositoryInterface
 {
     /** @var array<string, ClientToken> */
     private array $tokens = [];
@@ -65,6 +66,19 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
         $removed = 0;
         foreach ($this->tokens as $id => $token) {
             if ($token->getCredentialId() === $credentialId) {
+                unset($this->tokens[$id]);
+                ++$removed;
+            }
+        }
+
+        return $removed;
+    }
+
+    public function removeByUserId(string $userId): int
+    {
+        $removed = 0;
+        foreach ($this->tokens as $id => $token) {
+            if (UserIdResolver::idOf($token->getUser()) === $userId) {
                 unset($this->tokens[$id]);
                 ++$removed;
             }

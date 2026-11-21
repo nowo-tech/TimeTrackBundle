@@ -112,6 +112,13 @@ use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmBalanceLedgerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmCalendarRepository;
+use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
+use Nowo\TimeTrackBundle\Query\DoctrineTimeTrackQuery;
+use Nowo\TimeTrackBundle\Query\RunningTimerQueryInterface;
+use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
+use Nowo\TimeTrackBundle\PersonalData\DoctrineTimeTrackPersonalData;
+use Nowo\TimeTrackBundle\PersonalData\TimeTrackPersonalDataInterface;
+use Nowo\TimeTrackBundle\Repository\UserClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringAcknowledgementStore;
@@ -340,6 +347,33 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setAlias(CredentialClientTokenRepositoryInterface::class, DoctrineOrmClientTokenRepository::class);
         // 1.34.0: one session by its id (ClientTokenRevoker::revokeById()), a separate alias for the same reason.
         $container->setAlias(ClientSessionRepositoryInterface::class, DoctrineOrmClientTokenRepository::class);
+        // 1.35.0: every session of a user (ClientTokenRevoker::revokeAllForUser()), a separate alias for the same reason.
+        $container->setAlias(UserClientTokenRepositoryInterface::class, DoctrineOrmClientTokenRepository::class);
+        // 1.35.0 (DDD-host checklist B7): the read ports (views by owner / tenant ids) and the personal-data port (export and
+        // erasure by user id), on the bundle's entity manager; public so hosts stop writing DQL over the bundle's entities.
+        $container->setDefinition(DoctrineTimeTrackQuery::class, (new Definition(DoctrineTimeTrackQuery::class))
+            ->setArguments([
+                '$entityManager' => $emRef,
+                '$clock'         => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ]));
+        foreach ([TimeEntryQueryInterface::class, RunningTimerQueryInterface::class, ClientAccessQueryInterface::class] as $port) {
+            $container->setAlias($port, DoctrineTimeTrackQuery::class)->setPublic(true);
+        }
+        $container->setDefinition(DoctrineTimeTrackPersonalData::class, (new Definition(DoctrineTimeTrackPersonalData::class))
+            ->setArguments([
+                '$entityManager' => $emRef,
+                '$runner'        => new Reference(TimeTrackTransactionRunner::class),
+                '$entries'       => new Reference(TimeEntryQueryInterface::class),
+                '$timers'        => new Reference(RunningTimerQueryInterface::class),
+                '$clientAccess'  => new Reference(ClientAccessQueryInterface::class),
+                '$entryStore'    => new Reference(TimeEntryRepositoryInterface::class),
+                '$formerPeople'  => new Reference(FormerPersonTimeEntries::class),
+                '$calendars'     => new Reference(CalendarPersonalDataExporter::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'         => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'        => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setAlias(TimeTrackPersonalDataInterface::class, DoctrineTimeTrackPersonalData::class)->setPublic(true);
 
         $container->setDefinition(TimeTrackMetadataListener::class, (new Definition(TimeTrackMetadataListener::class))
             ->setArgument('$entriesTableName', $entriesTable)
