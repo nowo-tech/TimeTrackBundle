@@ -468,6 +468,8 @@ nowo_time_track:
 
 ```yaml
 nowo_time_track:
+  entries:
+    allow_without_task: false       # 1.36: timers and entries without a task (host APIs only; USAGE "Entries without a task")
   manual_entries:                   # POST entries (sources manual / calendar), Q-O7
     enabled: false
     max_age_days: 31                # oldest start accepted (1-366); accepted suggestions use calendar.lookback_days

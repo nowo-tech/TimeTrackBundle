@@ -10,6 +10,7 @@
 - [Imported entries (1.11)](#imported-entries-111)
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Read ports and personal data (1.35)](#read-ports-and-personal-data-135)
+- [Entries without a task (1.36, Beacon spec 250)](#entries-without-a-task-136-beacon-spec-250)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
@@ -586,6 +587,45 @@ $result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep t
   owner and checked again byte for byte before they are deleted or anonymised (by id): on a case-insensitive collation
   of your string user ids, `erase('ABC')` never touches `abc`'s rows. An id the owner column cannot hold (`'nobody'`
   with integer ids) owns nothing.
+
+## Entries without a task (1.36, Beacon spec 250)
+
+Opt-in (`entries.allow_without_task: true`, default false). Use case: a salesperson who uses no task boards times a
+customer from the host's CRM area; the host links the entry to the customer on its own side by the ids it gets back,
+so TimeTrack needs no CRM knowledge.
+
+```php
+use Nowo\TimeTrackBundle\Timer\HostTimerApi;
+
+// Starts now (stopping the actor's running timer first, as start() does); scope: one of the actor's, or the current one.
+$start = $hostTimerApi->startWithoutTask($actorRef, description: 'Call with ACME', channel: 'api', scopeKey: 'org-42');
+$crmLinks->link($start->timer->timerId, $customerId);
+$entry = $hostTimerApi->stop($actorRef);         // TimerEntrySnapshot: withoutTask true, description, scopeKey
+$crmLinks->link($entry->entryId, $customerId);
+
+// A past range without a timer.
+$manualEntries->create($user, null, $start, $end, TimeEntrySource::Manual, description: 'Visit ACME', scopeKey: 'org-42');
+```
+
+- Storage: `task_id` is NULL, the title snapshot is empty, the free text is the entry's `description`. `getTaskId()`
+  returns `''`; use `hasTask()` / `taskIdOrNull()`.
+- Validation: the same as with a task (backdate clamping, overlaps, 24 h, age, period lock of the entry's scope). A
+  requested scope must be one of the user's, compared byte for byte; anything else is refused like an unknown task
+  (`TaskNotTrackableException`, `ManualEntryException::NOT_TRACKABLE`), with no hint whether the scope exists. Without a
+  scope provider the entry has no scope and a requested one is refused.
+- One running timer per user, with or without a task (the same lock and unique index; REQ-RUNTIME-003).
+- Who sees and edits it: its owner; anyone else (a manager, an admin role, a granting access-check listener) only within
+  their own tenant scopes (`TeamAccessGuard::isWithinTenant()`, checked after the listeners). An entry without a scope is
+  then the owner's only. It is never reached through task or board permissions: no query by task or board matches a
+  NULL task.
+- Reports, exports, timesheets: grouped as "No task" (task id `''` in `byTask` and in the timesheet hash); the client
+  API and export rows carry `taskId: ""` and `withoutTask: true`. The host billable default is not asked (per task).
+- Events: `TimerStartedWithoutTaskEvent` (ids only) instead of `TIMER_START`; `TIMER_STOP`, `TIME_ENTRY_CREATED` and
+  `TIME_ENTRY_ACCESS_CHECK` as for every entry, with `getTaskId()` null.
+- Erasure and anonymisation: the 1.35 rules, unchanged (the description is cleared with the person's other free text;
+  the time stays).
+- Idle decisions on such a timer: `split` continues it without a task (same description and scope); `reassign` gives
+  the span to a task and `continue` resumes without one.
 
 ## Task time follows a board move (Unreleased)
 

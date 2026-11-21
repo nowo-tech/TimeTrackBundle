@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 1.36 (entries without a task, Beacon spec 250)](#re-audit-136-entries-without-a-task-beacon-spec-250)
 - [Re-audit 1.35 (read and personal-data ports)](#re-audit-135-read-and-personal-data-ports)
 - [Re-audit 1.33 (host-flush probe)](#re-audit-133-host-flush-probe)
 - [Re-audit 1.27 (load readiness, Beacon spec 239)](#re-audit-127-load-readiness-beacon-spec-239)
@@ -28,6 +29,18 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.36 (entries without a task, Beacon spec 250)
+
+- `entries.allow_without_task` is a constructor `bool` of `TimerService` (container parameter): no per-request state.
+- The user's tenant scopes (a new start or entry without a task, `TeamAccessGuard::isWithinTenant()`, the listing rule
+  of `TimerService::listEntries*()`) are asked from the scope provider per call and never kept: a worker serving two
+  tenants in turn never answers one with the other's scopes. `TimeEntryListing` is a value built per call.
+- `DoctrineOrmTimeEntryRepository::findListingPage()` / `countListing()` build a new query per batch, as the 1.24.1
+  exact listings do (REQ-RUNTIME-002); `ScopeKeys` stays stateless.
+- Concurrency (REQ-RUNTIME-003): a start without a task takes the same owner lock and the same unique `user_id` slot as
+  any start, so two concurrent starts leave one running timer (`LoadReadinessDatabaseTest`, two processes).
+- Verdict unchanged: works with `FRANKENPHP_RESET_KERNEL=false`.
 
 ## Re-audit 1.35 (read and personal-data ports)
 

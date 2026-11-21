@@ -268,6 +268,19 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertSame($this->timesheets->period($this->user, 'org-a', null)->key, $this->timesheets->period($this->user, 'org-a', 'current')->key);
     }
 
+    /**
+     * Since 1.36.0: a running timer without a task belongs to the scope it was started in: it refuses that scope's
+     * submit only, and the week grid shows its entries as "No task" with their free text.
+     */
+    public function testARunningTimerWithoutATaskRefusesTheSubmitOfItsOwnScopeOnly(): void
+    {
+        $timers = new DoctrineOrmActiveTimerRepository($this->entityManager());
+        $timers->save(ActiveTimer::withoutTask($this->user, ClientType::Web, 'ACME', 'org-b', null, $this->week->startsAt('UTC')->modify('+1 hour')));
+
+        $this->expectTimesheetError('timer_running', fn (): Timesheet => $this->timesheets->submit($this->user, 'org-b', $this->week));
+        self::assertSame(TimesheetStatus::Submitted, $this->timesheets->submit($this->user, 'org-a', $this->week)->getStatus());
+    }
+
     public function testTenantIsolationAnswersLikeANonExistentTimesheet(): void
     {
         // AC-07: the boss approves the owner in org-a, but is only a colleague in org-b.
