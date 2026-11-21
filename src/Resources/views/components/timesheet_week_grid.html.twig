@@ -1,8 +1,9 @@
 {#
   TimeTrack:TimesheetWeekGrid (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::weekGrid()):
-  dates, rows [{taskId, title|null (masked), imported, days{date: seconds}, total, notes}], daily, total,
+  dates, rows [{taskId, title|null (masked), imported, days{date: seconds}, total, notes, withoutTask}], daily, total,
   expected / diff per date (null = hidden or no balance), status, locked, lockReason, decisionComment, legalRecord,
   unassigned (owner only), actions {name: {form, dialog}}, labels, density, readOnly.
+  1.36.0: withoutTask rows (entries without a task, task id '') show reports.no_task.
   Labels: view.labels.<slot> overrides the translation key (title, task, total, expected, diff, legal_notice, …).
 #}
 {% trans_default_domain 'NowoTimeTrackBundle' %}
@@ -29,7 +30,7 @@
                 <tbody>
                     {% for row in view.rows %}
                         <tr class="{{ nowo_ui_class('table_row', _b) }}" data-task="{{ row.taskId }}">
-                            <th class="{{ nowo_ui_class('table_cell', _b) }}" scope="row">{{ row.title ?? 'reports.task_not_visible'|trans }}{% if row.imported %} <span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ 'reports.source_import'|trans }}</span>{% endif %}
+                            <th class="{{ nowo_ui_class('table_cell', _b) }}" scope="row">{{ row.title is null ? 'reports.task_not_visible'|trans : ((row.withoutTask ?? false) ? 'reports.no_task'|trans : row.title) }}{% if row.imported %} <span class="{{ nowo_ui_class('badge_neutral', _b) }}">{{ 'reports.source_import'|trans }}</span>{% endif %}
                                 {% for note in row.notes %}<br><small class="{{ nowo_ui_class('muted', _b) }}">{{ note }}</small>{% endfor %}</th>
                             {% for date in view.dates %}<td class="{{ nowo_ui_class('table_cell', _b) }} nowo-ui-cell--end">{{ row.days[date] > 0 ? row.days[date]|nowo_time_track_duration : '' }}</td>{% endfor %}
                             <td class="{{ nowo_ui_class('table_cell', _b) }} nowo-ui-cell--end">{{ row.total|nowo_time_track_duration }}</td>

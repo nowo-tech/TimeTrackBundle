@@ -6,7 +6,9 @@ namespace Nowo\TimeTrackBundle\Timesheet;
 
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 
+use function array_map;
 use function count;
 use function in_array;
 use function preg_match;
@@ -126,5 +128,39 @@ final class ScopeKeys
     public static function isOneOf(?string $scopeKey, array $scopeKeys): bool
     {
         return $scopeKey !== null && in_array($scopeKey, $scopeKeys, true);
+    }
+
+    /**
+     * Since 1.36.0: the usable scope keys of the user, the current one first; [] without a scope provider.
+     *
+     * @return list<string>
+     */
+    public static function ofUser(?TimesheetScopeProviderInterface $provider, UserInterface $user, LoggerInterface $logger): array
+    {
+        if (!$provider instanceof TimesheetScopeProviderInterface) {
+            return [];
+        }
+
+        return array_map(static fn (TimesheetScope $scope): string => $scope->key, self::usableScopes($provider->scopesFor($user), $logger));
+    }
+
+    /**
+     * Since 1.36.0 (Beacon spec 250): the tenant scope of a new entry or timer without a task. A requested key must be
+     * one of the user's scopes byte for byte (`===`); without one, the user's current scope (the provider's first).
+     * Without a scope provider there is no scope, and a requested key cannot be checked, so it is refused.
+     *
+     * @throws InvalidArgumentException When the requested key is not one of the user's scopes (callers answer "not trackable")
+     */
+    public static function forEntryWithoutTask(?TimesheetScopeProviderInterface $provider, UserInterface $user, ?string $requested, LoggerInterface $logger): ?string
+    {
+        $keys = self::ofUser($provider, $user, $logger);
+        if ($requested === null) {
+            return $keys[0] ?? null;
+        }
+        if (!in_array($requested, $keys, true)) {
+            throw new InvalidArgumentException('The scope of an entry without a task must be one of the user\'s scopes.');
+        }
+
+        return $requested;
     }
 }

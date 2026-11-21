@@ -11,6 +11,7 @@ timer:
   started_at: Iniciado a las
   none: Sin temporizador activo
   running_intro: "En curso: %task% (desde %started%)"
+  running_intro_without_task: "En marcha sin tarea (desde %started%)"
   status_running: En curso
 tasks:
   title: Tareas registrables
@@ -36,6 +37,7 @@ reports:
   source_manual: "Manual"
   source_calendar: "Calendario"
   task_not_visible: Tarea no visible
+  no_task: "Sin tarea"
   former_person: "Persona antigua"
 flash:
   timer_started: Temporizador iniciado.

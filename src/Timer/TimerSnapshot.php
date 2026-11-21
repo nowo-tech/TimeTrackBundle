@@ -30,7 +30,19 @@ final readonly class TimerSnapshot
         public ClientType $clientType,
         public ?string $channel,
         public ?string $note,
+        // Since 1.36.0: a timer without a task (taskId and taskTitle are ''), its free text and its tenant scope.
+        public bool $withoutTask = false,
+        public ?string $description = null,
+        public ?string $scopeKey = null,
     ) {
+    }
+
+    /**
+     * Since 1.36.0: the task id, null for a timer without a task.
+     */
+    public function taskIdOrNull(): ?string
+    {
+        return $this->withoutTask ? null : $this->taskId;
     }
 
     /**
@@ -51,6 +63,9 @@ final readonly class TimerSnapshot
             $timer->getClientType(),
             is_string($channel) && preg_match(TimerChannel::PATTERN, $channel) === 1 ? $channel : null,
             is_string($note) ? $note : null,
+            !$timer->hasTask(),
+            $timer->getDescription(),
+            $timer->getScopeKey(),
         );
     }
 }

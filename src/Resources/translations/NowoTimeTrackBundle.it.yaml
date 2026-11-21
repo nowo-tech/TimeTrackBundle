@@ -11,6 +11,7 @@ timer:
   started_at: Avviato alle
   none: Nessun timer attivo
   running_intro: "In corso: %task% (dalle %started%)"
+  running_intro_without_task: "In corso senza attività (dal %started%)"
   status_running: In corso
 tasks:
   title: Attività tracciabili
@@ -36,6 +37,7 @@ reports:
   source_manual: "Manuale"
   source_calendar: "Calendario"
   task_not_visible: Attività non visibile
+  no_task: "Nessuna attività"
   former_person: "Ex collaboratore"
 flash:
   timer_started: Timer avviato.

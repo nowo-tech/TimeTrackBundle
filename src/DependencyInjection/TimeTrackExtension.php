@@ -449,6 +449,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerMonitoring($container, $config, $emRef, $registryRef);
         $this->registerBillable($container);
         $this->registerServiceAccounts($container, $config['service_account_policy'] ?? null);
+        $this->registerEntriesWithoutTask($container, $config);
 
         if (!$private) {
             $this->wireHostFlushProbe($container);
@@ -661,6 +662,19 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     }
 
     /**
+     * Since 1.36.0 (Beacon spec 250): `entries.allow_without_task` (default false) on the services that write time.
+     *
+     * @param array<string, mixed> $config
+     */
+    private function registerEntriesWithoutTask(ContainerBuilder $container, array $config): void
+    {
+        /** @var array{allow_without_task: bool} $entries */
+        $entries = $config['entries'];
+        $container->setParameter('nowo_time_track.entries.allow_without_task', $entries['allow_without_task']);
+        $container->getDefinition(TimerService::class)->setArgument('$allowWithoutTask', $entries['allow_without_task']);
+    }
+
+    /**
      * Since 1.25.0 (Beacon spec 234): the {@see ServiceAccountPolicyInterface} port (default {@see NoServiceAccountPolicy};
      * `service_account_policy` or an alias override of the host), injected into the services that write live entries, and
      * the public {@see HostTimerApi} for the host's own controllers.
@@ -858,7 +872,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$periodLockGuard', $guardRef)
             ->setArgument('$scopeProvider', $scopeRef);
         $container->getDefinition(TeamAccessGuard::class)
-            ->setArgument('$periodLockGuard', $guardRef);
+            ->setArgument('$periodLockGuard', $guardRef)
+            // Since 1.36.0: the actor's tenant scopes for entries without a task.
+            ->setArgument('$scopeProvider', $scopeRef);
         $container->getDefinition(BackfillEntryScopeCommand::class)
             ->setArgument('$scopeProvider', $scopeRef)
             ->setArgument('$lockGuard', $guardRef);

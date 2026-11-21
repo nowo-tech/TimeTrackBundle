@@ -238,6 +238,7 @@ final class Configuration implements ConfigurationInterface
                 ->append($this->timesheetsNode())
                 ->append($this->calendarNode())
                 ->append($this->manualEntriesNode())
+                ->append($this->entriesNode())
                 ->append($this->meetingsNode())
                 ->arrayNode('retention')
                     ->info('Since 1.11: retention policy (Retention\\TimeEntryRetentionPolicy) that any purge must apply.')
@@ -1347,6 +1348,24 @@ final class Configuration implements ConfigurationInterface
             ->validate()
                 ->ifTrue(static fn (array $v): bool => $v['enabled'] && in_array('server', $v['modes'], true) && !is_string($v['credential_provider']))
                 ->thenInvalid('calendar.credential_provider is required when the server mode is enabled.')
+            ->end();
+
+        return $node;
+    }
+
+    /**
+     * Since 1.36.0 (Beacon spec 250): `entries`: time entries without a task. Off by default.
+     */
+    private function entriesNode(): ArrayNodeDefinition
+    {
+        $node = (new TreeBuilder('entries'))->getRootNode();
+        $node
+            ->addDefaultsIfNotSet()
+            ->children()
+                ->booleanNode('allow_without_task')
+                    ->info('Since 1.36.0: false (default) = every timer and entry needs a task, as before. true = TimerService::startAt() / startReplacing(), HostTimerApi::startWithoutTask() and ManualEntryService::create() accept a null task with an optional free-text description and a tenant scope that must be one of the user\'s. Such an entry is reached only by its owner and, for anyone else, within their own tenant scopes; never through task or board permissions. The client API (desktop, extension) stays task-only for writes.')
+                    ->defaultFalse()
+                ->end()
             ->end();
 
         return $node;

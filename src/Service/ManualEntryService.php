@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Event\TimeEntryCreatedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
@@ -52,6 +53,10 @@ use function in_array;
  *
  * Since 1.25.0 a service account ({@see ServiceAccountPolicyInterface}) is not refused for an overlap: an agent's entries
  * may overlap its own entries and its running timer. Every other check applies to it as to a person.
+ *
+ * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`): a null `$taskId` creates an entry without a task, with
+ * the user's free text and a tenant scope that must be one of the user's (`===`; default: the current one). Every other
+ * check is the same; with the option off a null task is refused as `not_trackable`, like an unknown task.
  */
 final readonly class ManualEntryService
 {
@@ -121,12 +126,15 @@ final readonly class ManualEntryService
      *                            ({@see TimeEntryBillableDefaultProviderInterface}), unset when it has none. An explicit
      *                            value needs {@see TeamAccessGuard::isBillableEditGranted()} (`billable_forbidden`)
      * @param string|null $channel Since 1.25.0: the channel label stored on the entry (`api`, `mcp`, …; {@see TimerChannel})
+     * @param string|null $taskId Since 1.36.0 nullable: null = an entry without a task (`entries.allow_without_task`)
+     * @param string|null $description Since 1.36.0: free text of an entry without a task (cleaned and cut like a note; ignored with a task)
+     * @param string|null $scopeKey Since 1.36.0: tenant scope of an entry without a task (one of the user's; null = the current one; ignored with a task)
      *
      * @throws InvalidArgumentException When the channel is not a valid label (since 1.25.0)
      * @throws ManualEntryException
      * @throws PeriodWriteRefusedException When the period is locked or submitted
      */
-    public function create(UserInterface $user, string $taskId, DateTimeImmutable $start, DateTimeImmutable $end, TimeEntrySource $source, ?string $note = null, array $metadata = [], ?int $maxAgeDays = null, ?callable $prepare = null, ?callable $finish = null, ?bool $billable = null, ?string $channel = null): TimeEntry
+    public function create(UserInterface $user, ?string $taskId, DateTimeImmutable $start, DateTimeImmutable $end, TimeEntrySource $source, ?string $note = null, array $metadata = [], ?int $maxAgeDays = null, ?callable $prepare = null, ?callable $finish = null, ?bool $billable = null, ?string $channel = null, ?string $description = null, ?string $scopeKey = null): TimeEntry
     {
         $channel = $channel === null ? null : TimerChannel::assertValid($channel);
         if (!in_array($source, [TimeEntrySource::Manual, TimeEntrySource::Calendar], true)) {
@@ -148,9 +156,21 @@ final readonly class ManualEntryService
         if ($start->getTimestamp() < $now - ($maxAgeDays ?? $this->maxAgeDays) * 86_400) {
             throw new ManualEntryException(ManualEntryException::TOO_OLD);
         }
-        $task = $this->taskAccess->canTrack($user, $taskId) ? $this->timerService->findTask($user, $taskId) : null;
-        if (!$task instanceof TaskReference) {
-            throw new ManualEntryException(ManualEntryException::NOT_TRACKABLE);
+        if ($taskId === null) {
+            $task = null;
+            try {
+                // Since 1.36.0: the option and the requested scope, checked before anything is written.
+                $scopeKey = $this->timerService->scopeForEntryWithoutTask($user, $scopeKey);
+            } catch (TaskNotTrackableException) {
+                throw new ManualEntryException(ManualEntryException::NOT_TRACKABLE);
+            }
+            $description = TimerService::cleanDescription($description);
+        } else {
+            $task = $this->taskAccess->canTrack($user, $taskId) ? $this->timerService->findTask($user, $taskId) : null;
+            if (!$task instanceof TaskReference) {
+                throw new ManualEntryException(ManualEntryException::NOT_TRACKABLE);
+            }
+            $description = null;
         }
         // Since 1.25.0: `closed_by` is reserved for the timer marks ({@see TimeEntry::closedBy()}); a caller cannot forge it.
         unset($metadata['closed_by']);
@@ -160,25 +180,29 @@ final readonly class ManualEntryService
         }
 
         // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-        $entry = $this->serialised($user, function () use ($user, $task, $start, $end, $seconds, $source, $metadata, $prepare, $finish, $billable, $channel): TimeEntry {
+        $tasklessScope = $scopeKey;
+        $entry         = $this->serialised($user, function () use ($user, $task, $start, $end, $seconds, $source, $metadata, $prepare, $finish, $billable, $channel, $description, $tasklessScope): TimeEntry {
             if ($prepare !== null) {
                 $prepare();
             }
-            // Since 1.24.1 (audit OM TT-L2): an unusable host key is no scope (warning), never a failed request.
-            $scopeKey = ScopeKeys::fromHost($this->scopeProvider?->scopeKeyForTask($user, $task->id, $task->boardId), $this->logger, 'manual_entry_scope');
+            // Since 1.24.1 (audit OM TT-L2): an unusable host key is no scope (warning), never a failed request. Since
+            // 1.36.0 an entry without a task has the scope checked above.
+            $scopeKey = $task instanceof TaskReference ? ScopeKeys::fromHost($this->scopeProvider?->scopeKeyForTask($user, $task->id, $task->boardId), $this->logger, 'manual_entry_scope') : $tasklessScope;
             $this->periodLockGuard?->assertWritable($user, $scopeKey, $start, WriteKind::EntryCreate);
             // Since 1.25.0: a service account's entries may overlap (asked per call, never memoised).
             $serviceAccount = $this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false;
             if (!$serviceAccount && $this->overlaps($user, $start, $end)) {
                 throw new ManualEntryException(ManualEntryException::OVERLAP);
             }
-            $entry = new TimeEntry($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
+            $entry = new TimeEntry($this->userReferences->reference($user), $task?->id, $task->title ?? '', $task?->boardId, $start, $end, $seconds, $source, $metadata === [] ? null : $metadata, StorageTime::normalize($this->clock->now()));
             $entry->assignScopeKey($scopeKey);
+            $entry->describe($description);
             $entry->markOrigin($channel, $serviceAccount);
             if ($billable !== null && $this->accessGuard instanceof TeamAccessGuard && !$this->accessGuard->isBillableEditGranted($user, $entry)) {
                 throw new ManualEntryException(ManualEntryException::BILLABLE_FORBIDDEN);
             }
-            $entry->markBillable($billable ?? $this->billableDefaults?->defaultFor($scopeKey ?? '', $task->id));
+            // Since 1.36.0: the host default is per task; an entry without a task has none (unset unless given).
+            $entry->markBillable($billable ?? ($task instanceof TaskReference ? $this->billableDefaults?->defaultFor($scopeKey ?? '', $task->id) : null));
             $this->entries->save($entry);
             if ($finish !== null) {
                 $finish($entry);
@@ -192,7 +216,7 @@ final readonly class ManualEntryService
         } catch (Throwable $exception) {
             $this->logger->warning('TimeTrack entry-created listener failed.', ['bundle' => 'time_track', 'action' => 'entry_create', 'exception' => $exception::class]);
         }
-        $this->logger->info('TimeTrack entry created without a timer.', ['bundle' => 'time_track', 'action' => 'entry_create', 'source' => $source->value]);
+        $this->logger->info('TimeTrack entry created without a timer.', ['bundle' => 'time_track', 'action' => 'entry_create', 'source' => $source->value] + ($entry->hasTask() ? [] : ['without_task' => true]));
 
         return $entry;
     }

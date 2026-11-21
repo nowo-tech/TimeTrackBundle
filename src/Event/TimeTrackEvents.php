@@ -88,4 +88,7 @@ final class TimeTrackEvents
 
     /** {@see ClientSessionAccessCheckEvent}: whether the actor may revoke one client session by its id (1.34.0). */
     public const CLIENT_SESSION_ACCESS_CHECK = 'nowo_time_track.client_session.access_check';
+
+    /** Since 1.36.0: {@see TimerStartedWithoutTaskEvent} — a timer without a task was started (ids only; TIMER_START is not dispatched for it). */
+    public const TIMER_START_WITHOUT_TASK = 'nowo_time_track.timer.start_without_task';
 }

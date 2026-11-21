@@ -112,7 +112,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 'clientType'      => $timer->timer->clientType->value,
                 'channel'         => $timer->timer->channel,
                 'note'            => $timer->timer->note,
-            ] : null,
+            ] + ($timer->timer->withoutTask ? ['withoutTask' => true, 'description' => $timer->timer->description, 'scopeKey' => $timer->timer->scopeKey] : []) : null,
             'clientSessions' => array_map(static fn (ClientSessionView $session): array => [
                 'clientType' => $session->clientType->value,
                 'scopes'     => $session->scopes,
@@ -287,7 +287,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             'channel'         => $entry->channel,
             'serviceAccount'  => $entry->serviceAccount,
             'createdAt'       => $record->createdAt->format(DATE_ATOM),
-        ];
+        ] + ($entry->withoutTask ? ['withoutTask' => true] : []);
     }
 
     /**

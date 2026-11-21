@@ -49,7 +49,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $em->persist(new TimeEntry($this->user, 'task-1', 'Kept', null, new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Web));
         $em->flush();
 
-        // Since 1.25.0: the later migration is rolled back first and applied again last.
+        // Since 1.25.0: the later migrations are rolled back first and applied again last (1.36.0 rebuilds the table on SQLite).
+        $this->runSql($this->platformName() . '-down.sql', '1.36.0');
         $this->runSql($this->platformName() . '-down.sql', '1.25.0');
         $this->runSql($this->platformName() . '-down.sql');
         $table = $conn->createSchemaManager()->introspectTable('time_track_entries');
@@ -61,6 +62,7 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
 
         $this->runSql($this->platformName() . '-up.sql');
         $this->runSql($this->platformName() . '-up.sql', '1.25.0');
+        $this->runSql($this->platformName() . '-up.sql', '1.36.0');
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.15 mapping');
         self::assertSame(['Kept', '3600'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT duration_seconds FROM time_track_entries')]);
     }

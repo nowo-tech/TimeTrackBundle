@@ -24,6 +24,7 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\IdleResolvedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
+use Nowo\TimeTrackBundle\Event\TimerStartedWithoutTaskEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartEvent;
 use Nowo\TimeTrackBundle\Event\TimerStopEvent;
 use Nowo\TimeTrackBundle\Event\TimesheetLateEntryEvent;
@@ -46,6 +47,8 @@ use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\LatestTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\PaginatedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TasklessScopedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\TimeEntryListing;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
@@ -91,6 +94,13 @@ use function usort;
  * `period_submitted`). A stop is always allowed: an entry belongs to its start date, which was writable at start;
  * when that period was locked while the timer ran (manual lock), the entry is written and
  * {@see TimesheetLateEntryEvent} fires.
+ *
+ * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`): a timer may run without a task (a null `$taskId` on
+ * {@see self::startAt()} / {@see self::startReplacing()}), with the user's free text and a tenant scope that must be one
+ * of the user's own ({@see ScopeKeys::forEntryWithoutTask()}). Its entry has no task, so it is only ever reached through
+ * its owner and, for anyone else, through the existing per-user rules within the same tenant
+ * ({@see self::listEntriesPage()}, {@see TeamAccessGuard}). With the option off a null task is refused like an unknown
+ * task, and everything else behaves as in 1.35.
  */
 final readonly class TimerService
 {
@@ -136,6 +146,8 @@ final readonly class TimerService
         private ?TimeEntryBillableDefaultProviderInterface $billableDefaults = null,
         // Since 1.25.0: tells a service account (agent) from a person (null = everyone is a person).
         private ?ServiceAccountPolicyInterface $serviceAccounts = null,
+        // Since 1.36.0: `entries.allow_without_task` (false = a null task is refused, the 1.35 behaviour).
+        private bool $allowWithoutTask = false,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -158,18 +170,21 @@ final readonly class TimerService
      * Starts a timer on a task the user may track.
      *
      * @param UserInterface $user Timer owner
-     * @param string $taskId Task id resolved through the task provider
+     * @param string|null $taskId Task id resolved through the task provider; since 1.36.0 null = a timer without a task
+     *                            (`entries.allow_without_task`)
      * @param ClientType $clientType Client that starts the timer (web, extension, desktop)
      * @param array<string, mixed> $metadata Client metadata stored with the timer
+     * @param string|null $description Since 1.36.0: free text of a timer without a task (ignored with a task)
+     * @param string|null $scopeKey Since 1.36.0: tenant scope of a timer without a task (one of the user's; null = the current one)
      *
      * @throws ActiveTimerConflictException When the user already has a running timer
-     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user (or, without a task, the option is off or the scope is not the user's)
      *
      * @return ActiveTimer The new running timer
      */
-    public function start(UserInterface $user, string $taskId, ClientType $clientType, array $metadata = []): ActiveTimer
+    public function start(UserInterface $user, ?string $taskId, ClientType $clientType, array $metadata = [], ?string $description = null, ?string $scopeKey = null): ActiveTimer
     {
-        return $this->startAt($user, $taskId, $clientType, $metadata)['timer'];
+        return $this->startAt($user, $taskId, $clientType, $metadata, description: $description, scopeKey: $scopeKey)['timer'];
     }
 
     /**
@@ -178,24 +193,29 @@ final readonly class TimerService
      * user's latest entry (`overlap`) and not older than the backdate limit (`max_backdate`).
      *
      * @param UserInterface $user Timer owner
-     * @param string $taskId Task id resolved through the task provider
+     * @param string|null $taskId Task id resolved through the task provider; since 1.36.0 null = a timer without a task
      * @param ClientType $clientType Client that starts the timer
      * @param array<string, mixed> $metadata Client metadata stored with the timer
      * @param DateTimeImmutable|null $requestedStart Client-supplied start (null = now, 1.9 behaviour)
      * @param BackdateLimits|null $limits Backdate limits (null = the defaults)
+     * @param string|null $description Since 1.36.0: free text of a timer without a task (cleaned and cut like a note; ignored with a task)
+     * @param string|null $scopeKey Since 1.36.0: tenant scope of a timer without a task (one of the user's, `===`; null = the current one; ignored with a task)
      *
      * @throws ActiveTimerConflictException When the user already has a running timer
-     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user (or, without a task, the option is off or the scope is not the user's)
      * @throws PeriodLockedException When the (applied) start is in a locked period (since 1.13)
      * @throws PeriodSubmittedException When the (applied) start is in a submitted period (since 1.13)
      *
-     * @return array{timer: ActiveTimer, task: TaskReference, startTime: ClampedTime|null} The timer, its task and the clamp result (null without a requested start)
+     * @return ($taskId is null ? array{timer: ActiveTimer, task: null, startTime: ClampedTime|null} : array{timer: ActiveTimer, task: TaskReference, startTime: ClampedTime|null}) The timer, its task (since 1.36.0 null without one) and the clamp result (null without a requested start)
      */
-    public function startAt(UserInterface $user, string $taskId, ClientType $clientType, array $metadata = [], ?DateTimeImmutable $requestedStart = null, ?BackdateLimits $limits = null): array
+    public function startAt(UserInterface $user, ?string $taskId, ClientType $clientType, array $metadata = [], ?DateTimeImmutable $requestedStart = null, ?BackdateLimits $limits = null, ?string $description = null, ?string $scopeKey = null): array
     {
         $existing = $this->getActive($user);
         if ($existing instanceof ActiveTimer) {
             throw ActiveTimerConflictException::alreadyRunning($existing->getTaskId());
+        }
+        if ($taskId === null) {
+            return $this->startWithoutTaskAt($user, $clientType, $metadata, $requestedStart, $limits, $description, $scopeKey);
         }
 
         $task      = $this->resolveTrackable($user, $taskId);
@@ -224,6 +244,85 @@ final readonly class TimerService
         }
 
         return ['timer' => $timer, 'task' => $task, 'startTime' => $startTime];
+    }
+
+    /**
+     * Since 1.36.0: {@see self::startAt()} without a task. The same checks, clamping, lock order and concurrency guard as
+     * a task timer (one running timer per user: {@see self::insertTimer()}); the scope is the requested one when it is
+     * one of the user's, else the current one; {@see TimerStartedWithoutTaskEvent} instead of TIMER_START.
+     *
+     * @param array<string, mixed> $metadata
+     *
+     * @return array{timer: ActiveTimer, task: null, startTime: ClampedTime|null}
+     */
+    private function startWithoutTaskAt(UserInterface $user, ClientType $clientType, array $metadata, ?DateTimeImmutable $requestedStart, ?BackdateLimits $limits, ?string $description, ?string $scopeKey): array
+    {
+        $scopeKey  = $this->scopeKeyWithoutTask($user, $scopeKey);
+        $metadata  = $this->startMetadata($metadata);
+        $now       = $this->clock->now();
+        $startTime = $requestedStart instanceof DateTimeImmutable ? $this->clampStart($user, $requestedStart, $limits ?? new BackdateLimits(), $now) : null;
+        $startedAt = $startTime instanceof ClampedTime ? $startTime->applied : $now;
+        $this->periodLockGuard?->assertWritable($user, $scopeKey, $startedAt, WriteKind::TimerStart);
+
+        $timer = ActiveTimer::withoutTask($this->userReferences->reference($user), $clientType, self::cleanDescription($description), $scopeKey, $metadata, $startedAt);
+        $this->insertTimer($user, $timer, 'timer_start', $clientType);
+
+        $this->dispatchStartedWithoutTask($user, $timer, $startTime);
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime, 'without_task' => true]);
+        if ($startTime instanceof ClampedTime && $startTime->clamped) {
+            $this->logger->info('TimeTrack timer start clamped.', $this->context('timer_start_clamped', $clientType) + ['reason' => $startTime->reason]);
+        }
+
+        return ['timer' => $timer, 'task' => null, 'startTime' => $startTime];
+    }
+
+    /**
+     * Since 1.36.0: the tenant scope of a new timer or entry without a task, when the option allows one.
+     *
+     * @throws TaskNotTrackableException When the option is off, or the requested scope is not one of the user's
+     */
+    private function scopeKeyWithoutTask(UserInterface $user, ?string $requested): ?string
+    {
+        if (!$this->allowWithoutTask) {
+            throw TaskNotTrackableException::withoutTask();
+        }
+
+        try {
+            return ScopeKeys::forEntryWithoutTask($this->scopeProvider, $user, $requested, $this->logger);
+        } catch (InvalidArgumentException) {
+            throw TaskNotTrackableException::withoutTask();
+        }
+    }
+
+    /**
+     * Since 1.36.0: the free text of a timer or entry without a task, cleaned and cut like a note (blank = none).
+     */
+    public static function cleanDescription(?string $description): ?string
+    {
+        return $description === null ? null : NoteSanitizer::cleanAndCut($description);
+    }
+
+    /**
+     * Since 1.36.0: whether `entries.allow_without_task` is on.
+     */
+    public function allowsEntriesWithoutTask(): bool
+    {
+        return $this->allowWithoutTask;
+    }
+
+    /**
+     * Since 1.36.0: the tenant scope a new entry without a task gets (ManualEntryService), checked as for a timer.
+     *
+     * @throws TaskNotTrackableException When the option is off, or the requested scope is not one of the user's
+     */
+    public function scopeForEntryWithoutTask(UserInterface $user, ?string $requested): ?string
+    {
+        return $this->scopeKeyWithoutTask($user, $requested);
+    }
+
+    private function dispatchStartedWithoutTask(UserInterface $user, ActiveTimer $timer, ?ClampedTime $startTime = null): void
+    {
+        $this->eventDispatcher->dispatch(new TimerStartedWithoutTaskEvent(UserIdResolver::getId($user), $timer->getId(), $timer->getScopeKey(), $timer->getClientType(), $timer->getStartedAt(), $startTime), TimeTrackEvents::TIMER_START_WITHOUT_TASK);
     }
 
     /**
@@ -354,12 +453,18 @@ final readonly class TimerService
      * unique index in between, the attempt is retried: up to {@see self::REPLACE_ATTEMPTS} attempts, the last call wins,
      * and every stopped timer is recorded once.
      *
+     * Since 1.36.0 a null `$taskId` starts a timer without a task (`entries.allow_without_task`, see {@see self::startAt()}):
+     * the scope is checked before anything is stopped, as the task is, and {@see TimerStartedWithoutTaskEvent} replaces
+     * TIMER_START. The one-running-timer guarantee is the same.
+     *
      * @param UserInterface $user Timer owner
-     * @param string $taskId Task to track
+     * @param string|null $taskId Task to track (since 1.36.0 null = no task)
      * @param ClientType $clientType Client of the new timer (source of its entry)
      * @param string $channel Channel label ({@see TimerChannel}), stored on the entry
      * @param array<string, mixed> $metadata Metadata of the new timer (`note`; reserved keys are dropped)
      * @param string|null $stopNote Note stored on the entry of the replaced timer
+     * @param string|null $description Since 1.36.0: free text of a timer without a task
+     * @param string|null $scopeKey Since 1.36.0: tenant scope of a timer without a task (one of the user's; null = the current one)
      *
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
      * @throws PeriodLockedException When the current period is locked
@@ -370,13 +475,14 @@ final readonly class TimerService
      *                                      (they are written: a refused start leaves the running timer untouched for a
      *                                      task, period-lock or channel refusal, not for an exhausted conflict)
      *
-     * @return array{timer: ActiveTimer, task: TaskReference, stopped: list<TimeEntry>} The new timer, its task and the entries of the timers it stopped (oldest first)
+     * @return ($taskId is null ? array{timer: ActiveTimer, task: null, stopped: list<TimeEntry>} : array{timer: ActiveTimer, task: TaskReference, stopped: list<TimeEntry>}) The new timer, its task (null without one) and the entries of the timers it stopped (oldest first)
      */
-    public function startReplacing(UserInterface $user, string $taskId, ClientType $clientType, string $channel, array $metadata = [], ?string $stopNote = null): array
+    public function startReplacing(UserInterface $user, ?string $taskId, ClientType $clientType, string $channel, array $metadata = [], ?string $stopNote = null, ?string $description = null, ?string $scopeKey = null): array
     {
         $channel  = TimerChannel::assertValid($channel);
-        $task     = $this->resolveTrackable($user, $taskId);
-        $scopeKey = $this->scopeKeyFor($user, $task->id, $task->boardId);
+        $task     = $taskId === null ? null : $this->resolveTrackable($user, $taskId);
+        $scopeKey = $task instanceof TaskReference ? $this->scopeKeyFor($user, $task->id, $task->boardId) : $this->scopeKeyWithoutTask($user, $scopeKey);
+        $description = $task instanceof TaskReference ? null : self::cleanDescription($description);
         $this->periodLockGuard?->assertWritable($user, $scopeKey, $this->clock->now(), WriteKind::TimerStart);
         $metadata                    = $this->startMetadata($metadata);
         $metadata[self::CHANNEL_KEY] = $channel;
@@ -396,11 +502,13 @@ final readonly class TimerService
 
             try {
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-                $timer = $this->serialised($user, function () use ($user, $task, $clientType, $metadata): ?ActiveTimer {
+                $timer = $this->serialised($user, function () use ($user, $task, $clientType, $metadata, $description, $scopeKey): ?ActiveTimer {
                     if ($this->getActive($user) instanceof ActiveTimer) {
                         return null; // Another start of this account got in first: stop that one on the next attempt.
                     }
-                    $timer = new ActiveTimer($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $clientType, $metadata, $this->clock->now());
+                    $timer = $task instanceof TaskReference
+                        ? new ActiveTimer($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $clientType, $metadata, $this->clock->now())
+                        : ActiveTimer::withoutTask($this->userReferences->reference($user), $clientType, $description, $scopeKey, $metadata, $this->clock->now());
                     $this->activeTimerRepository->save($timer);
 
                     return $timer;
@@ -422,8 +530,12 @@ final readonly class TimerService
             }
         }
 
-        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
-        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['channel' => $channel, 'replaced' => $stopped !== []]);
+        if ($task instanceof TaskReference) {
+            $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
+        } else {
+            $this->dispatchStartedWithoutTask($user, $timer);
+        }
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['channel' => $channel, 'replaced' => $stopped !== []] + ($task instanceof TaskReference ? [] : ['without_task' => true]));
 
         return ['timer' => $timer, 'task' => $task, 'stopped' => $stopped];
     }
@@ -493,7 +605,7 @@ final readonly class TimerService
         $note = $note !== null ? NoteSanitizer::cleanAndCut($note) : null;
 
         if ($resolution !== IdleResolution::Keep && $this->periodLockGuard instanceof PeriodLockGuard) {
-            $this->periodLockGuard->assertWritable($user, $this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()), $from, WriteKind::IdleResolve);
+            $this->periodLockGuard->assertWritable($user, $this->timerScopeKey($user, $timer), $from, WriteKind::IdleResolve);
             if ($target instanceof TaskReference) {
                 $this->periodLockGuard->assertWritable($user, $this->scopeKeyFor($user, $target->id, $target->boardId), $from, WriteKind::IdleResolve);
             }
@@ -530,7 +642,7 @@ final readonly class TimerService
         }
 
         // The note stays on the entry up to the idle start; the follow-up timer starts without it (EF2-I4).
-        $next = $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_split');
+        $next = $this->continueTimer($user, $timer, $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_split');
         $this->logger->info('TimeTrack idle span discarded, timer continued.', $this->context('timer_split', $timer->getClientType()));
         $this->dispatchIdleResolved($user, $resolution, $from, $to, $clientType);
 
@@ -664,6 +776,31 @@ final readonly class TimerService
     {
         $entries = [];
         $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId, $allowOwnerless);
+        // Since 1.36.0: another owner's entries without a task only in the viewer's tenant scopes.
+        $listing = $this->tasklessListing($viewer, $from, $to, $query);
+        if ($listing instanceof TimeEntryListing) {
+            if ($this->timeEntryRepository instanceof TasklessScopedTimeEntryRepositoryInterface) {
+                $total = $this->timeEntryRepository->countListing($listing);
+
+                return $total === 0 ? [] : $this->timeEntryRepository->findListingPage($listing, 0, $total);
+            }
+
+            return array_values(array_filter($this->listEntriesOf($query, $from, $to), static fn (TimeEntry $entry): bool => $entry->hasTask() || $listing->keepsWithoutTask($entry->getUserId(), $entry->getScopeKey())));
+        }
+
+        return $this->listEntriesOf($query, $from, $to);
+    }
+
+    /**
+     * The entries of a resolved query (the 1.35 listing).
+     *
+     * @param array{userIds: list<string>, includeImported: bool, includeOwnerless: bool, ownerlessScopeKeys: list<string>|null} $query
+     *
+     * @return list<TimeEntry>
+     */
+    private function listEntriesOf(array $query, DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        $entries = [];
         // Since 1.15: with the ownerless entries a list-query listener let this viewer see.
         if ($query['includeOwnerless'] && $this->timeEntryRepository instanceof FormerPersonTimeEntryRepositoryInterface) {
             $total = $this->timeEntryRepository->countWithOwnerless($query['userIds'], $query['ownerlessScopeKeys'], $from, $to, $query['includeImported']);
@@ -705,6 +842,18 @@ final readonly class TimerService
         if ($repository instanceof PaginatedTimeEntryRepositoryInterface) {
             $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId, $allowOwnerless);
             $userIds = $query['userIds'];
+            // Since 1.36.0: another owner's entries without a task only in the viewer's tenant scopes, in the database
+            // when the store can (else listed in memory below).
+            $listing = $this->tasklessListing($viewer, $from, $to, $query);
+            if ($listing instanceof TimeEntryListing && $repository instanceof TasklessScopedTimeEntryRepositoryInterface) {
+                $total = $repository->countListing($listing);
+                $page  = $this->clampPage($page, $total, $perPage);
+
+                return new TimeEntryPage($total === 0 ? [] : $repository->findListingPage($listing, ($page - 1) * $perPage, $perPage), $page, $perPage, $total);
+            }
+            if ($listing instanceof TimeEntryListing) {
+                return $this->slicePage($this->listEntries($viewer, $from, $to, $targetUserId, $allowOwnerless), $page, $perPage);
+            }
             if ($query['includeOwnerless'] && $repository instanceof FormerPersonTimeEntryRepositoryInterface) {
                 $total = $repository->countWithOwnerless($userIds, $query['ownerlessScopeKeys'], $from, $to, $query['includeImported']);
                 $page  = $this->clampPage($page, $total, $perPage);
@@ -725,11 +874,36 @@ final readonly class TimerService
             }
         }
 
-        $entries = $this->listEntries($viewer, $from, $to, $targetUserId, $allowOwnerless);
-        $total   = count($entries);
-        $page    = $this->clampPage($page, $total, $perPage);
+        return $this->slicePage($this->listEntries($viewer, $from, $to, $targetUserId, $allowOwnerless), $page, $perPage);
+    }
+
+    /**
+     * @param list<TimeEntry> $entries
+     */
+    private function slicePage(array $entries, int $page, int $perPage): TimeEntryPage
+    {
+        $total = count($entries);
+        $page  = $this->clampPage($page, $total, $perPage);
 
         return new TimeEntryPage(array_slice($entries, ($page - 1) * $perPage, $perPage), $page, $perPage, $total);
+    }
+
+    /**
+     * Since 1.36.0 (Beacon spec 250): the listing that keeps another owner's entries without a task only in the viewer's
+     * tenant scopes, or null when nothing needs that rule: the option off (the 1.35 listing), no scope provider (a
+     * single-tenant host keeps the per-user rules), or a listing of the viewer's own entries only. Asked per call (never
+     * memoised: worker mode).
+     *
+     * @param array{userIds: list<string>, includeImported: bool, includeOwnerless: bool, ownerlessScopeKeys: list<string>|null} $query
+     */
+    private function tasklessListing(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, array $query): ?TimeEntryListing
+    {
+        $viewerId = UserIdResolver::getId($viewer);
+        if (!$this->allowWithoutTask || !$this->scopeProvider instanceof TimesheetScopeProviderInterface || (!$query['includeOwnerless'] && $query['userIds'] === [$viewerId])) {
+            return null;
+        }
+
+        return new TimeEntryListing($query['userIds'], $from, $to, $query['includeImported'], $query['includeOwnerless'], $query['ownerlessScopeKeys'], $viewerId, ScopeKeys::ofUser($this->scopeProvider, $viewer, $this->logger));
     }
 
     private function clampPage(int $page, int $total, int $perPage): int
@@ -745,6 +919,7 @@ final readonly class TimerService
      * sees what the member can see, and a task the owner can see but no longer track (closed) is masked too.
      *
      * Since 1.15 an ownerless entry has no owner to ask: it is judged by what `$viewer` may track, and masked without one.
+     * Since 1.36.0 an entry without a task is never masked, unless it is ownerless (then always).
      *
      * @param list<TimeEntry> $entries
      *
@@ -756,6 +931,14 @@ final readonly class TimerService
         /** @var array<string, array{owner: UserInterface, entries: array<string, list<string>>}> $byOwner */
         $byOwner = [];
         foreach ($entries as $entry) {
+            if (!$entry->hasTask()) {
+                // Since 1.36.0: no task to judge an entry without one by. Its owner wrote the free text, so it shows; an
+                // ownerless one (user deleted, not anonymised) has no owner to vouch for it either: masked for everyone.
+                if ($entry->isOwnerless()) {
+                    $hidden[$entry->getId()] = true;
+                }
+                continue;
+            }
             if ($entry->isOwnerless()) {
                 if (!$viewer instanceof UserInterface) {
                     $hidden[$entry->getId()] = true;
@@ -860,7 +1043,7 @@ final readonly class TimerService
             $duration = max(0, $endedAt->getTimestamp() - $current->getStartedAt()->getTimestamp());
             $entry    = new TimeEntry(
                 $this->userReferences->reference($user),
-                $current->getTaskId(),
+                $current->taskIdOrNull(),
                 $current->getTaskTitleSnapshot(),
                 $current->getBoardIdSnapshot(),
                 $current->getStartedAt(),
@@ -870,7 +1053,9 @@ final readonly class TimerService
                 $extraMetadata === [] ? $this->entryMetadata($this->withoutChannel($current->getMetadata()), $note) : [...($this->entryMetadata($this->withoutChannel($current->getMetadata()), $note) ?? []), ...$extraMetadata],
                 $endedAt,
             );
-            $entry->assignScopeKey($this->scopeKeyFor($user, $current->getTaskId(), $current->getBoardIdSnapshot()));
+            $entry->assignScopeKey($this->timerScopeKey($user, $current));
+            // Since 1.36.0: an entry without a task keeps the timer's free text.
+            $entry->describe($current->hasTask() ? null : $current->getDescription());
             $this->applyBillableDefault($entry);
             $entry->markOrigin($this->channelOf($current), $serviceAccount);
             foreach ($extraEntries as $extra) {
@@ -1085,7 +1270,8 @@ final readonly class TimerService
      */
     private function applyBillableDefault(TimeEntry $entry): void
     {
-        $entry->markBillable($this->billableDefaults?->defaultFor($entry->getScopeKey() ?? '', $entry->getTaskId()));
+        // Since 1.36.0: the host default is per task; an entry without a task has none (the flag stays unset).
+        $entry->markBillable($entry->hasTask() ? $this->billableDefaults?->defaultFor($entry->getScopeKey() ?? '', $entry->getTaskId()) : null);
     }
 
     /**
@@ -1183,8 +1369,8 @@ final readonly class TimerService
         }
 
         $next = match ($followUp) {
-            IdleFollowUp::Continue => $this->continueTimer($user, $timer->getTaskId(), $timer->getTaskTitleSnapshot(), $timer->getBoardIdSnapshot(), $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_idle_reassign'),
-            IdleFollowUp::Switch   => $this->continueTimer($user, $target->id, $target->title, $target->boardId, $clientType, null, $to, 'timer_idle_reassign', $target),
+            IdleFollowUp::Continue => $this->continueTimer($user, $timer, $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_idle_reassign'),
+            IdleFollowUp::Switch   => $this->continueTimer($user, $target, $clientType, null, $to, 'timer_idle_reassign'),
             IdleFollowUp::Stop     => null,
         };
 
@@ -1195,20 +1381,40 @@ final readonly class TimerService
     }
 
     /**
-     * Starts the follow-up timer of an idle decision at `$startedAt`.
+     * Starts the follow-up timer of an idle decision at `$startedAt`: on the target task, or on what the stopped timer
+     * tracked (since 1.36.0 a timer without a task continues without one, with its free text and scope).
      *
      * @param array<string, mixed>|null $metadata
      *
      * @throws ActiveTimerConflictException When a concurrent start took the timer slot first (the recorded entries stay)
      */
-    private function continueTimer(UserInterface $user, string $taskId, string $taskTitle, ?string $boardId, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action, ?TaskReference $task = null): ActiveTimer
+    private function continueTimer(UserInterface $user, TaskReference|ActiveTimer $from, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action): ActiveTimer
     {
-        $next = new ActiveTimer($this->userReferences->reference($user), $taskId, $taskTitle, $boardId, $clientType, $metadata, $startedAt);
+        $owner = $this->userReferences->reference($user);
+        $next  = match (true) {
+            $from instanceof TaskReference => new ActiveTimer($owner, $from->id, $from->title, $from->boardId, $clientType, $metadata, $startedAt),
+            $from->hasTask()               => new ActiveTimer($owner, $from->getTaskId(), $from->getTaskTitleSnapshot(), $from->getBoardIdSnapshot(), $clientType, $metadata, $startedAt),
+            default                        => ActiveTimer::withoutTask($owner, $clientType, $from->getDescription(), $from->getScopeKey(), $metadata, $startedAt),
+        };
         // A concurrent start won between the stop and the continuation (1.9.1): the entries stay, its timer runs.
         $this->insertTimer($user, $next, $action, $clientType);
-        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task ?? new TaskReference($taskId, $taskTitle, $boardId), $clientType), TimeTrackEvents::TIMER_START);
+        if ($next->hasTask()) {
+            $task = $from instanceof TaskReference ? $from : new TaskReference($next->getTaskId(), $next->getTaskTitleSnapshot(), $next->getBoardIdSnapshot());
+            $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
+        } else {
+            $this->dispatchStartedWithoutTask($user, $next);
+        }
 
         return $next;
+    }
+
+    /**
+     * Since 1.36.0: the tenant scope of the entry a timer records: the task's (asked again, as since 1.13), or the scope
+     * a timer without a task was started in.
+     */
+    private function timerScopeKey(UserInterface $user, ActiveTimer $timer): ?string
+    {
+        return $timer->hasTask() ? $this->scopeKeyFor($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()) : $timer->getScopeKey();
     }
 
     private function dispatchIdleResolved(UserInterface $user, IdleResolution $resolution, DateTimeImmutable $from, DateTimeImmutable $to, ClientType $clientType, ?string $targetTaskId = null, ?IdleFollowUp $followUp = null, ?string $note = null): void

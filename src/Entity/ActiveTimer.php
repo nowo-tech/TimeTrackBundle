@@ -19,6 +19,10 @@ use const DATE_ATOM;
 
 /**
  * Running timer of a user (one per user, unique index on user_id).
+ *
+ * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`) a timer may run without a task: `task_id` is NULL, the
+ * user's free text is in `description`, and the tenant scope chosen at start is in `scope_key`, so the entry the stop
+ * records lands in that tenant ({@see self::withoutTask()}). A task timer leaves both columns null.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_active_timers')]
@@ -35,6 +39,14 @@ class ActiveTimer
     #[ORM\Column(name: 'last_heartbeat_at', type: 'datetime_immutable')]
     private DateTimeImmutable $lastHeartbeatAt;
 
+    /** Since 1.36.0: the user's free text of a timer without a task (null on a task timer, or none given). */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $description = null;
+
+    /** Since 1.36.0: the tenant scope chosen when a timer without a task started (null on a task timer, or no scope). */
+    #[ORM\Column(name: 'scope_key', type: 'string', length: 64, nullable: true)]
+    private ?string $scopeKey = null;
+
     /**
      * Starts a timer (start time: the given one, else now).
      */
@@ -42,8 +54,9 @@ class ActiveTimer
         #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(name: 'user_id', nullable: false, onDelete: 'CASCADE')]
         private object $user,
-        #[ORM\Column(name: 'task_id', type: 'string', length: 36)]
-        private string $taskId,
+        // Since 1.36.0 nullable: null = a timer without a task (see withoutTask()).
+        #[ORM\Column(name: 'task_id', type: 'string', length: 36, nullable: true)]
+        private ?string $taskId,
         #[ORM\Column(name: 'task_title_snapshot', type: 'string', length: 255)]
         private string $taskTitleSnapshot,
         #[ORM\Column(name: 'board_id_snapshot', type: 'string', length: 36, nullable: true)]
@@ -59,6 +72,23 @@ class ActiveTimer
         $this->id              = Uuid::generate()->toString();
         $this->startedAt       = $now;
         $this->lastHeartbeatAt = $now;
+    }
+
+    /**
+     * Since 1.36.0: a timer without a task (`entries.allow_without_task`): empty title snapshot, no board, the user's
+     * free text and the tenant scope chosen at start. The caller cleans the description and checks the scope.
+     *
+     * @param array<string, mixed>|null $metadata
+     */
+    public static function withoutTask(object $user, ClientType $clientType, ?string $description, ?string $scopeKey, ?array $metadata = null, ?DateTimeImmutable $startedAt = null): self
+    {
+        $timer = new self($user, null, '', null, $clientType, $metadata, $startedAt);
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $timer->description = $description;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $timer->scopeKey = $scopeKey;
+
+        return $timer;
     }
 
     /**
@@ -86,11 +116,44 @@ class ActiveTimer
     }
 
     /**
-     * Tracked task id.
+     * Tracked task id; since 1.36.0 '' for a timer without a task ({@see self::hasTask()}, {@see self::taskIdOrNull()}).
      */
     public function getTaskId(): string
     {
+        return $this->taskId ?? '';
+    }
+
+    /**
+     * Since 1.36.0: whether the timer runs on a task (false = a timer without a task).
+     */
+    public function hasTask(): bool
+    {
+        return $this->taskId !== null;
+    }
+
+    /**
+     * Since 1.36.0: the task id, null for a timer without a task.
+     */
+    public function taskIdOrNull(): ?string
+    {
         return $this->taskId;
+    }
+
+    /**
+     * Since 1.36.0: the free text of a timer without a task (null on a task timer).
+     */
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    /**
+     * Since 1.36.0: the tenant scope chosen when a timer without a task started (null on a task timer: its scope is the
+     * task's, asked again when it stops).
+     */
+    public function getScopeKey(): ?string
+    {
+        return $this->scopeKey;
     }
 
     /**
@@ -198,13 +261,15 @@ class ActiveTimer
     {
         return [
             'id'              => $this->id,
-            'taskId'          => $this->taskId,
+            'taskId'          => $this->taskId ?? '',
             'taskTitle'       => $this->taskTitleSnapshot,
             'boardId'         => $this->boardIdSnapshot,
             'startedAt'       => $this->startedAt->format(DATE_ATOM),
             'lastHeartbeatAt' => $this->lastHeartbeatAt->format(DATE_ATOM),
             'clientType'      => $this->clientType->value,
             'metadata'        => $this->metadata,
-        ];
+            // Since 1.36.0: a timer without a task has taskId '' (the type clients know) and these two keys; a task
+            // timer's shape is unchanged.
+        ] + ($this->taskId === null ? ['withoutTask' => true, 'description' => $this->description] : []);
     }
 }
