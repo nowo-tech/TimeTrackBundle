@@ -26,7 +26,7 @@ test.describe('TimeTrack demo', () => {
     expect(response?.status()).toBe(200);
     await expect(page).toHaveURL(new RegExp(`${TIMER_PATH}$`));
     await expect(page).toHaveTitle(/Time tracker/);
-    await expect(page.getByRole('navigation', { name: 'Demo' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Demo navigation' })).toBeVisible();
 
     const timer = page.getByTestId('time-track-timer');
     await expect(timer).toBeVisible();
@@ -47,7 +47,7 @@ test.describe('TimeTrack demo', () => {
     await expect(page.getByText('Timer stopped.')).toBeVisible();
     await expect(page.getByText('No active timer')).toBeVisible();
 
-    await page.getByRole('navigation', { name: 'Demo' }).getByRole('link', { name: 'Reports' }).click();
+    await page.getByRole('complementary', { name: 'Demo navigation' }).getByRole('link', { name: 'Reports' }).click();
     await expect(page).toHaveURL(new RegExp(`${REPORTS_PATH}$`));
     const reports = page.getByTestId('time-track-reports');
     await expect(reports).toBeVisible();

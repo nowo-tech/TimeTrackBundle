@@ -1,3 +1,7 @@
 nowo_task_board:
     user_class: App\Entity\User
     dashboard_route: nowo_time_track_index
+    templates:
+        # REQ-DEMO-014: the board pages render inside the demo platform shell (no CDN layout of the bundle).
+        layout: task_board_bridge.html.twig
+        css_framework: custom

@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { REPORTS_PATH, startTimer, stopTimerIfRunning } from './helpers';
 
 /**
- * REQ-DEMO-013 — README screenshots in full demo context: demo navigation + bundle UI + Symfony web debug toolbar.
+ * REQ-DEMO-013 — README screenshots in the demo platform shell (top bar, aside, bundle UI); the Symfony web debug toolbar is hidden.
  * Captured as PNG; `make demo-screenshots` converts them to WebP and deletes the PNGs.
  */
 test.describe.configure({ mode: 'serial' });
@@ -15,17 +15,12 @@ const outDir = process.env.SCREENSHOT_DIR
 
 const WIDTH = 1280;
 
-/** Resizes the viewport to the bundle UI + the (fixed, bottom) web debug toolbar, then captures it. */
+/** Hides the Symfony Web Debug Toolbar, resizes the viewport to the whole shell, then captures it. */
 async function captureDemoFrame(page: Page, file: string): Promise<void> {
-  const toolbar = page.locator('.sf-toolbar .sf-toolbarreset');
-  await expect(toolbar).toBeVisible();
-  const toolbarHeight = (await toolbar.boundingBox())?.height ?? 40;
-  const contentBottom = await page
-    .locator('main')
-    .first()
-    .evaluate((el) => el.getBoundingClientRect().bottom + window.scrollY);
-  await page.setViewportSize({ width: WIDTH, height: Math.ceil(contentBottom + 48 + toolbarHeight) });
-  await expect(toolbar).toBeVisible();
+  await page.addStyleTag({ content: '.sf-toolbar, .sf-minitoolbar, [id^="sfwdt"] { display: none !important; }' });
+  const contentBottom = await page.evaluate(() => Math.ceil(document.documentElement.scrollHeight));
+  await page.setViewportSize({ width: WIDTH, height: Math.max(720, contentBottom) });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: resolve(outDir, file) });
 }
 
@@ -33,7 +28,7 @@ test.beforeAll(() => {
   mkdirSync(outDir, { recursive: true });
 });
 
-test.describe('TimeTrack screenshots (full demo frame)', () => {
+test.describe('TimeTrack screenshots (demo platform shell)', () => {
   test.afterAll(async ({ browser }) => {
     const page = await browser.newPage();
     await stopTimerIfRunning(page);
