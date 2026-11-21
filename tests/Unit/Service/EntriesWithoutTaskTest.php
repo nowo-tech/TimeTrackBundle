@@ -162,7 +162,7 @@ final class EntriesWithoutTaskTest extends TestCase
         } catch (TaskNotTrackableException) {
             self::assertNull($service->getActive($nobody));
         }
-        $manual = new ManualEntryService($service, $this->entries, $this->timers, new TaskProviderTaskAccessChecker(new StubTaskProvider()), clock: $this->clock, scopeProvider: $this->scopes);
+        $manual = new ManualEntryService($service, $this->entries, $this->timers, new TaskProviderTaskAccessChecker(new StubTaskProvider()), scopeProvider: $this->scopes, clock: $this->clock);
         try {
             $manual->create($nobody, null, new DateTimeImmutable('2026-11-21 08:00'), new DateTimeImmutable('2026-11-21 09:00'), TimeEntrySource::Manual);
             self::fail('expected a refusal for a user without a scope');
