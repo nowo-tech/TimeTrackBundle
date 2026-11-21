@@ -40,6 +40,7 @@ final class TimeEntryCriteriaTest extends TestCase
     public function testSourcesMustBeCases(): void
     {
         $this->expectException(InvalidArgumentException::class);
+        /* @phpstan-ignore argument.type (the wrong type is the point of the test) */
         new TimeEntryCriteria(ownerIds: ['7'], sources: ['web']);
     }
 

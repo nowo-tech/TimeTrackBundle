@@ -145,23 +145,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         $now = $this->clock?->now() ?? new DateTimeImmutable();
 
         /** @var TimeTrackErasureResult $result */
-        $result = $this->runner->runStatements(function () use ($userId, $entries, $store, $now): TimeTrackErasureResult {
-            // Read inside the transaction: a timer stopped meanwhile does not block, a running one writes nothing.
-            if ($this->timers->runningOf($userId) instanceof RunningTimerView) {
-                throw new PersonalDataErasureRefusedException(PersonalDataErasureRefusedException::TIMER_RUNNING);
-            }
-            $personRef = TimeEntry::USER_REF_PREFIX . $userId;
-
-            return new TimeTrackErasureResult(
-                $this->deleteOwned(ClientToken::class, $userId),
-                $this->deleteOwned(DeviceAuthorization::class, $userId),
-                $this->deleteOwned(MonitoringUploadIntent::class, $userId),
-                $this->deleteOwned(MonitoringAcknowledgementRecord::class, $userId),
-                ($entries === TimeEntryErasure::Anonymise ? $store->anonymiseOwner($userId, $now) : 0) + $store->anonymisePerson($personRef, $now),
-                $entries === TimeEntryErasure::FreeText ? $this->clearFreeText($userId) : 0,
-                count($this->ownedIds(CalendarConnection::class, $userId)),
-            );
-        });
+        $result = $this->runner->runStatements(fn (): TimeTrackErasureResult => $this->eraseInTransaction($userId, $entries, $store, $now));
 
         $this->logger->info('TimeTrack personal data erased.', [
             'bundle'                     => 'time_track',
@@ -176,6 +160,38 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         ]);
 
         return $result;
+    }
+
+    /**
+     * The erasure's write unit (inside the runner's transaction).
+     */
+    private function eraseInTransaction(string $userId, TimeEntryErasure $entries, FormerPersonTimeEntryRepositoryInterface $store, DateTimeImmutable $now): TimeTrackErasureResult
+    {
+        // Owner decision 2 (pending; recommended): refuse while a timer runs, so no tracked time is ever lost.
+        // Alternative: delete the user's ActiveTimer row here (deleteOwned(ActiveTimer::class, ...)), as Beacon does today.
+        // Read inside the transaction: a timer stopped meanwhile does not block, a running one writes nothing.
+        if ($this->timers->runningOf($userId) instanceof RunningTimerView) {
+            throw new PersonalDataErasureRefusedException(PersonalDataErasureRefusedException::TIMER_RUNNING);
+        }
+        $personRef = TimeEntry::USER_REF_PREFIX . $userId;
+
+        return new TimeTrackErasureResult(
+            $this->deleteOwned(ClientToken::class, $userId),
+            $this->deleteOwned(DeviceAuthorization::class, $userId),
+            $this->deleteOwned(MonitoringUploadIntent::class, $userId),
+            // Owner decision 3 (pending; recommended): delete the monitoring acknowledgements, as Beacon does.
+            // Alternative: keep them as evidence of the notice (count 0 here; export() still lists them).
+            $this->deleteOwned(MonitoringAcknowledgementRecord::class, $userId),
+            // Owner decisions 1 and 5 (pending; recommended): TimeEntryErasure::Anonymise is the default (interface);
+            // FreeText clears text in every period, locked or submitted ones included (the timesheet hash excludes
+            // text). Alternatives: FreeText as the default; FreeText skipping entries of locked/submitted periods.
+            ($entries === TimeEntryErasure::Anonymise ? $store->anonymiseOwner($userId, $now) : 0) + $store->anonymisePerson($personRef, $now),
+            $entries === TimeEntryErasure::FreeText ? $this->clearFreeText($userId) : 0,
+            // Owner decision 4 (pending; recommended): timesheets and the audit trail are kept (GDPR art. 17.3.b);
+            // calendar connections are only counted, CalendarConnectionService::revokeAllFor() revokes them.
+            // Alternative: revoke the calendar connections here too.
+            count($this->ownedIds(CalendarConnection::class, $userId)),
+        );
     }
 
     /**
@@ -202,7 +218,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             $page = $this->entries->listAfter($criteria, $after, self::BATCH);
             foreach ($page as $record) {
                 $after  = $record->entry->id;
-                $rows[] = self::entryRow($record);
+                $rows[] = $this->entryRow($record);
             }
         } while (count($page) === self::BATCH);
 
@@ -212,7 +228,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
     /**
      * @return array<string, mixed>
      */
-    private static function entryRow(TimeEntryRecord $record): array
+    private function entryRow(TimeEntryRecord $record): array
     {
         $entry = $record->entry;
 
@@ -272,7 +288,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 }
                 $out = [];
                 foreach ($fields as $field) {
-                    $out[$field] = self::exported($row[$field] ?? null);
+                    $out[$field] = $this->exported($row[$field] ?? null);
                 }
                 $rows[] = $out;
             }
@@ -307,7 +323,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         return $ids;
     }
 
-    private static function exported(mixed $value): mixed
+    private function exported(mixed $value): mixed
     {
         return match (true) {
             $value instanceof BackedEnum        => $value->value,

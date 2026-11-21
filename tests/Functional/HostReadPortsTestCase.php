@@ -37,6 +37,7 @@ use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryRecord;
 use Nowo\TimeTrackBundle\Query\TimeEntrySort;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -62,6 +63,8 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
 {
     /**
      * A host user of the variant (persisted when the variant needs it).
+     *
+     * @param non-empty-string $name
      */
     abstract protected function person(string $name): UserInterface;
 
@@ -169,11 +172,11 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
     {
         $criteria = TimeEntryCriteria::ofOwner('1');
         foreach ([
-            fn () => $this->query()->list($criteria, limit: 0),
-            fn () => $this->query()->list($criteria, limit: TimeEntryQueryInterface::MAX_LIMIT + 1),
-            fn () => $this->query()->list($criteria, offset: -1),
-            fn () => $this->query()->listAfter($criteria, '', 0),
-            fn () => $this->timerQuery()->startedBefore(new DateTimeImmutable(), '', 0),
+            fn (): array => $this->query()->list($criteria, limit: 0),
+            fn (): array => $this->query()->list($criteria, limit: TimeEntryQueryInterface::MAX_LIMIT + 1),
+            fn (): array => $this->query()->list($criteria, offset: -1),
+            fn (): array => $this->query()->listAfter($criteria, '', 0),
+            fn (): array => $this->timerQuery()->startedBefore(new DateTimeImmutable(), '', 0),
         ] as $call) {
             try {
                 $call();
@@ -290,6 +293,7 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $anaToken   = $this->bundleManager()->find(ClientToken::class, (string) $connection->fetchOne('SELECT id FROM time_track_client_tokens WHERE token_hash = ?', ['token-hash-ana']));
         $bobToken   = $this->bundleManager()->find(ClientToken::class, (string) $connection->fetchOne('SELECT id FROM time_track_client_tokens WHERE token_hash = ?', ['token-hash-bob']));
         self::assertNotNull($anaToken);
+        self::assertNotNull($bobToken);
         $seconds = (int) $connection->fetchOne('SELECT SUM(duration_seconds) FROM time_track_entries');
 
         $result = $this->personalData()->erase($this->idOf($ana));
@@ -377,7 +381,11 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $this->entry($ana, 'task-1', '2026-11-02 09:00', 60);
         $this->entry($bob, 'task-2', '2026-11-02 09:00', 30);
         $this->bundleManager()->clear();
-        $step = function (int $i) use ($ana, $bob): void {
+        // The test kernel's logger keeps every record (Doctrine logs each query): emptied per call, as a host's handler would.
+        $logger = self::getContainer()->get('logger');
+        self::assertInstanceOf(RecordingLogger::class, $logger);
+        $step = function (int $i) use ($ana, $bob, $logger): void {
+            $logger->records = [];
             $user    = $i % 2 === 0 ? $ana : $bob;
             $records = $this->query()->list(TimeEntryCriteria::ofOwner($this->idOf($user)));
             self::assertCount(1, $records);
@@ -408,7 +416,7 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $owner = $this->owner($user);
         $now   = new DateTimeImmutable();
         $this->persist(new ClientToken('token-hash-' . $tag, new DateTimeImmutable('+1 day'), $owner, ClientType::Desktop));
-        $device = new DeviceAuthorization('device-hash-' . $tag, 'user-hash-' . $tag, ClientType::Desktop, 'Laptop', [ClientScope::TimerWrite], new DateTimeImmutable('+10 minutes'), $now, null);
+        $device = new DeviceAuthorization('device-hash-' . $tag, 'user-hash-' . $tag, ClientType::Desktop, 'Laptop', [ClientScope::TimerWrite], new DateTimeImmutable('+10 minutes'), $now);
         $device->approve($owner, 'app-' . $tag);
         $this->persist($device);
         $this->persist(new MonitoringAcknowledgementRecord($owner, 3, $now, 'desktop', str_repeat('a', 64)));

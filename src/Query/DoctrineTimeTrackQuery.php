@@ -25,6 +25,7 @@ use Psr\Clock\ClockInterface;
 use SortDirection;
 
 use function array_map;
+use function array_values;
 use function count;
 use function is_array;
 use function is_bool;
@@ -86,7 +87,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             ->getArrayResult();
         foreach ($rows as $row) {
             if ($row['id'] === $entryId) {
-                return self::record($row);
+                return $this->record($row);
             }
         }
 
@@ -98,7 +99,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function list(TimeEntryCriteria $criteria, TimeEntrySort $sort = TimeEntrySort::StartedAtDescending, int $limit = 100, int $offset = 0): array
     {
-        self::assertLimit($limit, self::MAX_LIMIT);
+        $this->assertLimit($limit, self::MAX_LIMIT);
         if ($offset < 0) {
             throw new InvalidArgumentException('A TimeTrack entry query offset cannot be negative.');
         }
@@ -112,23 +113,17 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
         $skipped = 0;
         $read    = 0;
         do {
-            $query = $this->entryQuery($criteria)->select(...self::ENTRY_FIELDS);
-            match ($sort) {
-                TimeEntrySort::StartedAtDescending => $query->orderBy('e.startedAt', SortDirection::Descending)->addOrderBy('e.id', SortDirection::Descending),
-                TimeEntrySort::StartedAtAscending  => $query->orderBy('e.startedAt', SortDirection::Ascending)->addOrderBy('e.id', SortDirection::Ascending),
-                TimeEntrySort::IdAscending         => $query->orderBy('e.id', SortDirection::Ascending),
-            };
-            $rows = $query->setFirstResult($read)->setMaxResults($batch)->getQuery()->getArrayResult();
+            $rows = $this->sortedEntryQuery($criteria, $sort)->setFirstResult($read)->setMaxResults($batch)->getQuery()->getArrayResult();
             $read += $batch;
             foreach ($rows as $row) {
-                if (!self::matches($criteria, $row)) {
+                if (!$this->matches($criteria, $row)) {
                     continue;
                 }
                 if ($skipped < $offset) {
                     ++$skipped;
                     continue;
                 }
-                $kept[] = self::record($row);
+                $kept[] = $this->record($row);
                 if (count($kept) === $limit) {
                     return $kept;
                 }
@@ -143,7 +138,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function listAfter(TimeEntryCriteria $criteria, string $afterEntryId = '', int $limit = 500): array
     {
-        self::assertLimit($limit, self::MAX_LIMIT);
+        $this->assertLimit($limit, self::MAX_LIMIT);
         if ($criteria->matchesNothing()) {
             return [];
         }
@@ -159,11 +154,11 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 ->getQuery()
                 ->getArrayResult();
             foreach ($rows as $row) {
-                $afterEntryId = self::string($row['id']);
-                if (!self::matches($criteria, $row)) {
+                $afterEntryId = $this->string($row['id']);
+                if (!$this->matches($criteria, $row)) {
                     continue;
                 }
-                $kept[] = self::record($row);
+                $kept[] = $this->record($row);
                 if (count($kept) === $limit) {
                     return $kept;
                 }
@@ -194,7 +189,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function runningOf(string $ownerId): ?RunningTimerView
     {
-        if (!self::isOwnerId($ownerId)) {
+        if (!$this->isOwnerId($ownerId)) {
             return null;
         }
         $rows = $this->entityManager->createQueryBuilder()
@@ -205,8 +200,8 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             ->getQuery()
             ->getArrayResult();
         foreach ($rows as $row) {
-            if (self::owner($row) === $ownerId) {
-                return self::timer($row);
+            if ($this->owner($row) === $ownerId) {
+                return $this->timer($row);
             }
         }
 
@@ -218,7 +213,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function startedBefore(DateTimeImmutable $before, string $afterTimerId = '', int $limit = 200): array
     {
-        self::assertLimit($limit, self::MAX_LIMIT);
+        $this->assertLimit($limit, self::MAX_TIMER_LIMIT);
         $rows = $this->entityManager->createQueryBuilder()
             ->select(...self::TIMER_FIELDS)
             ->from(ActiveTimer::class, 't')
@@ -231,7 +226,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             ->getQuery()
             ->getArrayResult();
 
-        return array_map(self::timer(...), $rows);
+        return array_values(array_map($this->timer(...), $rows));
     }
 
     /**
@@ -239,7 +234,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function sessionsOf(string $ownerId, bool $includeExpired = false): array
     {
-        if (!self::isOwnerId($ownerId)) {
+        if (!$this->isOwnerId($ownerId)) {
             return [];
         }
         $query = $this->entityManager->createQueryBuilder()
@@ -255,19 +250,19 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
 
         $views = [];
         foreach ($query->getQuery()->getArrayResult() as $row) {
-            if (self::owner($row) !== $ownerId) {
+            if ($this->owner($row) !== $ownerId) {
                 continue;
             }
             $scopes  = is_array($row['scopes']) ? ClientScope::normalize($row['scopes']) : ClientScope::defaults();
             $views[] = new ClientSessionView(
-                self::string($row['id']),
+                $this->string($row['id']),
                 $ownerId,
-                self::clientType($row['clientType']),
-                self::nullableString($row['credentialId']),
+                $this->clientType($row['clientType']),
+                $this->nullableString($row['credentialId']),
                 array_map(static fn (ClientScope $scope): string => $scope->value, $scopes),
-                self::date($row['createdAt']),
-                self::nullableDate($row['lastUsedAt']),
-                self::date($row['expiresAt']),
+                $this->date($row['createdAt']),
+                $this->nullableDate($row['lastUsedAt']),
+                $this->date($row['expiresAt']),
             );
         }
 
@@ -279,7 +274,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     public function deviceSignInsOf(string $ownerId): array
     {
-        if (!self::isOwnerId($ownerId)) {
+        if (!$this->isOwnerId($ownerId)) {
             return [];
         }
         $rows = $this->entityManager->createQueryBuilder()
@@ -294,21 +289,21 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
 
         $views = [];
         foreach ($rows as $row) {
-            if (self::owner($row) !== $ownerId) {
+            if ($this->owner($row) !== $ownerId) {
                 continue;
             }
             $status  = $row['status'];
             $views[] = new DeviceSignInView(
-                self::string($row['id']),
+                $this->string($row['id']),
                 $ownerId,
-                self::clientType($row['clientType']),
-                self::string($row['clientName']),
-                $status instanceof DeviceAuthorizationStatus ? $status : DeviceAuthorizationStatus::from(self::string($status)),
+                $this->clientType($row['clientType']),
+                $this->string($row['clientName']),
+                $status instanceof DeviceAuthorizationStatus ? $status : DeviceAuthorizationStatus::from($this->string($status)),
                 array_map(static fn (ClientScope $scope): string => $scope->value, ClientScope::normalize(is_array($row['scopes']) ? $row['scopes'] : [])),
-                self::nullableString($row['ipPrefix']),
-                self::date($row['createdAt']),
-                self::date($row['expiresAt']),
-                self::nullableDate($row['lastPolledAt']),
+                $this->nullableString($row['ipPrefix']),
+                $this->date($row['createdAt']),
+                $this->date($row['expiresAt']),
+                $this->nullableDate($row['lastPolledAt']),
             );
         }
 
@@ -338,15 +333,27 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 ->getQuery()
                 ->getArrayResult();
             foreach ($rows as $row) {
-                $after = self::string($row['id']);
-                if (self::matches($criteria, $row)) {
+                $after = $this->string($row['id']);
+                if ($this->matches($criteria, $row)) {
                     ++$count;
-                    $seconds += self::int($row['seconds']);
+                    $seconds += $this->int($row['seconds']);
                 }
             }
         } while (count($rows) === self::BATCH);
 
         return [$count, $seconds];
+    }
+
+    /**
+     * A new query of the entry fields in the requested order.
+     */
+    private function sortedEntryQuery(TimeEntryCriteria $criteria, TimeEntrySort $sort): QueryBuilder
+    {
+        return match ($sort) {
+            TimeEntrySort::StartedAtDescending => $this->entryQuery($criteria)->select(...self::ENTRY_FIELDS)->orderBy('e.startedAt', SortDirection::Descending)->addOrderBy('e.id', SortDirection::Descending),
+            TimeEntrySort::StartedAtAscending  => $this->entryQuery($criteria)->select(...self::ENTRY_FIELDS)->orderBy('e.startedAt', SortDirection::Ascending)->addOrderBy('e.id', SortDirection::Ascending),
+            TimeEntrySort::IdAscending         => $this->entryQuery($criteria)->select(...self::ENTRY_FIELDS)->orderBy('e.id', SortDirection::Ascending),
+        };
     }
 
     /**
@@ -365,13 +372,13 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 $query->andWhere('e.' . $field . ' IN (:' . $field . 's)')->setParameter($field . 's', $values);
             }
         }
-        if ($criteria->startedFrom !== null) {
+        if ($criteria->startedFrom instanceof DateTimeImmutable) {
             $query->andWhere('e.startedAt >= :startedFrom')->setParameter('startedFrom', $criteria->startedFrom);
         }
-        if ($criteria->startedTo !== null) {
+        if ($criteria->startedTo instanceof DateTimeImmutable) {
             $query->andWhere('e.startedAt <= :startedTo')->setParameter('startedTo', $criteria->startedTo);
         }
-        if ($criteria->overlapFrom !== null && $criteria->overlapTo !== null) {
+        if ($criteria->overlapFrom instanceof DateTimeImmutable && $criteria->overlapTo instanceof DateTimeImmutable) {
             $query->andWhere('e.endedAt > :overlapFrom')->andWhere('e.startedAt < :overlapTo')
                 ->setParameter('overlapFrom', $criteria->overlapFrom)
                 ->setParameter('overlapTo', $criteria->overlapTo);
@@ -392,51 +399,51 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
     /**
      * @param array<array-key, mixed> $row
      */
-    private static function matches(TimeEntryCriteria $criteria, array $row): bool
+    private function matches(TimeEntryCriteria $criteria, array $row): bool
     {
-        return $criteria->matchesExactly(self::string($row['id']), self::owner($row), self::nullableString($row['scopeKey']), self::string($row['taskId']), self::nullableString($row['boardId']));
+        return $criteria->matchesExactly($this->string($row['id']), $this->owner($row), $this->nullableString($row['scopeKey']), $this->string($row['taskId']), $this->nullableString($row['boardId']));
     }
 
     /**
      * @param array<array-key, mixed> $row
      */
-    private static function record(array $row): TimeEntryRecord
+    private function record(array $row): TimeEntryRecord
     {
         $metadata = is_array($row['metadata']) ? $row['metadata'] : [];
         $note     = $metadata['note'] ?? null;
         $source   = $row['source'];
-        $channel  = self::nullableString($row['channel']);
+        $channel  = $this->nullableString($row['channel']);
 
-        /** @var array<string, mixed> $metadata */
+        /* @var array<string, mixed> $metadata */
         return new TimeEntryRecord(
             new TimeEntryView(
-                self::string($row['id']),
-                self::owner($row),
-                self::string($row['taskId']),
-                self::string($row['taskTitle']),
-                self::nullableString($row['boardId']),
-                self::nullableString($row['scopeKey']),
-                self::date($row['startedAt']),
-                self::date($row['endedAt']),
-                self::int($row['seconds']),
-                $source instanceof TimeEntrySource ? $source : TimeEntrySource::from(self::string($source)),
-                self::nullableString($row['externalSource']),
-                self::nullableString($row['externalId']),
+                $this->string($row['id']),
+                $this->owner($row),
+                $this->string($row['taskId']),
+                $this->string($row['taskTitle']),
+                $this->nullableString($row['boardId']),
+                $this->nullableString($row['scopeKey']),
+                $this->date($row['startedAt']),
+                $this->date($row['endedAt']),
+                $this->int($row['seconds']),
+                $source instanceof TimeEntrySource ? $source : TimeEntrySource::from($this->string($source)),
+                $this->nullableString($row['externalSource']),
+                $this->nullableString($row['externalId']),
                 $channel !== null && preg_match(TimerChannel::PATTERN, $channel) === 1 ? $channel : null,
-                self::bool($row['serviceAccount']),
+                $this->bool($row['serviceAccount']),
             ),
             is_string($note) && $note !== '' ? $note : null,
-            self::nullableString($row['description']),
-            $row['billable'] === null ? null : self::bool($row['billable']),
+            $this->nullableString($row['description']),
+            $row['billable'] === null ? null : $this->bool($row['billable']),
             $metadata,
-            self::date($row['createdAt']),
+            $this->date($row['createdAt']),
         );
     }
 
     /**
      * @param array<array-key, mixed> $row
      */
-    private static function timer(array $row): RunningTimerView
+    private function timer(array $row): RunningTimerView
     {
         $metadata = is_array($row['metadata']) ? $row['metadata'] : [];
         $channel  = $metadata[TimerService::CHANNEL_KEY] ?? null;
@@ -444,26 +451,26 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
 
         return new RunningTimerView(
             new TimerSnapshot(
-                self::string($row['id']),
-                self::string($row['taskId']),
-                self::string($row['taskTitle']),
-                self::nullableString($row['boardId']),
-                self::date($row['startedAt']),
-                self::clientType($row['clientType']),
+                $this->string($row['id']),
+                $this->string($row['taskId']),
+                $this->string($row['taskTitle']),
+                $this->nullableString($row['boardId']),
+                $this->date($row['startedAt']),
+                $this->clientType($row['clientType']),
                 is_string($channel) && preg_match(TimerChannel::PATTERN, $channel) === 1 ? $channel : null,
                 is_string($note) ? $note : null,
             ),
-            (string) self::owner($row),
-            self::date($row['lastHeartbeatAt']),
+            (string) $this->owner($row),
+            $this->date($row['lastHeartbeatAt']),
         );
     }
 
-    private static function isOwnerId(string $ownerId): bool
+    private function isOwnerId(string $ownerId): bool
     {
         return $ownerId !== '' && DoctrineUserReferenceResolver::isExactId($ownerId);
     }
 
-    private static function assertLimit(int $limit, int $max): void
+    private function assertLimit(int $limit, int $max): void
     {
         if ($limit < 1 || $limit > $max) {
             throw new InvalidArgumentException('A TimeTrack query limit must be between 1 and ' . $max . '.');
@@ -473,43 +480,43 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
     /**
      * @param array<array-key, mixed> $row
      */
-    private static function owner(array $row): ?string
+    private function owner(array $row): ?string
     {
         return is_scalar($row['userId']) ? (string) $row['userId'] : null;
     }
 
-    private static function clientType(mixed $value): ClientType
+    private function clientType(mixed $value): ClientType
     {
-        return $value instanceof ClientType ? $value : ClientType::from(self::string($value));
+        return $value instanceof ClientType ? $value : ClientType::from($this->string($value));
     }
 
-    private static function string(mixed $value): string
+    private function string(mixed $value): string
     {
         return is_scalar($value) ? (string) $value : '';
     }
 
-    private static function nullableString(mixed $value): ?string
+    private function nullableString(mixed $value): ?string
     {
         return is_scalar($value) ? (string) $value : null;
     }
 
-    private static function int(mixed $value): int
+    private function int(mixed $value): int
     {
         return is_scalar($value) ? (int) $value : 0;
     }
 
-    private static function bool(mixed $value): bool
+    private function bool(mixed $value): bool
     {
         return is_bool($value) ? $value : (is_scalar($value) && (bool) $value);
     }
 
-    private static function date(mixed $value): DateTimeImmutable
+    private function date(mixed $value): DateTimeImmutable
     {
-        return $value instanceof DateTimeImmutable ? $value : new DateTimeImmutable(self::string($value));
+        return $value instanceof DateTimeImmutable ? $value : new DateTimeImmutable($this->string($value));
     }
 
-    private static function nullableDate(mixed $value): ?DateTimeImmutable
+    private function nullableDate(mixed $value): ?DateTimeImmutable
     {
-        return $value === null ? null : self::date($value);
+        return $value === null ? null : $this->date($value);
     }
 }

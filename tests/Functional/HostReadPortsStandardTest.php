@@ -14,6 +14,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 final class HostReadPortsStandardTest extends HostReadPortsTestCase
 {
+    /**
+     * @param non-empty-string $name
+     */
     protected function person(string $name): UserInterface
     {
         return $name === 'ana' ? $this->user : $this->createUser($name . '@example.com');

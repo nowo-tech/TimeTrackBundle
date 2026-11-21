@@ -8,10 +8,12 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 
 use function array_values;
 use function count;
+use function in_array;
 use function is_string;
 use function strlen;
 
@@ -21,7 +23,7 @@ use function strlen;
  * never reads the whole table by accident. Every list compares byte for byte; an empty list matches nothing.
  *
  * Only entries that still have an owner are listed (an anonymised entry, a former person's entry or the entry of a
- * deleted user has none): those are read through {@see \Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries}.
+ * deleted user has none): those are read through {@see FormerPersonTimeEntries}.
  *
  * Immutable, framework-free and built per call (FrankenPHP worker mode, kernel reset false).
  */
@@ -83,16 +85,16 @@ final readonly class TimeEntryCriteria
         if ($ownerIds === null && $scopeKeys === null && $taskIds === null && $boardIds === null) {
             throw new InvalidArgumentException('A TimeTrack entry query needs a key: owner ids, scope keys, task ids or board ids.');
         }
-        if (($overlapFrom === null) !== ($overlapTo === null)) {
+        if ((!$overlapFrom instanceof DateTimeImmutable) !== (!$overlapTo instanceof DateTimeImmutable)) {
             throw new InvalidArgumentException('A TimeTrack entry overlap filter needs both ends of the range.');
         }
-        $this->ownerIds        = self::strings($ownerIds, 'owner id', static fn (string $id): bool => DoctrineUserReferenceResolver::isExactId($id));
-        $this->scopeKeys       = self::strings($scopeKeys, 'scope key', static fn (string $key): bool => $key !== '' && ScopeKeys::isUsable($key));
-        $this->taskIds         = self::strings($taskIds, 'task id', self::isId(...));
-        $this->boardIds        = self::strings($boardIds, 'board id', self::isId(...));
-        $this->excludeEntryIds = self::strings($excludeEntryIds, 'entry id', self::isId(...)) ?? [];
+        $this->ownerIds        = $this->strings($ownerIds, 'owner id', static fn (string $id): bool => DoctrineUserReferenceResolver::isExactId($id));
+        $this->scopeKeys       = $this->strings($scopeKeys, 'scope key', static fn (string $key): bool => $key !== '' && ScopeKeys::isUsable($key));
+        $this->taskIds         = $this->strings($taskIds, 'task id', $this->isId(...));
+        $this->boardIds        = $this->strings($boardIds, 'board id', $this->isId(...));
+        $this->excludeEntryIds = $this->strings($excludeEntryIds, 'entry id', $this->isId(...)) ?? [];
         if ($sources !== null) {
-            self::assertCount($sources, 'source');
+            $this->assertCount($sources, 'source');
             foreach ($sources as $source) {
                 if (!$source instanceof TimeEntrySource) {
                     throw new InvalidArgumentException('A TimeTrack entry query source must be a TimeEntrySource case.');
@@ -125,31 +127,26 @@ final readonly class TimeEntryCriteria
     public function matchesExactly(string $entryId, ?string $ownerId, ?string $scopeKey, string $taskId, ?string $boardId): bool
     {
         return $ownerId !== null
-            && self::isIn($ownerId, $this->ownerIds)
+            && $this->isIn($ownerId, $this->ownerIds)
             && ($this->scopeKeys === null || ScopeKeys::isOneOf($scopeKey, $this->scopeKeys))
-            && self::isIn($taskId, $this->taskIds)
-            && ($this->boardIds === null || ($boardId !== null && self::isIn($boardId, $this->boardIds)))
-            && !self::isIn($entryId, $this->excludeEntryIds, false);
+            && $this->isIn($taskId, $this->taskIds)
+            && ($this->boardIds === null || ($boardId !== null && $this->isIn($boardId, $this->boardIds)))
+            && !$this->isIn($entryId, $this->excludeEntryIds, false);
     }
 
     /**
      * @param list<string>|null $values
      */
-    private static function isIn(string $value, ?array $values, bool $whenNull = true): bool
+    private function isIn(string $value, ?array $values, bool $whenNull = true): bool
     {
         if ($values === null) {
             return $whenNull;
         }
-        foreach ($values as $candidate) {
-            if ($candidate === $value) {
-                return true;
-            }
-        }
 
-        return false;
+        return in_array($value, $values, true);
     }
 
-    private static function isId(string $id): bool
+    private function isId(string $id): bool
     {
         return $id !== '' && strlen($id) <= self::MAX_TASK_ID_LENGTH && DoctrineUserReferenceResolver::isExactId($id);
     }
@@ -160,12 +157,12 @@ final readonly class TimeEntryCriteria
      *
      * @return list<string>|null
      */
-    private static function strings(?array $values, string $label, callable $usable): ?array
+    private function strings(?array $values, string $label, callable $usable): ?array
     {
         if ($values === null) {
             return null;
         }
-        self::assertCount($values, $label);
+        $this->assertCount($values, $label);
         $kept = [];
         foreach ($values as $value) {
             if (!is_string($value) || $value === '' || !$usable($value)) {
@@ -180,7 +177,7 @@ final readonly class TimeEntryCriteria
     /**
      * @param array<mixed> $values
      */
-    private static function assertCount(array $values, string $label): void
+    private function assertCount(array $values, string $label): void
     {
         if (count($values) > self::MAX_VALUES) {
             throw new InvalidArgumentException('A TimeTrack entry query takes at most ' . self::MAX_VALUES . ' values per filter (' . $label . ').');

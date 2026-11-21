@@ -15,7 +15,7 @@ use InvalidArgumentException;
 interface RunningTimerQueryInterface
 {
     /** The largest page {@see self::startedBefore()} returns. */
-    public const MAX_LIMIT = 1000;
+    public const MAX_TIMER_LIMIT = 1000;
 
     /**
      * The user's running timer, or null.
@@ -28,7 +28,7 @@ interface RunningTimerQueryInterface
      * The timers started before a time, by timer id (keyset paging: pass the last timer id of the previous page, `''` for
      * the first).
      *
-     * @param int $limit Timers per page (1 to {@see self::MAX_LIMIT})
+     * @param int $limit Timers per page (1 to {@see self::MAX_TIMER_LIMIT})
      *
      * @throws InvalidArgumentException When the limit is out of range
      *

@@ -17,6 +17,9 @@ services:
             - '../../Doctrine/'
             # Since 1.27.0 (Beacon spec 239): the runner and the 503 / 409 subscriber are defined by the extension.
             - '../../Transaction/'
+            # Since 1.35.0: the read and personal-data ports are defined by the extension (the bundle's entity manager).
+            - '../../Query/'
+            - '../../PersonalData/'
             - '../../EventSubscriber/'
             - '../../Client/ClientLoginRateLimiter.php'
             - '../../Client/ClientResponseFactory.php'

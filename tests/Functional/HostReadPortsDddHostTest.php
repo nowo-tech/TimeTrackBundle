@@ -48,6 +48,9 @@ final class HostReadPortsDddHostTest extends HostReadPortsTestCase
         self::assertCount(1, $this->clientAccess()->sessionsOf('abc'));
     }
 
+    /**
+     * @param non-empty-string $name
+     */
     protected function person(string $name): UserInterface
     {
         return new SecurityUser('ext-' . $name, $name);
