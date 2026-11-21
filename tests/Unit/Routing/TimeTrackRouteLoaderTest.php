@@ -134,7 +134,7 @@ final class TimeTrackRouteLoaderTest extends TestCase
 
         // The router has no such route: a path match fails (404), under both prefixes.
         $collection = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, false, '/api', $include))->load('.', TimeTrackRouteLoader::API_ONLY_TYPE);
-        $paths      = array_map(static fn ($r): string => $r->getPath(), $collection->all());
+        $paths      = array_map(static fn (Route $r): string => $r->getPath(), $collection->all());
         self::assertContains('/api/time-track/login', $paths);
         self::assertContains('/api/time-track/v1/login', $paths);
         self::assertNotContains('/api/time-track/balance', $paths);
@@ -142,7 +142,7 @@ final class TimeTrackRouteLoaderTest extends TestCase
 
         $all = (new TimeTrackRouteLoader(true, $config['clients']['routes'], $config['routes'], '', true, false))->load('.', TimeTrackRouteLoader::API_ONLY_TYPE);
         self::assertGreaterThan(count($include) * 2, count($all->all()));
-        self::assertTrue($all->get('nowo_time_track_api_balance') !== null && $all->get('nowo_time_track_api_v1_balance') !== null);
+        self::assertTrue($all->get('nowo_time_track_api_balance') instanceof Route && $all->get('nowo_time_track_api_v1_balance') instanceof Route);
     }
 
     /**

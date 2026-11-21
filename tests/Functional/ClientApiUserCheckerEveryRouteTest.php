@@ -36,7 +36,7 @@ final class ClientApiUserCheckerEveryRouteTest extends FunctionalTestCase
     public function testEveryBearerRouteRefusesADisabledAccount(): void
     {
         $refused = 0;
-        foreach (self::routeTable() as [, $legacyPath, $v1Name, $v1Path, $methods]) {
+        foreach ($this->routeTable() as [, $legacyPath, $v1Name, $v1Path, $methods]) {
             if (in_array(substr($v1Name, strlen('nowo_time_track_api_v1_')), self::UNAUTHENTICATED, true)) {
                 continue;
             }
@@ -46,11 +46,11 @@ final class ClientApiUserCheckerEveryRouteTest extends FunctionalTestCase
                     $this->checker()->allow('person@example.com');
                     $token = $this->login();
                     $this->checker()->refuse('person@example.com', $phase);
-                    $body = $this->api($method, self::uri($path), ['taskId' => 'task-1'], $token);
+                    $body = $this->api($method, $this->uri($path), ['taskId' => 'task-1'], $token);
                     if (($body['error'] ?? null) === 'not_found') {
                         // Feature off in this kernel (meetings, monitoring): 404 before authentication, for everyone.
                         $this->checker()->allow('person@example.com');
-                        $this->api($method, self::uri($path), ['taskId' => 'task-1'], $token);
+                        $this->api($method, $this->uri($path), ['taskId' => 'task-1'], $token);
                         self::assertResponseStatusCodeSame(404, $path);
                         $this->entityManager()->getConnection()->executeStatement('DELETE FROM time_track_client_tokens');
                         continue;
@@ -156,7 +156,7 @@ final class ClientApiUserCheckerEveryRouteTest extends FunctionalTestCase
     /**
      * @return list<array{string, string, string, string, string}>
      */
-    private static function routeTable(): array
+    private function routeTable(): array
     {
         /** @var list<array{string, string, string, string, string}> $routes */
         $routes = (new ReflectionClassConstant(ClientApiV1AliasTest::class, 'ROUTES'))->getValue();
@@ -164,7 +164,7 @@ final class ClientApiUserCheckerEveryRouteTest extends FunctionalTestCase
         return $routes;
     }
 
-    private static function uri(string $path): string
+    private function uri(string $path): string
     {
         return strtr($path, ['{action}' => 'clock-in', '{periodKey}' => 'current', '{id}' => 'unknown-id', '{uploadId}' => '0b6b3c2e-4f1a-4c1e-9d55-1f6e2a7b9c10', '{screenshotId}' => 'shot-1']);
     }

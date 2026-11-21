@@ -35,16 +35,16 @@ final class ClientApiV1HostFirewallTest extends FunctionalTestCase
 
     public function testEveryV1RouteRefusesLikeItsUnversionedTwin(): void
     {
-        foreach (self::routeTable() as [, $legacyPath, $v1Name, $v1Path, $methods]) {
+        foreach ($this->routeTable() as [, $legacyPath, $v1Name, $v1Path, $methods]) {
             $method = explode('|', $methods)[0];
             foreach (['no token' => null, 'bad token' => 'not-a-real-token'] as $kind => $token) {
-                $this->api($method, self::uri($legacyPath), [], $token);
+                $this->api($method, $this->uri($legacyPath), [], $token);
                 $legacy = $this->client->getResponse()->getStatusCode();
-                $this->api($method, self::uri($v1Path), [], $token);
+                $this->api($method, $this->uri($v1Path), [], $token);
                 self::assertSame($legacy, $this->client->getResponse()->getStatusCode(), $v1Name . ' ' . $kind);
             }
             if (str_contains($methods, 'OPTIONS')) {
-                $this->api('OPTIONS', self::uri($v1Path), null, null, ['HTTP_ORIGIN' => 'chrome-extension://functional', 'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => $method]);
+                $this->api('OPTIONS', $this->uri($v1Path), null, null, ['HTTP_ORIGIN' => 'chrome-extension://functional', 'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => $method]);
                 self::assertResponseStatusCodeSame(204, $v1Name . ' preflight');
                 self::assertSame([], $this->client->getResponse()->headers->getCookies(), $v1Name . ' no session cookie');
             }
@@ -76,7 +76,7 @@ final class ClientApiV1HostFirewallTest extends FunctionalTestCase
     /**
      * @return list<array{string, string, string, string, string}>
      */
-    private static function routeTable(): array
+    private function routeTable(): array
     {
         /** @var list<array{string, string, string, string, string}> $routes */
         $routes = (new ReflectionClassConstant(ClientApiV1AliasTest::class, 'ROUTES'))->getValue();
@@ -84,7 +84,7 @@ final class ClientApiV1HostFirewallTest extends FunctionalTestCase
         return $routes;
     }
 
-    private static function uri(string $path): string
+    private function uri(string $path): string
     {
         return strtr($path, ['{action}' => 'clock-in', '{periodKey}' => 'current', '{id}' => 'unknown-id', '{uploadId}' => '0b6b3c2e-4f1a-4c1e-9d55-1f6e2a7b9c10', '{screenshotId}' => 'shot-1']);
     }

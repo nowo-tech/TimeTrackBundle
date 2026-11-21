@@ -92,7 +92,7 @@ final class ClientUserCheckerPass implements CompilerPassInterface
      */
     private function resolve(ContainerBuilder $container, mixed $firewall): ?Reference
     {
-        $firewalls = self::firewallNames($container);
+        $firewalls = $this->firewallNames($container);
 
         if (is_string($firewall) && $firewall !== '') {
             $checkerId = 'security.user_checker.' . $firewall;
@@ -144,8 +144,8 @@ final class ClientUserCheckerPass implements CompilerPassInterface
         }
         if (is_string($class) && is_a($class, ChainUserChecker::class, true)) {
             $checkers = $definition->getArguments()[0] ?? null;
-            if ($checkers instanceof TaggedIteratorArgument && $container->findTaggedServiceIds((string) $checkers->getTag()) === []) {
-                return sprintf('"%s" is a ChainUserChecker with no checker tagged "%s"', $id, (string) $checkers->getTag());
+            if ($checkers instanceof TaggedIteratorArgument && $container->findTaggedServiceIds($checkers->getTag()) === []) {
+                return sprintf('"%s" is a ChainUserChecker with no checker tagged "%s"', $id, $checkers->getTag());
             }
         }
 
@@ -155,7 +155,7 @@ final class ClientUserCheckerPass implements CompilerPassInterface
     /**
      * @return list<string>
      */
-    private static function firewallNames(ContainerBuilder $container): array
+    private function firewallNames(ContainerBuilder $container): array
     {
         $names = $container->hasParameter('security.firewalls') ? $container->getParameter('security.firewalls') : [];
         if (!is_array($names)) {

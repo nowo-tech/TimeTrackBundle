@@ -69,15 +69,15 @@ final class RouteCollectionFixtureTest extends TestCase
     #[DataProvider('scenarios')]
     public function testRouteCollectionMatchesTheFixture(string $scenario): void
     {
-        $actual = self::export($this->routes($scenario));
+        $actual = $this->export($this->routes($scenario));
 
         if (getenv('TIME_TRACK_ROUTE_FIXTURE_WRITE') === '1') {
-            $all            = self::fixture();
+            $all            = $this->fixture();
             $all[$scenario] = $actual;
             file_put_contents(self::FIXTURE, json_encode($all, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
         }
 
-        $expected = self::fixture()[$scenario] ?? null;
+        $expected = $this->fixture()[$scenario] ?? null;
         self::assertIsArray($expected, 'No fixture for scenario ' . $scenario);
         self::assertSame($expected, $actual);
     }
@@ -147,13 +147,13 @@ final class RouteCollectionFixtureTest extends TestCase
         $kernel->boot();
 
         try {
-            return self::router($kernel)->getRouteCollection();
+            return $this->router($kernel)->getRouteCollection();
         } finally {
             $kernel->shutdown();
         }
     }
 
-    private static function router(KernelInterface $kernel): RouterInterface
+    private function router(KernelInterface $kernel): RouterInterface
     {
         $router = $kernel->getContainer()->get('router');
         self::assertInstanceOf(RouterInterface::class, $router);
@@ -166,7 +166,7 @@ final class RouteCollectionFixtureTest extends TestCase
      *
      * @return array{routes: list<array<string, mixed>>, aliases: array<string, string>}
      */
-    private static function export(RouteCollection $collection): array
+    private function export(RouteCollection $collection): array
     {
         $routes = [];
         foreach ($collection->all() as $name => $route) {
@@ -200,7 +200,7 @@ final class RouteCollectionFixtureTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private static function fixture(): array
+    private function fixture(): array
     {
         $json = @file_get_contents(self::FIXTURE);
         if (!is_string($json)) {
