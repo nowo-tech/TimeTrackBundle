@@ -144,8 +144,13 @@ services:
             - { name: monolog.logger, channel: time_track }
 
     # 1.9 host entry point: revoke every session token of a deleted credential (public for host controllers/listeners).
+    # 1.34.0: also one session by its id (revokeById(), owner or security.admin_roles, then the access-check event).
     Nowo\TimeTrackBundle\Client\ClientTokenRevoker:
         public: true
+        arguments:
+            $adminRoles: '%nowo_time_track.security.admin_roles%'
+        tags:
+            - { name: monolog.logger, channel: time_track }
 
     # 1.24 host entry point: build a TimeTrackUserRef from a Symfony user (autowire it by class; stateless).
     Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory:

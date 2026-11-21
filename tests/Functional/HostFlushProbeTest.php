@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
+use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
@@ -21,6 +24,7 @@ use Symfony\Component\HttpKernel\TerminableInterface;
 use function array_filter;
 use function array_values;
 use function assert;
+use function hash;
 use function is_array;
 use function json_decode;
 use function json_encode;
@@ -108,6 +112,38 @@ final class HostFlushProbeTest extends FunctionalTestCase
             $host->flush();
         });
         self::assertCount(1, $this->matching($again, 'Your application deleted ' . TimeEntry::class . ' rows with its own entity manager'));
+    }
+
+    /**
+     * 1.34.0: the application deleting a session row with its own manager is told to use ClientTokenRevoker::revokeById(),
+     * and revokeById() itself reports nothing and flushes none of the application's pending changes.
+     */
+    public function testDeletingOneClientSessionNamesRevokeById(): void
+    {
+        $host   = $this->entityManager();
+        $issued = [];
+        foreach (['by-host', 'by-bundle'] as $credential) {
+            $issued[$credential] = new ClientToken(hash('sha256', $credential), new DateTimeImmutable('+1 hour'), $this->user, ClientType::Desktop, null, $credential);
+            $host->persist($issued[$credential]);
+        }
+        $host->flush();
+        $this->call('current'); // a new unit of work
+        $seen = $this->capture(static function () use ($host, $issued): void {
+            $host->remove($issued['by-host']);
+            $host->flush();
+        });
+        $rows = $this->matching($seen, 'Your application deleted ' . ClientToken::class . ' rows with its own entity manager');
+        self::assertCount(1, $rows);
+        self::assertStringContainsString(ClientTokenRevoker::class . '::revokeById()', $rows[0]);
+
+        $this->call('current');
+        $revoker = self::getContainer()->get(ClientTokenRevoker::class);
+        self::assertInstanceOf(ClientTokenRevoker::class, $revoker);
+        $host->persist(new AppUser('pending-revoke@example.com', 'secret'));
+        $bundle = $this->capture(fn (): bool => $revoker->revokeById($issued['by-bundle']->getId(), $this->user)->isRevoked());
+        self::assertSame([], $bundle, 'revokeById() flushes nothing, so the probe has nothing to report');
+        self::assertSame(0, (int) $host->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_client_tokens'));
+        self::assertSame(0, (int) $host->getConnection()->fetchOne("SELECT COUNT(*) FROM app_user WHERE email = 'pending-revoke@example.com'"));
     }
 
     public function testOnlyChangedReferencesToTimeTrackRowsAreReported(): void

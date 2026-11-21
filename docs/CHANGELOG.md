@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.34.0] - 2026-11-20](#1340---2026-11-20)
+  - [Added (Unreleased)](#added-unreleased)
+  - [Fixed (Unreleased)](#fixed-unreleased)
 - [[1.33.0] - 2026-11-20](#1330---2026-11-20)
   - [Added (1.33.0)](#added-1330)
   - [Changed (1.33.0)](#changed-1330)
@@ -221,6 +224,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - demo: the demo runs inside UiKit's demo platform shell (`@NowoUiKit/demo_platform/layout.html.twig`, UiKit ^2.60): shared top bar, aside navigation and section cards, no demo masthead markup; the Web Debug Toolbar and the CDN hot-reload scripts are off in the demo and its README screenshots. Demo only, no release.
+
+## [1.34.0] - 2026-11-20
+
+### Added (Unreleased)
+
+- **Revoke one client session by its id (1.34.0).** `ClientTokenRevoker::revokeById(ClientSessionId|string $sessionId,
+  UserInterface $actor): ClientSessionRevocation` ends one desktop or extension session: its Bearer token stops
+  authenticating at once. Granted for the session owner and `security.admin_roles`, then the new deny/grant event
+  `nowo_time_track.client_session.access_check` (`ClientSessionAccessCheckEvent`, action `revoke`, framework-free
+  `actorRef()`). Idempotent and existence-hiding: an unknown, malformed or already revoked id and a session the actor
+  may not revoke all answer `ClientSessionRevocation::NotFound`. A revocation is audited as `session_revoked`
+  (`ClientApiAuditAction::SessionRevoked`, user = the owner, reason `owner` or `other`). One `DELETE` statement: no
+  flush, clear or reset of any entity manager, nothing loaded into one; two concurrent revocations revoke once; a lock
+  conflict throws `TransientStorageFailure` with nothing committed (`CONFLICT_001`). New `ValueObject\ClientSessionId`,
+  `Enum\ClientSessionRevocation`, `Repository\ClientSessionRepositoryInterface` (implemented by the Doctrine token
+  store), `Dto\ClientSessionRecord` and `ClientApiAuditor::recordForUserId()`. The host-flush probe names
+  `revokeById()` for a `ClientToken` delete written by the application's own manager.
+
+### Fixed (Unreleased)
+
+- `ValueObject\Uuid` no longer accepts a UUID followed by a trailing newline (the pattern's `$` now matches the very
+  end only).
 
 ## [1.33.0] - 2026-11-20
 
@@ -2103,7 +2128,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.33.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.34.0...HEAD
+[1.34.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.33.0...v1.34.0
 [1.33.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.31.0...v1.32.0

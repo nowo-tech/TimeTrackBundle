@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Nowo\TimeTrackBundle\Dto\ClientSessionRecord;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
+use Nowo\TimeTrackBundle\Repository\ClientSessionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Clock\ClockInterface;
 
 use function array_values;
 
-final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterface, CredentialClientTokenRepositoryInterface
+final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterface, CredentialClientTokenRepositoryInterface, ClientSessionRepositoryInterface
 {
     /** @var array<string, ClientToken> */
     private array $tokens = [];
@@ -68,6 +71,26 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
         }
 
         return $removed;
+    }
+
+    public function findSessionById(string $sessionId): ?ClientSessionRecord
+    {
+        $token = $this->tokens[$sessionId] ?? null;
+        if (!$token instanceof ClientToken) {
+            return null;
+        }
+
+        return new ClientSessionRecord($token->getId(), (string) UserIdResolver::idOf($token->getUser()), $token->getCredentialId(), $token->getClientType());
+    }
+
+    public function removeSessionById(string $sessionId): int
+    {
+        if (!isset($this->tokens[$sessionId])) {
+            return 0;
+        }
+        unset($this->tokens[$sessionId]);
+
+        return 1;
     }
 
     /**
