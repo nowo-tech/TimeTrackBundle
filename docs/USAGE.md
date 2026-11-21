@@ -558,8 +558,12 @@ $result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep t
 
 - **Export** sections: `entries` (every owned entry), `formerPersonEntries` (entries left under the user's former
   reference `user:<id>`), `runningTimer`, `clientSessions`, `deviceSignIns`, `monitoringAcknowledgements`,
-  `monitoringUploads`, `timesheets`, `calendarConnections`, `calendarRules`, `calendarSuggestions`. Dates are RFC 3339
-  strings; no token hash, device code or calendar credential. Pass cells through `TimeEntryCsv::cell()` for a CSV.
+  `monitoringUploads`, `timesheets`, `balanceLedgerLines` (balance movements: kind, seconds, reason),
+  `timesheetEvents` (the audit trail of the user's own timesheets, comments included), `calendarConnections`,
+  `calendarRules`, `calendarSuggestions`. Dates are RFC 3339 strings; no token hash, device code or calendar credential.
+  Pass cells through `TimeEntryCsv::cell()` for a CSV. Most sections select scalars; `formerPersonEntries` and the
+  calendar sections load entities into the bundle's entity manager (dropped at the request boundary with the private
+  manager; with the shared one they stay managed until you clear it). Nothing is written.
 - **Erasure** deletes the client sessions, device sign-ins, monitoring upload intents and monitoring acknowledgements, and
   treats the entries as you choose:
   - `TimeEntryErasure::Anonymise` (default, as `FormerPersonTimeEntries::anonymiseUser()`): the time stays, the person
@@ -570,7 +574,7 @@ $result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep t
   and a locked or submitted period does not block it (the timesheet hash covers ids, tasks, times and sources only).
 - **Kept:** timesheets and their audit trail (the working-time register, GDPR art. 17.3.b) and calendar connections:
   call `CalendarConnectionService::revokeAllFor()`, which revokes the host grant before deleting them
-  (`TimeTrackErasureResult::$calendarConnectionsKept` counts them). Evidence files of activity monitoring live in your
+  (`TimeTrackErasureResult::$calendarConnectionsKept` counts them, and a warning is logged when it is not 0). Evidence files of activity monitoring live in your
   store: delete them there.
 - **A running timer refuses the erasure** (`PersonalDataErasureRefusedException`, code `timer_running`, nothing written):
   stop it first (`HostTimerApi::stop()` or `TimerService::stopForUserDeletion()`), so the time in progress is saved and
@@ -578,7 +582,10 @@ $result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep t
 - **One unit:** one transaction of the bundle's runner (a savepoint inside yours), bulk statements only: no entity
   manager is flushed, cleared or reset, so it fits an erasure chain that must not flush. Idempotent; a lock conflict
   surfaces as `TransientStorageFailure` with nothing committed (retry).
-- An id with a leading or trailing blank or an invisible character is refused (`invalid_user_id`).
+- An id with a leading or trailing blank or an invisible character is refused (`invalid_user_id`). Rows are matched by
+  owner and checked again byte for byte before they are deleted or anonymised (by id): on a case-insensitive collation
+  of your string user ids, `erase('ABC')` never touches `abc`'s rows. An id the owner column cannot hold (`'nobody'`
+  with integer ids) owns nothing.
 
 ## Task time follows a board move (Unreleased)
 

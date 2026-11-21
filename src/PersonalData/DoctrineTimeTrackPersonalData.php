@@ -13,8 +13,10 @@ use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
 use Nowo\TimeTrackBundle\Calendar\CalendarPersonalDataExporter;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
+use Nowo\TimeTrackBundle\Doctrine\OwnedRows;
 use Nowo\TimeTrackBundle\Doctrine\OwnerIdColumn;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -22,6 +24,7 @@ use Nowo\TimeTrackBundle\Entity\MonitoringAcknowledgementRecord;
 use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
 use Nowo\TimeTrackBundle\Exception\PersonalDataErasureRefusedException;
 use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
 use Nowo\TimeTrackBundle\Query\ClientSessionView;
@@ -35,7 +38,6 @@ use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
-use Nowo\TimeTrackBundle\UserRef\ExactUserIds;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -131,6 +133,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             'monitoringAcknowledgements' => $this->ownedRows(MonitoringAcknowledgementRecord::class, $userId, ['policyVersion', 'clientType', 'noticeSha256', 'acknowledgedAt']),
             'monitoringUploads'          => $this->ownedRows(MonitoringUploadIntent::class, $userId, ['entryId', 'slot', 'takenAt', 'status', 'policyVersion', 'blurred', 'mime', 'bytes', 'width', 'height', 'screenshotId', 'createdAt']),
             'timesheets'                 => $this->ownedRows(Timesheet::class, $userId, ['id', 'scopeKey', 'periodKind', 'periodStart', 'periodEnd', 'timezone', 'status', 'lockedAt', 'lockReason', 'submittedAt', 'decidedAt', 'decisionComment', 'totals', 'createdAt', 'updatedAt']),
+            // Since 1.35.0 (audit YI L2, art. 15): the balance movements and the audit trail of the user's own timesheets.
+            'balanceLedgerLines' => $this->ownedRows(BalanceLedgerLine::class, $userId, ['id', 'scopeKey', 'effectiveDate', 'kind', 'seconds', 'reason', 'reversesId', 'createdAt']),
+            'timesheetEvents'    => $this->ownedRows(TimesheetEvent::class, $userId, ['seq', 'action', 'fromStatus', 'toStatus', 'actorRole', 'client', 'comment', 'occurredAt'], true),
         ] + $this->calendarSections($userId);
     }
 
@@ -159,6 +164,14 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             'entriesAnonymised'          => $result->entriesAnonymised,
             'entriesCleared'             => $result->entriesCleared,
         ]);
+        if ($result->calendarConnectionsKept > 0) {
+            // Owner decision 4: calendar grants are revoked by the host (provider tokens are revoked over HTTP).
+            $this->logger->warning('TimeTrack personal data erased, but {count} calendar connection(s) of the user remain: call CalendarConnectionService::revokeAllFor() to revoke them.', [
+                'bundle' => 'time_track',
+                'action' => 'personal_data_erase',
+                'count'  => $result->calendarConnectionsKept,
+            ]);
+        }
 
         return $result;
     }
@@ -168,7 +181,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function eraseInTransaction(string $userId, TimeEntryErasure $entries, FormerPersonTimeEntryRepositoryInterface $store, DateTimeImmutable $now): TimeTrackErasureResult
     {
-        // Owner decision 2 (pending; recommended): refuse while a timer runs, so no tracked time is ever lost.
+        // Owner decision 2 (confirmed 2026-11-21): refuse while a timer runs, so no tracked time is ever lost.
         // Alternative: delete the user's ActiveTimer row here (deleteOwned(ActiveTimer::class, ...)), as Beacon does today.
         // Read inside the transaction: a timer stopped meanwhile does not block, a running one writes nothing.
         if ($this->timers->runningOf($userId) instanceof RunningTimerView) {
@@ -180,18 +193,18 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             $this->deleteOwned(ClientToken::class, $userId),
             $this->deleteOwned(DeviceAuthorization::class, $userId),
             $this->deleteOwned(MonitoringUploadIntent::class, $userId),
-            // Owner decision 3 (pending; recommended): delete the monitoring acknowledgements, as Beacon does.
+            // Owner decision 3 (confirmed 2026-11-21): delete the monitoring acknowledgements, as Beacon does.
             // Alternative: keep them as evidence of the notice (count 0 here; export() still lists them).
             $this->deleteOwned(MonitoringAcknowledgementRecord::class, $userId),
-            // Owner decisions 1 and 5 (pending; recommended): TimeEntryErasure::Anonymise is the default (interface);
+            // Owner decisions 1 and 5 (confirmed 2026-11-21): TimeEntryErasure::Anonymise is the default (interface);
             // FreeText clears text in every period, locked or submitted ones included (the timesheet hash excludes
             // text). Alternatives: FreeText as the default; FreeText skipping entries of locked/submitted periods.
             ($entries === TimeEntryErasure::Anonymise && $this->stores(TimeEntry::class, $userId) ? $store->anonymiseOwner($userId, $now) : 0) + $store->anonymisePerson($personRef, $now),
             $entries === TimeEntryErasure::FreeText ? $this->clearFreeText($userId) : 0,
-            // Owner decision 4 (pending; recommended): timesheets and the audit trail are kept (GDPR art. 17.3.b);
+            // Owner decision 4 (kept as built, 2026-11-21): timesheets and the audit trail are kept (GDPR art. 17.3.b);
             // calendar connections are only counted, CalendarConnectionService::revokeAllFor() revokes them.
             // Alternative: revoke the calendar connections here too.
-            count($this->ownedIds(CalendarConnection::class, $userId)),
+            count(OwnedRows::ids($this->entityManager, CalendarConnection::class, $userId)),
         );
     }
 
@@ -282,25 +295,29 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      *
      * @param class-string $class
      * @param list<string> $fields
+     * @param bool $viaTimesheet The rows belong to the user's timesheets (the owner is the timesheet's)
      *
      * @return list<array<string, mixed>>
      */
-    private function ownedRows(string $class, string $userId, array $fields): array
+    private function ownedRows(string $class, string $userId, array $fields, bool $viaTimesheet = false): array
     {
-        if (!$this->stores($class, $userId)) {
+        if (!$this->stores($viaTimesheet ? Timesheet::class : $class, $userId)) {
             return [];
         }
-        $select = ['x.id AS rowId', 'IDENTITY(x.user) AS ownerId'];
+        $owner  = $viaTimesheet ? 'IDENTITY(t.user)' : 'IDENTITY(x.user)';
+        $select = ['x.id AS rowId', $owner . ' AS ownerId'];
+        if ($viaTimesheet) {
+            $select[] = 'IDENTITY(x.timesheet) AS timesheetId';
+        }
         foreach ($fields as $field) {
             $select[] = 'x.' . $field . ' AS ' . $field;
         }
         $rows  = [];
         $after = '';
         do {
-            $batch = $this->entityManager->createQueryBuilder()
-                ->select(...$select)
-                ->from($class, 'x')
-                ->where('IDENTITY(x.user) = :owner')
+            $query = $this->entityManager->createQueryBuilder()->select(...$select)->from($class, 'x');
+            $batch = ($viaTimesheet ? $query->innerJoin('x.timesheet', 't') : $query)
+                ->where($owner . ' = :owner')
                 ->andWhere('x.id > :after')
                 ->setParameter('owner', $userId)
                 ->setParameter('after', $after)
@@ -314,7 +331,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 if (!is_scalar($row['ownerId']) || (string) $row['ownerId'] !== $userId) {
                     continue; // @codeCoverageIgnore
                 }
-                $out = [];
+                $out = $viaTimesheet ? ['timesheetId' => $row['timesheetId']] : [];
                 foreach ($fields as $field) {
                     $out[$field] = $this->exported($row[$field] ?? null);
                 }
@@ -323,35 +340,6 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         } while (count($batch) === self::BATCH);
 
         return $rows;
-    }
-
-    /**
-     * The ids of the user's rows of a bundle entity (owners checked byte for byte).
-     *
-     * @param class-string $class
-     *
-     * @return list<string>
-     */
-    private function ownedIds(string $class, string $userId): array
-    {
-        if (!$this->stores($class, $userId)) {
-            return [];
-        }
-        $rows = $this->entityManager->createQueryBuilder()
-            ->select('x.id AS id', 'IDENTITY(x.user) AS ownerId')
-            ->from($class, 'x')
-            ->where('IDENTITY(x.user) = :owner')
-            ->setParameter('owner', $userId)
-            ->getQuery()
-            ->getArrayResult();
-        $ids = [];
-        foreach ($rows as $row) {
-            if (is_scalar($row['ownerId']) && (string) $row['ownerId'] === $userId && is_scalar($row['id'])) {
-                $ids[] = (string) $row['id'];
-            }
-        }
-
-        return $ids;
     }
 
     private function exported(mixed $value): mixed
@@ -364,23 +352,20 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
     }
 
     /**
-     * Deletes the user's rows of a bundle entity in one statement by owner, then detaches the rows of that user this
+     * Deletes the user's rows of a bundle entity: read and locked by owner, checked byte for byte in PHP, deleted by id
+     * (audit YI L1: a case-insensitive owner column never reaches a look-alike's rows); then detaches the deleted rows this
      * manager had loaded (a later flush must not see them).
      *
      * @param class-string $class
      */
     private function deleteOwned(string $class, string $userId): int
     {
-        if (!$this->stores($class, $userId)) {
-            return 0;
-        }
-        $deleted = (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
-            ->delete($class, 'x')
-            ->where('IDENTITY(x.user) = :owner')
-            ->setParameter('owner', $userId)
-            ->getQuery(), $this->entityManager);
-        foreach ($this->entityManager->getUnitOfWork()->getIdentityMap()[$class] ?? [] as $loaded) {
-            if (ExactUserIds::ownerId($loaded) === $userId) {
+        $ids        = OwnedRows::ids($this->entityManager, $class, $userId, true);
+        $deleted    = OwnedRows::delete($this->entityManager, $class, $ids);
+        $unitOfWork = $this->entityManager->getUnitOfWork();
+        foreach ($ids as $id) {
+            $loaded = $unitOfWork->tryGetById($id, $class);
+            if ($loaded !== false) {
                 $this->entityManager->detach($loaded);
             }
         }

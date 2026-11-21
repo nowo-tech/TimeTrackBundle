@@ -10,6 +10,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -17,14 +18,20 @@ use Nowo\TimeTrackBundle\Entity\MonitoringAcknowledgementRecord;
 use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
+use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
+use Nowo\TimeTrackBundle\Enum\AuditClient;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionMode;
 use Nowo\TimeTrackBundle\Enum\CalendarProvider;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
+use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Enum\TimesheetAction;
+use Nowo\TimeTrackBundle\Enum\TimesheetActorRole;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Exception\PersonalDataErasureRefusedException;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
@@ -254,7 +261,7 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $this->timers()->start($ana, 'task-2', ClientType::Web);
 
         $export = $this->personalData()->export($this->idOf($ana));
-        self::assertSame(['entries', 'formerPersonEntries', 'runningTimer', 'clientSessions', 'deviceSignIns', 'monitoringAcknowledgements', 'monitoringUploads', 'timesheets', 'calendarConnections', 'calendarRules', 'calendarSuggestions'], array_keys($export));
+        self::assertSame(['entries', 'formerPersonEntries', 'runningTimer', 'clientSessions', 'deviceSignIns', 'monitoringAcknowledgements', 'monitoringUploads', 'timesheets', 'balanceLedgerLines', 'timesheetEvents', 'calendarConnections', 'calendarRules', 'calendarSuggestions'], array_keys($export));
         self::assertIsArray($export['entries']);
         self::assertCount(1, $export['entries']);
         self::assertSame(['Standup', 3600], [$export['entries'][0]['note'], $export['entries'][0]['durationSeconds']]);
@@ -273,13 +280,20 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         self::assertIsArray($export['timesheets']);
         self::assertSame(['week', 'open', 'manual'], [$export['timesheets'][0]['periodKind'], $export['timesheets'][0]['status'], $export['timesheets'][0]['lockReason']]);
         self::assertIsString($export['timesheets'][0]['lockedAt']);
+        self::assertIsArray($export['balanceLedgerLines']);
+        self::assertCount(1, $export['balanceLedgerLines']);
+        self::assertSame(['overtime_ratified', 3600, 'Ratified ana'], [$export['balanceLedgerLines'][0]['kind'], $export['balanceLedgerLines'][0]['seconds'], $export['balanceLedgerLines'][0]['reason']]);
+        self::assertIsArray($export['timesheetEvents']);
+        self::assertCount(1, $export['timesheetEvents']);
+        self::assertSame(['rejected', 'approver', 'Fix Monday ana', $export['timesheets'][0]['id']], [$export['timesheetEvents'][0]['action'], $export['timesheetEvents'][0]['actorRole'], $export['timesheetEvents'][0]['comment'], $export['timesheetEvents'][0]['timesheetId']]);
         self::assertIsArray($export['calendarConnections']);
         self::assertCount(1, $export['calendarConnections']);
         $json = json_encode($export, JSON_THROW_ON_ERROR);
         foreach (['token-hash-ana', 'device-hash-ana', 'cred-ana'] as $secret) {
             self::assertStringNotContainsString($secret, $json);
         }
-        self::assertSame([], $this->personalData()->export($this->idOf($bob))['clientSessions']);
+        $bobs = $this->personalData()->export($this->idOf($bob));
+        self::assertSame([[], [], []], [$bobs['clientSessions'], $bobs['balanceLedgerLines'], $bobs['timesheetEvents']]);
     }
 
     public function testErasureAnonymisesTheEntriesByDefaultAndDeletesNoTime(): void
@@ -312,6 +326,10 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         self::assertCount(1, $this->clientAccess()->sessionsOf($this->idOf($bob)));
         self::assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_timesheets'), 'the working-time register stays');
         self::assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_calendar_connections'), 'calendar grants are revoked by the host first');
+        self::assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_balance_ledger'), 'the balance ledger stays');
+        $logger = self::getContainer()->get('logger');
+        self::assertInstanceOf(RecordingLogger::class, $logger);
+        self::assertContains('TimeTrack personal data erased, but {count} calendar connection(s) of the user remain: call CalendarConnectionService::revokeAllFor() to revoke them.', $logger->messages());
 
         $again = $this->personalData()->erase($this->idOf($ana));
         self::assertSame([0, 0, 0, 0, 0, 0, 1], [$again->clientSessions, $again->deviceSignIns, $again->monitoringUploads, $again->monitoringAcknowledgements, $again->entriesAnonymised, $again->entriesCleared, $again->calendarConnectionsKept], 'idempotent');
@@ -438,6 +456,9 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $sheet = new Timesheet($owner, $this->idOf($user), 'org-a', Period::fromKey(TimesheetPeriodKind::Week, $now->format('o-\WW')), 'UTC', $now);
         $sheet->applyLock($now, TimesheetLockReason::Manual);
         $this->persist($sheet);
+        // 1.35.0 (audit YI L2): a balance movement and the audit trail of the user's own timesheet.
+        $this->persist(new BalanceLedgerLine($owner, $this->idOf($user), 'org-a', $now->format('Y-m-d'), LedgerKind::OvertimeRatified, 3600, $now, null, 'Ratified ' . $tag, $sheet, null, 'manager-1'));
+        $this->persist(new TimesheetEvent($sheet, 1, TimesheetAction::Rejected, TimesheetStatus::Submitted, TimesheetStatus::Rejected, 'manager-1', TimesheetActorRole::Approver, AuditClient::Web, $now, null, 'Fix Monday ' . $tag));
         $this->persist(new CalendarConnection($owner, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'cred-' . $tag, 'v1', $now));
     }
 

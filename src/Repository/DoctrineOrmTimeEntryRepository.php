@@ -35,6 +35,7 @@ use function array_map;
 use function array_values;
 use function count;
 use function in_array;
+use function is_scalar;
 use function max;
 
 /**
@@ -919,7 +920,13 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function anonymiseOwner(string $userId, DateTimeImmutable $at): int
     {
-        return $this->anonymiseWhere(static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId), $at);
+        // Since 1.35.0 (audit YI L1): the owner is matched again in PHP, byte for byte; a case-insensitive collation of a
+        // host's string user ids must never anonymise a look-alike's entries.
+        return $this->anonymiseWhere(
+            static fn (QueryBuilder $query): QueryBuilder => $query->andWhere('IDENTITY(e.user) = :owner')->setParameter('owner', $userId),
+            $at,
+            static fn (array $row): bool => is_scalar($row['ownerId']) && (string) $row['ownerId'] === $userId,
+        );
     }
 
     /**
@@ -1119,16 +1126,16 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      * result as {@see TimeEntry::anonymiseInPlace()}. Already anonymised rows are skipped.
      *
      * @param callable(QueryBuilder): QueryBuilder $filter
-     * @param (callable(array{id: string, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}): bool)|null $accept
+     * @param (callable(array{id: string, ownerId: int|string|null, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}): bool)|null $accept
      */
     private function anonymiseWhere(callable $filter, DateTimeImmutable $at, ?callable $accept = null): int
     {
         $changed = 0;
         $lastId  = '';
         do {
-            /** @var list<array{id: string, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}> $rows */
+            /** @var list<array{id: string, ownerId: int|string|null, externalSource: string|null, externalId: string|null, metadata: array<string, mixed>|null, personRef: string|null}> $rows */
             $rows = $filter($this->entityManager->createQueryBuilder()
-                ->select('e.id AS id', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.metadata AS metadata', 'e.personRef AS personRef')
+                ->select('e.id AS id', 'IDENTITY(e.user) AS ownerId', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.metadata AS metadata', 'e.personRef AS personRef')
                 ->from(TimeEntry::class, 'e')
                 ->where('e.id > :lastId')
                 ->andWhere('e.anonymisedAt IS NULL')

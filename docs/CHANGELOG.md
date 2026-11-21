@@ -236,12 +236,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `DeviceSignInView` (never a token hash or a device code).
 - **Personal data by user id.** `PersonalData\TimeTrackPersonalDataInterface::export($userId)` (GDPR arts. 15 / 20:
   entries, former-person entries, running timer, sessions, device sign-ins, monitoring acknowledgements and uploads,
-  timesheets, calendar data) and `erase($userId, TimeEntryErasure)` (art. 17: deletes sessions, device sign-ins and the
+  timesheets, balance ledger lines, the audit trail of the user's timesheets, calendar data) and `erase($userId, TimeEntryErasure)` (art. 17: deletes sessions, device sign-ins and the
   monitoring rows; anonymises the entries by default, or clears only their free text with `TimeEntryErasure::FreeText`;
   never deletes an entry or changes its time; keeps timesheets and calendar connections). One transaction, bulk
   statements, no flush; refused with `PersonalDataErasureRefusedException` (`timer_running`) while the user's timer runs.
+  Rows are written by id after a byte-for-byte owner check; a warning is logged when calendar connections remain.
 - `ClientTokenRevoker::revokeAllForUser($userId)`: sign out every client session of a user (store capability
   `Repository\UserClientTokenRepositoryInterface`, kept apart so decorators of the other token interfaces keep compiling).
+
+### Fixed
+
+- `FormerPersonTimeEntryRepositoryInterface::anonymiseOwner()` (Doctrine store, since 1.15; used by
+  `FormerPersonTimeEntries::anonymiseUser()`) checks the owner again byte for byte before it anonymises an entry: with
+  the relation mapping and string user ids on a case-insensitive collation (MySQL / MariaDB default), anonymising
+  `ABC` also anonymised the entries of `abc` (audit YI L1). Integer ids and `user_mapping: id` (binary collation) were
+  not affected.
 
 ### Changed
 

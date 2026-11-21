@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Repository;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
-use Nowo\TimeTrackBundle\Doctrine\OwnerIdColumn;
+use Nowo\TimeTrackBundle\Doctrine\OwnedRows;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
@@ -114,25 +114,21 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
     }
 
     /**
-     * Since 1.35.0: deletes every token of the user in one DQL statement through the bundle's runner (no entity manager is
-     * flushed) and returns how many were deleted. An id with a leading or trailing blank or an invisible character deletes
-     * nothing (it could reach a look-alike's rows on a padding collation).
+     * Since 1.35.0: deletes every token of the user through the bundle's runner (no entity manager is flushed) and returns
+     * how many were deleted. The tokens are read and locked by owner, checked again byte for byte in PHP and deleted by
+     * id (audit YI L1: a case-insensitive collation of a host's string ids never reaches a look-alike's sessions). An id
+     * with a leading or trailing blank or an invisible character deletes nothing.
      *
      * @throws TransientStorageFailure When the storage failed transiently (deadlock, lock wait timeout)
      */
     public function removeByUserId(string $userId): int
     {
-        if ($userId === '' || !DoctrineUserReferenceResolver::isExactId($userId) || !OwnerIdColumn::accepts($this->entityManager, ClientToken::class, $userId)) {
+        if ($userId === '' || !DoctrineUserReferenceResolver::isExactId($userId)) {
             return 0;
         }
-        $query = $this->entityManager->createQueryBuilder()
-            ->delete(ClientToken::class, 't')
-            ->where('IDENTITY(t.user) = :owner')
-            ->setParameter('owner', $userId)
-            ->getQuery();
         $runner = $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
 
-        return (int) $runner->runStatements(fn (): mixed => TimeTrackSavepoint::execute($query, $this->entityManager));
+        return (int) $runner->runStatements(fn (): int => OwnedRows::delete($this->entityManager, ClientToken::class, OwnedRows::ids($this->entityManager, ClientToken::class, $userId, true)));
     }
 
     /**
