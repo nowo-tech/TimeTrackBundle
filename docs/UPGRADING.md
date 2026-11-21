@@ -4,6 +4,7 @@
 
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
+- [To 1.35.0](#to-1350)
 - [To 1.34.0](#to-1340)
 - [To 1.33.0](#to-1330)
 - [To 1.33.0](#to-1330-1)
@@ -120,6 +121,14 @@ The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and 
 minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
+
+## To 1.35.0
+
+From **1.34.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Nothing to change: every addition is optional and backwards compatible.
 
