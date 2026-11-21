@@ -251,14 +251,15 @@ final class EntriesWithoutTaskTest extends TestCase
             self::assertSame([3, 2], [$page->total, count($page->entries)]);
             self::assertNotContains($otherScope->getId(), $this->ids($page->entries));
 
-            // The owner lists them all, an admin of one tenant looking at the user only that tenant's; the option off
-            // keeps the 1.35 listing.
+            // The owner lists them all, an admin of one tenant looking at the user only that tenant's; with the option
+            // off the stored rows keep the tenant rule (coordinator decision 2026-11-22).
             $plain = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), $store, new EventDispatcher(), $this->clock, scopeProvider: $this->scopes, allowWithoutTask: true);
             self::assertCount(3, $plain->listEntries($this->user, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30')));
             self::assertCount(3, $plain->listEntriesPage($this->user, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'), 1, 10)->entries);
             self::assertEqualsCanonicalizing([$inScope->getId(), $withTask->getId()], $this->ids($plain->listEntriesPage($admin, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'), 1, 10, 'user-1')->entries));
             $off = new TimerService(new StubTaskProvider(), new InMemoryActiveTimerRepository(), $store, $this->dispatcher, $this->clock, scopeProvider: $this->scopes);
-            self::assertSame(4, $off->listEntriesPage($admin, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'), 1, 10)->total);
+            self::assertSame(3, $off->listEntriesPage($admin, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'), 1, 10)->total);
+            self::assertNotContains($otherScope->getId(), $this->ids($off->listEntries($admin, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'))));
         }
     }
 

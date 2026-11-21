@@ -889,16 +889,17 @@ final readonly class TimerService
 
     /**
      * Since 1.36.0 (Beacon spec 250): the listing that keeps another owner's entries without a task only in the viewer's
-     * tenant scopes, or null when nothing needs that rule: the option off (the 1.35 listing), no scope provider (a
-     * single-tenant host keeps the per-user rules), or a listing of the viewer's own entries only. Asked per call (never
-     * memoised: worker mode).
+     * tenant scopes, or null when nothing needs that rule: no scope provider (a single-tenant host keeps the per-user
+     * rules), or a listing of the viewer's own entries only. The rule applies whether `entries.allow_without_task` is on
+     * or off (coordinator decision 2026-11-22): rows written while it was on are never opened across scopes; without
+     * such rows the listing is the 1.35 one. Asked per call (never memoised: worker mode).
      *
      * @param array{userIds: list<string>, includeImported: bool, includeOwnerless: bool, ownerlessScopeKeys: list<string>|null} $query
      */
     private function tasklessListing(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, array $query): ?TimeEntryListing
     {
         $viewerId = UserIdResolver::getId($viewer);
-        if (!$this->allowWithoutTask || !$this->scopeProvider instanceof TimesheetScopeProviderInterface || (!$query['includeOwnerless'] && $query['userIds'] === [$viewerId])) {
+        if (!$this->scopeProvider instanceof TimesheetScopeProviderInterface || (!$query['includeOwnerless'] && $query['userIds'] === [$viewerId])) {
             return null;
         }
 

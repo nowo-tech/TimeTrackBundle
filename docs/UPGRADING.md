@@ -269,8 +269,8 @@ nowo_time_track:
   `getEntryView()->withoutTask`) before you look a task up. `getTaskId()` on the entity and the views stays a string and
   is `''` for them.
 - Multi-tenant hosts (a `timesheets.scope_provider`): anyone but the owner reaches these entries only within their own
-  tenant scopes. Keep the option on while such entries exist: with it off the listings no longer apply the tenant rule
-  to them (editing still does).
+  tenant scopes, in listings and in edits, whether the option is on or off: switching it off later refuses new such
+  entries and never opens the stored ones across scopes. One without a scope stays its owner's only.
 - A host that replaces the entry store and lists other users' entries implements
   `Repository\TasklessScopedTimeEntryRepositoryInterface` to page them in the database; otherwise the listing is
   filtered in memory.
