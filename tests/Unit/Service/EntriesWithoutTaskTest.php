@@ -6,7 +6,6 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Service;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
-use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
@@ -41,6 +40,7 @@ use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 use function array_map;
+use function count;
 
 /**
  * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`): timers and entries without a task, their tenant scope,
@@ -248,7 +248,7 @@ final class EntriesWithoutTaskTest extends TestCase
             $listed = $service->listEntries($admin, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'));
             self::assertEqualsCanonicalizing([$inScope->getId(), $withTask->getId(), $own->getId()], $this->ids($listed), $store::class);
             $page = $service->listEntriesPage($admin, new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-30'), 1, 2);
-            self::assertSame([3, 2], [$page->total, \count($page->entries)]);
+            self::assertSame([3, 2], [$page->total, count($page->entries)]);
             self::assertNotContains($otherScope->getId(), $this->ids($page->entries));
 
             // The owner lists them all, an admin of one tenant looking at the user only that tenant's; the option off
@@ -266,7 +266,7 @@ final class EntriesWithoutTaskTest extends TestCase
     {
         $billable = new StubBillableDefaultProvider(true);
         $tasks    = new StubTaskProvider();
-        $off      = new ManualEntryService($this->service(allow: false), $this->entries, $this->timers, new TaskProviderTaskAccessChecker($tasks), $this->dispatcher, clock: $this->clock, scopeProvider: $this->scopes);
+        $off      = new ManualEntryService($this->service(allow: false), $this->entries, $this->timers, new TaskProviderTaskAccessChecker($tasks), $this->dispatcher, scopeProvider: $this->scopes, clock: $this->clock);
         try {
             $off->create($this->user, null, new DateTimeImmutable('2026-11-21 08:00'), new DateTimeImmutable('2026-11-21 09:00'), TimeEntrySource::Manual);
             self::fail('expected a refusal');
@@ -274,7 +274,7 @@ final class EntriesWithoutTaskTest extends TestCase
             self::assertSame(ManualEntryException::NOT_TRACKABLE, $e->getMessage());
         }
 
-        $service = new ManualEntryService($this->service(), $this->entries, $this->timers, new TaskProviderTaskAccessChecker($tasks), $this->dispatcher, clock: $this->clock, scopeProvider: $this->scopes, billableDefaults: $billable);
+        $service = new ManualEntryService($this->service(), $this->entries, $this->timers, new TaskProviderTaskAccessChecker($tasks), $this->dispatcher, scopeProvider: $this->scopes, clock: $this->clock, billableDefaults: $billable);
         $entry   = $service->create($this->user, null, new DateTimeImmutable('2026-11-21 08:00'), new DateTimeImmutable('2026-11-21 09:00'), TimeEntrySource::Manual, 'note', description: ' Visit ACME ', scopeKey: 'org-b');
         self::assertSame([null, '', 'Visit ACME', 'org-b', null, ['note' => 'note']], [$entry->taskIdOrNull(), $entry->getTaskTitleSnapshot(), $entry->getDescription(), $entry->getScopeKey(), $entry->getBillable(), $entry->getMetadata()]);
         self::assertSame([], $billable->calls);
@@ -346,7 +346,7 @@ final class EntriesWithoutTaskTest extends TestCase
 
     private function lastEvent(): ?object
     {
-        return $this->events === [] ? null : $this->events[\count($this->events) - 1];
+        return $this->events === [] ? null : $this->events[count($this->events) - 1];
     }
 
     private function service(bool $allow = true, ?StubBillableDefaultProvider $billable = null, ?TimesheetScopeProviderInterface $scopes = null): TimerService

@@ -14,6 +14,7 @@ use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 
 use function dirname;
 use function explode;
@@ -63,6 +64,7 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $this->runSql($this->platformName() . '-up.sql');
         $this->runSql($this->platformName() . '-up.sql', '1.25.0');
         $this->runSql($this->platformName() . '-up.sql', '1.36.0');
+        ScopeKeyCollation::apply($conn);
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.15 mapping');
         self::assertSame(['Kept', '3600'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT duration_seconds FROM time_track_entries')]);
     }

@@ -74,7 +74,7 @@ final class EntriesWithoutTaskDatabaseTest extends FunctionalTestCase
         self::assertSame(['withoutTask' => true, 'description' => 'Call with ACME', 'scopeKey' => 'org-b'], ['withoutTask' => $export['runningTimer']['withoutTask'] ?? null, 'description' => $export['runningTimer']['description'] ?? null, 'scopeKey' => $export['runningTimer']['scopeKey'] ?? null]);
 
         $this->entityManager()->clear();
-        $user  = $this->entityManager()->find(AppUser::class, $this->user->getId());
+        $user = $this->entityManager()->find(AppUser::class, $this->user->getId());
         self::assertInstanceOf(AppUser::class, $user);
         $entry = $timers->stop($user);
         self::assertNotSame('', $timer->getId());
@@ -112,9 +112,10 @@ final class EntriesWithoutTaskDatabaseTest extends FunctionalTestCase
         $noScope    = $this->entry($this->user, null);
         $withTask   = $this->save(new TimeEntry($this->user, 'task-1', 'Task', 'board-1', new DateTimeImmutable('-5 hours'), new DateTimeImmutable('-4 hours'), 3600, TimeEntrySource::Web));
         $ownerless  = $this->entry(null, 'org-a');
-        $timers     = $this->service(TimerService::class);
-        $from       = new DateTimeImmutable('-2 days');
-        $to         = new DateTimeImmutable('+1 day');
+        $this->entry(null, 'Org-a'); // An ownerless look-alike: the SQL may match it on a folding collation, the PHP check never.
+        $timers = $this->service(TimerService::class);
+        $from   = new DateTimeImmutable('-2 days');
+        $to     = new DateTimeImmutable('+1 day');
 
         $page = $timers->listEntriesPage($this->admin, $from, $to, 1, 10, (string) $this->user->getId());
         self::assertSame($this->sorted([$inScope, $withTask]), $this->sorted($page->entries));

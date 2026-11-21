@@ -1134,7 +1134,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     private function listingQuery(TimeEntryListing $listing): QueryBuilder
     {
-        $query = $this->ownerlessPeriodQuery($listing->userIds, $listing->includeOwnerless ? $listing->ownerlessScopeKeys : [], $listing->from, $listing->to, $listing->includeImported);
+        $query    = $this->ownerlessPeriodQuery($listing->userIds, $listing->includeOwnerless ? $listing->ownerlessScopeKeys : [], $listing->from, $listing->to, $listing->includeImported);
         $taskless = $listing->tasklessScopeKeys === [] ? '' : ' OR e.scopeKey IN (:tasklessScopes)';
         // @igor-ignore - Per-call QueryBuilder built in this method; not a shared service.
         $query->andWhere('e.taskId IS NOT NULL OR IDENTITY(e.user) = :tasklessViewer' . $taskless)->setParameter('tasklessViewer', $listing->viewerId);

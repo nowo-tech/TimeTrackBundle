@@ -479,9 +479,9 @@ final readonly class TimerService
      */
     public function startReplacing(UserInterface $user, ?string $taskId, ClientType $clientType, string $channel, array $metadata = [], ?string $stopNote = null, ?string $description = null, ?string $scopeKey = null): array
     {
-        $channel  = TimerChannel::assertValid($channel);
-        $task     = $taskId === null ? null : $this->resolveTrackable($user, $taskId);
-        $scopeKey = $task instanceof TaskReference ? $this->scopeKeyFor($user, $task->id, $task->boardId) : $this->scopeKeyWithoutTask($user, $scopeKey);
+        $channel     = TimerChannel::assertValid($channel);
+        $task        = $taskId === null ? null : $this->resolveTrackable($user, $taskId);
+        $scopeKey    = $task instanceof TaskReference ? $this->scopeKeyFor($user, $task->id, $task->boardId) : $this->scopeKeyWithoutTask($user, $scopeKey);
         $description = $task instanceof TaskReference ? null : self::cleanDescription($description);
         $this->periodLockGuard?->assertWritable($user, $scopeKey, $this->clock->now(), WriteKind::TimerStart);
         $metadata                    = $this->startMetadata($metadata);
@@ -774,8 +774,7 @@ final readonly class TimerService
      */
     public function listEntries(UserInterface $viewer, DateTimeImmutable $from, DateTimeImmutable $to, ?string $targetUserId = null, bool $allowOwnerless = true): array
     {
-        $entries = [];
-        $query   = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId, $allowOwnerless);
+        $query = $this->resolveEntryQuery($viewer, $from, $to, $targetUserId, $allowOwnerless);
         // Since 1.36.0: another owner's entries without a task only in the viewer's tenant scopes.
         $listing = $this->tasklessListing($viewer, $from, $to, $query);
         if ($listing instanceof TimeEntryListing) {

@@ -134,6 +134,13 @@ is rewritten. Run `doctrine:migrations:diff`, or apply the reference SQL of your
 (replace `users` with your user table on SQLite, and the foreign key name if yours differs; the demo ships the MySQL one
 as `demo/symfony8/migrations/Version20261121000000.php`). On a large MySQL table the `ALTER` rebuilds the table: plan
 the window. The rollback refuses while a running timer or an entry has no task: it never deletes tracked time.
+On MySQL / MariaDB, give the new `time_track_active_timers.scope_key` the exact collation of the other `scope_key`
+columns (as in 1.24.1; `utf8mb4_nopad_bin` on MariaDB, `utf8mb4_bin` on MySQL before 8.0.17), or
+`doctrine:migrations:diff` proposes it:
+
+```sql
+ALTER TABLE time_track_active_timers MODIFY scope_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin NULL DEFAULT NULL;
+```
 
 <details><summary>MySQL 8 / MariaDB 10.6+ (docs/sql/1.36.0/mysql-up.sql)</summary>
 

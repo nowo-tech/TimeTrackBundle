@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 
 use function dirname;
 use function explode;
@@ -60,6 +61,8 @@ final class EntriesWithoutTaskSchemaTest extends FunctionalTestCase
         self::assertSame(['task-1', 'task-2'], [(string) $conn->fetchOne('SELECT task_id FROM time_track_entries'), (string) $conn->fetchOne('SELECT task_id FROM time_track_active_timers')]);
 
         $this->runSql($this->platformName() . '-up.sql');
+        // The exact (binary, NO PAD) collation of the scope_key columns, as UPGRADING 1.24.1 sets it on MySQL / MariaDB.
+        ScopeKeyCollation::apply($conn);
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.36 mapping');
         self::assertSame(['Kept', 'Running'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_active_timers')]);
     }
