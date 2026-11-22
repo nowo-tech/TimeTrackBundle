@@ -251,16 +251,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `delete_imported`), starting from that event's answer. A listener may narrow; it never grants an entry without a
     task outside the actor's tenant scopes, nor past a period lock.
   - `TeamAccessGuard::canViewEntry()` and the action constants `ACTION_VIEW` (`view`) and `ACTION_EDIT` (`edit`).
-  - Stateless (FrankenPHP worker mode, kernel reset false): the entry and the host ports are read at every call. An
-    answer is a check at that moment; the bundle's write services check again under the owner's lock
-    (REQ-RUNTIME-003).
+  - Stateless (FrankenPHP worker mode, kernel reset false): the entry and the host ports are read at every call. A
+    grant holds as of the check only; under the owner's lock the bundle's write services re-check the entry's owner,
+    its state and the period lock (REQ-RUNTIME-003).
+  - A reference whose user object has another id than the reference is refused; a failure of the store, a host port
+    or a listener is logged (class only) and answered as the same refusal (no error oracle).
 
 ### Changed (1.37.0)
 
 - `TimeEntryBillableService::changeById()` reads the entry by its exact id and, for an actor who may not see the entry,
   answers every refusal (`read_only`, `anonymised`, `forbidden`) as `not_found`, like an unknown id. `find()` (and so
   `PATCH /api/time-track/entries/{id}`) compares the id exactly: a look-alike id is unknown. The monitoring evidence
-  check reads its timer entry the same way.
+  check reads its timer entry the same way. To decide, a refusal asks the `view` check, so listeners of
+  `nowo_time_track.time_entry.access_check` now also receive action `view` there: give them a default branch for
+  actions they do not know.
 - `TeamAccessGuard::canDeleteImportedEntry()` also applies the 1.36 tenant rule after the listeners (only entries
   without a task with a scope provider configured are affected).
 

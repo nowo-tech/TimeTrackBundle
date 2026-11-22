@@ -128,9 +128,15 @@ From **1.36.0**: no change is required.
 - Optional (DDD hosts, private entity manager): replace your own ownership checks by entry id (`findOneBy(['id' => …,
   'user' => …])`, DQL over `TimeEntry`) with `Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface`
   (`canViewEntry()`, `canEditEntry()`, `viewableEntry()`); see USAGE "Entry access by id (1.37)".
-- Listeners of `nowo_time_track.time_entry.access_check` may now be asked about action `view` (through the new port
-  only). Prefer the ids-only `nowo_time_track.time_entry.id_access_check` (`TimeEntryIdAccessCheckEvent`) for new
-  listeners: it carries no entity and no user object.
+- Listeners of `nowo_time_track.time_entry.access_check` may now be asked about action `view`: through the new port,
+  and when `TimeEntryBillableService::changeById()` refuses (it then asks whether the actor may see the entry). Give
+  every listener a default branch for actions it does not know, and a listener that grants only `edit` should also
+  decide `view` (otherwise the actor it grants `edit` gets `not_found` from `changeById()` refusals). Prefer the ids-only
+  `nowo_time_track.time_entry.id_access_check` (`TimeEntryIdAccessCheckEvent`) for new listeners: it carries no entity
+  and no user object.
+- Deprecated object ports and `TimeEntryAccessCheckEvent` listeners may receive an internal `UserInterface` that
+  carries only an id and role names. Resolve it by `getId()` only (never by identifier or login) and answer `[]` /
+  `false` for a class you do not know. Build role-carrying references from current data at check time.
 - `TimeEntryBillableService::changeById()` answers `not_found` (instead of `read_only` / `anonymised` / `forbidden`) when
   the actor may not see the entry; a look-alike entry id is unknown.
 

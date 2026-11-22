@@ -656,7 +656,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$entries'   => new Reference(TimeEntryRepositoryInterface::class),
                 '$guard'     => new Reference(TeamAccessGuard::class),
                 '$userClass' => '%nowo_time_track.user_class%',
-            ]));
+                '$logger'    => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setAlias(TimeEntryAccessInterface::class, TimeEntryAccess::class)->setPublic(true);
         $container->setDefinition(TimeEntryBillableService::class, (new Definition(TimeEntryBillableService::class))
             ->setPublic(true)

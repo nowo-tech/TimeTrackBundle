@@ -40,9 +40,9 @@ first lock of a unit ([One lock order](HIGH-LOAD.md#one-lock-order)).
 
 Side effects (timer, entry, timesheet, ledger and import events, a revocation) run after the outermost commit. The read
 ports of 1.35.0 (`Query\*`) take no lock and write nothing. The entry access port of 1.37.0 (`Access\TimeEntryAccessInterface`)
-takes no lock and writes nothing either: its answer is a check at that moment (time of check), so the bundle's write
-services check again under the owner's lock when they write (e.g. `TimeEntryBillableService` re-reads the entry `FOR
-UPDATE` and compares its owner).
+takes no lock and writes nothing either: a grant holds as of the check only (time of check). The bundle's write services
+do not rely on it: under the owner's lock they re-read the entry and check again its owner, its state (imported,
+anonymised) and the period lock (e.g. `TimeEntryBillableService::change()` re-reads the entry `FOR UPDATE`).
 
 ## Conflict codes
 

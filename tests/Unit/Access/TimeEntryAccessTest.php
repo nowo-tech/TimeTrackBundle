@@ -27,10 +27,12 @@ use Nowo\TimeTrackBundle\Tests\Support\FindableInMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetRepository;
+use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 use function str_repeat;
@@ -219,6 +221,46 @@ final class TimeEntryAccessTest extends TestCase
         self::assertSame($entry, ExactTimeEntryLookup::find($folding, $entry->getId()));
         self::assertNull(ExactTimeEntryLookup::find($folding, strtoupper($entry->getId())));
         self::assertFalse((new TimeEntryAccess($folding, $this->guard(), TestUser::class))->canViewEntry('7', strtoupper($entry->getId())));
+    }
+
+    /** Audit YO-L1: a reference whose object has another id is refused, whatever the object's kind. */
+    public function testAReferenceWhoseObjectHasAnotherIdIsRefused(): void
+    {
+        $entry  = $this->entry($this->ana, 'task-1');
+        $access = $this->access();
+        $plain  = static fn (string $id): object => new class($id) {
+            public function __construct(private readonly string $id)
+            {
+            }
+
+            public function getId(): string
+            {
+                return $this->id;
+            }
+        };
+
+        self::assertFalse($access->canViewEntry(TimeTrackUserRef::of(new TestUser('8', 'bob@example.com'), TestUser::class, '7', 'ana@example.com'), $entry->getId()), 'a security user of another id');
+        self::assertFalse($access->canEditEntry(TimeTrackUserRef::of($plain('8'), 'App\\User', '7', ''), $entry->getId()), 'a plain object of another id');
+        self::assertNull($access->viewableEntry(TimeTrackUserRef::of($plain('07'), 'App\\User', '7', ''), $entry->getId()));
+        self::assertTrue($access->canEditEntry(TimeTrackUserRef::of($plain('7'), 'App\\User', '7', ''), $entry->getId()), 'a plain object of the same id is checked by that id');
+        self::assertTrue($access->canViewEntry(TimeTrackUserRef::of($this->ana, TestUser::class, '7', 'ana@example.com'), $entry->getId()));
+    }
+
+    /** Audit YO-L2: a failing listener or port is logged and answered as the same refusal (no error oracle). */
+    public function testAFailureIsLoggedAndAnsweredAsARefusal(): void
+    {
+        $entry = $this->entry($this->ana, 'task-1');
+        $this->dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_ID_ACCESS_CHECK, static function (): never {
+            throw new RuntimeException('listener down');
+        });
+        $logger = new RecordingLogger();
+        $access = new TimeEntryAccess($this->entries, $this->guard(), TestUser::class, $logger);
+
+        self::assertFalse($access->canViewEntry('7', $entry->getId()));
+        self::assertFalse($access->canEditEntry('7', $entry->getId()));
+        self::assertNull($access->viewableEntry('7', $entry->getId()));
+        self::assertCount(3, $logger->records);
+        self::assertSame(['warning', 'entry_access_view', 'entry_access_edit', RuntimeException::class], [$logger->records[0]['level'], $logger->records[0]['context']['action'], $logger->records[1]['context']['action'], $logger->records[2]['context']['exception']]);
     }
 
     public function testTheIdActorStandsForItsReference(): void

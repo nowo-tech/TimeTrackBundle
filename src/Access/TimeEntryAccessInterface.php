@@ -32,8 +32,14 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
  * an entry the user may not reach all give the same answer (false / null): the answer tells nothing about which.
  *
  * Every call reads the entry and asks the host ports again; nothing is kept between calls (FrankenPHP worker mode,
- * kernel reset false). An answer is a check at that moment: the bundle's own write services check again, under the
- * owner's lock, when they write (REQ-RUNTIME-003).
+ * kernel reset false). An answer is a check at that moment: a grant holds as of the check only (REQ-RUNTIME-003). The
+ * bundle's write services do not reuse it: under the owner's lock they re-read the entry and check its owner, its state
+ * and the period lock again (e.g. `TimeEntryBillableService::change()`). Build a role-carrying reference from your
+ * current data at check time; never reuse roles kept in a queued message or a cache.
+ *
+ * A failure of the store, of a host port or of a listener is logged (its class only) and answered as the same refusal,
+ * so an error never tells an existing entry from an unknown one. A reference whose user object has another id than the
+ * reference (`getId()`, compared byte for byte) is refused.
  */
 interface TimeEntryAccessInterface
 {
