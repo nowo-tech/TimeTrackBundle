@@ -234,6 +234,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A new strict `TranslationCatalogueTest` fails on a non-en locale missing a key, on a non-en value identical to English (any length, placeholders included; values without letters are skipped) unless allow-listed per locale (brands, units, protocols, loanwords, true cognates), on a non-es value identical to the Spanish one (longer than 12 characters) unless allow-listed as genuinely shared, and on stale allow-list entries. No translation changed.
 
+### Tests
+
+- `MonitoringApiTest::testEveryRefusalHappensAtIntentTime` no longer fails between 00:00 and 00:09 UTC: its `outside_hours` case used a fixed 00:00-00:01 window, which contains the frozen clock (the start of the current 10-minute slot) in that interval. The window now sits two hours after the frozen now, so it never contains it. Test-only; no production change.
+
 ## [1.37.0] - 2026-11-22
 
 ### Added (1.37.0)
