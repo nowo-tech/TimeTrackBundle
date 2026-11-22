@@ -243,7 +243,10 @@ class MonitoringApiTest extends MonitoringTestCase
         $refused('outside_timer', $this->intentBody($ended, $image, takenAt: $this->now() - 1800), 't5');
 
         // Spec 198 schedule through the working calendar (here derived from the working hours).
-        $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N', $this->now()), 'from' => '00:00', 'to' => '00:01']]];
+        // One-minute window two hours after the frozen now (a slot start, so never within a minute of midnight): it can never
+        // contain now, whatever the instant the suite runs at (a fixed 00:00-00:01 window contained it from 00:00 to 00:09 UTC).
+        $later                  = $this->now() + 7200;
+        $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N', $later), 'from' => gmdate('H:i', $later), 'to' => gmdate('H:i', $later + 60)]]];
         $refused('outside_hours', $this->intentBody($timer, $image), 'h1');
         $this->profile()->hours = ['timezone' => 'UTC', 'slots' => [['day' => (int) gmdate('N', $this->now() + 86_400), 'from' => '00:00', 'to' => '23:59']]];
         $refused('outside_hours', $this->intentBody($timer, $image), 'h2');
