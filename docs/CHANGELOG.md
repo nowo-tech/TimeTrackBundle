@@ -230,6 +230,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- REQ-SEC-006: the bundle now declares its own identity / access-key columns, so the knowledge of which columns are
+  exact keys lives in the bundle that owns the tables instead of in every host.
+  `Nowo\TimeTrackBundle\Doctrine\TimeTrackExactKeyColumns` implements
+  `Nowo\MigrationsKitContracts\Collation\ExactKeyColumnsInterface` (new runtime dependency
+  `nowo-tech/migrations-kit-contracts` ^1.0: interfaces and value objects only, no dependency beyond PHP) and declares
+  thirteen columns: `scope_key` on the timesheets, balance ledger, calendar connections, calendar rules, entries and
+  active timers — the tenant scope every read is filtered by, exact in every configuration — and the person reference
+  columns `owner_ref`, `submitted_by_ref`, `decided_by_ref`, `actor_ref` and `person_ref`, which hold an opaque user
+  id and are declared **inactive** with `user_mapping: relation`, where that DDL does not apply (reported as skipped
+  with the setting, never as a failure). The bundle already gives these columns the server's binary NO PAD collation
+  when the schema is built (1.23.0, 1.24.1); the declaration is what makes `nowo:migrations:check-key-collations`
+  *assert* it, so a table created before 1.24.1, restored from a dump or imported by hand is reported instead of
+  trusted — on a folding collation the approver of scope `acme` reads `Acme`'s and `acme `'s rows
+  (GHSA-r889-x27h-wq4q). MigrationsKit discovers the declaration by autoconfiguration, so a host registers
+  **nothing** and can delete the `nowo_migrations_kit.collation_check.ignore_columns` entries it kept for those
+  columns (see UPGRADING). Every table name is built from `nowo_time_track.table_prefix`, the way the schema builds
+  it: there is not one literal table name in the declaration. Nothing is memoised (REQ-RUNTIME-002).
+  The task and client identifiers the bundle only stores and returns, the client-token and device-code digests, the
+  monitoring tables' ids, the state and timestamp columns and the `uuid` / integer primary keys are **not** declared:
+  a declaration is a claim about identity, and an untrue one is worse than none.
+- Tests: the bundle's own REQ-SEC-006 gate (`tests/Collation`, testsuite `collation`, extending MigrationsKit's
+  `ExactKeyColumnsTestCase`), run on MySQL 8.4 and MariaDB 11.4 in the load-readiness matrix with `user_mapping: id`,
+  so both kinds of key are checked. The tables are created by the bundle's own metadata listener under a prefix that
+  is not the default, and the declared columns are read back from `information_schema`. A unit test also asserts that
+  the declaration's default-prefix table names are exactly the ones the entities map.
+
 ### Fixed
 
 - A new strict `TranslationCatalogueTest` fails on a non-en locale missing a key, on a non-en value identical to English (any length, placeholders included; values without letters are skipped) unless allow-listed per locale (brands, units, protocols, loanwords, true cognates), on a non-es value identical to the Spanish one (longer than 12 characters) unless allow-listed as genuinely shared, and on stale allow-list entries. No translation changed.

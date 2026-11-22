@@ -72,6 +72,7 @@ use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerMiddleware;
 use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerSubscriber;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackExactKeyColumns;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
@@ -376,6 +377,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setAlias(TimeTrackPersonalDataInterface::class, DoctrineTimeTrackPersonalData::class)->setPublic(true);
+
+        // REQ-SEC-006: the bundle's own declaration of its identity / access-key columns, built from the same
+        // configuration the schema is. Autoconfigured, so MigrationsKit tags it
+        // (nowo:migrations:check-key-collations) with no registration by the host; the person reference columns are
+        // declared inactive with the relation mapping instead of being omitted.
+        $container->setDefinition(TimeTrackExactKeyColumns::class, (new Definition(TimeTrackExactKeyColumns::class))
+            ->setAutowired(false)
+            ->setArgument('$tablePrefix', $prefix)
+            ->setArgument('$userMapping', $config['user_mapping'])
+            ->setAutoconfigured(true));
 
         $container->setDefinition(TimeTrackMetadataListener::class, (new Definition(TimeTrackMetadataListener::class))
             ->setArgument('$entriesTableName', $entriesTable)
