@@ -6,13 +6,13 @@ namespace Nowo\TimeTrackBundle\Monitoring;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Nowo\TimeTrackBundle\Access\ExactTimeEntryLookup;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
-use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
@@ -141,8 +141,9 @@ final readonly class MonitoringGate
             // Running: until now, with the accepted clock skew of the client.
             return ['start' => $timer->getStartedAt(), 'end' => $now->modify('+' . MonitoringSettings::CLOCK_SKEW_SECONDS . ' seconds'), 'scopeKey' => ($timer->hasTask() ? $this->scopeProvider?->scopeKeyForTask($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()) : $timer->getScopeKey()) ?? ''];
         }
-        $entry = $this->entries instanceof FindableTimeEntryRepositoryInterface ? $this->entries->findById($entryId) : null;
-        if (!$entry instanceof TimeEntry || $entry->getId() !== $entryId || $entry->getUserId() !== $userId || !in_array($entry->getSource(), self::TIMER_SOURCES, true)) {
+        // Since 1.37.0: by its exact id (audit LQ rule), the owner compared with ===.
+        $entry = ExactTimeEntryLookup::find($this->entries, $entryId);
+        if (!$entry instanceof TimeEntry || $entry->getUserId() !== $userId || !in_array($entry->getSource(), self::TIMER_SOURCES, true)) {
             return null;
         }
 

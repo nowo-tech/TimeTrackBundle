@@ -33,6 +33,8 @@ use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
+use function strtoupper;
+
 /**
  * Since 1.21 (Beacon D-20261111-12): the audited `billable` setter — who may change it, the period lock, the audit event.
  */
@@ -103,6 +105,26 @@ final class TimeEntryBillableServiceTest extends TestCase
         $this->service(manager: true)->change($stranger, $entry, true);
         $this->service()->change(new TestUser('1', 'admin@example.com', ['ROLE_ADMIN']), $entry, false);
         self::assertSame(['8', '1'], array_map(static fn (TimeEntryBillableChangedEvent $event): string => $event->actorId, $this->audit));
+    }
+
+    /** 1.37.0 (DDD-host checklist B8, no oracle): by id, a refusal is told only to someone who may see the entry. */
+    public function testByIdEveryRefusalOfAnEntryTheActorCannotSeeIsNotFound(): void
+    {
+        $entry    = $this->entry('2026-11-10 09:00:00Z');
+        $imported = TimeEntry::imported($this->owner, new ImportedTimeEntryData('clickup:1', 'e-9', 'task-1', 'T', null, new DateTimeImmutable('2026-11-10 11:00:00Z'), new DateTimeImmutable('2026-11-10 12:00:00Z'), 3600, true));
+        $this->entries->save($imported);
+        $stranger = new TestUser('8', 'bob@example.com');
+
+        $this->expectRefusal(BillableChangeRefusedException::NOT_FOUND, fn (): TimeEntry => $this->service()->changeById($stranger, $entry->getId(), true));
+        $this->expectRefusal(BillableChangeRefusedException::NOT_FOUND, fn (): TimeEntry => $this->service()->changeById($stranger, $imported->getId(), true));
+        $this->expectRefusal(BillableChangeRefusedException::NOT_FOUND, fn (): TimeEntry => $this->service()->changeById($this->owner, strtoupper($entry->getId()), true));
+        $this->expectRefusal(BillableChangeRefusedException::READ_ONLY, fn (): TimeEntry => $this->service()->changeById($this->owner, $imported->getId(), true));
+
+        // A manager who may see the owner's entries but not change them is told why.
+        $viewer = new TimeEntryBillableService($this->entries, new TeamAccessGuard(new StubTeamContextProvider(['7'], false), $this->dispatcher, ['ROLE_ADMIN'], true, false), new PeriodLockGuard($this->timesheets), $this->dispatcher);
+        $this->expectRefusal(BillableChangeRefusedException::FORBIDDEN, static fn (): TimeEntry => $viewer->changeById($stranger, $entry->getId(), true));
+        self::assertNull($entry->getBillable());
+        self::assertSame([], $this->audit);
     }
 
     public function testAHostListenerCanDenyTheOwner(): void

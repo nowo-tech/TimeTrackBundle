@@ -25,6 +25,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_column;
 use function array_values;
+use function strtoupper;
 
 use const DATE_ATOM;
 
@@ -140,6 +141,9 @@ final class BillableClientApiTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(404, 'another user\'s entry looks like an unknown one');
         $this->api('PATCH', '/api/time-track/entries/unknown-id', ['billable' => true], $token);
         self::assertResponseStatusCodeSame(404);
+        // 1.37.0: the id compares exactly (a case-folding collation's look-alike row is refused in PHP).
+        $this->api('PATCH', '/api/time-track/entries/' . strtoupper($id), ['billable' => true], $token);
+        self::assertResponseStatusCodeSame(404, 'a look-alike id looks like an unknown one');
 
         // An imported entry is read-only.
         $start    = new DateTimeImmutable('today -2 days 09:00');

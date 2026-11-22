@@ -123,6 +123,17 @@ minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
 
+From **1.36.0**: no change is required.
+
+- Optional (DDD hosts, private entity manager): replace your own ownership checks by entry id (`findOneBy(['id' => …,
+  'user' => …])`, DQL over `TimeEntry`) with `Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface`
+  (`canViewEntry()`, `canEditEntry()`, `viewableEntry()`); see USAGE "Entry access by id (1.37)".
+- Listeners of `nowo_time_track.time_entry.access_check` may now be asked about action `view` (through the new port
+  only). Prefer the ids-only `nowo_time_track.time_entry.id_access_check` (`TimeEntryIdAccessCheckEvent`) for new
+  listeners: it carries no entity and no user object.
+- `TimeEntryBillableService::changeById()` answers `not_found` (instead of `read_only` / `anonymised` / `forbidden`) when
+  the actor may not see the entry; a look-alike entry id is unknown.
+
 ## To 1.36.0
 
 From **1.35.0**:

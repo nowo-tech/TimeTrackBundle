@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\DependencyInjection;
 
 use LogicException;
+use Nowo\TimeTrackBundle\Access\TimeEntryAccess;
+use Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
@@ -648,6 +650,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         if ($container->hasDefinition(ManualEntryService::class)) {
             $container->getDefinition(ManualEntryService::class)->setArgument('$accessGuard', new Reference(TeamAccessGuard::class));
         }
+        // 1.37.0 (DDD-host checklist B1/B8): may this user see / change entry id X, by ids (public port).
+        $container->setDefinition(TimeEntryAccess::class, (new Definition(TimeEntryAccess::class))
+            ->setArguments([
+                '$entries'   => new Reference(TimeEntryRepositoryInterface::class),
+                '$guard'     => new Reference(TeamAccessGuard::class),
+                '$userClass' => '%nowo_time_track.user_class%',
+            ]));
+        $container->setAlias(TimeEntryAccessInterface::class, TimeEntryAccess::class)->setPublic(true);
         $container->setDefinition(TimeEntryBillableService::class, (new Definition(TimeEntryBillableService::class))
             ->setPublic(true)
             ->setArguments([
@@ -657,6 +667,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$clock'           => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$logger'          => new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$entryAccess'     => new Reference(TimeEntryAccessInterface::class),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
     }

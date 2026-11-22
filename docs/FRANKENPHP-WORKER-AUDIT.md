@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 1.37 (entry access by id)](#re-audit-137-entry-access-by-id)
 - [Re-audit 1.36 (entries without a task, Beacon spec 250)](#re-audit-136-entries-without-a-task-beacon-spec-250)
 - [Re-audit 1.35 (read and personal-data ports)](#re-audit-135-read-and-personal-data-ports)
 - [Re-audit 1.33 (host-flush probe)](#re-audit-133-host-flush-probe)
@@ -29,6 +30,17 @@
   - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 1.37 (entry access by id)
+
+- `Access\TimeEntryAccess` (`TimeEntryAccessInterface`) is `final readonly` with only its store, the guard and the
+  configured user class: it reads the entry by its exact id and asks `TeamAccessGuard` at every call, and keeps no
+  answer. `Access\IdActor` and `TimeEntryIdAccessCheckEvent` are built per call and dropped with it.
+- `TeamAccessGuard::decide()` reads the actor's tenant scopes once per call (never kept), so a worker serving two
+  tenants in turn never answers one with the other's scopes; roles come from the reference given (an id actor) or are
+  refreshed from the database as before (a managed user).
+- Test: `EntryAccessByIdTestCase::testNothingIsKeptBetweenCalls` (two people in turn on one kernel, three rounds; with
+  the private entity manager no bundle entity enters the host's manager).
 
 ## Re-audit 1.36 (entries without a task, Beacon spec 250)
 
