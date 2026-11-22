@@ -19,6 +19,8 @@ services:
             - '../../Transaction/'
             # Since 1.35.0: the read and personal-data ports are defined by the extension (the bundle's entity manager).
             - '../../Query/'
+            # Since 1.37.0: the id-based entry access port is defined by the extension.
+            - '../../Access/'
             - '../../PersonalData/'
             - '../../EventSubscriber/'
             - '../../Client/ClientLoginRateLimiter.php'

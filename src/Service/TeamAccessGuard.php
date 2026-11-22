@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Service;
 
 use Doctrine\Persistence\ManagerRegistry;
+use Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface;
 use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Event\TaskEffortAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryAccessCheckEvent;
+use Nowo\TimeTrackBundle\Event\TimeEntryIdAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -24,7 +26,11 @@ use function in_array;
 /**
  * Decides whether a viewer may read the entries of another user (self, admin roles, managed users) or edit an entry
  * (owner, manager, admin roles, then the access-check event). Since 1.36.0 an entry without a task is reachable by
- * anyone but its owner only within the actor's own tenant scopes ({@see self::isWithinTenant()}).
+ * anyone but its owner only within the actor's own tenant scopes ({@see self::isWithinTenant()}). Since 1.37.0 every entry
+ * check also dispatches the ids-only {@see TimeEntryIdAccessCheckEvent} after {@see TimeEntryAccessCheckEvent}, and
+ * {@see self::canViewEntry()} decides whether a viewer may read one entry (the id-based port
+ * {@see TimeEntryAccessInterface} asks it). Stateless: every answer is read per call
+ * (FrankenPHP worker mode, kernel reset false).
  */
 final readonly class TeamAccessGuard
 {
@@ -64,6 +70,27 @@ final readonly class TeamAccessGuard
         return in_array($targetUserId, $this->teamContext->getManagedUserIds($viewer), true);
     }
 
+    /** Since 1.37.0: the access-check action of {@see self::canViewEntry()}. */
+    public const ACTION_VIEW = 'view';
+
+    /** Since 1.37.0: the access-check action of {@see self::isEditGranted()} (the value it always had). */
+    public const ACTION_EDIT = 'edit';
+
+    /**
+     * Since 1.37.0 (DDD-host checklist B1/B8): whether the viewer may read this entry: its owner, an admin role, or a
+     * manager of the owner when `security.manager_can_view_entries` is true ({@see self::canViewUserEntries()}); an
+     * ownerless or anonymised entry only an admin role. Then {@see TimeEntryAccessCheckEvent} and
+     * {@see TimeEntryIdAccessCheckEvent} with action `view` may grant or deny it, but an entry without a task stays
+     * within the viewer's tenant scopes ({@see self::isWithinTenant()}, checked before and after the listeners).
+     */
+    public function canViewEntry(UserInterface $viewer, TimeEntry $entry): bool
+    {
+        $owner   = $entry->getUserId();
+        $granted = $owner !== null ? $this->canViewUserEntries($viewer, $owner) : $this->hasAdminRole($viewer);
+
+        return $this->decide($viewer, $entry, self::ACTION_VIEW, $granted);
+    }
+
     /** Since 1.21: the access-check action of {@see self::isBillableEditGranted()} (audit MV-T-L3). */
     public const ACTION_EDIT_BILLABLE = 'edit_billable';
 
@@ -79,11 +106,9 @@ final readonly class TeamAccessGuard
         if ($entry->isReadOnly() || !$entry->getUser() instanceof UserInterface) {
             return false;
         }
-        $event = new TimeEntryAccessCheckEvent($editor, $entry, self::ACTION_EDIT_BILLABLE, $this->isEditGranted($editor, $entry));
-        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
         // Since 1.36.0: a listener cannot grant another tenant's entry without a task.
-        return $event->isGranted() && $this->isWithinTenant($editor, $entry);
+        return $this->decide($editor, $entry, self::ACTION_EDIT_BILLABLE, $this->isEditGranted($editor, $entry));
     }
 
     /** Since 1.11: the access-check action of {@see self::canDeleteImportedEntry()}. */
@@ -125,11 +150,8 @@ final readonly class TeamAccessGuard
             $granted = $this->hasAdminRole($editor);
         }
 
-        $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted && $this->isWithinTenant($editor, $entry));
-        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
-
         // Since 1.36.0: checked again after the listeners, so a grant never crosses tenants for an entry without a task.
-        return $event->isGranted() && $this->isWithinTenant($editor, $entry);
+        return $this->decide($editor, $entry, self::ACTION_EDIT, $granted);
     }
 
     /**
@@ -163,10 +185,8 @@ final readonly class TeamAccessGuard
             return false;
         }
 
-        $event = new TimeEntryAccessCheckEvent($actor, $entry, self::ACTION_DELETE_IMPORTED, false);
-        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
-
-        return $event->isGranted() && $this->isWritable($entry);
+        // Since 1.37.0 the tenant rule of entries without a task applies here too (a listener never grants across tenants).
+        return $this->decide($actor, $entry, self::ACTION_DELETE_IMPORTED, false) && $this->isWritable($entry);
     }
 
     /**
@@ -180,6 +200,23 @@ final readonly class TeamAccessGuard
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TASK_EFFORT_ACCESS_CHECK);
 
         return $event->isGranted();
+    }
+
+    /**
+     * Since 1.37.0: one entry decision. The tenant rule ({@see self::isWithinTenant()}, read once per call) bounds the
+     * starting decision, then {@see TimeEntryAccessCheckEvent} and the ids-only {@see TimeEntryIdAccessCheckEvent} (which
+     * starts from the first one's answer) may change it, and the tenant rule applies again to the final answer: listeners
+     * narrow, but never widen across tenants.
+     */
+    private function decide(UserInterface $actor, TimeEntry $entry, string $action, bool $granted): bool
+    {
+        $within = $this->isWithinTenant($actor, $entry);
+        $event  = new TimeEntryAccessCheckEvent($actor, $entry, $action, $granted && $within);
+        $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
+        $ids = new TimeEntryIdAccessCheckEvent(UserIdResolver::getId($actor), $entry->getId(), $entry->getUserId(), $entry->taskIdOrNull(), $entry->getScopeKey(), $action, $event->isGranted() && $within);
+        $this->eventDispatcher->dispatch($ids, TimeTrackEvents::TIME_ENTRY_ID_ACCESS_CHECK);
+
+        return $ids->isGranted() && $within;
     }
 
     /**

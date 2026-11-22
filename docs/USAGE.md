@@ -11,6 +11,7 @@
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Read ports and personal data (1.35)](#read-ports-and-personal-data-135)
 - [Entries without a task (1.36, Beacon spec 250)](#entries-without-a-task-136-beacon-spec-250)
+- [Entry access by id (1.37)](#entry-access-by-id-137)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
@@ -627,6 +628,69 @@ $manualEntries->create($user, null, $start, $end, TimeEntrySource::Manual, descr
 - Idle decisions on such a timer: `split` continues it without a task (same description and scope); `reassign` gives
   the span to a task and `continue` resumes without one.
 
+## Entry access by id (1.37)
+
+Since 1.37.0 (DDD-host checklist B1/B8) a host asks "may this user see / change entry X?" by ids, through the public
+`Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface`. A host with a private entity manager (or users that are no
+Doctrine entities) no longer loads `TimeEntry` in its own manager or re-implements ownership in DQL.
+
+```php
+use Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
+
+final class CorrectOwnEntry
+{
+    public function __construct(private TimeEntryAccessInterface $entryAccess) {}
+
+    public function __invoke(string $userId, string $entryId): void
+    {
+        $entry = $this->entryAccess->viewableEntry($userId, $entryId); // TimeEntryView or null
+        if ($entry === null || !$this->entryAccess->canEditEntry($userId, $entryId)) {
+            throw new NotFoundHttpException(); // one answer for unknown, foreign and out-of-reach entries
+        }
+        // ... change it through the bundle's services: under the owner's lock they re-check owner, state and period lock
+    }
+}
+
+// Admin roles are read from the reference; a bare id carries none.
+$entryAccess->canViewEntry(TimeTrackUserRef::ofId(User::class, $id, '', $roles), $entryId);
+```
+
+| Method | Granted to |
+|---|---|
+| `canViewEntry($user, $entryId)` | the owner; an admin role (`security.admin_roles`); a manager of the owner (`security.manager_can_view_entries`); an ownerless or anonymised entry: admin roles only |
+| `canEditEntry($user, $entryId)` | the owner; a manager of the owner (`security.manager_can_edit_entries`); an admin role. Never an imported, ownerless or anonymised entry, nor one in a locked or submitted period (checked after the listeners) |
+| `viewableEntry($user, $entryId)` | `canViewEntry()`, returning the `TimeEntryView` snapshot (null otherwise) |
+
+- `$user` is your user id (`string|int`, what `getId()` returns) or a `TimeTrackUserRef`. A reference that carries your
+  security user object (`TimeTrackUserRef::of()`) is checked as that object; a bare id or `TimeTrackUserRef::ofId()` is
+  checked by its id with the reference's role names, and your team / scope ports (`TeamDirectoryInterface`,
+  `TimesheetScopePolicyInterface`) receive that reference (no user object). A reference whose object has another id
+  than the reference (`getId()`, byte for byte) is refused.
+- Deprecated object ports (`TeamContextProviderInterface`, `TimesheetScopeProviderInterface`) and listeners of
+  `TimeEntryAccessCheckEvent` may receive an internal `UserInterface` that carries only the id and the role names (no
+  login, no other data, not your class). Resolve it by `getId()` only, never by its identifier or login, and answer
+  `[]` / `false` for a user object of a class you do not know.
+- Build a role-carrying reference (`TimeTrackUserRef::ofId(…, $roles)`) from your current data at check time; never
+  reuse roles kept in a queued message or a cache.
+- Then both access-check events run, in this order: `nowo_time_track.time_entry.access_check`
+  (`TimeEntryAccessCheckEvent`, entity based) and the ids-only `nowo_time_track.time_entry.id_access_check`
+  (`TimeEntryIdAccessCheckEvent`: `getUserId()`, `getEntryId()`, `getOwnerId()`, `getTaskId()`, `getScopeKey()`,
+  `getAction()`, `grant()` / `deny()`), with action `view` or `edit`. They run for the bundle's own checks too
+  (`edit_billable`, `delete_imported`). A listener may narrow any decision; for an entry without a task it never
+  grants outside the user's tenant scopes (the 1.36 rule is applied before and after the listeners). Handle unknown
+  actions with a default branch: `view` also reaches `access_check` listeners when `TimeEntryBillableService::changeById()`
+  refuses (it asks whether the actor may see the entry), and a listener that grants only `edit` should also decide
+  `view`.
+- A failure of the store, a host port or a listener is logged (its class only) and answered as the same refusal.
+- No oracle: an unknown id, a look-alike (`ABC…` for `abc…`, a padded id), an unusable user id (empty, padded, invisible
+  characters, longer than 128), another user's entry and an entry out of reach all answer `false` / `null`.
+- Exact ids (audit LQ rule): the entry id is a bound `id = ?` parameter and is compared again with `===` in PHP; user ids
+  compare byte for byte (`'07'` is not `7`).
+- Worker mode (kernel reset false): nothing is kept between calls; the entry and your ports are read at every call. An
+  answer holds as of the check only: write through the bundle's services, which under the owner's lock re-check the
+  entry's owner, its state and the period lock (REQ-RUNTIME-003).
+
 ## Task time follows a board move (Unreleased)
 
 Owner decision (Beacon spec 217 FR-008): **the time follows the task.** When TaskBoard moves a task and its subtasks to another board,
@@ -792,6 +856,7 @@ the event adds no copy of them, and listeners must not log or forward them.
 - `nowo_time_track.timer.stop` — `TimerStopEvent` (TaskBoard can aggregate `time_spent`)
 - `nowo_time_track.time_entry.list_query` — filter report user ids
 - `nowo_time_track.time_entry.access_check` — fine-grained ACL
+- `nowo_time_track.time_entry.id_access_check` — the same decision with ids only (`TimeEntryIdAccessCheckEvent`, 1.37)
 - `nowo_time_track.client_api` — `ClientApiEvent` audit trail of the client API (1.9)
 
 ## Calendar OAuth apps at runtime (1.20)

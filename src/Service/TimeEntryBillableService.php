@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Service;
 
+use Nowo\TimeTrackBundle\Access\ExactTimeEntryLookup;
+use Nowo\TimeTrackBundle\Access\TimeEntryAccess;
+use Nowo\TimeTrackBundle\Access\TimeEntryAccessInterface;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\TimeEntryBillableChangedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\BillableChangeRefusedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\LockingFindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -51,8 +55,13 @@ final readonly class TimeEntryBillableService
 
     private LoggerInterface $logger;
 
+    private TimeEntryAccessInterface $entryAccess;
+
     /**
      * Receives the store, the access guard, the period lock and the dispatcher of the audit event.
+     *
+     * @param TimeEntryAccessInterface|null $entryAccess Since 1.37.0: the id-based access port (null = one on this store
+     *                                                   and guard)
      */
     public function __construct(
         private TimeEntryRepositoryInterface $entries,
@@ -61,15 +70,21 @@ final readonly class TimeEntryBillableService
         private ?EventDispatcherInterface $eventDispatcher = null,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        ?TimeEntryAccessInterface $entryAccess = null,
     ) {
-        $this->clock  = $clock ?? new NativeClock();
-        $this->logger = $logger ?? new NullLogger();
+        $this->clock       = $clock ?? new NativeClock();
+        $this->logger      = $logger ?? new NullLogger();
+        $this->entryAccess = $entryAccess ?? new TimeEntryAccess($entries, $accessGuard, '');
     }
 
     /**
      * {@see self::change()} for the entry with this id.
      *
      * @param string $via `api` or `host` (recorded on the audit event)
+     *
+     * Since 1.37.0 (DDD-host checklist B8, no oracle): the id compares exactly, and any refusal for an entry the actor
+     * may not see ({@see TimeEntryAccessInterface::canViewEntry()}) is `not_found`, like an unknown id: `read_only`,
+     * `anonymised` and `forbidden` are told only to someone who may see the entry.
      *
      * @throws BillableChangeRefusedException `not_found` when there is no such entry (or the store cannot look it up)
      * @throws PeriodWriteRefusedException When the period is locked or submitted
@@ -81,15 +96,24 @@ final readonly class TimeEntryBillableService
             throw new BillableChangeRefusedException(BillableChangeRefusedException::NOT_FOUND);
         }
 
-        return $this->change($actor, $entry, $billable, $via);
+        try {
+            return $this->change($actor, $entry, $billable, $via);
+        } catch (BillableChangeRefusedException $e) {
+            if ($e->errorCode !== BillableChangeRefusedException::NOT_FOUND && !$this->entryAccess->canViewEntry(TimeTrackUserRefs::fromUser($actor), $entryId)) {
+                throw new BillableChangeRefusedException(BillableChangeRefusedException::NOT_FOUND);
+            }
+
+            throw $e;
+        }
     }
 
     /**
-     * The entry with this id (null when there is none, or the store cannot look it up). No access check.
+     * The entry with exactly this id (null when there is none, or the store cannot look it up). No access check. Since
+     * 1.37.0 the id compares exactly ({@see ExactTimeEntryLookup}): a look-alike id finds nothing.
      */
     public function find(string $entryId): ?TimeEntry
     {
-        return $this->entries instanceof FindableTimeEntryRepositoryInterface ? $this->entries->findById($entryId) : null;
+        return ExactTimeEntryLookup::find($this->entries, $entryId);
     }
 
     /**

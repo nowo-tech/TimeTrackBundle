@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (1.37.0)](#added-1370)
+  - [Changed (1.37.0)](#changed-1370)
 - [[1.36.0] - 2026-11-22](#1360---2026-11-22)
   - [Added](#added)
 - [[1.35.0] - 2026-11-21](#1350---2026-11-21)
@@ -226,6 +228,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-11)
 
 ## [Unreleased]
+
+### Added (1.37.0)
+
+- **Entry access by id (DDD-host checklist B1/B8, ARCH-001; owner decision 6 of 1.35).** A host asks whether a user may
+  see or change a time entry by user id and entry id, without loading bundle entities in its own entity manager and
+  without re-implementing ownership in DQL (Beacon's `OwnEntryCorrector`, `BeaconTaskApiTimeEntries`).
+  - Public port `Access\TimeEntryAccessInterface` (service id = the interface): `canViewEntry($user, $entryId)`,
+    `canEditEntry($user, $entryId)` and `viewableEntry($user, $entryId)` (a `TimeEntryView` snapshot, or null). `$user`
+    is the user id (`string|int`) or a `TimeTrackUserRef` (with the security user object it is checked as that user;
+    without it, by its id and the role names it carries; a bare id has no roles).
+  - The rules are `TeamAccessGuard`'s: the owner, an admin role, a manager of the owner
+    (`security.manager_can_view_entries` / `manager_can_edit_entries`), then the access-check listeners; entries
+    without a task stay within the user's tenant scopes (1.36 rule, before and after the listeners); an edit also
+    needs a live entry with an owner in a period that is neither locked nor submitted.
+  - No oracle: an unknown id, a look-alike id (other case, padded), an unusable user id, another user's entry and an
+    entry out of reach all give the same `false` / `null`. Entry ids compare exactly: bound `id = ?` in SQL, then `===`
+    in PHP (audit LQ rule), so a case-folding or padding collation never lets a look-alike stand for another entry.
+  - Ids-only access-check event `nowo_time_track.time_entry.id_access_check` (`Event\TimeEntryIdAccessCheckEvent`:
+    actor id, entry id, owner id, task id, scope key, action), dispatched right after
+    `nowo_time_track.time_entry.access_check` for every entry check (`view`, `edit`, `edit_billable`,
+    `delete_imported`), starting from that event's answer. A listener may narrow; it never grants an entry without a
+    task outside the actor's tenant scopes, nor past a period lock.
+  - `TeamAccessGuard::canViewEntry()` and the action constants `ACTION_VIEW` (`view`) and `ACTION_EDIT` (`edit`).
+  - Stateless (FrankenPHP worker mode, kernel reset false): the entry and the host ports are read at every call. A
+    grant holds as of the check only; under the owner's lock the bundle's write services re-check the entry's owner,
+    its state and the period lock (REQ-RUNTIME-003).
+  - A reference whose user object has another id than the reference is refused; a failure of the store, a host port
+    or a listener is logged (class only) and answered as the same refusal (no error oracle).
+
+### Changed (1.37.0)
+
+- `TimeEntryBillableService::changeById()` reads the entry by its exact id and, for an actor who may not see the entry,
+  answers every refusal (`read_only`, `anonymised`, `forbidden`) as `not_found`, like an unknown id. `find()` (and so
+  `PATCH /api/time-track/entries/{id}`) compares the id exactly: a look-alike id is unknown. The monitoring evidence
+  check reads its timer entry the same way. To decide, a refusal asks the `view` check, so listeners of
+  `nowo_time_track.time_entry.access_check` now also receive action `view` there: give them a default branch for
+  actions they do not know.
+- `TeamAccessGuard::canDeleteImportedEntry()` also applies the 1.36 tenant rule after the listeners (only entries
+  without a task with a scope provider configured are affected).
 
 ## [1.36.0] - 2026-11-22
 

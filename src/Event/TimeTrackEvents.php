@@ -17,6 +17,13 @@ final class TimeTrackEvents
 
     public const TIME_ENTRY_ACCESS_CHECK = 'nowo_time_track.time_entry.access_check';
 
+    /**
+     * {@see TimeEntryIdAccessCheckEvent} (1.37.0, DDD-host checklist B8): the ids-only twin of
+     * {@see self::TIME_ENTRY_ACCESS_CHECK}, dispatched right after it for every entry check (view, edit, edit_billable,
+     * delete_imported). A listener may narrow; for an entry without a task it never widens across tenants.
+     */
+    public const TIME_ENTRY_ID_ACCESS_CHECK = 'nowo_time_track.time_entry.id_access_check';
+
     /** {@see IdleResolvedEvent}: the user's decision about an idle span was applied (1.10). */
     public const IDLE_RESOLVED = 'nowo_time_track.idle.resolved';
 

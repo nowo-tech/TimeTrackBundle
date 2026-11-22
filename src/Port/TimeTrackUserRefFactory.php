@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
+use Nowo\TimeTrackBundle\Access\IdActor;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
@@ -46,6 +47,10 @@ final readonly class TimeTrackUserRefFactory
      */
     public static function buildFromObject(object $user): TimeTrackUserRef
     {
+        if ($user instanceof IdActor) {
+            // Since 1.37.0: the actor of an id-based entry check is the reference the host gave.
+            return $user->ref();
+        }
         if ($user instanceof HostUser) {
             // Since 1.23.0 (`user_mapping: id`): a stored owner is your user's class and id (no object of yours).
             return new TimeTrackUserRef($user->getUserClass(), $user->getId(), '', [], $user);
