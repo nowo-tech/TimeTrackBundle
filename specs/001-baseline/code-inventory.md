@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-20 (v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
+**Last audited**: 2026-11-22 (v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -620,12 +620,50 @@
 | `Workday/WorkdaySourceInterface.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayState.php` | Workday | FR-WDAY-001 |
 
+## Id-based access, read ports, personal data and client sessions (1.33-1.37)
+
+| Source file | Spec section | Requirement IDs |
+| --- | --- | --- |
+| `Access/TimeEntryAccessInterface.php` | Entry access by ids (port) | FR-ACC-001 |
+| `Access/TimeEntryAccess.php` | Default entry access by ids | FR-ACC-001 |
+| `Access/ExactTimeEntryLookup.php` | One entry by exact id, id re-checked with `===` | FR-ACC-001 |
+| `Access/IdActor.php` | Stand-in actor for an id-based check | FR-ACC-001 |
+| `Event/TimeEntryIdAccessCheckEvent.php` | Ids-only twin of the entry access event | FR-ACC-001 |
+| `Query/TimeEntryQueryInterface.php` | Time entry read port | FR-QRY-001 |
+| `Query/TimeEntryCriteria.php` | Keyed filters of a listing | FR-QRY-001 |
+| `Query/TimeEntrySort.php` | Listing order ending on the entry id | FR-QRY-001 |
+| `Query/TimeEntryRecord.php` | One entry as the read port returns it | FR-QRY-001 |
+| `Query/RunningTimerQueryInterface.php` | Running timer read port | FR-QRY-001 |
+| `Query/RunningTimerView.php` | A running timer with owner and heartbeat | FR-QRY-001 |
+| `Query/ClientAccessQueryInterface.php` | Client sessions and device sign-ins read port | FR-QRY-001 |
+| `Query/ClientSessionView.php` | One client session without its token hash | FR-QRY-001 |
+| `Query/DeviceSignInView.php` | One device sign-in without its codes | FR-QRY-001 |
+| `Query/DoctrineTimeTrackQuery.php` | Doctrine implementation of the three read ports | FR-QRY-001 |
+| `Repository/TasklessScopedTimeEntryRepositoryInterface.php` | Store capability: taskless entries kept in the viewer's tenant scopes | FR-QRY-002 |
+| `Repository/TimeEntryListing.php` | One scoped listing | FR-QRY-002 |
+| `PersonalData/TimeTrackPersonalDataInterface.php` | GDPR export and erasure by user id (port) | FR-PD-001 |
+| `PersonalData/DoctrineTimeTrackPersonalData.php` | Doctrine implementation of the personal data port | FR-PD-001 |
+| `PersonalData/TimeEntryErasure.php` | What erasure does to the user's entries | FR-PD-001 |
+| `PersonalData/TimeTrackErasureResult.php` | Erasure counts | FR-PD-001 |
+| `Exception/PersonalDataErasureRefusedException.php` | Erasure refused with nothing written | FR-PD-001 |
+| `Doctrine/OwnedRows.php` | Rows a user owns, matched byte for byte | FR-PD-002 |
+| `Doctrine/OwnerIdColumn.php` | Whether a user id fits the owner column | FR-PD-002 |
+| `Repository/ClientSessionRepositoryInterface.php` | One client session by id | FR-CLIENT-008 |
+| `Repository/UserClientTokenRepositoryInterface.php` | Bulk revocation of one user's client sessions | FR-CLIENT-008 |
+| `Dto/ClientSessionRecord.php` | Client session scalars for revocation by id | FR-CLIENT-008 |
+| `ValueObject/ClientSessionId.php` | Client session id (lower-cased UUID) | FR-CLIENT-008 |
+| `Enum/ClientSessionRevocation.php` | Result of revocation by id | FR-CLIENT-008 |
+| `Event/ClientSessionAccessCheckEvent.php` | Grant or deny a client session revocation | FR-CLIENT-008 |
+| `Event/TimerStartedWithoutTaskEvent.php` | A timer without a task was started | FR-EVT-005 |
+| `Doctrine/TimeTrackHostFlushProbe.php` | Host flush migration list (shared manager mode) | FR-PEM-004 |
+
 ## Coverage summary
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
 | PHP classes (`src/**/*.php`) | 429 | 429 |
+| Id-based access, read ports, personal data and client sessions (1.33-1.37) | 32 | 32 |
 | Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
-| **Total production sources** | **461** | **461** |
+| **Total production sources** | **493** | **493** |
 
-Audit command: `git ls-files src | wc -l` → 461.
+Audit command: `git ls-files src | wc -l` → 493.
