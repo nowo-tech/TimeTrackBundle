@@ -31,6 +31,13 @@ final readonly class StorageFailureConflictFormatter implements ConflictResponse
     {
     }
 
+    /**
+     * Formats a storage-failure conflict as the client API's JSON error (`unavailable`, with the conflict's code) for a
+     * bundle request that wants JSON; null for any other request, which keeps the default answer.
+     *
+     * @param Request $request The failed request
+     * @param ConflictResponseContext $context The conflict (message, status, code)
+     */
     public function format(Request $request, ConflictResponseContext $context): ?Response
     {
         if (!StorageFailureSubscriber::isBundleRequest($request) || !StorageFailureSubscriber::wantsJson($request)) {
