@@ -4,7 +4,7 @@
 composer require nowo-tech/time-track-bundle
 ```
 
-The Flex recipe copies `config/packages/nowo_time_track.yaml` and `config/routes/nowo_time_track.yaml`.
+The Flex recipe (kept in `.symfony/recipe/nowo-tech/time-track-bundle/1.0.0/`) copies `config/packages/nowo_time_track.yaml` and `config/routes/nowo_time_track.yaml`.
 
 ## Table of contents
 
