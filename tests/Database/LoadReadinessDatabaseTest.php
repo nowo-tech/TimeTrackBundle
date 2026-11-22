@@ -51,6 +51,7 @@ use const PHP_BINARY;
  * - Two processes adding ledger lines for one owner at once all chain (1.26: lines refused as `conflict`).
  * - Two processes starting timers for one user at once never detach the application's entities (1.26: every lost start
  *   reset the application's manager).
+ * - 1.36.0: two processes starting timers without a task for one user leave exactly one running.
  * - 1.34.0: two processes revoking the same client sessions by id revoke each once; a revocation behind a row lock
  *   fails with nothing committed (CONFLICT_001) and the retry revokes.
  */
@@ -168,6 +169,28 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
             self::assertSame(0, $report['detached'], 'a lost start never resets the application\'s manager');
         }
         self::assertLessThanOrEqual(1, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_active_timers'));
+    }
+
+    /**
+     * 1.36.0 (REQ-RUNTIME-003, Beacon spec 250): two processes starting timers without a task for one user at the same
+     * moment, again and again: exactly one start wins, every other one is refused as `running` (no error, nothing
+     * detached), and one timer without a task runs.
+     */
+    public function testTwoProcessesStartingTimersWithoutATaskLeaveOnlyOneRunning(): void
+    {
+        $reports = $this->workers('start-without-task', 10, 2);
+
+        $won = 0;
+        foreach ($reports as $report) {
+            self::assertSame([], $report['errors'], (string) json_encode($report));
+            self::assertSame(0, $report['detached']);
+            $won += $report['ok'];
+            self::assertSame(10 - $report['ok'], $report['refused']['running'] ?? 0);
+        }
+        self::assertSame(1, $won, 'one start wins');
+        $connection = $this->entityManager()->getConnection();
+        self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_active_timers'));
+        self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_active_timers WHERE task_id IS NULL AND scope_key = ?', ['org-a']));
     }
 
     /**

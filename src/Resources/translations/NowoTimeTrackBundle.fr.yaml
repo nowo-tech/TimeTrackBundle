@@ -11,6 +11,7 @@ timer:
   started_at: Démarré à
   none: Aucun minuteur actif
   running_intro: "En cours : %task% (depuis %started%)"
+  running_intro_without_task: "En cours sans tâche (depuis %started%)"
   status_running: En cours
 tasks:
   title: Tâches chronométrables
@@ -36,6 +37,7 @@ reports:
   source_manual: "Manuel"
   source_calendar: "Calendrier"
   task_not_visible: Tâche non visible
+  no_task: "Aucune tâche"
   former_person: "Ancienne personne"
 flash:
   timer_started: Minuteur démarré.

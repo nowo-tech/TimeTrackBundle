@@ -11,6 +11,7 @@ timer:
   started_at: Gestart om
   none: Geen actieve timer
   running_intro: "Loopt: %task% (sinds %started%)"
+  running_intro_without_task: "Loopt zonder taak (sinds %started%)"
   status_running: Loopt
 tasks:
   title: Registreerbare taken
@@ -36,6 +37,7 @@ reports:
   source_manual: "Handmatig"
   source_calendar: "Agenda"
   task_not_visible: Taak niet zichtbaar
+  no_task: "Geen taak"
   former_person: "Voormalige persoon"
 flash:
   timer_started: Timer gestart.

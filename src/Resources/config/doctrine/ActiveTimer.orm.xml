@@ -12,7 +12,9 @@
         <id name="id" type="string" column="id" length="36"/>
         <field name="startedAt" type="datetime_immutable" column="started_at"/>
         <field name="lastHeartbeatAt" type="datetime_immutable" column="last_heartbeat_at"/>
-        <field name="taskId" type="string" column="task_id" length="36"/>
+        <field name="description" type="text" column="description" nullable="true"/>
+        <field name="scopeKey" type="string" column="scope_key" length="64" nullable="true"/>
+        <field name="taskId" type="string" column="task_id" length="36" nullable="true"/>
         <field name="taskTitleSnapshot" type="string" column="task_title_snapshot" length="255"/>
         <field name="boardIdSnapshot" type="string" column="board_id_snapshot" length="36" nullable="true"/>
         <field name="clientType" type="string" column="client_type" length="16" enum-type="Nowo\TimeTrackBundle\Enum\ClientType"/>

@@ -27,7 +27,8 @@ interface TimesheetScopePolicyInterface
     public function scopeKeyForUserTask(TimeTrackUserRef $user, string $taskId, ?string $boardId): ?string;
 
     /**
-     * Scopes of existing entries (back-fill command), keyed by entry id; null = cannot be placed.
+     * Scopes of existing entries (back-fill command), keyed by entry id; null = cannot be placed. Since 1.36.0 never
+     * given an entry without a task (it got its scope when it was written).
      *
      * @param list<TimeEntryView> $entries
      *

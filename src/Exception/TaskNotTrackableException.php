@@ -21,4 +21,13 @@ final class TaskNotTrackableException extends InvalidArgumentException
     {
         return new self(sprintf('User cannot track task %s.', $taskId));
     }
+
+    /**
+     * Since 1.36.0: time without a task is refused (`entries.allow_without_task` off, or a requested scope that is not
+     * one of the user's). One answer for both, like an unknown task.
+     */
+    public static function withoutTask(): self
+    {
+        return new self('User cannot track time without a task here.');
+    }
 }

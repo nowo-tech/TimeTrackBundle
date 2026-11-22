@@ -107,7 +107,8 @@ final readonly class ClientTaskPresenter
      */
     public function timer(ActiveTimer $timer, UserInterface $user, Request $request, ?TaskReference $known = null): array
     {
-        $task = $known instanceof TaskReference && $known->id === $timer->getTaskId() ? $known : $this->resolve($timer->getTaskId(), $user);
+        // Since 1.36.0: a timer without a task has no task details to resolve.
+        $task = !$timer->hasTask() ? null : ($known instanceof TaskReference && $known->id === $timer->getTaskId() ? $known : $this->resolve($timer->getTaskId(), $user));
         $body = $timer->toArray();
 
         if (!$task instanceof TaskReference) {

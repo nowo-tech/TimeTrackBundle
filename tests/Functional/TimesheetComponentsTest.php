@@ -76,6 +76,8 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         $repo->save(new TimeEntry($this->user, 'task-1', 'Implement login API', 'board-1', $monday->modify('+13 hours'), $monday->modify('+14 hours'), 3600, TimeEntrySource::Web));
         // GB-M2: an imported entry of a task the owner can no longer see (title and note masked for the owner too).
         $repo->save(TimeEntry::imported($this->user, new ImportedTimeEntryData('clickup:d', 'gone-1', 'task-gone', 'Gone project', null, $monday->modify('+15 hours'), $monday->modify('+16 hours'), 3600))->assignScopeKey('org-a'));
+        // Since 1.36.0: an entry without a task is one "No task" row; its free text shows like a note.
+        $repo->save((new TimeEntry($this->user, null, '', null, $monday->modify('+17 hours'), $monday->modify('+18 hours'), 3600, TimeEntrySource::Manual))->describe('Customer ACME')->assignScopeKey('org-a'));
         $timesheet = $sheets->view($this->user, (string) $this->user->getId(), 'org-a', $week);
         $urls      = ['submit' => '/host/submit', 'withdraw' => '/host/withdraw', 'approve' => '/host/approve', 'reject' => '/host/reject', 'reopen' => '/host/reopen'];
 
@@ -93,6 +95,8 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         self::assertStringContainsString('Task time, not a working-time record', $owner);
         self::assertStringNotContainsString('Gone project', $owner, 'GB-M2: masked for the owner as in GET entries');
         self::assertStringContainsString('Task not visible', $owner);
+        self::assertStringContainsString('No task', $owner);
+        self::assertStringContainsString('Customer ACME', $owner);
 
         // GB-I2: the component checks the viewer, whatever the host passes in.
         $stranger = $this->createUser('stranger@example.com');
@@ -109,6 +113,8 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         self::assertStringNotContainsString('Secret project', $approver);
         self::assertStringNotContainsString('Gone project', $approver);
         self::assertStringNotContainsString('Private note', $approver, 'AC-08: no notes by default');
+        self::assertStringContainsString('No task', $approver, 'an entry without a task is never masked by task');
+        self::assertStringNotContainsString('Customer ACME', $approver, 'its free text follows the notes rule');
         self::assertStringContainsString('/host/approve', $approver);
         self::assertStringContainsString('nowo-ui-confirm-dialog--anatomy', $approver, 'reject is a UiKit 2.29 dialog');
         self::assertStringContainsString('form="time-track-reject-' . $submitted->getId() . '-form"', $approver);

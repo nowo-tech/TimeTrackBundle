@@ -9,7 +9,8 @@ declare(strict_types=1);
  * {"ok": n, "refused": {code: n}, "errors": {class: n}, "detached": n}.
  *
  * Usage: php tests/Database/worker.php <action> <count> <ownerId> [<approverId>]
- * Actions: `ledger`, `start`, `revoke` (1.34.0: revoke every stored client session by its id, as the owner).
+ * Actions: `ledger`, `start`, `revoke` (1.34.0: revoke every stored client session by its id, as the owner),
+ * `start-without-task` (1.36.0: start a timer without a task and keep it; only one may ever run).
  */
 
 use Doctrine\ORM\EntityManagerInterface;
@@ -35,6 +36,7 @@ $approverId                   = $argv[4] ?? '';
 $kernel = new FunctionalKernel([
     'timesheets'   => ['enabled' => true, 'scope_provider' => FixedScopeProvider::class, 'approver_provider' => StubTimesheetApproverProvider::class],
     'working_time' => ['enabled' => true, 'calendar_provider' => FixedWorkingCalendar::class],
+    'entries'      => ['allow_without_task' => true],
 ], debug: false);
 $kernel->boot();
 $container = $kernel->getContainer()->get('test.service_container');
@@ -71,6 +73,19 @@ for ($i = 0; $i < (int) $count; ++$i) {
                 $report['refused']['not_found'] = ($report['refused']['not_found'] ?? 0) + 1;
             }
             $report['detached'] += $em->contains($owner) ? 0 : 1;
+
+            continue;
+        }
+        if ($action === 'start-without-task') {
+            try {
+                $timers->start($owner, null, ClientType::Desktop, [], 'worker ' . getmypid(), 'org-a');
+            } catch (ActiveTimerConflictException) {
+                $report['refused']['running'] = ($report['refused']['running'] ?? 0) + 1;
+                $report['detached'] += $em->contains($owner) ? 0 : 1;
+
+                continue;
+            }
+            ++$report['ok'];
 
             continue;
         }

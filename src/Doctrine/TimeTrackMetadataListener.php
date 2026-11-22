@@ -61,6 +61,8 @@ final readonly class TimeTrackMetadataListener
         CalendarConnection::class => 'scopeKey',
         CalendarRule::class       => 'scopeKey',
         TimeEntry::class          => 'scopeKey',
+        // Since 1.36.0: the scope a timer without a task was started in (copied to its entry).
+        ActiveTimer::class => 'scopeKey',
     ];
 
     /**

@@ -36,6 +36,11 @@ use const DATE_ATOM;
  * deleted): the imported hours of a former person who never had an account, or an entry whose user was deleted
  * (`user_id` is `ON DELETE SET NULL`). It then shows under `person_name_snapshot`; `person_ref` is the opaque identity
  * erasure and export look it up by; {@see self::isAnonymised()} entries keep their time and nothing else about the person.
+ *
+ * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`) a live entry may have no task: `task_id` is NULL (so no
+ * query by task or board ever reaches it), the title snapshot is empty and the user's free text is the `description`.
+ * {@see self::getTaskId()} keeps its string type and returns ''; {@see self::hasTask()} and {@see self::taskIdOrNull()}
+ * tell the case apart.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_entries')]
@@ -136,8 +141,9 @@ class TimeEntry
         #[ORM\ManyToOne(targetEntity: User::class)]
         #[ORM\JoinColumn(name: 'user_id', nullable: true, onDelete: 'SET NULL')]
         private ?object $user,
-        #[ORM\Column(name: 'task_id', type: 'string', length: 36)]
-        private string $taskId,
+        // Since 1.36.0 nullable: null = an entry without a task.
+        #[ORM\Column(name: 'task_id', type: 'string', length: 36, nullable: true)]
+        private ?string $taskId,
         #[ORM\Column(name: 'task_title_snapshot', type: 'string', length: 255)]
         private string $taskTitleSnapshot,
         #[ORM\Column(name: 'board_id_snapshot', type: 'string', length: 36, nullable: true)]
@@ -440,9 +446,25 @@ class TimeEntry
     }
 
     /**
-     * Tracked task id.
+     * Tracked task id; since 1.36.0 '' for an entry without a task ({@see self::hasTask()}, {@see self::taskIdOrNull()}).
      */
     public function getTaskId(): string
+    {
+        return $this->taskId ?? '';
+    }
+
+    /**
+     * Since 1.36.0: whether the entry is on a task (false = an entry without a task).
+     */
+    public function hasTask(): bool
+    {
+        return $this->taskId !== null;
+    }
+
+    /**
+     * Since 1.36.0: the task id, null for an entry without a task.
+     */
+    public function taskIdOrNull(): ?string
     {
         return $this->taskId;
     }
@@ -553,6 +575,20 @@ class TimeEntry
     }
 
     /**
+     * Since 1.36.0: sets the free text of a new entry without a task (the timer and manual-entry services call it; the
+     * caller cleans it). Anonymising clears it like every description.
+     *
+     * @internal
+     */
+    public function describe(?string $description): self
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->description = $description;
+
+        return $this;
+    }
+
+    /**
      * Since 1.11: imported entries are read-only (they can only be deleted).
      */
     public function isReadOnly(): bool
@@ -640,7 +676,7 @@ class TimeEntry
     {
         $array = [
             'id'              => $this->id,
-            'taskId'          => $this->taskId,
+            'taskId'          => $this->taskId ?? '',
             'taskTitle'       => $taskVisible ? $this->taskTitleSnapshot : $hiddenTitle,
             'boardId'         => $this->boardIdSnapshot,
             'startedAt'       => $this->startedAt->format(DATE_ATOM),
@@ -658,6 +694,10 @@ class TimeEntry
             'channel'        => $this->channel,
             'serviceAccount' => $this->serviceAccount,
         ];
+        // Since 1.36.0: an entry without a task has taskId '' (the type clients know) and this key; others are unchanged.
+        if ($this->taskId === null) {
+            $array['withoutTask'] = true;
+        }
         if ($this->user === null) {
             $array['person'] = ['name' => $this->personNameSnapshot, 'anonymised' => $this->anonymisedAt instanceof DateTimeImmutable];
         }

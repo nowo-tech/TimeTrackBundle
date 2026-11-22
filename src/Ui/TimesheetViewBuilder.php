@@ -88,9 +88,10 @@ final readonly class TimesheetViewBuilder
         $rows     = [];
         $daily    = array_combine($dates, array_fill(0, count($dates), 0));
         foreach ($snapshot->entries as $entry) {
+            // Since 1.36.0: entries without a task share one "No task" row (task id '').
             $taskId = $entry->getTaskId();
             $date   = StorageTime::localDate($entry->getStartedAt(), $timesheet->getTimezone());
-            $rows[$taskId] ??= ['taskId' => $taskId, 'title' => isset($hidden[$entry->getId()]) ? null : $this->title($entry, $viewer, $owner), 'masked' => false, 'imported' => !$entry->getSource()->isLive(), 'days' => array_combine($dates, array_fill(0, count($dates), 0)), 'total' => 0, 'notes' => []];
+            $rows[$taskId] ??= ['taskId' => $taskId, 'title' => isset($hidden[$entry->getId()]) ? null : $this->title($entry, $viewer, $owner), 'masked' => false, 'imported' => !$entry->getSource()->isLive(), 'days' => array_combine($dates, array_fill(0, count($dates), 0)), 'total' => 0, 'notes' => [], 'withoutTask' => !$entry->hasTask()];
             $rows[$taskId]['masked'] = $rows[$taskId]['title'] === null;
             $rows[$taskId]['days'][$date] += $entry->getDurationSeconds();
             $rows[$taskId]['total'] += $entry->getDurationSeconds();
@@ -98,6 +99,11 @@ final readonly class TimesheetViewBuilder
             $note = ($entry->getMetadata() ?? [])['note'] ?? null;
             if ($notes && !isset($hidden[$entry->getId()]) && is_string($note) && $note !== '') {
                 $rows[$taskId]['notes'][] = $note;
+            }
+            // Since 1.36.0: the free text of an entry without a task is shown like a note (same visibility).
+            $description = $entry->hasTask() ? null : $entry->getDescription();
+            if ($notes && !isset($hidden[$entry->getId()]) && $description !== null && $description !== '') {
+                $rows[$taskId]['notes'][] = $description;
             }
         }
 
@@ -249,7 +255,8 @@ final readonly class TimesheetViewBuilder
      */
     private function title(TimeEntry $entry, UserInterface $viewer, bool $owner): ?string
     {
-        if ($owner || !$this->taskAccess instanceof TaskAccessCheckerInterface || $this->taskAccess->canTrack($viewer, $entry->getTaskId())) {
+        // Since 1.36.0: no task to mask an entry without one by (the template shows "No task").
+        if (!$entry->hasTask() || $owner || !$this->taskAccess instanceof TaskAccessCheckerInterface || $this->taskAccess->canTrack($viewer, $entry->getTaskId())) {
             return $entry->getTaskTitleSnapshot();
         }
 

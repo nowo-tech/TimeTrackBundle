@@ -82,10 +82,11 @@ final readonly class TimeTrackPages
         $header = $active instanceof ActiveTimer
             ? new PageHeader(
                 self::label('page.timer'),
-                self::label('timer.running_intro', [
-                    '%task%'    => $active->getTaskTitleSnapshot(),
+                // Since 1.36.0: a timer without a task shows its free text, or "without a task".
+                $active->hasTask() || ($active->getDescription() ?? '') !== '' ? self::label('timer.running_intro', [
+                    '%task%'    => $active->hasTask() ? $active->getTaskTitleSnapshot() : (string) $active->getDescription(),
                     '%started%' => $active->getStartedAt()->format('Y-m-d H:i'),
-                ]),
+                ]) : self::label('timer.running_intro_without_task', ['%started%' => $active->getStartedAt()->format('Y-m-d H:i')]),
                 [new Action(kind: 'custom', label: self::label('action.stop'), method: 'POST', variant: 'danger', attributes: ['data-testid' => 'time-track-stop'], form: $stopForm)],
                 status: new PageStatus(self::label('timer.status_running'), 'success'),
             )

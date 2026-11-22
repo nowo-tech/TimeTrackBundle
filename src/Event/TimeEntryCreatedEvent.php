@@ -52,4 +52,10 @@ final class TimeEntryCreatedEvent extends Event
     {
         return TimeEntryView::fromEntry($this->entry);
     }
+
+    /** Since 1.36.0: id of the entry's task, null for an entry without a task (`entries.allow_without_task`). */
+    public function getTaskId(): ?string
+    {
+        return $this->entry->taskIdOrNull();
+    }
 }

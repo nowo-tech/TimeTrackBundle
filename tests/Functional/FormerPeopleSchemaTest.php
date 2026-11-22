@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
+use Doctrine\DBAL\Platforms\MariaDBPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\Tools\SchemaTool;
@@ -14,6 +15,7 @@ use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 
 use function dirname;
 use function explode;
@@ -49,7 +51,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $em->persist(new TimeEntry($this->user, 'task-1', 'Kept', null, new DateTimeImmutable('2026-01-01 10:00:00'), new DateTimeImmutable('2026-01-01 11:00:00'), 3600, TimeEntrySource::Web));
         $em->flush();
 
-        // Since 1.25.0: the later migration is rolled back first and applied again last.
+        // Since 1.25.0: the later migrations are rolled back first and applied again last (1.36.0 rebuilds the table on SQLite).
+        $this->runSql($this->platformName() . '-down.sql', '1.36.0');
         $this->runSql($this->platformName() . '-down.sql', '1.25.0');
         $this->runSql($this->platformName() . '-down.sql');
         $table = $conn->createSchemaManager()->introspectTable('time_track_entries');
@@ -61,6 +64,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
 
         $this->runSql($this->platformName() . '-up.sql');
         $this->runSql($this->platformName() . '-up.sql', '1.25.0');
+        $this->runSql($this->platformName() . '-up.sql', '1.36.0');
+        ScopeKeyCollation::apply($conn);
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.15 mapping');
         self::assertSame(['Kept', '3600'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT duration_seconds FROM time_track_entries')]);
     }
@@ -138,6 +143,8 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
     {
         $conn = $this->entityManager()->getConnection();
         foreach ($this->statements($file, $version) as $statement) {
+            // The MySQL scripts name MySQL 8's binary collation; MariaDB's is utf8mb4_nopad_bin (as the 1.36.0 header says).
+            $statement = $conn->getDatabasePlatform() instanceof MariaDBPlatform ? str_replace('utf8mb4_0900_bin', 'utf8mb4_nopad_bin', $statement) : $statement;
             $conn->executeStatement(str_replace('REFERENCES users (id)', 'REFERENCES app_user (id)', $statement));
         }
     }

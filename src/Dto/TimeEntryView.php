@@ -33,7 +33,17 @@ final readonly class TimeEntryView
         // Since 1.25.0: the channel (`api`, `mcp`, …; null outside HostTimerApi and host manual entries) and the agent mark.
         public ?string $channel = null,
         public bool $serviceAccount = false,
+        // Since 1.36.0: an entry without a task (its taskId is '' and its taskTitle '').
+        public bool $withoutTask = false,
     ) {
+    }
+
+    /**
+     * Since 1.36.0: the task id, null for an entry without a task.
+     */
+    public function taskIdOrNull(): ?string
+    {
+        return $this->withoutTask ? null : $this->taskId;
     }
 
     /**
@@ -56,6 +66,7 @@ final readonly class TimeEntryView
             $entry->getExternalId(),
             $entry->channel(),
             $entry->isServiceAccount(),
+            !$entry->hasTask(),
         );
     }
 }

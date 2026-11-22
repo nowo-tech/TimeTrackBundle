@@ -13,6 +13,9 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
+use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -20,7 +23,8 @@ use function in_array;
 
 /**
  * Decides whether a viewer may read the entries of another user (self, admin roles, managed users) or edit an entry
- * (owner, manager, admin roles, then the access-check event).
+ * (owner, manager, admin roles, then the access-check event). Since 1.36.0 an entry without a task is reachable by
+ * anyone but its owner only within the actor's own tenant scopes ({@see self::isWithinTenant()}).
  */
 final readonly class TeamAccessGuard
 {
@@ -35,6 +39,8 @@ final readonly class TeamAccessGuard
         private bool $managerCanEditEntries,
         private ?ManagerRegistry $managerRegistry = null,
         private ?PeriodLockGuard $periodLockGuard = null,
+        // Since 1.36.0: the tenant scopes of the actor, for entries without a task (null = a single-tenant host).
+        private ?TimesheetScopeProviderInterface $scopeProvider = null,
     ) {
     }
 
@@ -76,7 +82,8 @@ final readonly class TeamAccessGuard
         $event = new TimeEntryAccessCheckEvent($editor, $entry, self::ACTION_EDIT_BILLABLE, $this->isEditGranted($editor, $entry));
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
-        return $event->isGranted();
+        // Since 1.36.0: a listener cannot grant another tenant's entry without a task.
+        return $event->isGranted() && $this->isWithinTenant($editor, $entry);
     }
 
     /** Since 1.11: the access-check action of {@see self::canDeleteImportedEntry()}. */
@@ -118,10 +125,30 @@ final readonly class TeamAccessGuard
             $granted = $this->hasAdminRole($editor);
         }
 
-        $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted);
+        $event = new TimeEntryAccessCheckEvent($editor, $entry, 'edit', $granted && $this->isWithinTenant($editor, $entry));
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK);
 
-        return $event->isGranted();
+        // Since 1.36.0: checked again after the listeners, so a grant never crosses tenants for an entry without a task.
+        return $event->isGranted() && $this->isWithinTenant($editor, $entry);
+    }
+
+    /**
+     * Since 1.36.0 (Beacon spec 250): an entry without a task has no board or task to derive access from, so anyone but
+     * its owner (a manager, an admin role, a granting listener) reaches it only within one of their own tenant scopes:
+     * the entry's scope key must be one of the actor's, byte for byte (`===`). An entry without a scope is then the
+     * owner's only. Entries with a task, the owner, and a host without a scope provider (single tenant) are unaffected.
+     */
+    public function isWithinTenant(UserInterface $actor, TimeEntry $entry): bool
+    {
+        if ($entry->hasTask() || !$this->scopeProvider instanceof TimesheetScopeProviderInterface) {
+            return true;
+        }
+        $owner = $entry->getUserId();
+        if ($owner !== null && $owner === UserIdResolver::getId($actor)) {
+            return true;
+        }
+
+        return ScopeKeys::isOneOf($entry->getScopeKey(), ScopeKeys::ofUser($this->scopeProvider, $actor, new NullLogger()));
     }
 
     /**

@@ -11,6 +11,7 @@ timer:
   started_at: Started at
   none: No active timer
   running_intro: "Running: %task% (since %started%)"
+  running_intro_without_task: "Running without a task (since %started%)"
   status_running: Running
 tasks:
   title: Trackable tasks
@@ -36,6 +37,7 @@ reports:
   source_manual: "Manual"
   source_calendar: "Calendar"
   task_not_visible: Task not visible
+  no_task: "No task"
   former_person: "Former person"
 flash:
   timer_started: Timer started.

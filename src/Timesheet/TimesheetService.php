@@ -577,6 +577,11 @@ final readonly class TimesheetService
 
     private function timerScope(UserInterface $owner, ActiveTimer $timer): ?string
     {
+        // Since 1.36.0: a timer without a task carries the scope it was started in.
+        if (!$timer->hasTask()) {
+            return $timer->getScopeKey();
+        }
+
         return $this->scopeProvider instanceof TimesheetScopeProviderInterface ? $this->scopeProvider->scopeKeyForTask($owner, $timer->getTaskId(), $timer->getBoardIdSnapshot()) : null;
     }
 

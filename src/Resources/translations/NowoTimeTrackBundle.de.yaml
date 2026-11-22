@@ -11,6 +11,7 @@ timer:
   started_at: Gestartet um
   none: Kein aktiver Timer
   running_intro: "Läuft: %task% (seit %started%)"
+  running_intro_without_task: "Läuft ohne Aufgabe (seit %started%)"
   status_running: Läuft
 tasks:
   title: Erfassbare Aufgaben
@@ -36,6 +37,7 @@ reports:
   source_manual: "Manuell"
   source_calendar: "Kalender"
   task_not_visible: Aufgabe nicht sichtbar
+  no_task: "Keine Aufgabe"
   former_person: "Ehemalige Person"
 flash:
   timer_started: Timer gestartet.

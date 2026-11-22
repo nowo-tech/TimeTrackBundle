@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Command;
 
 use DateTimeImmutable;
+use LogicException;
 use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
@@ -49,7 +50,9 @@ final class BackfillEntryScopeCommandTest extends TestCase
         foreach (['a', 'b', 'c'] as $id) {
             $entries[] = new TimeEntry($user, 'task-' . $id, 'T', null, new DateTimeImmutable(), new DateTimeImmutable(), 0, TimeEntrySource::Web);
         }
-        $store = new class($entries) implements TimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface {
+        // Since 1.36.0 (audit YM-L2): an entry without a task a store returns anyway is never given to the provider.
+        $withoutTask = new TimeEntry($user, null, '', null, new DateTimeImmutable(), new DateTimeImmutable(), 0, TimeEntrySource::Manual);
+        $store       = new class([...$entries, $withoutTask]) implements TimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface {
             /** @var array<string, string> */
             public array $assigned = [];
 
@@ -102,6 +105,56 @@ final class BackfillEntryScopeCommandTest extends TestCase
         self::assertSame([$entries[0]->getId() => 'org-a'], $store->assigned);
         self::assertStringContainsString('Placed 1 entry; 2 left without a scope; 0 left in a locked or submitted', $tester->getDisplay());
         self::assertSame(['bundle' => 'time_track', 'action' => 'entries_backfill_scope', 'placed' => 1, 'unplaced' => 2, 'locked' => 0, 'dry_run' => false], $logger->records[0]['context']);
+    }
+
+    public function testABatchOfEntriesWithoutATaskNeverReachesTheProvider(): void
+    {
+        $entry = new TimeEntry(new TestUser('7', 'ana@example.com'), null, '', null, new DateTimeImmutable(), new DateTimeImmutable(), 0, TimeEntrySource::Manual);
+        $store = new class([$entry]) implements TimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface {
+            /** @param list<TimeEntry> $entries */
+            public function __construct(private readonly array $entries)
+            {
+            }
+
+            public function save(TimeEntry $entry): void
+            {
+            }
+
+            public function findByUserAndPeriod(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+            {
+                return [];
+            }
+
+            public function findScopelessAfter(string $afterId, int $limit): array
+            {
+                return $afterId === '' ? $this->entries : [];
+            }
+
+            public function assignScopeKeys(array $scopeKeys): int
+            {
+                throw new LogicException('nothing to assign');
+            }
+        };
+        $provider = new class implements TimesheetScopeProviderInterface {
+            public function scopesFor(UserInterface $user): array
+            {
+                return [];
+            }
+
+            public function scopeKeyForTask(UserInterface $user, string $taskId, ?string $boardId): ?string
+            {
+                return null;
+            }
+
+            public function scopeKeysForEntries(array $entries): array
+            {
+                throw new LogicException('never asked');
+            }
+        };
+        $tester = new CommandTester(new BackfillEntryScopeCommand($store, $provider));
+
+        self::assertSame(Command::SUCCESS, $tester->execute(['--batch' => '1']));
+        self::assertStringContainsString('Placed 0 entries; 0 left without a scope', $tester->getDisplay());
     }
 
     public function testEntriesOfALockedPeriodKeepTheirScopeless(): void

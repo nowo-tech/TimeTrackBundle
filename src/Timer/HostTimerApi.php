@@ -85,6 +85,34 @@ final readonly class HostTimerApi
     }
 
     /**
+     * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`): starts the actor's timer now without a task (e.g. time
+     * spent on a CRM customer that the host links on its own side by the ids it gets back), stopping the actor's running
+     * timer first if there is one, exactly like {@see self::start()}. The scope is checked before anything is stopped.
+     *
+     * @param TimeTrackUserRef $actor The account, with its security user object
+     * @param string|null $description Free text of the timer (cleaned and cut like a note)
+     * @param string|null $note Note of the new timer
+     * @param string $channel Channel label stored on the entry ({@see TimerChannel}: `api`, `mcp`, …)
+     * @param string|null $scopeKey Tenant scope (one of the actor's, compared exactly; null = the current one)
+     *
+     * @throws LogicException When the reference carries no security user object
+     * @throws InvalidArgumentException When the channel is not a valid label
+     * @throws TaskNotTrackableException When the option is off or the scope is not one of the actor's (nothing is stopped)
+     * @throws PeriodLockedException When the current period is locked (nothing is stopped)
+     * @throws PeriodSubmittedException When the current period is submitted (nothing is stopped)
+     * @throws ActiveTimerConflictException When concurrent starts took the slot on every attempt
+     */
+    public function startWithoutTask(TimeTrackUserRef $actor, ?string $description = null, ?string $note = null, string $channel = 'api', ?string $scopeKey = null): HostTimerStart
+    {
+        $result = $this->timers->startReplacing($this->user($actor), null, ClientType::Web, $channel, $note === null ? [] : ['note' => $note], null, $description, $scopeKey);
+
+        return new HostTimerStart(
+            TimerSnapshot::fromTimer($result['timer']),
+            array_map(TimerEntrySnapshot::fromEntry(...), $result['stopped']),
+        );
+    }
+
+    /**
      * Stops the actor's running timer now and returns its entry, or null when none runs.
      *
      * @param string|null $note Note added to the entry

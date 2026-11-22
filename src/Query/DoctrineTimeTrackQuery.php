@@ -59,7 +59,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
 
     private const KEY_FIELDS = ['e.id AS id', 'IDENTITY(e.user) AS userId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds'];
 
-    private const TIMER_FIELDS = ['t.id AS id', 'IDENTITY(t.user) AS userId', 't.taskId AS taskId', 't.taskTitleSnapshot AS taskTitle', 't.boardIdSnapshot AS boardId', 't.startedAt AS startedAt', 't.lastHeartbeatAt AS lastHeartbeatAt', 't.clientType AS clientType', 't.metadata AS metadata'];
+    private const TIMER_FIELDS = ['t.id AS id', 'IDENTITY(t.user) AS userId', 't.taskId AS taskId', 't.taskTitleSnapshot AS taskTitle', 't.boardIdSnapshot AS boardId', 't.startedAt AS startedAt', 't.lastHeartbeatAt AS lastHeartbeatAt', 't.clientType AS clientType', 't.metadata AS metadata', 't.description AS description', 't.scopeKey AS scopeKey'];
 
     /**
      * @param EntityManagerInterface $entityManager The bundle's entity manager (private or `database.entity_manager`)
@@ -443,6 +443,8 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 $this->nullableString($row['externalId']),
                 $channel !== null && preg_match(TimerChannel::PATTERN, $channel) === 1 ? $channel : null,
                 $this->bool($row['serviceAccount']),
+                // Since 1.36.0: a NULL task id is an entry without a task.
+                $row['taskId'] === null,
             ),
             is_string($note) && $note !== '' ? $note : null,
             $this->nullableString($row['description']),
@@ -471,6 +473,10 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 $this->clientType($row['clientType']),
                 is_string($channel) && preg_match(TimerChannel::PATTERN, $channel) === 1 ? $channel : null,
                 is_string($note) ? $note : null,
+                // Since 1.36.0: a timer without a task, its free text and its tenant scope.
+                $row['taskId'] === null,
+                $this->nullableString($row['description']),
+                $this->nullableString($row['scopeKey']),
             ),
             (string) $this->owner($row),
             $this->date($row['lastHeartbeatAt']),

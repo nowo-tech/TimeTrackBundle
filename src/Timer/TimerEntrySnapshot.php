@@ -30,7 +30,19 @@ final readonly class TimerEntrySnapshot
         public bool $serviceAccount,
         // Why the bundle closed the timer (`replaced`, `user_deletion`) or null ({@see TimeEntry::closedBy()}).
         public ?string $closedBy = null,
+        // Since 1.36.0: an entry without a task (taskId and taskTitle are ''), its free text and its tenant scope.
+        public bool $withoutTask = false,
+        public ?string $description = null,
+        public ?string $scopeKey = null,
     ) {
+    }
+
+    /**
+     * Since 1.36.0: the task id, null for an entry without a task.
+     */
+    public function taskIdOrNull(): ?string
+    {
+        return $this->withoutTask ? null : $this->taskId;
     }
 
     /**
@@ -50,6 +62,9 @@ final readonly class TimerEntrySnapshot
             $entry->channel(),
             $entry->isServiceAccount(),
             $entry->closedBy(),
+            !$entry->hasTask(),
+            $entry->getDescription(),
+            $entry->getScopeKey(),
         );
     }
 }

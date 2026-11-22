@@ -110,7 +110,7 @@
     "prefer-stable": true,
     "scripts": {
         "test": "@php -d memory_limit=512M vendor/bin/phpunit --colors=always",
-        "test-coverage": "@php -d memory_limit=512M vendor/bin/phpunit --colors=always --coverage-html coverage --coverage-clover coverage.xml --coverage-text",
+        "test-coverage": "@php -d memory_limit=1G vendor/bin/phpunit --colors=always --coverage-html coverage --coverage-clover coverage.xml --coverage-text",
         "test-coverage-100": [
             "@test-coverage",
             "@php scripts/check-coverage.php coverage.xml --min-percent=100"

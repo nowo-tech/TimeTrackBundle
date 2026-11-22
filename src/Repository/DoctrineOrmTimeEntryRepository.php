@@ -41,7 +41,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, LockingFindableTimeEntryRepositoryInterface, OriginFilteredTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, LockingFindableTimeEntryRepositoryInterface, OriginFilteredTimeEntryRepositoryInterface, TasklessScopedTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -614,7 +614,8 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
 
     /**
      * Since 1.13: entries without a scope after an id (back-fill keyset). Since 1.15 only entries with a user: the scope
-     * provider places entries by their owner, and an ownerless entry belongs to no timesheet.
+     * provider places entries by their owner, and an ownerless entry belongs to no timesheet. Since 1.36.0 only entries
+     * with a task: an entry without one got its scope when it was written, and the provider places entries by task.
      */
     public function findScopelessAfter(string $afterId, int $limit): array
     {
@@ -624,6 +625,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->from(TimeEntry::class, 'e')
             ->where('e.scopeKey IS NULL')
             ->andWhere('e.user IS NOT NULL')
+            ->andWhere('e.taskId IS NOT NULL')
             ->andWhere('e.id > :after')
             ->setParameter('after', $afterId)
             ->orderBy('e.id', SortDirection::Ascending)
@@ -1058,6 +1060,121 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
         } while (count($batch) === self::EXACT_BATCH);
 
         return $count;
+    }
+
+    /**
+     * Since 1.36.0 (Beacon spec 250): one page of the listing, newest first. Another owner's entry without a task is
+     * kept only in one of the viewer's scopes: an SQL condition, then every row checked again byte for byte (owners
+     * with the id mapping, ownerless scopes, the taskless scope with `===`) before the page is cut.
+     */
+    public function findListingPage(TimeEntryListing $listing, int $offset, int $limit): array
+    {
+        $offset  = max(0, $offset);
+        $limit   = max(1, $limit);
+        $kept    = [];
+        $skipped = 0;
+        $read    = 0;
+        do {
+            /** @var list<TimeEntry> $rows */
+            $rows = $this->listingQuery($listing)
+                ->select('e')
+                ->orderBy('e.startedAt', SortDirection::Descending)
+                ->addOrderBy('e.id', SortDirection::Descending)
+                ->setFirstResult($read)
+                ->setMaxResults(self::EXACT_BATCH)
+                ->getQuery()
+                ->getResult();
+            $read += self::EXACT_BATCH;
+            foreach ($rows as $entry) {
+                if (!$this->isInListing($entry->getUserId(), $entry->getScopeKey(), $entry->hasTask(), $listing)) {
+                    continue;
+                }
+                if ($skipped < $offset) {
+                    ++$skipped;
+                    continue;
+                }
+                $kept[] = $entry;
+                if (count($kept) === $limit) {
+                    return $kept;
+                }
+            }
+        } while (count($rows) === self::EXACT_BATCH);
+
+        return $kept;
+    }
+
+    /**
+     * Since 1.36.0 (Beacon spec 250): number of entries of the listing, counted in keyset batches with the same PHP
+     * re-check as {@see self::findListingPage()}. Each batch builds its own query (REQ-RUNTIME-002).
+     */
+    public function countListing(TimeEntryListing $listing): int
+    {
+        $count = 0;
+        $after = '';
+        do {
+            /** @var list<array{id: string, owner: int|string|null, scopeKey: string|null, taskId: string|null}> $batch */
+            $batch = $this->listingQuery($listing)
+                ->select('e.id AS id', 'IDENTITY(e.user) AS owner', 'e.scopeKey AS scopeKey', 'e.taskId AS taskId')
+                ->andWhere('e.id > :afterEntry')
+                ->setParameter('afterEntry', $after)
+                ->orderBy('e.id', SortDirection::Ascending)
+                ->setMaxResults(self::EXACT_BATCH)
+                ->getQuery()
+                ->getArrayResult();
+            foreach ($batch as $row) {
+                $after = $row['id'];
+                $count += $this->isInListing($row['owner'] === null ? null : (string) $row['owner'], $row['scopeKey'], $row['taskId'] !== null, $listing) ? 1 : 0;
+            }
+        } while (count($batch) === self::EXACT_BATCH);
+
+        return $count;
+    }
+
+    /**
+     * Since 1.36.0 (audit YM-M1): whether the listing reaches any entry without a task at all (one row read, by the
+     * listing's owners, ownerless scopes, period and sources). False: the listing is exactly the 1.35 one.
+     */
+    public function hasEntriesWithoutTask(TimeEntryListing $listing): bool
+    {
+        $rows = $this->ownerlessPeriodQuery($listing->userIds, $listing->includeOwnerless ? $listing->ownerlessScopeKeys : [], $listing->from, $listing->to, $listing->includeImported)
+            ->select('e.id')
+            ->andWhere('e.taskId IS NULL')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getArrayResult();
+
+        return $rows !== [];
+    }
+
+    /**
+     * Since 1.36.0: the listing's query: the period, the owners (and the ownerless entries when asked), live entries only
+     * unless imported ones are asked, and another owner's entry without a task only in one of the viewer's scopes.
+     */
+    private function listingQuery(TimeEntryListing $listing): QueryBuilder
+    {
+        $query    = $this->ownerlessPeriodQuery($listing->userIds, $listing->includeOwnerless ? $listing->ownerlessScopeKeys : [], $listing->from, $listing->to, $listing->includeImported);
+        $taskless = $listing->tasklessScopeKeys === [] ? '' : ' OR e.scopeKey IN (:tasklessScopes)';
+        // @igor-ignore - Per-call QueryBuilder built in this method; not a shared service.
+        $query->andWhere('e.taskId IS NOT NULL OR IDENTITY(e.user) = :tasklessViewer' . $taskless)->setParameter('tasklessViewer', $listing->viewerId);
+        if ($listing->tasklessScopeKeys !== []) {
+            // @igor-ignore - Per-call QueryBuilder built in this method; not a shared service.
+            $query->setParameter('tasklessScopes', $listing->tasklessScopeKeys);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Since 1.36.0: whether a row the listing query returned belongs to it byte for byte ({@see self::isListed()}, then
+     * the taskless scope rule of {@see TimeEntryListing::keepsWithoutTask()}).
+     */
+    private function isInListing(?string $owner, ?string $scopeKey, bool $hasTask, TimeEntryListing $listing): bool
+    {
+        if (!$this->isListed($owner, $scopeKey, $listing->userIds, $listing->includeOwnerless ? $listing->ownerlessScopeKeys : [])) {
+            return false;
+        }
+
+        return $hasTask || $listing->keepsWithoutTask($owner, $scopeKey);
     }
 
     /**

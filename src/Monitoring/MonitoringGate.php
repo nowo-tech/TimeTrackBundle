@@ -139,7 +139,7 @@ final readonly class MonitoringGate
         $timer  = $this->timers->findByUserId($userId);
         if ($timer instanceof ActiveTimer && $timer->getId() === $entryId && $timer->getUserId() === $userId) {
             // Running: until now, with the accepted clock skew of the client.
-            return ['start' => $timer->getStartedAt(), 'end' => $now->modify('+' . MonitoringSettings::CLOCK_SKEW_SECONDS . ' seconds'), 'scopeKey' => $this->scopeProvider?->scopeKeyForTask($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()) ?? ''];
+            return ['start' => $timer->getStartedAt(), 'end' => $now->modify('+' . MonitoringSettings::CLOCK_SKEW_SECONDS . ' seconds'), 'scopeKey' => ($timer->hasTask() ? $this->scopeProvider?->scopeKeyForTask($user, $timer->getTaskId(), $timer->getBoardIdSnapshot()) : $timer->getScopeKey()) ?? ''];
         }
         $entry = $this->entries instanceof FindableTimeEntryRepositoryInterface ? $this->entries->findById($entryId) : null;
         if (!$entry instanceof TimeEntry || $entry->getId() !== $entryId || $entry->getUserId() !== $userId || !in_array($entry->getSource(), self::TIMER_SOURCES, true)) {
