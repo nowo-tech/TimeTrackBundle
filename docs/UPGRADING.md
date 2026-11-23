@@ -156,6 +156,10 @@ If the gate now *fails* on one of these columns, it is telling the truth: that t
 the reference columns), or it was restored from a dump, and it still carries the host's folding default. Run the
 `ALTER` the check prints.
 
+With `user_mapping: id` the host users `id` and the `user_id` of the bundle's tables that reference it are declared too
+(since 1.37.1; `time_track_monitoring_*` excluded): hosts in id mode can drop their `ignore_columns` entries for
+`<prefix>_host_users.id` and for those `user_id` columns.
+
 With `user_mapping: relation` the reference columns are reported as **skipped** with that setting, never as a
 failure: that DDL belongs to `user_mapping: id`.
 
