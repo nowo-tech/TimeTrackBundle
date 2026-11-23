@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Design, for owner review.** No code yet. |
+| Status | **Design, decisions recorded (Owner 2026-11-23).** Q-TS-1 revised after Beacon's objection; Q-TS-2..22 as recommended. No code yet. |
 | Target | TimeTrack **2.1.0** (minor after the 2.0.0 ARCH-001 major, PR #145) |
 | Requested by | Beacon, spec 256 (owner-approved D-20261123-16) |
 | Designed against | branch `feat/2.0-arch-001` (2.0: private entity manager only, deprecated ports removed) |
@@ -27,7 +27,7 @@
 15. [Events](#15-events)
 16. [Reuse of existing patterns and bundles](#16-reuse-of-existing-patterns-and-bundles)
 17. [Objections to the request as written](#17-objections-to-the-request-as-written)
-18. [Open questions for the owner (Q-TS)](#18-open-questions-for-the-owner-q-ts)
+18. [Owner decisions (Q-TS, Owner 2026-11-23)](#18-owner-decisions-q-ts-owner-2026-11-23)
 19. [Delivery plan and tests](#19-delivery-plan-and-tests)
 
 ---
@@ -35,9 +35,10 @@
 ## 1. Summary
 
 Time today is logged on a **task**, or (since 1.36.0, `entries.allow_without_task`) on **nothing** with a free-text
-description in a tenant scope. Beacon needs a third allocation: time on a **subject** that is not a task, such as a
-customer (a phone call) or the organisation itself under an internal category, plus an optional **activity type**
-(e.g. `support_call`, `internal_meeting`) on any entry.
+description in a tenant scope. Beacon needs a **subject**: time on something that is not a task, such as a customer
+(a phone call) or the organisation itself under an internal category, **or** a subject next to a task ("this task,
+for customer X", Beacon spec 250 customer time), plus an optional **activity type** (e.g. `support_call`,
+`internal_meeting`) on any entry.
 
 The design adds:
 
@@ -47,7 +48,8 @@ The design adds:
   objects;
 - the subject and activity type on every write path (timer start / start-replacing / switch / stop, idle reassign,
   manual entries, `TimeEntryOperationsInterface::correct()` / `createManual()`, the client API), with `canLog` checked on
-  every write that sets a subject;
+  every write that sets or changes a subject (task access stays the gate on task entries);
+- task + subject on one entry, only for subject types whose provider declares `allowsTask()`;
 - an optional refusal of a stop that has neither task nor subject (`allocation_required`), for interactive stops only;
 - filters and bounded grouping on the query side, `canRead` masking on every bundle read surface;
 - export, GDPR export, erasure and retention that keep both fields.
@@ -79,19 +81,25 @@ Read from `feat/2.0-arch-001` (read-only):
 
 ## 3. Concepts and invariants
 
-**Allocation** of an entry or running timer is exactly one of:
+**Allocation** of an entry or running timer is exactly one of (Q-TS-1, decided Owner 2026-11-23):
 
-| Allocation | `task_id` | `subject_type` / `subject_id` | Since |
-|---|---|---|---|
-| Task | set | NULL / NULL | 1.0 |
-| Subject | NULL | set / set | 2.1 |
-| None (unallocated) | NULL | NULL / NULL | 1.36 (`allow_without_task`) |
+| Allocation | `task_id` | `subject_type` / `subject_id` | Allowed when | Gate on write | Since |
+|---|---|---|---|---|---|
+| Task alone | set | NULL / NULL | always | task access (as today) | 1.0 |
+| Task + subject | set | set / set | the subject type's provider declares `allowsTask(): true` (customer-like types) | task access **and** `canLog(subject)` when the subject is set or changed | 2.1 |
+| Subject alone | NULL | set / set | any subject type (internal categories, customers) | `canLog(subject)` | 2.1 |
+| None (unallocated) | NULL | NULL / NULL | `allow_without_task` on and `require_allocation` off | scope check (as 1.36) | 1.36 |
+
+With `require_allocation: true` an entry must have a task or a subject (any of the first three rows).
 
 Invariants enforced by the entity and the write services (not by a CHECK constraint, see §11):
 
 - I-1: `subject_type` and `subject_id` are both NULL or both set.
-- I-2: task and subject are mutually exclusive (Q-TS-1). Grouping task time by customer stays a host join
-  (task → project → customer), which Beacon already has.
+- I-2: a task and a subject may be combined only when the subject's type allows tasks (`allowsTask()`); a task +
+  subject write with a type that disallows tasks is refused (`allocation_conflict`). On a task entry the task stays the
+  primary allocation: task access gates every write, task queries and moves (`TaskTimeMover`) work as today, and the
+  subject is checked with `canLog` in addition whenever it is set or changed. `describe()` still filters the subject's
+  label by `canRead`, independently of the task's visibility.
 - I-3: `activity_type_key` is independent of the allocation: a task entry, a subject entry and an unallocated entry may
   each carry one.
 - I-4: an entry never loses its time because of its allocation: no stop that the bundle itself triggers (user deletion,
@@ -202,13 +210,14 @@ empty list rather than an unbounded payload).
 ```php
 final readonly class TimeAllocation
 {
-    public static function task(string $taskId, ?string $activityTypeKey = null): self;
+    public static function task(string $taskId, ?TimeSubjectRef $subject = null, ?string $activityTypeKey = null): self;
     public static function subject(TimeSubjectRef $subject, ?string $activityTypeKey = null): self;
     public static function none(?string $activityTypeKey = null): self;   // the 1.36 task-less case
 }
 ```
 
-One VO for every write path, so the XOR (I-2) is structural rather than re-checked in each service.
+One VO for every write path, so I-1 is structural. Whether a task + subject is allowed depends on the provider's
+`allowsTask()` and is checked by the guard (§7.1).
 
 ### 4.9 `TimeAllocationPatch` (correction input)
 
@@ -228,6 +237,12 @@ interface TimeSubjectProviderInterface
 {
     /** The subject type this provider answers for (TimeSubjectRef::TYPE_PATTERN). Constant per class. */
     public static function subjectType(): string;
+
+    /**
+     * Whether a subject of this type may sit on a task entry next to the task (Q-TS-1): true for customer-like types,
+     * false for internal categories. Constant per class (read at compile time).
+     */
+    public static function allowsTask(): bool;
 
     /** Whether the actor may log time on the subject in the context's tenant. Deny by default. */
     public function canLog(TimeSubjectContext $context, TimeSubjectRef $subject): bool;
@@ -249,9 +264,11 @@ Wiring:
 
 - Autoconfigured tag (`#[AutoconfigureTag]` on the interface): a host implements the interface and is done, on standard
   Symfony and on DDD hosts (no bundle class in the host's domain, the VOs are the only bundle types it sees).
-- A compiler pass (`TimeSubjectProvidersPass`) builds a `ServiceLocator` keyed by `subjectType()`. It fails the build on
-  a type that does not match the pattern or on two providers for one type.
-- `TimeSubjectRegistry` (internal, stateless) holds that locator: `has(type)`, `provider(type)`, `types()`. An
+- A compiler pass (`TimeSubjectProvidersPass`) builds a `ServiceLocator` keyed by `subjectType()` and a constant
+  `type => allowsTask()` map. It fails the build on a type that does not match the pattern or on two providers for one
+  type.
+- `TimeSubjectRegistry` (internal, stateless) holds that locator and map: `has(type)`, `provider(type)`,
+  `allowsTask(type)`, `types()`. An
   **unknown type is denied** on every path (write → `subject_forbidden`, read → masked, search → empty).
 - Batched reads: callers never call `describe()` per entry. `TimeSubjectLabelResolver::forPage(context, list<TimeEntryView>)`
   groups the page's refs by type and calls each provider **once per type per page** (≤ 1000 refs, the page cap), so
@@ -283,7 +300,7 @@ interface ActivityTypeProviderInterface
 
 Opt-in (`entries.subjects.scope_subject.enabled`, default false; `type` default `organisation`): the subject is the
 tenant itself, built from the existing `TimesheetScopePolicyInterface::scopesOf()`. `canLog` = the id is the context's
-scope and one of the actor's scopes; `describe` = the scope label; `search` = the actor's scopes. It gives "internal
+scope and one of the actor's scopes; `allowsTask()` false (internal time, never next to a task); `describe` = the scope label; `search` = the actor's scopes. It gives "internal
 time on the organisation under a category" with **zero host code** beyond activity types. Beacon may still register
 its own `organisation` provider instead (the build refuses two for one type).
 
@@ -321,13 +338,17 @@ the adapter lives in its infrastructure layer.
 
 `AllocationGuard` (internal, stateless) runs before the unit of work:
 
-1. Structure: `TimeAllocation` already enforces I-1 and I-2.
-2. Scope: the entry's scope as today (task → `scopeKeyFor(task)`; subject / none → `ScopeKeys::forEntryWithoutTask()`
-   with the requested scope, refused when not one of the owner's).
-3. Subject: `registry->has(type)` else `subject_forbidden`; `provider->canLog(ctx(owner, scope), ref)` else
-   `subject_forbidden` (same code for unknown type, unknown id and no access: no enumeration oracle).
-4. Activity type: `provider->activityTypesFor(scope)->find(key)` exists and is active.
-5. `require_allocation` / `require_activity_type` when on.
+1. Structure: `TimeAllocation` already enforces I-1.
+2. Task: when a task is given, task access and trackability as today (`TaskAccessPolicyInterface` /
+   `TaskDirectoryInterface`): the task stays the gate of a task entry.
+3. Scope: the entry's scope as today (task, with or without subject → `scopeKeyFor(task)`; subject alone / none →
+   `ScopeKeys::forEntryWithoutTask()` with the requested scope, refused when not one of the owner's).
+4. Subject (when set or changed): `registry->has(type)` else `subject_forbidden`; with a task,
+   `registry->allowsTask(type)` else `allocation_conflict`; `provider->canLog(ctx(owner, scope), ref)` else
+   `subject_forbidden` (same code for unknown type, unknown id and no access: no enumeration oracle). On a task + subject
+   entry the subject is checked in the **task's** scope (I-6).
+5. Activity type: `provider->activityTypesFor(scope)->find(key)` exists and is active.
+6. `require_allocation` (task or subject) / `require_activity_type` when on.
 
 The host ports are asked **before** the owner's lock (as `isServiceAccount()` is today), so a slow host provider never
 holds the bundle's row locks. The unit then writes what was checked; a permission revoked between check and write lands
@@ -340,7 +361,7 @@ like the same race on tasks today (accepted, documented).
 | `HostTimerApi::start()` / `startWithoutTask()` | task / none | new `startAllocated(TimeTrackUserRef, TimeAllocation, ?note, channel, ?scopeKey)`; old methods unchanged |
 | `HostTimerApi::stop()` | stop | new optional `?TimeAllocationPatch $allocation`; returns `TimerEntrySnapshot` or throws `TimeAllocationRequiredException` |
 | `TimerService::startAt()` / `startReplacing()` / `switchTo()` | task or none | take `TimeAllocation`; stored on `ActiveTimer` (new columns) |
-| `TimerService::stopAt()` | — | optional allocation applied at stop (allowed only when the timer is unallocated or the patch keeps the task) |
+| `TimerService::stopAt()` | — | optional allocation patch applied at stop: set / change / clear the subject (next to the task when the type allows tasks) and the activity type; the task itself is never changed at stop |
 | `TimerService::resolveIdle()` (`Reassign`) | to another task | may reassign the idle span to a `TimeAllocation` |
 | new `TimerService::allocateRunning()` | — | sets / changes subject and activity type of the running timer (Q-TS-19) |
 | `ManualEntryService::create()` / `ManualTimeEntryDraft` | task or none | `ManualTimeEntryDraft::$allocation` (new optional arg; `$taskId` kept for BC and mapped) |
@@ -353,9 +374,14 @@ Correction rules:
 
 - `canLog` is checked only when the subject **changes** (Q-TS-8): a times-only fix of an entry on a subject the owner
   lost access to stays possible, as for tasks.
-- Setting a subject on a task entry is refused (`allocation_conflict`); moving task time stays `TaskTimeMover`.
-- Clearing the subject leaves an unallocated entry: refused with `require_allocation`, or when `allow_without_task` is
-  off.
+- Setting or changing the subject of a task entry is allowed when the type allows tasks (else `allocation_conflict`),
+  with `canLog` on the new subject; task access is the entry's existing gate. The task itself is not changed by a
+  correction: moving task time stays `TaskTimeMover`, which keeps the subject (re-allocating it after a task move is the
+  host's call).
+- Clearing the subject of a task entry is always allowed (the task still allocates it). Clearing the subject of a
+  subject-alone entry leaves it unallocated: refused with `require_allocation`, or when `allow_without_task` is off.
+- A row whose type stopped allowing tasks after it was written (a provider change) keeps working for corrections that
+  do not touch the subject; `check-allocation` reports it (§12.2).
 - Period lock, overlap, read-only and anonymised rules are unchanged: an allocation change in a locked or submitted
   period is refused like any correction.
 - `TimeEntryCorrectionResult::$changedFields` appends `subject` and `activity_type_key` **after** the existing four,
@@ -404,10 +430,12 @@ New optional named arguments (all byte-exact, each list ≤ `MAX_VALUES`, an emp
 | `subjects` | `list<TimeSubjectRef>` | `(subject_type, subject_id) IN ((?, ?), …)` written as `OR`ed pairs grouped by type: `subject_type = ? AND subject_id IN (…)` |
 | `subjectTypes` | `list<string>` | `subject_type IN (…)` |
 | `activityTypeKeys` | `list<string>` | `activity_type_key IN (…)` |
-| `allocation` | `AllocationFilter` enum `Any` / `Task` / `Subject` / `None` | `task_id IS [NOT] NULL AND subject_type IS [NOT] NULL` |
+| `allocation` | `AllocationFilter` enum `Any` / `TaskOnly` / `TaskAndSubject` / `SubjectOnly` / `Unallocated` | `task_id IS [NOT] NULL AND subject_type IS [NOT] NULL` |
 
 The key rule is unchanged: a query still needs owner ids, scope keys, task ids or board ids. A subject filter alone is
 not a key (a customer id is not a tenant). `matchesExactly()` re-checks the new columns in PHP like the others.
+A `subjects` filter matches task + subject entries and subject-alone entries alike, so "all time for customer X"
+includes the customer's task time that carries the subject.
 
 ### 8.3 Grouping: new `TimeEntryTotalsQueryInterface`
 
@@ -455,10 +483,10 @@ Contract addition **v0.4** after v0.3.1 + timetrack-next v1.1 (additive; old cli
 
 | Endpoint | Scope | Change |
 |---|---|---|
-| `GET me` | (token) | `features.subjects: [{type, label}]`, `features.activityTypes: bool`, `features.requireAllocation: bool`, `features.requireActivityType: bool` |
-| `POST timer/start` | `timer:write` | body: `taskId` **or** `subject: {type, id}` (exactly one, unless `allow_without_task` allows neither), `activityTypeKey?`, `scopeKey?` |
+| `GET me` | (token) | `features.subjects: [{type, label, allowsTask}]`, `features.activityTypes: bool`, `features.requireAllocation: bool`, `features.requireActivityType: bool` |
+| `POST timer/start` | `timer:write` | body: `taskId`, `subject: {type, id}`, or both when the type allows tasks (neither only when `allow_without_task` is on and `require_allocation` off), `activityTypeKey?`, `scopeKey?` (ignored with a task: the task's scope) |
 | `POST timer/switch` | `timer:write` | same allocation body for the next timer |
-| `POST timer/allocate` (new) | `timer:write` | `{subject?, activityTypeKey?}` on the running timer |
+| `POST timer/allocate` (new) | `timer:write` | `{subject?, activityTypeKey?}` on the running timer, task or task-less (`subject: null` clears it) |
 | `POST timer/stop` | `timer:write` | optional `subject`, `activityTypeKey`; `409 allocation_required` (§7.3) |
 | `POST timer/discard-idle` / idle reassign | `timer:write` | reassign target may be a subject |
 | `POST entries` | `entries:write` | `taskId` or `subject`, `activityTypeKey?`; same `Idempotency-Key` (the body hash covers the new fields) |
@@ -469,9 +497,11 @@ Contract addition **v0.4** after v0.3.1 + timetrack-next v1.1 (additive; old cli
 Rules:
 
 - Every subject in a request goes through §7.1 (`canLog` with the **token's user** as actor and the entry's scope);
-  the id from the client is never used before that.
+  the id from the client is never used before that. With a task, task access is checked first (`403 task_forbidden`
+  as today), then the subject.
 - Errors: `400 invalid_request` (malformed ref / key), `403 subject_forbidden` (unknown type, unknown id, no access: one
-  answer), `422 activity_type_unknown` / `activity_type_inactive` / `allocation_conflict`, `409 allocation_required`.
+  answer), `422 activity_type_unknown` / `activity_type_inactive` / `allocation_conflict` (task + subject whose type disallows
+  tasks), `409 allocation_required`.
 - No new client scope (Q-TS-12): existing desktop and extension tokens keep working without a new sign-in.
 - Audit: `ClientApiAuditor` records `subject_type` (not the id) on writes, as it records task writes today.
 
@@ -493,7 +523,7 @@ Rules:
 | Column | Tables | Type | Rule |
 |---|---|---|---|
 | `subject_type` | `time_track_entries`, `time_track_active_timers` | `VARCHAR(32)` NULL | `^[a-z][a-z0-9_]{0,31}$`; NULL iff `subject_id` NULL |
-| `subject_id` | both | `VARCHAR(64)` NULL | 1–64 bytes, `ScopeKeys::isUsable()`; NULL iff `subject_type` NULL; NULL when `task_id` is set |
+| `subject_id` | both | `VARCHAR(64)` NULL | 1–64 bytes, `ScopeKeys::isUsable()`; NULL iff `subject_type` NULL; may be set next to `task_id` only for a type whose provider allows tasks |
 | `activity_type_key` | both | `VARCHAR(64)` NULL | `^[a-z0-9][a-z0-9_.-]{0,63}$`; a key of the entry's scope (provider) |
 
 - All three are **exact keys** (REQ-SEC-006): added to `TimeTrackExactKeyColumns` and given the binary NO PAD collation
@@ -503,6 +533,9 @@ Rules:
   rebuild to add one, and the entity enforces I-1 / I-2 on every write. The check command (§12.3) reports rows a host
   wrote by hand that break the contract.
 - No foreign key: the subject lives in the host (opaque reference, like `task_id`).
+- Task + subject rows need no extra column or index: `idx_time_track_entries_scope_subject` serves subject totals of
+  task and task-less time alike, and the existing `time_track_entries_task_idx` serves task queries. The DDL below is
+  unchanged by the Q-TS-1 revision.
 
 Indexes (entries only; running timers are one row per user):
 
@@ -653,18 +686,35 @@ SQLite compares `=` with `BINARY` by default, which is exact.
    platform, e.g. MySQL / MariaDB:
 
    ```sql
-   -- Example: task-less entries whose description starts with "Call:" were customer calls; host table crm_call_log
-   -- maps entry ids to customers. Only rows still unallocated are touched, so the migration is idempotent.
+   -- Example 1: task-less entries that were customer calls; host table crm_call_log maps entry ids to customers.
+   -- Only rows without a subject are touched, so the migration is idempotent.
    UPDATE time_track_entries e
      JOIN crm_call_log m ON m.time_entry_id = e.id
       SET e.subject_type = 'customer', e.subject_id = m.customer_id, e.activity_type_key = 'support_call'
     WHERE e.task_id IS NULL AND e.subject_type IS NULL AND e.anonymised_at IS NULL;
+
+   -- Example 2 (spec 250 customer time on tasks): give existing task entries the customer of their task.
+   -- host_task_customer is a host view or table (task_id, customer_id); 'customer' must be a type whose provider
+   -- allowsTask(). Same statement on time_track_active_timers for timers already running, if wanted.
+   UPDATE time_track_entries e
+     JOIN host_task_customer m ON m.task_id = e.task_id
+      SET e.subject_type = 'customer', e.subject_id = m.customer_id
+    WHERE e.task_id IS NOT NULL AND e.subject_type IS NULL AND e.anonymised_at IS NULL;
    ```
 
-   PostgreSQL uses `UPDATE … FROM`; SQLite 3.33+ also supports `UPDATE … FROM`.
+   PostgreSQL uses `UPDATE … FROM`; SQLite 3.33+ also supports `UPDATE … FROM`, e.g. for example 2:
+
+   ```sql
+   UPDATE time_track_entries AS e
+      SET subject_type = 'customer', subject_id = m.customer_id
+     FROM host_task_customer AS m
+    WHERE m.task_id = e.task_id AND e.task_id IS NOT NULL AND e.subject_type IS NULL AND e.anonymised_at IS NULL;
+   ```
+
+   On a large table run example 2 per tenant (`AND e.scope_key = ?`) or in id ranges, to keep each transaction short.
 2. The bundle ships a **read-only** check command `nowo:time-track:entries:check-allocation [--scope=] [--fix-report]`
-   (keyset, bounded batches) that reports rows breaking the contract: half-set pair, subject on a task entry, malformed
-   type / id / key, unknown type (no provider), activity key unknown or inactive in the row's scope. Exit code non-zero on
+   (keyset, bounded batches) that reports rows breaking the contract: half-set pair, task + subject whose type
+   disallows tasks (`allowsTask()` false), malformed type / id / key, unknown type (no provider), activity key unknown or inactive in the row's scope. Exit code non-zero on
    findings, so a host can run it in CI / after the migration. It writes nothing.
 
 Why A is acceptable under REQ-ARCH-001: the rule targets **runtime** writes that bypass the bundle's rules and entity
@@ -686,9 +736,11 @@ delete's lock** (`removeIfPresent`). The design keeps that order and adds no new
 
 | Race | Outcome |
 |---|---|
-| **Double stop** (two devices) | unchanged: only the call that deletes the timer row records the entry (`removeIfPresent`, CL-05); the loser gets `null` → `404 no_active_timer`. If the two carried different subjects, the winner's allocation is stored; the loser's client re-reads the entry and may `correct()` it with its version. |
+| **Double stop** (two devices, task or task + subject) | unchanged: only the call that deletes the timer row records the entry (`removeIfPresent`, CL-05); the loser gets `null` → `404 no_active_timer`. If the two carried different subjects, the winner's allocation is stored; the loser's client re-reads the entry and may `correct()` it with its version. |
 | **Stop without allocation vs stop with a subject** | the refusal is decided inside the unit on the re-read timer; a refused stop throws before the delete commits, so the unit rolls back and the timer stays for the other call. Whichever unit locks first wins; neither loses time. |
 | **Stop racing `timer/allocate`** | both take the owner's lock. Allocate first → the stop's re-read timer carries the subject and the entry records it. Stop first → allocate finds no timer → `404 no_active_timer`; the client then corrects the new entry by version. No lost update, no half state. |
+| **Allocate on a task timer racing a switch** | both take the owner's lock. Allocate first → the switch's stop records the subject on the old task's entry. Switch first → allocate lands on the new timer (it is the running one); the client sees the result in the response and may `correct()` the old entry. |
+| **Task access revoked while a task + subject timer runs** | unchanged from today: the stop records the entry (time is never lost); the next write that changes the subject re-checks task access and `canLog`. |
 | **Allocate racing allocate** | serialised by the owner's lock; last write wins on a running timer (no version on timers, as for today's description / metadata). Documented. |
 | **Correct racing correct** | unchanged optimistic model: `expectedVersion` is checked under the row lock; the version covers subject and activity type (§8.1), so a concurrent allocation change makes the second correction `conflict`, never an overwrite. |
 | **Correct racing the back-fill** | the back-fill's `UPDATE` changes the version; the correction gets `conflict`. The snippet only touches unallocated rows, so re-running after a conflict is safe. |
@@ -703,6 +755,9 @@ for two viewers in one kernel and asserts the second sees nothing of the first.
 
 ## 14. Security
 
+- **Task + subject**: task access stays the gate of a task entry, exactly as today; `canLog(subject)` is checked in
+  addition on any write that sets or changes the subject, and a type that disallows tasks is refused next to a task.
+  Reading a task entry with a subject masks the subject (by `canRead`) independently of the task.
 - **canLog on every write that sets or changes a subject**, on every path in §7.2, including `HostTimerApi`,
   `TimeEntryOperationsInterface` and the client API. A subject id from the client is used only after `canLog` for the
   token's user in the entry's scope.
@@ -729,7 +784,7 @@ for two viewers in one kernel and asserts the second sees nothing of the first.
 | Event | Change |
 |---|---|
 | `TimerStopEvent`, `TimeEntryCreatedEvent` | `getSubject(): ?TimeSubjectRef`, `getActivityTypeKey(): ?string` |
-| `TimerStartEvent` / `TimerStartedWithoutTaskEvent` | the latter gains `getSubject()` / `getActivityTypeKey()` (a subject timer is a task-less timer; `TIMER_START` stays task-only for BC of its listeners) |
+| `TimerStartEvent` / `TimerStartedWithoutTaskEvent` | both gain `getSubject()` / `getActivityTypeKey()`: a task timer (with or without subject) dispatches `TIMER_START`, a subject-alone timer `TIMER_START_WITHOUT_TASK` (`TIMER_START` stays task-only for BC of its listeners) |
 | new `TimerAllocatedEvent` (`nowo_time_track.timer.allocated`) | running timer's allocation changed (old / new) |
 | new `TimeEntryUnallocatedEvent` (`nowo_time_track.time_entry.unallocated`) | a system stop stored an unallocated entry while `require_allocation` is on (§7.3) |
 | `TimeEntryCorrected` path | the host's revision reads before / after from `TimeEntryCorrectionResult` (records carry both fields) |
@@ -757,76 +812,84 @@ Nothing new is introduced where an existing nowo bundle covers it; no new depend
 
 ## 17. Objections to the request as written
 
-- **O-1 Separate `labels(ids)`, `urls` and `canRead(user, tenant, id)` invite N+1 and a label leak.** A page of 100
+Status after Beacon's review and the owner's answers (2026-11-23) is given on each line.
+
+- **O-1 [Accepted by Beacon]** **Separate `labels(ids)`, `urls` and `canRead(user, tenant, id)` invite N+1 and a label leak.** A page of 100
   entries would call `canRead` 100 times, and a `labels()` call that does not itself apply `canRead` returns names the
   viewer may not see if a caller forgets the check. Proposed: one batched `describe(context, refs)` that returns labels
   and URLs **only for readable subjects**; `canRead` is derived from it. `canLog` stays single (writes are single).
-- **O-2 "Refuse a stop with neither task nor subject" cannot apply to every stop.** User-deletion stops, the stop inside
+- **O-2 [Accepted by Beacon]** **"Refuse a stop with neither task nor subject" cannot apply to every stop.** User-deletion stops, the stop inside
   start-replacing / switch and idle resolution are triggered by the system; refusing them loses time (owner rule
   2026-11-06) or blocks an agent's start. Proposed: refuse only interactive stops, behind `require_allocation`
   (default false), store system stops unallocated and dispatch `TimeEntryUnallocatedEvent`. 1.36 hosts that rely on
   task-less stops keep working.
-- **O-3 Subject on task entries is ambiguous.** Two permission checks, two places for "the customer", conflicting
-  totals. Proposed: task XOR subject (Q-TS-1); customer totals of task time stay a host join.
-- **O-4 Two billable defaults.** `ActivityType::$defaultBillable` overlaps `TimeEntryBillableDefaultProviderInterface`.
+- **O-3 [Replaced by the revised Q-TS-1]** ~~Subject on task entries is ambiguous; proposed task XOR subject.~~
+  Beacon objected: spec 250 customer time already sits on task entries ("this task, for customer X"). Decided: task
+  alone, task + subject (only for types with `allowsTask()`), or subject alone; task access stays the gate of a task
+  entry and `canLog(subject)` is checked in addition when the subject is set or changed (§3, §7.1).
+- **O-4 [Accepted by Beacon]** **Two billable defaults.** `ActivityType::$defaultBillable` overlaps `TimeEntryBillableDefaultProviderInterface`.
   Proposed precedence: explicit flag > activity type default > host billable provider > null (Q-TS-9).
-- **O-5 "Query port: filter and group … with canRead".** The query port is rule-free by contract since 1.35 (B7); adding
+- **O-5 [Accepted by Beacon]** **"Query port: filter and group … with canRead".** The query port is rule-free by contract since 1.35 (B7); adding
   a per-row `canRead` there would make it provider-bound and N-bound. Proposed: filters and grouping stay rule-free; the
   bundle's own surfaces and the public `TimeSubjectLabelResolver` apply `canRead`.
-- **O-6 "Indexed with owner/tenant".** Owner-keyed reads are already served by `(user_id, scope_key, started_at)`;
+- **O-6 [Accepted by Beacon]** **"Indexed with owner/tenant".** Owner-keyed reads are already served by `(user_id, scope_key, started_at)`;
   a second owner-leading index would only cost writes. Proposed: two tenant-leading indexes (§11.1).
-- **O-7 Back-fill as a bundle hook.** Argued in §12: the mapping is host data; a bundle port used once adds surface
+- **O-7 [Settled by Q-TS-22]** **Back-fill as a bundle hook.** Argued in §12: the mapping is host data; a bundle port used once adds surface
   without adding safety that the read-only check command does not give.
-- **O-8 Per-tenant activity type validation on write requires a provider call per write.** Fine for interactive writes;
+- **O-8 [Documented]** **Per-tenant activity type validation on write requires a provider call per write.** Fine for interactive writes;
   `createManual()` in bulk (seeding, imports) should pass the same scope for a batch, and the provider should be cheap.
   Documented, no memo (worker mode).
 
-## 18. Open questions for the owner (Q-TS)
+## 18. Owner decisions (Q-TS, Owner 2026-11-23)
 
-Each has a recommended answer (**R**).
+All answered by the owner on 2026-11-23: Q-TS-2..22 as recommended, Q-TS-1 revised after Beacon's objection.
 
-- **Q-TS-1** May an entry carry both a task and a subject? **R:** No, task XOR subject in 2.1; revisit only if Beacon
-  shows a case the host join cannot serve.
-- **Q-TS-2** When is a stop without allocation refused? **R:** Only interactive stops / manual entries, only with
+- **Q-TS-1** May an entry carry both a task and a subject? **Decided (Owner 2026-11-23, revised after Beacon's
+  objection):** Yes. Allowed: task alone, task + subject, subject alone; with `require_allocation: true` an entry needs
+  one or the other. Each provider declares `allowsTask()` (true for customer-like types, false for internal
+  categories); a task + subject write with a type that disallows tasks is refused (`allocation_conflict`). On a task
+  entry with a subject, task access stays the gate and `canLog(subject)` is checked on any write that sets or changes
+  the subject; `describe()` still filters the label by `canRead`. (Recommendation was task XOR subject.)
+- **Q-TS-2** When is a stop without allocation refused? **Decided (Owner 2026-11-23, as recommended):** Only interactive stops / manual entries, only with
   `entries.require_allocation: true` (default false, Beacon sets it); system stops are stored unallocated and raise
   `TimeEntryUnallocatedEvent`.
-- **Q-TS-3** Replace Beacon's `labels` / `urls` / `canRead` with one batched `describe()`? **R:** Yes (O-1); keep
+- **Q-TS-3** Replace Beacon's `labels` / `urls` / `canRead` with one batched `describe()`? **Decided (Owner 2026-11-23, as recommended):** Yes (O-1); keep
   `canLog` and `search` as requested.
-- **Q-TS-4** Does the bundle re-check `canLog` on each search result? **R:** No; search is a hint, every write re-checks.
-- **Q-TS-5** Snapshot the subject label on the entry (like `task_title_snapshot`)? **R:** No; labels are live from the
+- **Q-TS-4** Does the bundle re-check `canLog` on each search result? **Decided (Owner 2026-11-23, as recommended):** No; search is a hint, every write re-checks.
+- **Q-TS-5** Snapshot the subject label on the entry (like `task_title_snapshot`)? **Decided (Owner 2026-11-23, as recommended):** No; labels are live from the
   provider, a deleted subject shows "Unknown subject". Avoids storing host / third-party names in TimeTrack.
-- **Q-TS-6** What does a viewer see for a subject they may not read? **R:** `{type, hidden: true, label: "Subject not
+- **Q-TS-6** What does a viewer see for a subject they may not read? **Decided (Owner 2026-11-23, as recommended):** `{type, hidden: true, label: "Subject not
   visible"}` without the id; time and activity type stay visible.
-- **Q-TS-7** Whose `canLog` when a host or manager writes for another person? **R:** The owner's (the person whose time
+- **Q-TS-7** Whose `canLog` when a host or manager writes for another person? **Decided (Owner 2026-11-23, as recommended):** The owner's (the person whose time
   it is); the host already authorises who may act for that owner.
-- **Q-TS-8** Does a correction re-check `canLog` when the subject does not change? **R:** No, only when it changes (as
+- **Q-TS-8** Does a correction re-check `canLog` when the subject does not change? **Decided (Owner 2026-11-23, as recommended):** No, only when it changes (as
   tasks today).
-- **Q-TS-9** Billable precedence? **R:** explicit > activity type default > `TimeEntryBillableDefaultProviderInterface` >
+- **Q-TS-9** Billable precedence? **Decided (Owner 2026-11-23, as recommended):** explicit > activity type default > `TimeEntryBillableDefaultProviderInterface` >
   null.
-- **Q-TS-10** Retired activity types? **R:** Provider returns them with `active: false`; refused on new writes and on a
+- **Q-TS-10** Retired activity types? **Decided (Owner 2026-11-23, as recommended):** Provider returns them with `active: false`; refused on new writes and on a
   correction that sets them, labelled on reads.
-- **Q-TS-11** Is an activity type ever mandatory? **R:** Option `entries.require_activity_type` (default false), effective
+- **Q-TS-11** Is an activity type ever mandatory? **Decided (Owner 2026-11-23, as recommended):** Option `entries.require_activity_type` (default false), effective
   only with a provider.
-- **Q-TS-12** New client scope (`subjects:read`) or reuse? **R:** Reuse `tasks:read` (search, activity types) and
+- **Q-TS-12** New client scope (`subjects:read`) or reuse? **Decided (Owner 2026-11-23, as recommended):** Reuse `tasks:read` (search, activity types) and
   `timer:write` / `entries:write` (writes); no re-sign-in for existing desktop / extension tokens.
-- **Q-TS-13** Ship a built-in `organisation` provider over the scope policy? **R:** Yes, opt-in, default off.
-- **Q-TS-14** Timesheet snapshot: change `entries_hash`, add totals? **R:** Keep the hash; add `bySubject` and
+- **Q-TS-13** Ship a built-in `organisation` provider over the scope policy? **Decided (Owner 2026-11-23, as recommended):** Yes, opt-in, default off.
+- **Q-TS-14** Timesheet snapshot: change `entries_hash`, add totals? **Decided (Owner 2026-11-23, as recommended):** Keep the hash; add `bySubject` and
   `byActivityType` totals.
-- **Q-TS-15** May the back-fill touch locked / approved periods? **R:** Yes (classification only, hash unaffected); the
+- **Q-TS-15** May the back-fill touch locked / approved periods? **Decided (Owner 2026-11-23, as recommended):** Yes (classification only, hash unaffected); the
   check command reports the count; runtime corrections there stay refused.
 - **Q-TS-16** Bulk operations when the host merges or deletes a subject (`reassignSubject(from, to)`, `detachSubject`)?
-  **R:** Not in 2.1; plan for 2.2 as bounded, keyset `TimeEntryOperations` methods. In 2.1 a deleted subject renders as
+  **Decided (Owner 2026-11-23, as recommended):** Not in 2.1; plan for 2.2 as bounded, keyset `TimeEntryOperations` methods. In 2.1 a deleted subject renders as
   unknown.
-- **Q-TS-17** GDPR export: labels or ids only? **R:** Ids and key always; labels resolved with the data subject as actor,
+- **Q-TS-17** GDPR export: labels or ids only? **Decided (Owner 2026-11-23, as recommended):** Ids and key always; labels resolved with the data subject as actor,
   masked when not readable.
-- **Q-TS-18** Index set? **R:** The two tenant-leading indexes of §11.1, nothing owner-leading.
-- **Q-TS-19** Add `POST timer/allocate` (change the subject while the timer runs)? **R:** Yes, under the owner's lock,
+- **Q-TS-18** Index set? **Decided (Owner 2026-11-23, as recommended):** The two tenant-leading indexes of §11.1, nothing owner-leading.
+- **Q-TS-19** Add `POST timer/allocate` (change the subject while the timer runs)? **Decided (Owner 2026-11-23, as recommended):** Yes, under the owner's lock,
   last write wins, `TimerAllocatedEvent`.
-- **Q-TS-20** Ship a picker / "allocate this time" Twig component in 2.1? **R:** No; 2.1 ships API + events, a UiKit
+- **Q-TS-20** Ship a picker / "allocate this time" Twig component in 2.1? **Decided (Owner 2026-11-23, as recommended):** No; 2.1 ships API + events, a UiKit
   combobox-based component follows in 2.2 if Beacon wants it.
-- **Q-TS-21** Imported entries (`ImportedTimeEntryData`) with a subject? **R:** Out of scope for 2.1; imports stay
+- **Q-TS-21** Imported entries (`ImportedTimeEntryData`) with a subject? **Decided (Owner 2026-11-23, as recommended):** Out of scope for 2.1; imports stay
   task-based.
-- **Q-TS-22** Back-fill mechanism? **R:** Host DBAL migration + documented snippet + column contract, plus the bundle's
+- **Q-TS-22** Back-fill mechanism? **Decided (Owner 2026-11-23, as recommended):** Host DBAL migration + documented snippet + column contract, plus the bundle's
   read-only `check-allocation` command (§12.2).
 
 ## 19. Delivery plan and tests
@@ -844,7 +907,8 @@ Tests (in addition to the house gates):
 
 - zero providers: every new field refused, columns NULL, `GET me` unchanged except empty features;
 - unknown type / unknown id / no access give the same answer; provider exception is denied, not 500;
-- XOR and half-pair refused on every path; `require_allocation` refuses interactive stops only, never system stops;
+- half-pair refused on every path; task + subject accepted only for `allowsTask()` types (refused otherwise, also
+  at stop, allocate and correct); task access checked before `canLog` on task + subject writes; `require_allocation` refuses interactive stops only, never system stops;
 - concurrency (MySQL 8.4, MariaDB 11.4, PostgreSQL 16, SQLite): double stop with different subjects, refused stop vs
   allocated stop, stop vs allocate, correct vs correct on allocation, correct vs back-fill `UPDATE`;
 - version token unchanged for unallocated entries, changed by any allocation change;
