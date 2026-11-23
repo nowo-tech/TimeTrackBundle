@@ -7,7 +7,6 @@ namespace Nowo\TimeTrackBundle\Service;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
-use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\WriteKind;
@@ -23,10 +22,10 @@ use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\FindableTimeEntryRepositoryInterface;
-use Nowo\TimeTrackBundle\Repository\OverlappingTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Support\EntryOverlap;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -248,20 +247,6 @@ final readonly class ManualEntryService
 
     private function overlaps(UserInterface $user, DateTimeImmutable $start, DateTimeImmutable $end): bool
     {
-        $userId = UserIdResolver::getId($user);
-        $timer  = $this->timers->findByUserId($userId);
-        if ($timer instanceof ActiveTimer && $timer->getStartedAt() < $end) {
-            return true;
-        }
-        $candidates = $this->entries instanceof OverlappingTimeEntryRepositoryInterface
-            ? $this->entries->findLiveOverlapping($userId, $start, $end)
-            : $this->entries->findByUserAndPeriod($userId, $start->modify('-2 days'), $end);
-        foreach ($candidates as $entry) {
-            if ($entry->getSource()->isLive() && $entry->getStartedAt() < $end && $entry->getEndedAt() > $start) {
-                return true;
-            }
-        }
-
-        return false;
+        return EntryOverlap::exists($this->entries, $this->timers, UserIdResolver::getId($user), $start, $end);
     }
 }

@@ -8,7 +8,9 @@ use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use InvalidArgumentException;
+use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
+use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
@@ -564,6 +566,32 @@ class TimeEntry
         $this->billable = $billable;
 
         return true;
+    }
+
+    /**
+     * Since 1.40.0: corrects the times, the duration and the metadata of a live entry. No checks here: use
+     * {@see TimeEntryOperationsInterface::correct()}, which scopes the change to the owner, re-reads the row under the
+     * owner's lock, compares the expected version and honours the period lock.
+     *
+     * @param array<string, mixed>|null $metadata The whole new metadata (null = none)
+     *
+     * @throws LogicException When the entry is imported (read-only) or anonymised
+     *
+     * @internal used by the bundle's services only
+     */
+    public function applyCorrection(DateTimeImmutable $startedAt, DateTimeImmutable $endedAt, int $durationSeconds, ?array $metadata): void
+    {
+        if ($this->isReadOnly() || $this->isAnonymised()) {
+            throw new LogicException('Only a live entry that is not anonymised can be corrected.');
+        }
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->startedAt = $startedAt;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->endedAt = $endedAt;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->durationSeconds = $durationSeconds;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->metadata = $metadata;
     }
 
     /**

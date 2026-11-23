@@ -98,4 +98,7 @@ final class TimeTrackEvents
 
     /** Since 1.36.0: {@see TimerStartedWithoutTaskEvent} — a timer without a task was started (ids only; TIMER_START is not dispatched for it). */
     public const TIMER_START_WITHOUT_TASK = 'nowo_time_track.timer.start_without_task';
+
+    /** Since 1.40.0: {@see TimeEntryCorrectedEvent} — an entry was corrected by id (`TimeEntryOperationsInterface::correct()`; before / after read models). */
+    public const TIME_ENTRY_CORRECTED = 'nowo_time_track.time_entry.corrected';
 }

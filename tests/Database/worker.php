@@ -10,15 +10,22 @@ declare(strict_types=1);
  *
  * Usage: php tests/Database/worker.php <action> <count> <ownerId> [<approverId>]
  * Actions: `ledger`, `start`, `revoke` (1.34.0: revoke every stored client session by its id, as the owner),
- * `start-without-task` (1.36.0: start a timer without a task and keep it; only one may ever run).
+ * `start-without-task` (1.36.0: start a timer without a task and keep it; only one may ever run), `correct` (1.40.0:
+ * read the only entry by id and add 1 to its metadata counter `n` through `TimeEntryOperationsInterface::correct()` with
+ * the version read), `revoke-session` (1.40.0: `revoke` through `ClientSessionRevokerInterface::revokeSession()` by id).
  */
 
 use Doctrine\ORM\EntityManagerInterface;
+use Nowo\TimeTrackBundle\Client\ClientSessionRevokerInterface;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
+use Nowo\TimeTrackBundle\Entry\TimeEntryCorrection;
+use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\LedgerRefusedException;
+use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
+use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -26,6 +33,7 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
+use Nowo\TransactionContract\TransientStorageFailure;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
@@ -49,7 +57,10 @@ $approvers = $container->get(StubTimesheetApproverProvider::class);
 $ledger    = $container->get(BalanceLedger::class);
 $timers    = $container->get(TimerService::class);
 $revoker   = $container->get(ClientTokenRevoker::class);
-if (!$em instanceof EntityManagerInterface || !$scopes instanceof FixedScopeProvider || !$approvers instanceof StubTimesheetApproverProvider || !$ledger instanceof BalanceLedger || !$timers instanceof TimerService || !$revoker instanceof ClientTokenRevoker) {
+$sessions2 = $container->get(ClientSessionRevokerInterface::class);
+$entryOps  = $container->get(TimeEntryOperationsInterface::class);
+$query     = $container->get(TimeEntryQueryInterface::class);
+if (!$em instanceof EntityManagerInterface || !$scopes instanceof FixedScopeProvider || !$approvers instanceof StubTimesheetApproverProvider || !$ledger instanceof BalanceLedger || !$timers instanceof TimerService || !$revoker instanceof ClientTokenRevoker || !$sessions2 instanceof ClientSessionRevokerInterface || !$entryOps instanceof TimeEntryOperationsInterface || !$query instanceof TimeEntryQueryInterface) {
     throw new LogicException('The functional kernel lacks a service of the worker.');
 }
 $owner    = $em->find(AppUser::class, (int) $ownerId);
@@ -63,9 +74,35 @@ $approvers->approvers = ['org-a' => [$approverId => [$ownerId]]];
 $report = ['ok' => 0, 'refused' => [], 'errors' => [], 'detached' => 0];
 fgets(\STDIN); // The start signal.
 // 1.34.0 `revoke`: every process revokes the same sessions (ids read once, before the loop), in the same order.
-$sessions = $action === 'revoke' ? array_map(strval(...), $em->getConnection()->fetchFirstColumn('SELECT id FROM time_track_client_tokens ORDER BY id')) : [];
+$sessions = $action === 'revoke' || $action === 'revoke-session' ? array_map(strval(...), $em->getConnection()->fetchFirstColumn('SELECT id FROM time_track_client_tokens ORDER BY id')) : [];
+$entryId  = $action === 'correct' ? (string) $em->getConnection()->fetchOne('SELECT id FROM time_track_entries') : '';
 for ($i = 0; $i < (int) $count; ++$i) {
     try {
+        if ($action === 'correct') {
+            // Read, then write with the version read: another process may have written in between (`conflict`).
+            $record = $query->find($entryId) ?? throw new LogicException('The entry is gone.');
+            $n      = $record->metadata['n'] ?? 0;
+            try {
+                $entryOps->correct($ownerId, $entryId, $record->version(), new TimeEntryCorrection(metadata: ['n' => (is_int($n) ? $n : 0) + 1]));
+                ++$report['ok'];
+            } catch (TimeEntryCorrectionException $refused) {
+                $report['refused'][$refused->errorCode] = ($report['refused'][$refused->errorCode] ?? 0) + 1;
+            } catch (TransientStorageFailure) {
+                $report['refused']['transient'] = ($report['refused']['transient'] ?? 0) + 1;
+            }
+            $report['detached'] += $em->contains($owner) ? 0 : 1;
+
+            continue;
+        }
+        if ($action === 'revoke-session') {
+            if ($sessions2->revokeSession($sessions[$i] ?? '', $ownerId)->isRevoked()) {
+                ++$report['ok'];
+            } else {
+                $report['refused']['not_found'] = ($report['refused']['not_found'] ?? 0) + 1;
+            }
+
+            continue;
+        }
         if ($action === 'revoke') {
             if ($revoker->revokeById($sessions[$i] ?? '', $owner)->isRevoked()) {
                 ++$report['ok'];
