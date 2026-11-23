@@ -20,6 +20,8 @@ use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
+use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
+use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
@@ -32,6 +34,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
+use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TransactionContract\TransientStorageFailure;
@@ -351,6 +354,71 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
         }
         self::assertSame(20, $revoked, 'every session revoked exactly once');
         self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_client_tokens'));
+    }
+
+    /**
+     * 1.40.1 (audit ZAN-1): inside a transaction the host opened and already read in (REPEATABLE READ on MySQL and
+     * MariaDB keeps that snapshot), an entry another request committed afterwards still counts as an overlap, and a
+     * period another request locked afterwards still refuses the correction: both checks read under a shared lock.
+     */
+    public function testChecksInsideAnOlderHostSnapshotSeeWhatOthersCommittedSince(): void
+    {
+        $start = (new DateTimeImmutable('today -2 days'))->setTime(9, 0);
+        $entry = new TimeEntry($this->user, 'task-1', 'Task', null, $start, $start->modify('+1 hour'), 3600, TimeEntrySource::Web);
+        $other = new TimeEntry($this->user, 'task-1', 'Task', null, $start->modify('+5 hours'), $start->modify('+6 hours'), 3600, TimeEntrySource::Web);
+        $entry->assignScopeKey('org-a');
+        $other->assignScopeKey('org-a');
+        $timesheet = TimesheetFixtures::open($this->user, 'org-a', $start->format('o-\WW'));
+        foreach ([$entry, $other, $timesheet] as $row) {
+            $this->entityManager()->persist($row);
+        }
+        $this->entityManager()->flush();
+        $operations = self::getContainer()->get(TimeEntryOperationsInterface::class);
+        self::assertInstanceOf(TimeEntryOperationsInterface::class, $operations);
+        $query = self::getContainer()->get(TimeEntryQueryInterface::class);
+        self::assertInstanceOf(TimeEntryQueryInterface::class, $query);
+        $ownerId    = (string) $this->user->getId();
+        $connection = $this->entityManager()->getConnection();
+        $writer     = $this->otherConnection();
+
+        // An overlap committed after the host's snapshot.
+        $version = $this->versionOf($query, $entry->getId());
+        $connection->beginTransaction();
+        try {
+            $connection->fetchAllAssociative('SELECT id, started_at, ended_at FROM time_track_entries');
+            $writer->executeStatement('UPDATE time_track_entries SET started_at = ?, ended_at = ? WHERE id = ?', [$start->modify('+90 minutes')->format('Y-m-d H:i:s'), $start->modify('+150 minutes')->format('Y-m-d H:i:s'), $other->getId()]);
+            try {
+                $operations->correct($ownerId, $entry->getId(), $version, new TimeEntryCorrection(endedAt: $start->modify('+2 hours')));
+                self::fail('the overlap committed since the snapshot was not seen');
+            } catch (TimeEntryCorrectionException $refused) {
+                self::assertSame(TimeEntryCorrectionException::OVERLAP, $refused->errorCode);
+            }
+        } finally {
+            $connection->rollBack(); // @phpstan-ignore frankenphp.worker.noRollbackAfterNestedBegin (the test plays the host's transaction)
+        }
+
+        // A period lock committed after the host's snapshot.
+        $version = $this->versionOf($query, $entry->getId());
+        $connection->beginTransaction();
+        try {
+            $connection->fetchAllAssociative('SELECT id, locked_at FROM time_track_timesheets');
+            $writer->executeStatement('UPDATE time_track_timesheets SET locked_at = ? WHERE id = ?', [(new DateTimeImmutable())->format('Y-m-d H:i:s'), $timesheet->getId()]);
+            try {
+                $operations->correct($ownerId, $entry->getId(), $version, new TimeEntryCorrection(durationSeconds: 60));
+                self::fail('the period lock committed since the snapshot was not seen');
+            } catch (PeriodLockedException) {
+                $this->addToAssertionCount(1);
+            }
+        } finally {
+            $connection->rollBack(); // @phpstan-ignore frankenphp.worker.noRollbackAfterNestedBegin (the test plays the host's transaction)
+            $writer->close();
+        }
+        self::assertSame(3600, (int) $connection->fetchOne('SELECT duration_seconds FROM time_track_entries WHERE id = ?', [$entry->getId()]));
+    }
+
+    private function versionOf(TimeEntryQueryInterface $query, string $entryId): string
+    {
+        return ($query->find($entryId) ?? self::fail('no entry ' . $entryId))->version();
     }
 
     /**

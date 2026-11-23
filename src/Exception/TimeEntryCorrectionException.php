@@ -31,6 +31,12 @@ final class TimeEntryCorrectionException extends RuntimeException
     /** The new end is in the future (beyond the clock skew). */
     public const IN_FUTURE = ManualEntryException::IN_FUTURE;
 
+    /** Since 1.40.1: the new start is older than the allowed age (`maxAgeDays`, default `manual_entries.max_age_days`). */
+    public const TOO_OLD = ManualEntryException::TOO_OLD;
+
+    /** Since 1.40.1: the stored metadata after the patch would exceed the key count or the size limit. */
+    public const METADATA_TOO_LARGE = 'metadata_too_large';
+
     /** The duration is longer than the span. */
     public const INVALID_DURATION = 'invalid_duration';
 

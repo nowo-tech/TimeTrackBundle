@@ -41,7 +41,7 @@ use function usort;
 /**
  * Since 1.13: Doctrine ORM timesheet store (timesheets, plus the retention purge and the verify listing).
  */
-final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface, FormerOwnerTimesheetRepositoryInterface, LockingGuardTimesheetRepositoryInterface
+final readonly class DoctrineOrmTimesheetRepository implements TimesheetRepositoryInterface, TimesheetRetentionRepositoryInterface, FormerOwnerTimesheetRepositoryInterface, LockingGuardTimesheetRepositoryInterface, SharedLockGuardTimesheetRepositoryInterface
 {
     /** Ids bound per `IN (...)` of the purge. */
     public const IDS_PER_QUERY = 1000;
@@ -184,9 +184,20 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
+     * Since 1.40.1 (audit ZAN-1): {@see self::findGuarding()} under a shared lock when a transaction is open, refreshed.
+     */
+    public function findGuardingShared(string $ownerId, ?string $scopeKey, string $fromDate, string $toDate): array
+    {
+        return ExactUserIds::keep($this->entityManager, Timesheet::class, $this->guarding('IDENTITY(t.user) = :owner', $ownerId, $scopeKey, $fromDate, $toDate, $this->entityManager->getConnection()->isTransactionActive() ? LockMode::PESSIMISTIC_READ : null, true), [$ownerId]);
+    }
+
+    /**
+     * @param int|LockMode|null $lock The lock mode (an `int` constant with doctrine/dbal 3, an enum with 4; null = none)
+     * @param bool $refresh Whether rows this manager already holds are refreshed from the database
+     *
      * @return list<Timesheet>
      */
-    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate, ?LockMode $lock = null): array
+    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate, LockMode|int|null $lock = null, bool $refresh = false): array
     {
         $query = $this->entityManager->createQueryBuilder()
             ->select('t')
@@ -204,8 +215,12 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             $query->andWhere('t.scopeKey = :scope')->setParameter('scope', $scopeKey);
         }
 
+        $built = $query->getQuery();
+        if ($refresh) {
+            $built->setHint(Query::HINT_REFRESH, true);
+        }
         /** @var list<Timesheet> $result */
-        $result = ($lock instanceof LockMode ? $query->getQuery()->setLockMode($lock) : $query->getQuery())->getResult();
+        $result = ($lock !== null ? $built->setLockMode($lock) : $built)->getResult();
 
         return $scopeKey === null ? $result : $this->inScope($result, $scopeKey);
     }

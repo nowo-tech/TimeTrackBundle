@@ -26,6 +26,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Throwable;
 
 use function array_intersect;
+use function is_a;
 use function is_int;
 use function is_string;
 
@@ -53,6 +54,8 @@ final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
      * @param ClientSessionRepositoryInterface|null $sessions Store of {@see self::revokeById()} (null: the token store when it implements it)
      * @param list<string> $adminRoles `security.admin_roles`: may revoke any session (no role hierarchy)
      * @param string $userClass Since 1.40.0: `user_class` (the class of the reference built from a bare actor id)
+     * @param list<class-string> $acceptedUserClasses Since 1.40.1: `accepted_user_classes` (with `user_class`, the classes a
+     *                                                reference given to {@see self::revokeSession()} may name)
      */
     public function __construct(
         private CredentialClientTokenRepositoryInterface $tokens,
@@ -62,6 +65,7 @@ final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
         private array $adminRoles = [],
         ?LoggerInterface $logger = null,
         private string $userClass = '',
+        private array $acceptedUserClasses = [],
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -119,6 +123,13 @@ final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
      * carries its role names for `security.admin_roles` (the user object's, when it carries one); a reference whose user
      * object has another id than the reference is answered `NotFound`.
      *
+     * Since 1.40.1 (audit ZAN-5) a reference whose class is neither `user_class` nor one of `accepted_user_classes` (nor a
+     * subclass of them; `''` = unknown is accepted) is answered `NotFound`: another principal (an API client, an admin
+     * entity) whose id equals a user's id is not that user. A revoker built without `user_class` does not check it.
+     *
+     * **Roles of a reference without a user object are trusted as given** (`TimeTrackUserRef::ofId(…, $roles)`): build them
+     * from the current security user at call time, never from a queued message, a cache or request input.
+     *
      * @throws LogicException when the configured token store cannot look up sessions by id
      * @throws TransientStorageFailure when the storage failed transiently (deadlock, lock wait timeout): nothing was committed, retry
      */
@@ -133,7 +144,7 @@ final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
             return $this->revoke($sessionId, TimeTrackUserRef::ofId($this->userClass, $id), $id, []);
         }
         $object = $actor->user();
-        if ($actor->id === null || ($object !== null && UserIdResolver::idOf($object) !== $actor->id)) {
+        if ($actor->id === null || !$this->isUserClass($actor->userClass) || ($object !== null && UserIdResolver::idOf($object) !== $actor->id)) {
             return ClientSessionRevocation::NotFound;
         }
 
@@ -199,6 +210,24 @@ final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
         $this->logger->info('TimeTrack client session revoked.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'client' => $session->clientType->value]);
 
         return ClientSessionRevocation::Revoked;
+    }
+
+    /**
+     * Whether a reference's class names a user: unknown (`''`), `user_class`, an accepted class or a subclass of one; any
+     * class when this revoker has no `user_class`.
+     */
+    private function isUserClass(string $class): bool
+    {
+        if ($class === '' || $this->userClass === '') {
+            return true;
+        }
+        foreach ([$this->userClass, ...$this->acceptedUserClasses] as $accepted) {
+            if ($class === $accepted || is_a($class, $accepted, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function sessionStore(): ClientSessionRepositoryInterface

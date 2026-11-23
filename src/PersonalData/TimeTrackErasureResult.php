@@ -15,7 +15,7 @@ final readonly class TimeTrackErasureResult
      * @param int $monitoringUploads Monitoring upload intents deleted (the evidence files live in the host's store)
      * @param int $monitoringAcknowledgements Monitoring notice acknowledgements deleted
      * @param int $entriesAnonymised Entries anonymised (owned ones with {@see TimeEntryErasure::Anonymise}, plus those under the former reference)
-     * @param int $entriesCleared Entries whose description or note was cleared ({@see TimeEntryErasure::FreeText})
+     * @param int $entriesCleared Entries whose description, note or (since 1.40.1) other free-text metadata was cleared ({@see TimeEntryErasure::FreeText})
      * @param int $calendarConnectionsKept Calendar connections left for `CalendarConnectionService::revokeAllFor()` (it revokes the host grant first)
      */
     public function __construct(
