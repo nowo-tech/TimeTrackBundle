@@ -86,6 +86,9 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         $this->logger = $logger ?? new NullLogger();
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function correct(TimeTrackUserRef|string|int $owner, string $entryId, string $expectedVersion, TimeEntryCorrection $correction): TimeEntryCorrectionResult
     {
         $ownerId = $this->ownerId($owner);
@@ -116,6 +119,9 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         return $result;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function createManual(TimeTrackUserRef|string|int $owner, ManualTimeEntryDraft $draft): TimeEntryRecord
     {
         $user  = $this->ownerUser($owner) ?? throw new ManualEntryException(ManualEntryException::UNKNOWN_USER);
