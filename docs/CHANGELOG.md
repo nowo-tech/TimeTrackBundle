@@ -109,6 +109,12 @@ See [UPGRADING](UPGRADING.md#unreleased).
   dialog action (`reversal`, `add_adjustment`; `reject`, `reopen`) with `options.action_urls` but without
   `options.dialog_urls` fails the render with a `LogicException`. `addForm` / `reversalForm` of the ledger view are
   always `null`; `_action.html.twig` renders the plain button only.
+- **BREAKING:** host entities and TimeTrack rows never cross the two managers by accident (audit lessons XS / W1-2): a
+  TimeTrack row another manager loaded (yours, or TimeTrack's in an earlier request) handed to a TimeTrack store fails
+  with a `LogicException` instead of being inserted again; a user of yours persisted but not flushed (no id yet, or
+  only scheduled for insert) fails the TimeTrack write with a `LogicException` ("flush your user first") before
+  anything is written. TimeTrack writes your users as its own reference to the same row and never detaches what your
+  manager holds.
 - UiKit seeding: without `nowo_ui_kit.css_framework` / `icon_set` the bundle still seeds `tabler` / `tabler-icons`
   (the 1.x default); the removed `templates.css_framework` no longer chooses the seed.
 - The bundle's own default port services (stub task provider, single scope, Doctrine user reference resolver, ...)

@@ -140,6 +140,11 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
      */
     public function findByUserId(string $userId): ?ActiveTimer
     {
+        if ($userId === '') {
+            // A user without an id (persisted but not flushed yet) has no timer; the write that follows refuses it
+            // clearly (TimeTrackEntityManager, W1-2) instead of a database type error on the empty id.
+            return null;
+        }
         /** @var ActiveTimer|null $timer */
         $timer = $this->entityManager->createQueryBuilder()
             ->select('t')

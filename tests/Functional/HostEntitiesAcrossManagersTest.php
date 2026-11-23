@@ -72,7 +72,8 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
 
         $failure = $this->failureOf(fn (): ActiveTimer => $this->timers()->start($unsaved, 'task-1', ClientType::Web));
 
-        self::assertInstanceOf(LogicException::class, $failure);
+        self::assertInstanceOf(LogicException::class, $failure, $failure::class . ': ' . $failure->getMessage());
+        self::assertStringContainsString('Flush your', $failure->getMessage());
         self::assertSame(0, (int) $host->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_active_timers'), 'nothing written');
         self::assertSame(0, (int) $host->getConnection()->fetchOne("SELECT COUNT(*) FROM app_user WHERE email = 'unsaved@example.com'"), 'the user is not written by TimeTrack either');
         self::assertTrue($host->getUnitOfWork()->isScheduledForInsert($unsaved), 'the application\'s scheduled insert stays');

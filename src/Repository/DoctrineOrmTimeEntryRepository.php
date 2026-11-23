@@ -12,6 +12,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use InvalidArgumentException;
+use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
@@ -38,6 +39,7 @@ use function count;
 use function in_array;
 use function is_scalar;
 use function max;
+use function sprintf;
 
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
@@ -361,6 +363,11 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             $this->entityManager->lock($user, LockMode::PESSIMISTIC_WRITE);
 
             return;
+        }
+        if ($user instanceof UserInterface && in_array(UserIdResolver::idOf($user), [null, ''], true)) {
+            // 2.0 (W1-2, XS-I2): a user of yours that has no id yet (persisted but not flushed) fails clearly, before the
+            // unit writes anything.
+            throw new LogicException(sprintf('TimeTrack: the %s user has no id yet (persisted but not flushed, or not saved at all). Flush your user first; TimeTrack wrote nothing.', $user::class));
         }
         $class  = $this->entityManager->getClassMetadata(TimeEntry::class)->getAssociationTargetClass('user');
         $locked = $user instanceof UserInterface ? $this->entityManager->find($class, UserIdResolver::getId($user), LockMode::PESSIMISTIC_WRITE) : null;
