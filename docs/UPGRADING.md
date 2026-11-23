@@ -4,6 +4,7 @@
 
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
+  - [The bundle declares its own identity / access-key columns (REQ-SEC-006)](#the-bundle-declares-its-own-identity--access-key-columns-req-sec-006)
 - [To 1.37.0](#to-1370)
 - [To 1.36.0](#to-1360)
 - [To 1.35.0](#to-1350)
@@ -123,6 +124,40 @@ The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and 
 minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
+
+### The bundle declares its own identity / access-key columns (REQ-SEC-006)
+
+Nothing to do: the declaration is discovered by autoconfiguration, and a host that does not install
+`nowo-tech/migrations-kit-bundle` is unaffected.
+
+What you can **remove**: if you excused this bundle's scope or reference columns by hand so the uniform collation gate
+would pass, those entries are now redundant — a declared exact-key column is exempt from the uniform gate by
+construction, and `nowo:migrations:check-key-collations` checks it under its real owner
+(`nowo-tech/time-track-bundle`) instead of yours. Delete them:
+
+```diff
+ nowo_migrations_kit:
+     collation_check:
+         ignore_columns:
+-            'time_track_timesheets.scope_key': 'TimeTrack tenant scope'
+-            'time_track_balance_ledger.scope_key': 'TimeTrack tenant scope'
+-            'time_track_calendar_connections.scope_key': 'TimeTrack tenant scope'
+-            'time_track_calendar_rules.scope_key': 'TimeTrack tenant scope'
+-            'time_track_entries.scope_key': 'TimeTrack tenant scope'
+-            'time_track_active_timers.scope_key': 'TimeTrack tenant scope'
+```
+
+The person reference columns (`owner_ref`, `submitted_by_ref`, `decided_by_ref`, `actor_ref`, `person_ref`) go the
+same way, and so do tables under your own `table_prefix`: the declaration builds every name from that prefix itself.
+Keeping an entry is not an error, but it outlives the declaration and goes on excusing a column nothing checks any
+more, so drop it.
+
+If the gate now *fails* on one of these columns, it is telling the truth: that table predates 1.24.1 (or 1.23.0 for
+the reference columns), or it was restored from a dump, and it still carries the host's folding default. Run the
+`ALTER` the check prints.
+
+With `user_mapping: relation` the reference columns are reported as **skipped** with that setting, never as a
+failure: that DDL belongs to `user_mapping: id`.
 
 ## To 1.37.0
 

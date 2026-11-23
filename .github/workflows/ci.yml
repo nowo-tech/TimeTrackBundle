@@ -459,6 +459,12 @@ jobs:
           TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
         run: php -d memory_limit=1G vendor/bin/phpunit --no-coverage --fail-on-skipped --testsuite database
 
+      - name: Identity / access-key column collations (REQ-SEC-006)
+        if: env.HEAVY == 'true'
+        env:
+          TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
+        run: php -d memory_limit=1G vendor/bin/phpunit --no-coverage --testsuite collation
+
       - name: Race replays and the transaction runner on the real server
         if: env.HEAVY == 'true'
         timeout-minutes: 10
