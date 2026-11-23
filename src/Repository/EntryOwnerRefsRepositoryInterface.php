@@ -8,7 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see EntryOwnersRepositoryInterface} (REQ-ARCH-001 rule 3), an optional
+ * Since 1.23.0: framework-free twin of the 1.x `EntryOwnersRepositoryInterface` (REQ-ARCH-001 rule 3), an optional
  * capability of the time entry store (auto-lock). Each reference must carry the user object
  * ({@see TimeTrackUserRef::of()}): the timesheet service stores it.
  */

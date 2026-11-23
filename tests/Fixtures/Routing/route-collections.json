@@ -256,31 +256,6 @@
                 "condition": ""
             },
             {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
                 "name": "nowo_time_track_api_entries",
                 "path": "/api/time-track/entries",
                 "host": "",
@@ -1065,31 +1040,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -1965,31 +1915,6 @@
                 "condition": ""
             },
             {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
                 "name": "nowo_time_track_api_entries",
                 "path": "/api/time-track/entries",
                 "host": "",
@@ -2824,31 +2749,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -3755,31 +3655,6 @@
                 "condition": ""
             },
             {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/acme/api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
                 "name": "acme_api_entries",
                 "path": "/acme/api/v9/entries",
                 "host": "",
@@ -4614,31 +4489,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/acme/api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -5564,31 +5414,6 @@
                 "condition": ""
             },
             {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/tenant//api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
                 "name": "nowo_time_track_api_entries",
                 "path": "/tenant//api/time-track/entries",
                 "host": "",
@@ -6423,31 +6248,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/tenant//api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -7354,31 +7154,6 @@
                 "condition": ""
             },
             {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
                 "name": "nowo_time_track_api_entries",
                 "path": "/api/time-track/entries",
                 "host": "",
@@ -8163,31 +7938,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -9010,31 +8760,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -9884,31 +9609,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -10815,31 +10515,6 @@
                 "condition": ""
             },
             {
-                "name": "nowo_time_track_api_heartbeat",
-                "path": "/api/time-track/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
                 "name": "nowo_time_track_api_entries",
                 "path": "/api/time-track/entries",
                 "host": "",
@@ -11624,31 +11299,6 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::timerStop"
-                },
-                "requirements": {
-                    "action": "clock-in|break-start|break-end|clock-out",
-                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-                    "id": "[A-Za-z0-9-]{1,36}",
-                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
-                },
-                "options": {
-                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-                    "utf8": true
-                },
-                "condition": ""
-            },
-            {
-                "name": "nowo_time_track_api_v1_heartbeat",
-                "path": "/edge/api/time-track/v1/heartbeat",
-                "host": "",
-                "schemes": [],
-                "methods": [
-                    "POST",
-                    "OPTIONS"
-                ],
-                "defaults": {
-                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",

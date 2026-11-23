@@ -21,7 +21,7 @@ final class TaskEffortAccessCheckEventTest extends TestCase
     {
         $user  = new TestUser('7', 'ana@example.com', ['ROLE_ADMIN']);
         $event = new TaskEffortAccessCheckEvent($user, 'task-1');
-        self::assertSame($user, $event->getUser());
+        self::assertSame($user, $event->userRef()->user());
         self::assertSame('task-1', $event->getTaskId());
         self::assertFalse($event->isGranted());
         $event->grant();

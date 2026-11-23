@@ -1,9 +1,9 @@
 {#
   TimeTrack:LedgerTable (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::ledgerTable()): rows (ledger
-  lines + reversed + reversalForm / reversalUrl), columns (effectiveDate, kind, seconds, reason, createdAt), addForm /
-  addUrl (null = not allowed or no URL), dialogId, labels, density. Since 1.39.0, with options.dialog_urls the add and
-  reversal actions are links to the host's dialog pages, loaded on demand into ONE remote UiKit dialog (no form and no
-  dialog body per row); without it the deprecated inline dialogs (UiKit 2.29 anatomy) stay.
+  lines + reversed + reversalUrl; reversalForm always null since 2.0), columns (effectiveDate, kind, seconds, reason,
+  createdAt), addUrl (null = not allowed or no URL; addForm always null since 2.0), dialogId, labels, density. The add
+  and reversal actions are links to the host's dialog pages (options.dialog_urls), loaded on demand into ONE remote
+  UiKit dialog (no form and no dialog body per row). The 1.x inline dialogs were removed in 2.0.
 #}
 {% trans_default_domain 'NowoTimeTrackBundle' %}
 {% set _l = view.labels %}
@@ -11,8 +11,7 @@
 <section class="{{ nowo_ui_class('card', _b) }} nowo-time-track-ledger nowo-time-track--{{ view.density }}" data-testid="time-track-ledger">
     <header class="{{ nowo_ui_class('card_header', _b) }}">
         <h2 class="{{ nowo_ui_class('card_title', _b) }}">{{ (_l.title ?? 'ledger.title')|trans }}</h2>
-        {% if view.addUrl ?? null %}<a href="{{ view.addUrl }}" class="{{ nowo_ui_class('btn_primary', _b) }}" data-testid="time-track-ledger-add"{{ nowo_ui_html_attrs(nowo_ui_remote_form_opener(view.dialogId, 'ledger.dialog.add_title'|trans, false, view.addUrl)) }}>{{ (_l.action_add_adjustment ?? 'ledger.action.add_adjustment')|trans }}</a>
-        {% elseif view.addForm %}{{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: view.addForm, label: (_l.action_add_adjustment ?? 'ledger.action.add_adjustment')|trans, dialog: true, dialog_id: 'time-track-ledger-add', title: 'ledger.dialog.add_title'|trans, primary: true}) }}{% endif %}
+        {% if view.addUrl ?? null %}<a href="{{ view.addUrl }}" class="{{ nowo_ui_class('btn_primary', _b) }}" data-testid="time-track-ledger-add"{{ nowo_ui_html_attrs(nowo_ui_remote_form_opener(view.dialogId, 'ledger.dialog.add_title'|trans, false, view.addUrl)) }}>{{ (_l.action_add_adjustment ?? 'ledger.action.add_adjustment')|trans }}</a>{% endif %}
     </header>
     <div class="{{ nowo_ui_class('table_wrap', _b) }}">
         <table class="{{ nowo_ui_class('table', _b) }}">
@@ -33,7 +32,7 @@
                                 {%- else -%}{{ attribute(row, column) ?? '' }}{%- endif -%}
                             </td>
                         {% endfor %}
-                        <td class="{{ nowo_ui_class('table_actions_cell', _b) }}">{% if row.reversalUrl ?? null %}<a href="{{ row.reversalUrl }}" class="{{ nowo_ui_class('btn_secondary', _b) }}" data-testid="time-track-ledger-reverse-{{ row.id }}"{{ nowo_ui_html_attrs(nowo_ui_remote_form_opener(view.dialogId, 'ledger.dialog.reversal_title'|trans, false, row.reversalUrl)) }}>{{ (_l.action_reversal ?? 'ledger.action.reversal')|trans }}<span class="nowo-ui-visually-hidden"> {{ row.effectiveDate }} {{ ('ledger.kind.' ~ row.kind)|trans }}</span></a>{% elseif row.reversalForm %}{{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: row.reversalForm, label: (_l.action_reversal ?? 'ledger.action.reversal')|trans, dialog: true, dialog_id: 'time-track-ledger-reverse-' ~ row.id, title: 'ledger.dialog.reversal_title'|trans, primary: false}) }}{% endif %}</td>
+                        <td class="{{ nowo_ui_class('table_actions_cell', _b) }}">{% if row.reversalUrl ?? null %}<a href="{{ row.reversalUrl }}" class="{{ nowo_ui_class('btn_secondary', _b) }}" data-testid="time-track-ledger-reverse-{{ row.id }}"{{ nowo_ui_html_attrs(nowo_ui_remote_form_opener(view.dialogId, 'ledger.dialog.reversal_title'|trans, false, row.reversalUrl)) }}>{{ (_l.action_reversal ?? 'ledger.action.reversal')|trans }}<span class="nowo-ui-visually-hidden"> {{ row.effectiveDate }} {{ ('ledger.kind.' ~ row.kind)|trans }}</span></a>{% endif %}</td>
                     </tr>
                 {% else %}
                     <tr class="{{ nowo_ui_class('table_row', _b) }}"><td class="{{ nowo_ui_class('table_cell_muted', _b) }}" colspan="{{ view.columns|length + 1 }}">{{ (_l.empty ?? 'ledger.empty')|trans }}</td></tr>

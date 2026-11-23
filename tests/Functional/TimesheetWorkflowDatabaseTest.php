@@ -54,7 +54,6 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetPersonalDataExporter;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
-use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -124,7 +123,6 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         }
     }
 
-    #[Group('shared-entity-manager')]
     public function testApprovalHardLocksTheWeekAndReopenRestoresItWithAVerifiableTrail(): void
     {
         $monday = $this->week->startsAt('UTC');
@@ -194,7 +192,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
 
         // A manual edit of one byte is caught and named.
         $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_timesheet_events SET comment = 'Wrong task on Tuesday' WHERE action = 'reopened'");
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $application = new Application(self::$kernel ?? throw new LogicException());
         $verify      = new CommandTester($application->find('nowo:time-track:timesheets:verify'));
         self::assertSame(1, $verify->execute([]));
@@ -202,7 +200,6 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertStringContainsString($reopened->getId(), $verify->getDisplay());
     }
 
-    #[Group('shared-entity-manager')]
     public function testStaleAndConcurrentApprovalsAndNoSelfApproval(): void
     {
         $monday = $this->week->startsAt('UTC');
@@ -211,10 +208,10 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
 
         // AC-04: the entries changed since submit (host edit that bypassed the bundle) → stale.
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_entries SET duration_seconds = 60 WHERE id = ?', [$entry->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $this->expectTimesheetError('stale', fn (): Timesheet => $this->timesheets->approve($this->approver, $sheet->getId()));
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_entries SET duration_seconds = 3600 WHERE id = ?', [$entry->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         // Two approvers at once: the other one's decision committed first. Since 1.27.0 (Beacon spec 239) the row is
         // locked and read again before the decision, so the later one finds it no longer submitted.
@@ -222,7 +219,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_timesheets SET version = version + 1, status = 'rejected' WHERE id = ?", [$loaded->getId()]);
         $this->expectTimesheetError('invalid_transition', fn (): Timesheet => $this->timesheets->approve($this->approver, $loaded->getId()));
         $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_timesheets SET version = version + 1, status = 'submitted' WHERE id = ?", [$loaded->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $this->user     = $this->entityManager()->find(AppUser::class, $this->user->getId()) ?? throw new LogicException();
         $this->approver = $this->entityManager()->find(AppUser::class, $this->approver->getId()) ?? throw new LogicException();
         $this->admin    = $this->entityManager()->find(AppUser::class, $this->admin->getId()) ?? throw new LogicException();
@@ -331,7 +328,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         }
         $this->entityManager()->getConnection()->executeStatement('DELETE FROM time_track_entries');
         $this->entityManager()->getConnection()->executeStatement('DELETE FROM app_user WHERE id = ?', [$ownerRef]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $kept = $this->entityManager()->find(Timesheet::class, $locked->getId());
         self::assertNotNull($kept);
         self::assertNull($kept->getUser());
@@ -346,7 +343,6 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertNull($this->entityManager()->find(Timesheet::class, $locked->getId()));
     }
 
-    #[Group('shared-entity-manager')]
     public function testAPurgedLedgerChainStillVerifiesAndATruncatedOneDoesNot(): void
     {
         $owner  = (string) $this->user->getId();
@@ -367,7 +363,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
 
         // Removing the mark (or deleting a chain's oldest lines by hand) is reported.
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_balance_ledger SET purged_before = NULL');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertStringContainsString('not linked', implode(' ', $verifier->verify()));
     }
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Port\Internal\WorkedTimeSourceInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeRecordInterface;
-use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

@@ -35,14 +35,15 @@ final class ClientResponseFactoryTest extends TestCase
         self::assertNull($other->headers->get('Access-Control-Allow-Origin'));
     }
 
-    public function testAnyExtensionOriginWhenOptedIn(): void
+    public function testTheRemovedAnyExtensionOptInIsIgnored(): void
     {
+        // 2.0: the argument is accepted and ignored (clients.cors_allow_any_extension_origin is removed).
         $factory = new ClientResponseFactory([], 'prod', allowAnyExtensionOrigin: true);
         foreach (['chrome-extension://abc', 'moz-extension://0f1e2d3c'] as $origin) {
             $request  = Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => $origin]);
             $response = $factory->json(['ok' => true], 200, $request);
 
-            self::assertSame($origin, $response->headers->get('Access-Control-Allow-Origin'));
+            self::assertNull($response->headers->get('Access-Control-Allow-Origin'));
         }
 
         $web = $factory->json(['ok' => true], 200, Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => 'https://evil.example.com']));
@@ -60,13 +61,17 @@ final class ClientResponseFactoryTest extends TestCase
         self::assertSame('Authorization, Content-Type, Idempotency-Key', $response->headers->get('Access-Control-Allow-Headers'));
     }
 
-    public function testJsonWithWildcardInDevOnly(): void
+    public function testAWildcardAllowsNothingInAnyEnvironment(): void
     {
-        $factory  = new ClientResponseFactory(['*'], 'dev');
-        $request  = Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => 'https://example.com']);
-        $response = $factory->json(null, 204, $request);
+        // 2.0: "*" is refused at build time; a factory built by hand with it matches no origin (not even "*").
+        foreach (['dev', 'prod'] as $environment) {
+            $factory = new ClientResponseFactory(['*'], $environment);
+            foreach (['https://example.com', '*'] as $origin) {
+                $response = $factory->json(null, 204, Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => $origin]));
 
-        self::assertSame('https://example.com', $response->headers->get('Access-Control-Allow-Origin'));
+                self::assertNull($response->headers->get('Access-Control-Allow-Origin'), $environment . ' ' . $origin);
+            }
+        }
     }
 
     public function testJsonRejectsWildcardInProd(): void
@@ -96,13 +101,18 @@ final class ClientResponseFactoryTest extends TestCase
         self::assertSame('https://app.example.com', $response->headers->get('Access-Control-Allow-Origin'));
     }
 
-    public function testTauriOriginAllowed(): void
+    public function testTauriWebviewOriginsAreNoLongerAllowed(): void
     {
-        $factory  = new ClientResponseFactory([], 'prod');
-        $request  = Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => 'tauri://localhost']);
-        $response = $factory->json(['ok' => true], 200, $request);
+        // 2.0: client_api.allow_tauri_webview_origins is removed; a settings provider asking for them is ignored.
+        $settings = $this->createStub(ClientApiSettingsProviderInterface::class);
+        $settings->method('getSettings')->willReturn(new ClientApiSettings(allowTauriWebviewOrigins: true));
+        foreach ([new ClientResponseFactory([], 'prod'), new ClientResponseFactory([], 'prod', settingsProvider: $settings)] as $factory) {
+            foreach (ClientResponseFactory::TAURI_WEBVIEW_ORIGINS as $origin) {
+                $response = $factory->json(['ok' => true], 200, Request::create('/', 'GET', [], [], [], ['HTTP_Origin' => $origin]));
 
-        self::assertSame('tauri://localhost', $response->headers->get('Access-Control-Allow-Origin'));
+                self::assertNull($response->headers->get('Access-Control-Allow-Origin'), $origin);
+            }
+        }
     }
 
     public function testDisallowedOriginIsRejected(): void

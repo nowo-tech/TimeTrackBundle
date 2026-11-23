@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Meeting\MeetingPage;
-use Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingQuery;
 use Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingSyncState;
+use Nowo\TimeTrackBundle\Port\Internal\MeetingProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

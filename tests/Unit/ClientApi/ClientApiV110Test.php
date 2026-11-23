@@ -11,7 +11,6 @@ use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettings;
-use Nowo\TimeTrackBundle\Client\IdleCheckSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
@@ -22,10 +21,11 @@ use Nowo\TimeTrackBundle\Event\IdleResolvedEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartEvent;
 use Nowo\TimeTrackBundle\Event\TimerStopEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\IdleCheckSettingsProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\ClientApiStack;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryPaginatedTimeEntryRepository;
@@ -496,9 +496,7 @@ final class ClientApiV110Test extends TestCase
         $switch = $this->body($controller->timerSwitch($this->request('POST', $token, ['taskId' => 'task-2'])));
         self::assertArrayHasKey('url', $switch['timer']);
         self::assertSame('Board 2', $switch['timer']['boardTitle']);
-
-        $heartbeat = $this->body($controller->heartbeat($this->request('POST', $token, [])));
-        self::assertArrayHasKey('projectId', $heartbeat['timer']);
+        self::assertArrayHasKey('projectId', $switch['timer']);
     }
 
     private function stack(?ConfigClientApiSettingsProvider $settings = null, ?ActiveTimerRepositoryInterface $timers = null, ?TimeEntryRepositoryInterface $entries = null): ClientApiStack

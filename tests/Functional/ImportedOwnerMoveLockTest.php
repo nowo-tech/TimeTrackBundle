@@ -20,6 +20,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryClaim;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
@@ -28,7 +29,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -52,7 +52,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
 
         $result = $writer->moveToPerson(self::SOURCE, $this->user, new ImportedTimeEntryPerson('p-1', 'Ana', ''));
         self::assertSame([1, 1, 0], [$result->moved, $result->keptLocked, $result->refusedScope]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNotNull($this->reload('locked')->getUser());
         self::assertNull($this->reload('open')->getUser());
     }
@@ -65,7 +65,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         $this->lockWeek($other);
 
         self::assertSame(1, $writer->moveBetweenUsers(self::SOURCE, $this->user, $other)->keptLocked);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $owner = $this->reload('e-1')->getUser();
         self::assertInstanceOf(AppUser::class, $owner);
         self::assertSame($this->user->getId(), $owner->getId());
@@ -174,7 +174,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         });
         $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
         self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $result = (new ImportedTimeEntryWriter($repository, scopeProvider: $scopes))->moveBetweenUsers(self::SOURCE, $this->managedUser(), $this->managedTarget($target));
         $other->close();
@@ -216,7 +216,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         });
         $repository = self::getContainer()->get(TimeEntryRepositoryInterface::class);
         self::assertInstanceOf(DoctrineOrmTimeEntryRepository::class, $repository);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $to = $this->entityManager()->find(AppUser::class, $userId);
         self::assertInstanceOf(AppUser::class, $to);
 
@@ -232,7 +232,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         $writer = $this->writer();
         $writer->upsert($this->user, $this->data('e-1', '2026-01-01 10:00:00'));
         $this->lockWeek($this->user);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $timesheets = $this->entityManager()->getRepository(Timesheet::class)->findAll();
         self::assertCount(1, $timesheets);
         $timesheets[0]->applyReopen(new DateTimeImmutable('2026-01-11 08:00:00'), 'approver', 'Pending reopen');
@@ -291,7 +291,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         $people    = self::getContainer()->get(FormerPersonTimeEntries::class);
         self::assertInstanceOf(FormerPersonTimeEntries::class, $people);
         $people->release($this->user, 'Ana');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(1, $writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($this->managedUser(), $reference, ''))->keptLocked);
     }

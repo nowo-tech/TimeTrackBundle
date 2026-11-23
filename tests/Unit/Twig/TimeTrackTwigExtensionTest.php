@@ -6,32 +6,25 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Twig;
 
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\TestCase;
+use Twig\Extension\GlobalsInterface;
+use Twig\TwigFunction;
+
+use function array_map;
 
 final class TimeTrackTwigExtensionTest extends TestCase
 {
-    public function testExposesLayoutAndCssFrameworkGlobals(): void
+    /**
+     * 2.0: the 1.x globals `nowo_time_track_layout` / `nowo_time_track_css_framework` (fed by the removed `templates.*`
+     * keys) are gone; the constructor still accepts (and ignores) their values.
+     */
+    public function testExposesNoGlobalsSince20(): void
     {
         $extension = new TimeTrackTwigExtension('base.html.twig', 'bootstrap5');
 
+        self::assertNotInstanceOf(GlobalsInterface::class, $extension);
         self::assertSame(
-            [
-                'nowo_time_track_layout'        => 'base.html.twig',
-                'nowo_time_track_css_framework' => 'bootstrap5',
-            ],
-            $extension->getGlobals(),
+            ['nowo_time_track_client_distribution', 'nowo_time_track_client_download_items', 'nowo_time_track_label'],
+            array_map(static fn (TwigFunction $function): string => $function->getName(), $extension->getFunctions()),
         );
-        self::assertArrayHasKey('nowo_time_track_layout', $extension->getGlobals());
-        self::assertArrayHasKey('nowo_time_track_css_framework', $extension->getGlobals());
-    }
-
-    public function testDefaultGlobalsMatchBundleDemo(): void
-    {
-        $globals = (new TimeTrackTwigExtension())->getGlobals();
-
-        self::assertSame(
-            '@NowoTimeTrackBundle/layout.html.twig',
-            $globals[TimeTrackTwigExtension::GLOBAL_LAYOUT],
-        );
-        self::assertSame('tabler', $globals[TimeTrackTwigExtension::GLOBAL_CSS_FRAMEWORK]);
     }
 }

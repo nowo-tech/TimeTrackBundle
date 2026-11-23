@@ -18,11 +18,12 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\FilteredImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryOwnerRepositoryInterface;
-use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
@@ -31,7 +32,6 @@ use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -125,7 +125,7 @@ final readonly class ImportedTimeEntryWriter
         ?UserReferenceResolverInterface $userReferences = null,
     ) {
         if (!$repository instanceof ImportedTimeEntryStoreInterface) {
-            throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryStoreInterface (or the deprecated ImportedTimeEntryRepositoryInterface).');
+            throw new LogicException('Imported time entries require a repository implementing ImportedTimeEntryStoreInterface.');
         }
         $this->repository     = $repository;
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -685,7 +685,7 @@ final readonly class ImportedTimeEntryWriter
         $guard = $this->periodLockGuard;
         if ($guard?->isEnabled() === true) {
             if (!$this->repository instanceof FilteredImportedTimeEntryStoreInterface) {
-                throw new LogicException('With timesheets on, removing imported entries requires a repository implementing FilteredImportedTimeEntryStoreInterface (or the deprecated FilteredImportedTimeEntryRepositoryInterface).');
+                throw new LogicException('With timesheets on, removing imported entries requires a repository implementing FilteredImportedTimeEntryStoreInterface.');
             }
             // @igor-ignore - I/O delegate (repository / writer call); no worker state.
             $removal = $this->repository->removeImportedWhere(

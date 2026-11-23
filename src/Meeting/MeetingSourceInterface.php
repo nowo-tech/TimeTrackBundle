@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Meeting;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see MeetingProviderInterface} (REQ-ARCH-001 rule 3), same `meetings.provider`
+ * Since 1.23.0: framework-free twin of the 1.x `MeetingProviderInterface` (REQ-ARCH-001 rule 3), same `meetings.provider`
  * option: the host's meeting read model.
  */
 interface MeetingSourceInterface

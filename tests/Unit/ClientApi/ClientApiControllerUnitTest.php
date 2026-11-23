@@ -17,9 +17,9 @@ use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\ClientApiStack;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
@@ -114,7 +114,7 @@ final class ClientApiControllerUnitTest extends TestCase
         self::assertSame('timer_running', $this->body($response)['error']);
     }
 
-    public function testDeprecatedTeamViewAndAllowedMetadata(): void
+    public function testTheRemovedTeamViewAnswersOwnEntriesAndAllowedMetadata(): void
     {
         $entries = new InMemoryTimeEntryRepository();
         $other   = new TestUser('u-2', 'o@example.com');
@@ -123,8 +123,10 @@ final class ClientApiControllerUnitTest extends TestCase
         $controller = $stack->apiController(allowMetadata: true);
         $token      = $stack->authService->issueToken($this->user, ClientType::Desktop)['token'];
 
+        // 2.0: `userId` (deprecated since 1.9) is ignored: the caller's own entries only, never the other user's.
         $team = $controller->entries($this->request('GET', $token, null, '?userId=u-2'));
-        self::assertCount(1, $this->body($team)['entries']);
+        self::assertSame(200, $team->getStatusCode());
+        self::assertSame([], $this->body($team)['entries']);
 
         $start = $controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1', 'metadata' => ['app' => 'tray'], 'note' => 'n']));
         self::assertSame(201, $start->getStatusCode());

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
-use Nowo\TimeTrackBundle\Client\ClientUserPrivacyProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserPrivacySourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserPrivacyProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

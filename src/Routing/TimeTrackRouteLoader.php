@@ -65,7 +65,6 @@ final class TimeTrackRouteLoader extends Loader
         'timer'       => TimeTrackClientApiController::class . '::timer',
         'timer_start' => TimeTrackClientApiController::class . '::timerStart',
         'timer_stop'  => TimeTrackClientApiController::class . '::timerStop',
-        'heartbeat'   => TimeTrackClientApiController::class . '::heartbeat',
         'entries'     => TimeTrackClientApiController::class . '::entries',
         // 1.9 (contract v0.2)
         'timer_switch'       => TimeTrackClientApiController::class . '::timerSwitch',

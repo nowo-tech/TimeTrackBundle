@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Doctrine;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\UserRef\Entity\HostUser;
 use Nowo\TimeTrackBundle\UserRef\UserMapping;

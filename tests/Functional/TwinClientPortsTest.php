@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
-use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Port\ClientCredentialMinterGate;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Port\TaskAccessPolicyGate;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinClientPorts;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 

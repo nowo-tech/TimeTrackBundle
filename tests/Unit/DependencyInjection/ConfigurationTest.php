@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 
 use App\Entity\User;
-use ErrorException;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -13,7 +12,6 @@ use Symfony\Component\Config\Definition\ArrayNode;
 use Symfony\Component\Config\Definition\BaseNode;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\Definition\Processor;
-use Symfony\Component\ErrorHandler\ErrorHandler;
 
 use function sprintf;
 
@@ -29,46 +27,61 @@ final class ConfigurationTest extends TestCase
         self::assertFalse($config['clients']['enabled']);
         self::assertSame('/tools/time-track', $config['routes']['index']['path']);
         self::assertSame('/api/time-track/login', $config['clients']['routes']['login']['path']);
-        self::assertSame('@NowoTimeTrackBundle/layout.html.twig', $config['templates']['layout']);
-        self::assertSame('tabler', $config['templates']['css_framework']);
-        self::assertFalse($config['clients']['cors_allow_any_extension_origin']);
+        self::assertArrayNotHasKey('templates', $config, 'removed in 2.0');
+        self::assertNull($config['clients']['cors_allow_any_extension_origin']);
+        self::assertNull($config['client_api']['allow_tauri_webview_origins']);
+        self::assertNull($config['database']['private_entity_manager']);
+        self::assertNull($config['security']['manager_can_edit_entries']);
+        self::assertArrayNotHasKey('heartbeat', $config['clients']['routes']);
         self::assertNull($config['clients']['login_rate_limit']['max_attempts_per_ip']);
     }
 
-    public function testManagerCanEditEntriesIsDeprecated(): void
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function optionsWithoutEffect(): iterable
+    {
+        yield 'security.manager_can_edit_entries' => ['security', 'manager_can_edit_entries'];
+        yield 'database.private_entity_manager' => ['database', 'private_entity_manager'];
+        yield 'clients.cors_allow_any_extension_origin' => ['clients', 'cors_allow_any_extension_origin'];
+        yield 'client_api.allow_tauri_webview_origins' => ['client_api', 'allow_tauri_webview_origins'];
+    }
+
+    /**
+     * 2.0: the 1.x opt-outs stay accepted with the 2.0 value as deprecated no-ops (removed in 3.0); the other value
+     * fails the container build (TimeTrackExtension).
+     */
+    #[DataProvider('optionsWithoutEffect')]
+    public function testTheRemovedOptOutsAreDeprecatedNoOps(string $section, string $key): void
     {
         $root = (new Configuration())->getConfigTreeBuilder()->buildTree();
         self::assertInstanceOf(ArrayNode::class, $root);
-        $security = $root->getChildren()['security'];
-        self::assertInstanceOf(ArrayNode::class, $security);
-        $node = $security->getChildren()['manager_can_edit_entries'];
+        $parent = $root->getChildren()[$section];
+        self::assertInstanceOf(ArrayNode::class, $parent);
+        $node = $parent->getChildren()[$key];
         self::assertInstanceOf(BaseNode::class, $node);
 
         self::assertTrue($node->isDeprecated());
-        $deprecation = $node->getDeprecation('manager_can_edit_entries', 'nowo_time_track.security');
+        $deprecation = $node->getDeprecation($key, 'nowo_time_track.' . $section);
         self::assertSame('nowo-tech/time-track-bundle', $deprecation['package']);
-        self::assertSame('1.5', $deprecation['version']);
-        self::assertStringContainsString('"nowo_time_track.security.manager_can_edit_entries" option is deprecated', $deprecation['message']);
-
-        $config = (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'security'   => ['manager_can_edit_entries' => false],
-        ]]);
-        self::assertFalse($config['security']['manager_can_edit_entries']);
+        self::assertSame('2.0', $deprecation['version']);
+        self::assertStringContainsString('"nowo_time_track.' . $section . '.' . $key . '" option has no effect since 2.0', $deprecation['message']);
     }
 
-    public function testCustomLayoutAndCssFramework(): void
+    public function testTheTemplatesKeysAreRemoved(): void
     {
-        $config = (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => [
-                'layout'        => 'base.html.twig',
-                'css_framework' => 'bootstrap5',
-            ],
-        ]]);
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('The nowo_time_track.templates keys (deprecated since 1.8) were removed in 2.0');
 
-        self::assertSame('base.html.twig', $config['templates']['layout']);
-        self::assertSame('bootstrap5', $config['templates']['css_framework']);
+        (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'templates' => ['css_framework' => 'tabler']]]);
+    }
+
+    public function testTheHeartbeatRouteIsRemoved(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('The client API route "heartbeat" (POST /api/time-track/heartbeat, deprecated since 1.9) was removed in 2.0');
+
+        (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'clients' => ['routes' => ['heartbeat' => ['path' => '/hb']]]]]);
     }
 
     public function testWebUiDefaultsToTheUiKitLayoutAndTheBundlePages(): void
@@ -77,60 +90,6 @@ final class ConfigurationTest extends TestCase
 
         self::assertNull($config['web_ui']['layout_template']);
         self::assertSame(['index' => Configuration::DEFAULT_INDEX_TEMPLATE, 'reports' => Configuration::DEFAULT_REPORTS_TEMPLATE], $config['web_ui']['templates']);
-        self::assertSame(Configuration::LEGACY_LAYOUT, $config['templates']['layout']);
-    }
-
-    public function testDeprecatedTemplatesKeysFeedWebUi(): void
-    {
-        $config = @(new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => ['layout' => 'base.html.twig', 'index' => 'host/timer.html.twig', 'reports' => 'host/reports.html.twig'],
-        ]]);
-
-        self::assertSame('base.html.twig', $config['web_ui']['layout_template']);
-        self::assertSame(['index' => 'host/timer.html.twig', 'reports' => 'host/reports.html.twig'], $config['web_ui']['templates']);
-        self::assertSame('base.html.twig', $config['templates']['layout'], 'still exposed (Twig global nowo_time_track_layout)');
-    }
-
-    public function testWebUiWinsOverTheDeprecatedKeysAndThe1xDefaultLayoutIsNotMapped(): void
-    {
-        $config = @(new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => ['layout' => Configuration::LEGACY_LAYOUT, 'index' => 'old/timer.html.twig'],
-            'web_ui'     => ['templates' => ['index' => 'new/timer.html.twig']],
-        ]]);
-        self::assertNull($config['web_ui']['layout_template']);
-        self::assertSame('new/timer.html.twig', $config['web_ui']['templates']['index']);
-
-        $config = @(new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => ['layout' => 'old/layout.html.twig'],
-            'web_ui'     => ['layout_template' => null],
-        ]]);
-        self::assertNull($config['web_ui']['layout_template'], 'an explicit web_ui.layout_template (even null) wins');
-    }
-
-    /**
-     * @return iterable<string, array{0: string, 1: string}>
-     */
-    public static function deprecatedTemplatesKeys(): iterable
-    {
-        yield 'layout' => ['layout', 'base.html.twig'];
-        yield 'css_framework' => ['css_framework', 'tailwind'];
-        yield 'index' => ['index', 'a.html.twig'];
-        yield 'reports' => ['reports', 'b.html.twig'];
-    }
-
-    #[DataProvider('deprecatedTemplatesKeys')]
-    public function testDeprecatedTemplatesKeysTriggerADeprecation(string $key, string $value): void
-    {
-        $this->expectException(ErrorException::class);
-        $this->expectExceptionMessage('The "nowo_time_track.templates.' . $key . '" option is deprecated');
-
-        ErrorHandler::call(static fn (): array => (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => [$key => $value],
-        ]]));
     }
 
     public function testReportsPageSizeDefaultsTo50(): void
@@ -185,37 +144,6 @@ final class ConfigurationTest extends TestCase
         $this->expectExceptionMessage(sprintf('client_distribution.min_supported_version.%s must be a semantic version', $clientType));
 
         (new Processor())->processConfiguration(new Configuration(), [['user_class' => User::class, 'client_distribution' => ['min_supported_version' => [$clientType => $value]]]]);
-    }
-
-    #[DataProvider('acceptedCssFrameworkProvider')]
-    public function testAcceptsCssFrameworkValues(string $value): void
-    {
-        $config = (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => ['css_framework' => $value],
-        ]]);
-
-        self::assertSame($value, $config['templates']['css_framework']);
-    }
-
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function acceptedCssFrameworkProvider(): iterable
-    {
-        foreach (Configuration::CSS_FRAMEWORKS as $value) {
-            yield $value => [$value];
-        }
-    }
-
-    public function testRejectsInvalidCssFramework(): void
-    {
-        $this->expectException(InvalidConfigurationException::class);
-
-        (new Processor())->processConfiguration(new Configuration(), [[
-            'user_class' => User::class,
-            'templates'  => ['css_framework' => 'bulma'],
-        ]]);
     }
 
     public function testClientApiDefaults(): void

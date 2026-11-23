@@ -19,8 +19,8 @@ final class ClientAuthResultTest extends TestCase
         $result = ClientAuthResult::success($user);
 
         self::assertTrue($result->isSuccess());
-        self::assertSame($user, $result->getUser());
         self::assertSame($user, $result->requireUser());
+        self::assertSame($user, $result->userRef()?->user());
     }
 
     public function testSuccessForAReference(): void
@@ -50,7 +50,7 @@ final class ClientAuthResultTest extends TestCase
         $result = ClientAuthResult::failure();
 
         self::assertFalse($result->isSuccess());
-        self::assertNull($result->getUser());
+        self::assertNull($result->userRef());
     }
 
     public function testRequireUserThrowsOnFailure(): void

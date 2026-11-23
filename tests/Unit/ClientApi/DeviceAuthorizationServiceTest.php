@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\ClientApi;
 
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
-use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Dto\DevicePollResult;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\ClientApiStack;

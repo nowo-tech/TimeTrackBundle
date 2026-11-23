@@ -13,7 +13,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 
 /**
  * Since 1.23.0: a time entry store that also holds imported entries ({@see TimeEntrySource::Import}), framework-free
- * (REQ-ARCH-001 rule 3): the methods of {@see ImportedTimeEntryRepositoryInterface} (1.11) without
+ * (REQ-ARCH-001 rule 3): the methods of the 1.x `ImportedTimeEntryRepositoryInterface` (1.11) without
  * `attachUser(UserInterface)`. Required by {@see ImportedTimeEntryWriter}; the Doctrine store implements it. A store
  * that implements only this interface is never asked to re-attach the user after a failed save (the user object the
  * writer was called with is used as it is).

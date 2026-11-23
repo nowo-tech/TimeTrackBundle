@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
@@ -24,7 +25,6 @@ use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Symfony\Component\Clock\NativeClock;
 
 use function str_repeat;
@@ -154,7 +154,7 @@ final class ConcurrencyWaveTest extends FunctionalTestCase
 
         $conn->executeStatement('DELETE FROM time_track_timesheet_events');
         $conn->executeStatement('DELETE FROM time_track_timesheets');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $trail->record($sheet, $owner, WriteKind::EntryCreate);
         self::assertSame(0, (int) $conn->fetchOne('SELECT COUNT(*) FROM time_track_timesheet_events'));
     }

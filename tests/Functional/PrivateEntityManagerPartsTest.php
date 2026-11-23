@@ -50,7 +50,7 @@ final class PrivateEntityManagerPartsTest extends FunctionalTestCase
 {
     protected static function timeTrackConfig(): array
     {
-        return ['database' => ['private_entity_manager' => true]];
+        return [];
     }
 
     public function testOnlyARollbackOfRowsThePrivateManagerWroteMakesItStale(): void
@@ -340,7 +340,7 @@ final class PrivateEntityManagerPartsTest extends FunctionalTestCase
         self::assertSame((string) $user->getId(), $entry->getUserId());
         self::assertTrue($this->entityManager()->contains($user), 'your object stays yours');
         self::assertFalse($private->live()->contains($user));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame((string) $user->getId(), $this->entityManager()->find(TimeEntry::class, $entry->getId())?->getUserId());
     }
 

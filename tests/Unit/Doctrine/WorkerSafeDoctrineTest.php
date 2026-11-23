@@ -35,8 +35,6 @@ final class WorkerSafeDoctrineTest extends TestCase
         } catch (RuntimeException $exception) {
             self::assertSame($failure, $exception);
         }
-        RecoveringFlusher::resetIfClosed($em, $registry);
-        RecoveringFlusher::resetIfClosed($em);
     }
 
     public function testAnOpenManagerIsFlushed(): void

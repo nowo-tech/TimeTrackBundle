@@ -79,9 +79,10 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         // Since 1.36.0: an entry without a task is one "No task" row; its free text shows like a note.
         $repo->save((new TimeEntry($this->user, null, '', null, $monday->modify('+17 hours'), $monday->modify('+18 hours'), 3600, TimeEntrySource::Manual))->describe('Customer ACME')->assignScopeKey('org-a'));
         $timesheet = $sheets->view($this->user, (string) $this->user->getId(), 'org-a', $week);
-        $urls      = ['submit' => '/host/submit', 'withdraw' => '/host/withdraw', 'approve' => '/host/approve', 'reject' => '/host/reject', 'reopen' => '/host/reopen'];
+        $urls      = ['submit' => '/host/submit', 'withdraw' => '/host/withdraw', 'approve' => '/host/approve'];
+        $dialogs   = ['reject' => '/host/reject', 'reopen' => '/host/reopen'];
 
-        $owner = $this->render('TimeTrack:TimesheetWeekGrid', ['timesheet' => $timesheet, 'viewer' => $this->user, 'options' => ['action_urls' => $urls, 'density' => 'compact', 'labels' => ['task' => 'Assignment']]]);
+        $owner = $this->render('TimeTrack:TimesheetWeekGrid', ['timesheet' => $timesheet, 'viewer' => $this->user, 'options' => ['action_urls' => $urls, 'dialog_urls' => $dialogs, 'density' => 'compact', 'labels' => ['task' => 'Assignment']]]);
         self::assertStringContainsString('data-testid="time-track-week-grid"', $owner);
         self::assertStringContainsString('nowo-time-track--compact', $owner);
         self::assertStringContainsString('Assignment', $owner);
@@ -108,7 +109,7 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         }
 
         $submitted = $sheets->submit($this->user, 'org-a', $week);
-        $approver  = $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'show_expected' => false]]);
+        $approver  = $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'dialog_urls' => $dialogs, 'show_expected' => false]]);
         self::assertStringContainsString('Task not visible', $approver, 'AC-08: a task the approver cannot see is masked');
         self::assertStringNotContainsString('Secret project', $approver);
         self::assertStringNotContainsString('Gone project', $approver);
@@ -116,14 +117,14 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         self::assertStringContainsString('No task', $approver, 'an entry without a task is never masked by task');
         self::assertStringNotContainsString('Customer ACME', $approver, 'its free text follows the notes rule');
         self::assertStringContainsString('/host/approve', $approver);
-        self::assertStringContainsString('nowo-ui-confirm-dialog--anatomy', $approver, 'reject is a UiKit 2.29 dialog');
-        self::assertStringContainsString('form="time-track-reject-' . $submitted->getId() . '-form"', $approver);
+        self::assertStringContainsString('href="/host/reject?timesheet=' . $submitted->getId() . '"', $approver, 'reject opens its dialog on demand');
+        self::assertStringNotContainsString('<textarea', $approver);
         self::assertStringNotContainsString('/host/withdraw', $approver);
         self::assertStringNotContainsString('time-track-week-expected', $approver);
         self::assertStringNotContainsString('time-track-week-unassigned', $approver);
 
         $approved = $sheets->approve($this->approver, $submitted->getId());
-        $reopen   = $this->render('TimesheetWeekGrid', ['timesheet' => $approved, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'actions' => ['reopen']]]);
+        $reopen   = $this->render('TimesheetWeekGrid', ['timesheet' => $approved, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'dialog_urls' => $dialogs, 'actions' => ['reopen']]]);
         self::assertStringContainsString('/host/reopen', $reopen);
         self::assertStringContainsString('time-track-week-locked', $reopen);
         $readOnly = $this->render('TimesheetWeekGrid', ['timesheet' => $sheets->reopen($this->approver, $approved->getId(), 'Reopened for a fix.'), 'viewer' => $this->user, 'options' => ['action_urls' => $urls, 'read_only' => true]]);
@@ -151,14 +152,14 @@ final class TimesheetComponentsTest extends FunctionalTestCase
         $lines = $ledger->linesOf((string) $this->user->getId(), 'org-a');
         $urls  = ['add_adjustment' => '/host/ledger', 'reversal' => '/host/ledger/reverse'];
 
-        $table = $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->approver, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a', 'options' => ['action_urls' => $urls]]);
+        $table = $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->approver, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a', 'options' => ['dialog_urls' => $urls]]);
         self::assertStringContainsString('Doctor visit', $table);
         self::assertStringContainsString('-0:30', $table);
         self::assertStringContainsString('/host/ledger/reverse', $table);
         self::assertStringContainsString('data-line="' . $line->getId() . '"', $table);
         self::assertStringContainsString('data-reversed="1"', $table);
         self::assertStringContainsString('time-track-ledger-add', $table);
-        $ownerView = $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->user, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a', 'options' => ['action_urls' => $urls, 'columns' => ['kind', 'seconds']]]);
+        $ownerView = $this->render('LedgerTable', ['lines' => $lines, 'viewer' => $this->user, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a', 'options' => ['dialog_urls' => $urls, 'columns' => ['kind', 'seconds']]]);
         self::assertStringNotContainsString('/host/ledger', $ownerView, 'owners never adjust their own balance');
         self::assertStringNotContainsString('Doctor visit', $ownerView, 'the reason column is hidden');
         self::assertStringContainsString('No movements.', $this->render('LedgerTable', ['lines' => [], 'viewer' => $this->user, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a']));

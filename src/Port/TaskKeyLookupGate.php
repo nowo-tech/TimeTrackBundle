@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Calendar\TaskKeyLookupInterface;
-use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskKeyResolverInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

@@ -19,28 +19,38 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
- * 1.23.0 (`database.private_entity_manager`, REQ-ARCH-001 rule 6): off by default (the 1.22 wiring), on it routes every
- * bundle store and the user reference resolver through the private manager on `database.entity_manager`.
+ * `database.private_entity_manager` (REQ-ARCH-001 rule 6): opt-in since 1.23.0, the only mode since 2.0. Every bundle
+ * store and the user reference resolver go through the private manager on `database.entity_manager`.
  */
 final class PrivateEntityManagerConfigTest extends TestCase
 {
-    public function testOffByDefault(): void
+    public function testOnByDefaultAndTrueIsTheSame(): void
     {
-        $container = $this->load([]);
+        foreach ([[], ['database' => ['private_entity_manager' => true]]] as $config) {
+            $container = @$this->load($config);
 
-        self::assertFalse($container->hasDefinition(TimeTrackEntityManager::class));
-        self::assertFalse($container->hasParameter(TimeTrackExtension::PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER));
-        self::assertSame('doctrine.orm.default_entity_manager', (string) $container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArgument('$entityManager'));
-        self::assertSame('doctrine', (string) $container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArgument('$managerRegistry'));
-        self::assertNull($container->getDefinition(FormerPersonSnapshotListener::class)->getArgument('$privateEntityManager'));
+            self::assertTrue($container->hasDefinition(TimeTrackEntityManager::class));
+            self::assertSame('default', $container->getParameter(TimeTrackExtension::PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER));
+            self::assertSame(TimeTrackEntityManager::class, (string) $container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArgument('$entityManager'));
+            self::assertSame(TimeTrackManagerRegistry::class, (string) $container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArgument('$managerRegistry'));
+        }
+    }
+
+    public function testFalseFailsTheBuild(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage(TimeTrackExtension::PRIVATE_ENTITY_MANAGER_REMOVED);
+
+        @$this->load(['database' => ['private_entity_manager' => false]]);
     }
 
     public function testOnRoutesTheStoresThroughThePrivateManager(): void
     {
-        $container = $this->load(['database' => ['entity_manager' => 'time', 'private_entity_manager' => true]]);
+        $container = $this->load(['database' => ['entity_manager' => 'time']]);
 
         self::assertSame('time', $container->getParameter(TimeTrackExtension::PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER));
         self::assertSame('time', $container->getDefinition(TimeTrackEntityManager::class)->getArgument(1));

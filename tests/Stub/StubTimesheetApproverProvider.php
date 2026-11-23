@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetApproverProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetApproverProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_keys;

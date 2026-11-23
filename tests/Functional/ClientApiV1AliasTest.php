@@ -42,7 +42,6 @@ final class ClientApiV1AliasTest extends FunctionalTestCase
         ['nowo_time_track_api_timer', '/api/time-track/timer', 'nowo_time_track_api_v1_timer', '/api/time-track/v1/timer', 'GET|OPTIONS'],
         ['nowo_time_track_api_timer_start', '/api/time-track/timer/start', 'nowo_time_track_api_v1_timer_start', '/api/time-track/v1/timer/start', 'POST|OPTIONS'],
         ['nowo_time_track_api_timer_stop', '/api/time-track/timer/stop', 'nowo_time_track_api_v1_timer_stop', '/api/time-track/v1/timer/stop', 'POST|OPTIONS'],
-        ['nowo_time_track_api_heartbeat', '/api/time-track/heartbeat', 'nowo_time_track_api_v1_heartbeat', '/api/time-track/v1/heartbeat', 'POST|OPTIONS'],
         ['nowo_time_track_api_entries', '/api/time-track/entries', 'nowo_time_track_api_v1_entries', '/api/time-track/v1/entries', 'GET|OPTIONS'],
         ['nowo_time_track_api_timer_switch', '/api/time-track/timer/switch', 'nowo_time_track_api_v1_timer_switch', '/api/time-track/v1/timer/switch', 'POST|OPTIONS'],
         ['nowo_time_track_api_timer_discard_idle', '/api/time-track/timer/discard-idle', 'nowo_time_track_api_v1_timer_discard_idle', '/api/time-track/v1/timer/discard-idle', 'POST|OPTIONS'],

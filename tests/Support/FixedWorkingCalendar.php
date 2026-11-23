@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
 use DateTimeImmutable;
+use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDay;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDayKind;
-use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function in_array;

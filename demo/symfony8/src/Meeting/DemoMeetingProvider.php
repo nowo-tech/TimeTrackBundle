@@ -6,21 +6,21 @@ namespace App\Meeting;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Meeting\MeetingPage;
-use Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingQuery;
+use Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingSyncState;
 use Nowo\TimeTrackBundle\Meeting\MeetingSyncStatus;
 use Nowo\TimeTrackBundle\Meeting\MeetingTaskLink;
 use Nowo\TimeTrackBundle\Meeting\MeetingView;
-use Symfony\Component\Security\Core\User\UserInterface;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
  * Demo meeting provider (TimeTrack 1.14 meetings API, `GET /api/time-track/me/meetings`): two **fake** meetings a day
  * relative to now — no real calendar, person or link. A real host (Beacon spec 210) answers from its synced read model.
  */
-final class DemoMeetingProvider implements MeetingProviderInterface
+final class DemoMeetingProvider implements MeetingSourceInterface
 {
-    public function meetingsFor(UserInterface $user, MeetingQuery $query): MeetingPage
+    public function meetingsOf(TimeTrackUserRef $user, MeetingQuery $query): MeetingPage
     {
         $meetings = [];
         $day      = $query->from->setTime(0, 0);
@@ -30,10 +30,10 @@ final class DemoMeetingProvider implements MeetingProviderInterface
             $meetings[] = new MeetingView('mtg_demo_private_' . $key, $day->setTime(12, 0), $day->setTime(13, 0), 'UTC', false, true, true, 'Hidden: private events lose their title', null, false, [], null, [new MeetingTaskLink('demo', '#demo')], $day);
         }
 
-        return new MeetingPage($meetings, $this->stateFor($user));
+        return new MeetingPage($meetings, $this->syncStateOf($user));
     }
 
-    public function stateFor(UserInterface $user): MeetingSyncState
+    public function syncStateOf(TimeTrackUserRef $user): MeetingSyncState
     {
         return new MeetingSyncState(MeetingSyncStatus::Connected, new DateTimeImmutable('-2 minutes'));
     }

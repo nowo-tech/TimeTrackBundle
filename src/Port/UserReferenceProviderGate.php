@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

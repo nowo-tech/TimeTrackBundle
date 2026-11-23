@@ -21,7 +21,6 @@ use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
-use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\NativeClock;
 
 /**
@@ -82,7 +81,6 @@ final class LoadReadinessTimesheetRaceTest extends FunctionalTestCase
      * R9: two first views (or a view and a submit) of a period at once. Up to 1.26 the second insert failed on the unique
      * key (`conflict`), closed the manager and reset the application's manager (its user detached).
      */
-    #[Group('shared-entity-manager')]
     public function testTwoFirstViewsShareOneTimesheet(): void
     {
         $period  = $this->timesheets()->period($this->user, 'org-a', null);
@@ -134,7 +132,7 @@ final class LoadReadinessTimesheetRaceTest extends FunctionalTestCase
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM time_track_timesheet_events'));
 
         $connection->executeStatement('UPDATE time_track_timesheets SET locked_at = NULL, lock_reason = NULL');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $clock->arm([1 => static fn (): int|string => $connection->executeStatement('DELETE FROM time_track_timesheets')]);
         try {
             $service->autoLock($this->user, 'org-a', $this->week);

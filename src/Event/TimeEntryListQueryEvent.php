@@ -11,8 +11,6 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
-use function trigger_deprecation;
-
 /**
  * Lets listeners set the user ids whose entries a viewer sees in a period (team reports).
  */
@@ -41,19 +39,7 @@ final class TimeEntryListQueryEvent extends Event
     }
 
     /**
-     * User asking for the entries.
-     *
-     * @deprecated since 1.23.0, use {@see self::viewerRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0 (1.33.0: triggers a deprecation notice).
-     */
-    public function getViewer(): UserInterface
-    {
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'Nowo\\TimeTrackBundle\\Event\\TimeEntryListQueryEvent::getViewer() is deprecated since 1.23.0 and 2.0 removes it: read viewerRef() instead (or the 1.18 getViewerId()).');
-
-        return $this->viewer;
-    }
-
-    /**
-     * Since 1.23.0: framework-free reference of {@see self::getViewer()} (REQ-ARCH-001 rule 3): class, id, identifier and
+     * Since 1.23.0: framework-free reference of the viewer (REQ-ARCH-001 rule 3): class, id, identifier and
      * roles; the object itself through `viewerRef()->user()`. Built per call: compare with `isSameUserAs()`.
      */
     public function viewerRef(): TimeTrackUserRef
@@ -145,7 +131,7 @@ final class TimeEntryListQueryEvent extends Event
         return $this->ownerlessScopeKeys;
     }
 
-    /** Since 1.18: id of {@see self::getViewer()} as a string (`getId()`), for listeners that keep only ids. */
+    /** Since 1.18: id of the viewer as a string (`getId()`), for listeners that keep only ids. */
     public function getViewerId(): string
     {
         return UserIdResolver::getId($this->viewer);

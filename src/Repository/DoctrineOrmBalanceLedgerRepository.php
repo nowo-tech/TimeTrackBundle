@@ -10,7 +10,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
@@ -24,10 +23,11 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
     /**
      * Receives the entity manager.
      */
+    // @phpstan-ignore constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
-        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
+        ?object $hostFlushProbe = null,
     ) {
     }
 
@@ -44,7 +44,7 @@ final readonly class DoctrineOrmBalanceLedgerRepository implements BalanceLedger
      */
     public function flush(): void
     {
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**

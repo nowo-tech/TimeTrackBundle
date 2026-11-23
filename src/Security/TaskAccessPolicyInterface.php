@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Security;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see TaskAccessCheckerInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `TaskAccessCheckerInterface` (REQ-ARCH-001 rule 3), same
  * `client_api.task_access_checker` option. Deny by default: return true only when the user may track time on the task
  * now.
  */

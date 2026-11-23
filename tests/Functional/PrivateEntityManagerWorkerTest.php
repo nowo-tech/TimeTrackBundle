@@ -21,7 +21,7 @@ final class PrivateEntityManagerWorkerTest extends WorkerModeNoResetTest
 {
     protected static function timeTrackConfig(): array
     {
-        return array_replace_recursive(parent::timeTrackConfig(), ['database' => ['private_entity_manager' => true]]);
+        return array_replace_recursive(parent::timeTrackConfig(), []);
     }
 
     public function testThePrivateManagerIsDroppedAtEveryBoundaryAndNeverServesARowOfAnotherRequest(): void

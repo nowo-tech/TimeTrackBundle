@@ -6,9 +6,10 @@ namespace Nowo\TimeTrackBundle\WorkingTime;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
-use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserDaysOffProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Psr\Log\LoggerInterface;

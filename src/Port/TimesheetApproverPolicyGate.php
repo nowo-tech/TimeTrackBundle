@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetApproverProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetApproverPolicyInterface;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetApproverProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

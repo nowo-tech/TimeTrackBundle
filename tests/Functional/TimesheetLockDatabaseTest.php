@@ -158,7 +158,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
             return $ratified->getId();
         });
         $ledger->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $found = $timesheets->findForPeriod($owner, 'org-a', TimesheetPeriodKind::Week, '2026-11-02');
         self::assertSame($week45->getId(), $found?->getId());
@@ -372,7 +372,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         $repository->save($entry);
 
         self::assertSame(1, $repository->assignScopeKeys([$entry->getId() => '42']));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame('42', (string) $this->entityManager()->getConnection()->fetchOne('SELECT scope_key FROM time_track_entries WHERE id = ?', [$entry->getId()]));
     }
 

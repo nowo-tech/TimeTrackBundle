@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
-use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
+use Nowo\TimeTrackBundle\Port\Internal\TaskKeyResolverInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function mb_strlen;

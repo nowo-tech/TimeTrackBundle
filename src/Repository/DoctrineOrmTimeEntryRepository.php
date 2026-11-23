@@ -13,13 +13,14 @@ use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
+use Nowo\TimeTrackBundle\Port\Internal\EntryOwnersRepositoryInterface;
+use Nowo\TimeTrackBundle\Port\Internal\FilteredImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
@@ -56,14 +57,15 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
      * @param ManagerRegistry|null $managerRegistry The registry of that manager (the bundle's runner replaces a failed private manager through it)
      * @param TimeTrackTransactionRunner|null $runner Since 1.27.0: the bundle's transaction runner (null = one on this manager)
-     * @param TimeTrackHostFlushProbe|null $hostFlushProbe 1.33.0: the probe of the shared manager (null with the private one)
+     * @param object|null $hostFlushProbe @deprecated since 2.0, ignored (the 1.33 host-flush probe of the removed shared manager); removed in 3.0
      */
+    // @phpstan-ignore constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?LoggerInterface $logger = null,
         private ?TimeTrackTransactionRunner $runner = null,
-        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
+        ?object $hostFlushProbe = null,
     ) {
     }
 
@@ -72,7 +74,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function runner(): TimeTrackTransactionRunner
     {
-        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -81,7 +83,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
     public function save(TimeEntry $entry): void
     {
         $this->entityManager->persist($entry);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -419,7 +421,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
                     throw $lost;
                 }
             }
-            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
         });
     }
 
@@ -429,7 +431,7 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function flushPending(): void
     {
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**

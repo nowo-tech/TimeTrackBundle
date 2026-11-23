@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
 use Nowo\TimeTrackBundle\Meeting\MeetingPage;
-use Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingQuery;
 use Nowo\TimeTrackBundle\Meeting\MeetingSyncState;
 use Nowo\TimeTrackBundle\Meeting\MeetingSyncStatus;
 use Nowo\TimeTrackBundle\Meeting\MeetingView;
+use Nowo\TimeTrackBundle\Port\Internal\MeetingProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use RuntimeException;
 use Symfony\Component\Security\Core\User\UserInterface;

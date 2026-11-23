@@ -6,10 +6,10 @@ namespace Nowo\TimeTrackBundle\Tests\Stub;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Port\Internal\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdayAction;
 use Nowo\TimeTrackBundle\Workday\WorkdayConflictException;
 use Nowo\TimeTrackBundle\Workday\WorkdayForbiddenException;
-use Nowo\TimeTrackBundle\Workday\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdayState;
 use Symfony\Component\Security\Core\User\UserInterface;
 

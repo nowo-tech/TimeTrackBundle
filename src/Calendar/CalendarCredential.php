@@ -11,7 +11,7 @@ use SensitiveParameter;
 use function is_string;
 
 /**
- * Since 1.14: an OAuth access token for one sync, built by the host ({@see CalendarCredentialProviderInterface}) from
+ * Since 1.14: an OAuth access token for one sync, built by the host (the 1.x `CalendarCredentialProviderInterface`) from
  * its encrypted store (contract §6.1, Q-B9). The bundle never stores, serializes, logs or dispatches it:
  * {@see self::reveal()} is the only way to read the secret (for the adapter's `Authorization` header), debug output is
  * redacted and serialization throws (so it cannot reach a Messenger message, a cache or a session).

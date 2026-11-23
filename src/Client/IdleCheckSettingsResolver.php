@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Client;
 
+use Nowo\TimeTrackBundle\Port\Internal\IdleCheckSettingsProviderInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Security\Core\User\UserInterface;

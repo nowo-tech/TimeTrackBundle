@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Port;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Integration\BatchTaskDirectoryInterface;
-use Nowo\TimeTrackBundle\Integration\BatchTaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\BatchTaskProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

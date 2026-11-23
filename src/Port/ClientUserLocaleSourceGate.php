@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
-use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserLocaleSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserLocaleProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

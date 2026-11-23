@@ -34,7 +34,7 @@ use const GRAPHEME_EXTR_MAXBYTES;
 use const SORT_STRING;
 
 /**
- * Since 1.12: validates the host's days off ({@see ClientUserDaysOffProviderInterface}) for `GET me.daysOff`.
+ * Since 1.12: validates the host's days off (the 1.x `ClientUserDaysOffProviderInterface`) for `GET me.daysOff`.
  *
  * The value must be a list (else null, logged); only its first {@see self::MAX_ENTRIES} entries are read. An entry needs
  * a real `YYYY-MM-DD` `date` and a `kind` of {@see self::KINDS} (any case); a malformed entry is dropped alone and

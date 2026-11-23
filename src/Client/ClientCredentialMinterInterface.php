@@ -9,7 +9,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see ClientCredentialIssuerInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `ClientCredentialIssuerInterface` (REQ-ARCH-001 rule 3), same
  * `client_api.credential_issuer` option. Creates the host credential of a device approved through the device flow.
  */
 interface ClientCredentialMinterInterface

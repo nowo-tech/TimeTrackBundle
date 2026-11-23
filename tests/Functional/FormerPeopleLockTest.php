@@ -32,7 +32,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimesheetRepository;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
-use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
@@ -59,7 +58,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         self::assertFalse($this->guard()->isEntryWritable($entry));
 
         $this->people()->release($this->user, 'Ana');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('locked');
         self::assertSame($owner, $entry->getFormerUserId());
         self::assertFalse($this->guard()->isEntryWritable($entry), 'releasing the entry does not unlock it');
@@ -70,7 +69,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert(new ImportedTimeEntryClaim($this->managedUser(), 'user:' . $owner), $this->data('locked', seconds: 60))->outcome);
         self::assertSame(0, $this->writer()->remove(self::SOURCE, 'locked'), 'kept');
         self::assertSame(0, $this->writer()->removeForSource(self::SOURCE), 'kept');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(3600, $this->reload('locked')->getDurationSeconds());
     }
 
@@ -84,13 +83,13 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         }
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entry = $this->reload('locked');
         self::assertNull($entry->getUser());
         self::assertFalse($this->guard()->isEntryWritable($entry), 'the timesheet lost user_id and keeps owner_ref');
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('locked', seconds: 60))->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(3600, $this->reload('locked')->getDurationSeconds());
         self::assertSame(0, $this->writer()->removeForSource(self::SOURCE), 'a manager removal respects the lock');
     }
@@ -143,7 +142,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
 
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entries = $this->entityManager()->getRepository(TimeEntry::class)->findAll();
         self::assertCount(1, $entries);
@@ -194,19 +193,18 @@ final class FormerPeopleLockTest extends FunctionalTestCase
     {
         $this->writer()->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('free'));
         $this->lockWeek();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert(new ImportedTimeEntryClaim($this->managedUser(), 'p-1'), $this->data('free'))->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertTrue($this->reload('free')->isOwnerless());
     }
 
-    #[Group('shared-entity-manager')]
     public function testAnEntryWithNoIdentityHasAnUnknownOwner(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_entries SET user_id = NULL');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
 
         self::assertFalse($this->guard()->isEntryWritable($entry));
@@ -222,10 +220,10 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         $this->lockWeek();
         $owner = 'user:' . $this->user->getId();
         $this->people()->release($this->user, 'Ana');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(ImportedTimeEntryOutcome::Locked, $this->writer()->upsert(new ImportedTimeEntryClaim($this->managedUser(), $owner), $this->data('open'))->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame($start->getTimestamp(), $this->reload('open')->getStartedAt()->getTimestamp());
     }
 
@@ -257,7 +255,7 @@ final class FormerPeopleLockTest extends FunctionalTestCase
         $this->lockWeek();
 
         self::assertSame(1, $this->people()->anonymiseUser($this->user));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('locked');
         self::assertTrue($entry->isAnonymised());
         self::assertNull($entry->getDescription());

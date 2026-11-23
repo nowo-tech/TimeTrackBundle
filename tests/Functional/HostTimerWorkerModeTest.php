@@ -95,14 +95,14 @@ final class HostTimerWorkerModeTest extends FunctionalTestCase
             $step($i);
             $logger->records = [];
         }
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         gc_collect_cycles();
         $start = memory_get_usage();
         for ($i = 0; $i < 300; ++$i) {
             $step($i);
             $logger->records = [];
         }
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         gc_collect_cycles();
         $grown = memory_get_usage() - $start;
 

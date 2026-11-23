@@ -60,7 +60,7 @@ final class DoctrineRepositoriesTest extends FunctionalTestCase
 
         $timer = new ActiveTimer($this->user, 'task-1', 'Task', 'board-1', ClientType::Web);
         $repository->save($timer);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $found = $repository->findByUserId($userId);
         self::assertInstanceOf(ActiveTimer::class, $found);
@@ -113,7 +113,7 @@ final class DoctrineRepositoriesTest extends FunctionalTestCase
         }
 
         self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertInstanceOf(ActiveTimer::class, $repository->findByUserId((string) $this->user->getId()));
     }
 
@@ -186,7 +186,7 @@ final class DoctrineRepositoriesTest extends FunctionalTestCase
         $repository->save(new TimeEntry($other, 'task-o', 'O', null, new DateTimeImmutable('2026-11-02 09:00:00'), new DateTimeImmutable('2026-11-02 12:00:00'), 10800, TimeEntrySource::Web));
         $repository->save(new TimeEntry($this->user, 'task-a', 'A', null, new DateTimeImmutable('2026-11-01 08:00:00'), new DateTimeImmutable('2026-11-02 10:00:00'), 3600, TimeEntrySource::Web));
         $repository->save(new TimeEntry($this->user, 'task-b', 'B', null, new DateTimeImmutable('2026-11-02 08:00:00'), new DateTimeImmutable('2026-11-02 09:00:00'), 3600, TimeEntrySource::Web));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame('2026-11-02 10:00:00', $repository->findLatestEndedAt($userId)?->format('Y-m-d H:i:s'), 'the latest end, not the latest start; other users ignored');
     }

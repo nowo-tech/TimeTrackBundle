@@ -53,7 +53,7 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
         $split = $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => $splitFrom, 'to' => $splitTo, 'action' => 'split'], $token);
         self::assertResponseIsSuccessful();
         self::assertEqualsWithDelta(1200, $split['entry']['durationSeconds'] ?? 0, 5);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $timer = $this->api('GET', '/api/time-track/timer', null, $token);
         self::assertSame($this->instant($splitTo), $this->instant((string) ($timer['timer']['startedAt'] ?? '')), 'the continued timer starts at the instant sent');
@@ -62,7 +62,7 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
         $discard     = $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => $discardFrom, 'to' => $this->at('-1 minute', $offset), 'action' => 'discard'], $token);
         self::assertResponseIsSuccessful();
         self::assertEqualsWithDelta(1200, $discard['entry']['durationSeconds'] ?? 0, 5);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entries = $this->api('GET', '/api/time-track/entries', null, $token)['entries'] ?? [];
         self::assertCount(2, $entries);
@@ -83,7 +83,7 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
         $start     = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'startedAt' => $startedAt], $token);
         self::assertResponseStatusCodeSame(201);
         self::assertFalse($start['startedAtResult']['clamped'] ?? null);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $timer = $this->api('GET', '/api/time-track/timer', null, $token);
         self::assertSame($this->instant($startedAt), $this->instant((string) ($timer['timer']['startedAt'] ?? '')), 'stored start = the instant sent');
 
@@ -91,13 +91,13 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
         $stop    = $this->api('POST', '/api/time-track/timer/stop', ['endedAt' => $endedAt], $token);
         self::assertResponseIsSuccessful();
         self::assertSame(600, $stop['entry']['durationSeconds'] ?? null);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         // Overlap rule on the real instants: a start before the stored end is moved to it, whatever the offset.
         $overlap = $this->api('POST', '/api/time-track/timer/start', ['taskId' => 'task-1', 'startedAt' => $this->at('-25 minutes', $offset)], $token);
         self::assertSame('overlap', $overlap['startedAtResult']['reason'] ?? null);
         self::assertSame($this->instant($endedAt), $this->instant((string) ($overlap['timer']['startedAt'] ?? '')));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $from     = $this->at('-15 minutes', $offset);
         $to       = $this->at('-5 minutes', $offset);
@@ -105,10 +105,10 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
         self::assertResponseIsSuccessful();
         self::assertSame(300, $reassign['entry']['durationSeconds'] ?? null);
         self::assertSame(600, $reassign['reassigned']['durationSeconds'] ?? null);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $this->api('POST', '/api/time-track/timer/stop', [], $token);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entries = $this->api('GET', '/api/time-track/entries', null, $token)['entries'] ?? [];
         self::assertSame(['task-1', 'task-2', 'task-1', 'task-1'], array_map(static fn (array $e): string => $e['taskId'], $entries));
         $total = 0;
@@ -148,7 +148,7 @@ final class ClientTimestampOffsetTest extends FunctionalTestCase
 
             $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => $this->at('-40 minutes', '+00:00'), 'to' => $to, 'action' => 'split'], $token);
             self::assertResponseIsSuccessful();
-            $this->entityManager()->clear();
+            $this->clearEntityManagers();
 
             $timer = $this->api('GET', '/api/time-track/timer', null, $token);
             self::assertSame($this->instant($to), $this->instant((string) ($timer['timer']['startedAt'] ?? '')));

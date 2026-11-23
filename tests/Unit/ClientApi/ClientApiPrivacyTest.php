@@ -8,10 +8,9 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Client\ClientPrivacyNormalizer;
-use Nowo\TimeTrackBundle\Client\ClientUserPrivacyProviderInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\StubPrivacyProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\ClientApiStack;
@@ -28,7 +27,7 @@ use const JSON_THROW_ON_ERROR;
 
 /**
  * 1.15 (TT-1): `privacy` on `GET me` when the profile provider also implements
- * {@see ClientUserPrivacyProviderInterface}, in the language of the request.
+ * the 1.x `ClientUserPrivacyProviderInterface`, in the language of the request.
  */
 final class ClientApiPrivacyTest extends TestCase
 {

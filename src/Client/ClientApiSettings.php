@@ -33,7 +33,7 @@ final readonly class ClientApiSettings
      * @param int $perIpLimit Requests per client IP per window on every API route (0 = off)
      * @param int $deviceIpLimit Requests per client IP per window on `device/code` and `device/token` (0 = off)
      * @param int $windowSeconds Rate limit window in seconds
-     * @param bool $allowTauriWebviewOrigins Deprecated 1.x behaviour: also allow `tauri://localhost` and `http(s)://tauri.localhost`
+     * @param bool $allowTauriWebviewOrigins @deprecated since 2.0, ignored: the client API no longer allows the Tauri webview origins; removed in 3.0
      * @param int $backdateMaxSeconds How far back `startedAt` may go, 0..86400 (0 = off; since 1.10)
      * @param int $clockSkewSeconds Future tolerance of `startedAt` / `endedAt` read as now, 0..900 (since 1.10)
      * @param bool $allowIdleReassign Accept `timer/discard-idle` action `reassign` (since 1.10)
@@ -48,7 +48,7 @@ final readonly class ClientApiSettings
         public int $perIpLimit = 300,
         public int $deviceIpLimit = 30,
         int $windowSeconds = 60,
-        public bool $allowTauriWebviewOrigins = true,
+        public bool $allowTauriWebviewOrigins = false,
         int $backdateMaxSeconds = BackdateLimits::MAX_SECONDS,
         int $clockSkewSeconds = 120,
         public bool $allowIdleReassign = true,

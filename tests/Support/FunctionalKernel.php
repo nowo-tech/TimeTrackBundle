@@ -86,8 +86,11 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
     /**
      * @param array<string, mixed> $timeTrackConfig
      * @param array<string, mixed> $securityConfig merged into the `security` configuration (since 1.29)
+     * @param string|null $serviceFixture since 2.0: a directory of tests/Fixtures/RemovedPorts whose classes the
+     *                                    application autodiscovers (ConfiguredTaskProvider: registered and configured as
+     *                                    `task_provider` instead)
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false, private readonly array $securityConfig = [])
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false, private readonly array $securityConfig = [], private readonly ?string $serviceFixture = null)
     {
         parent::__construct('test', $debug);
     }
@@ -121,7 +124,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize($this->securityConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize($this->securityConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . ($this->serviceFixture ?? '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -214,6 +217,15 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
             $container->services()->set(PsrOnlyClock::class)->public();
             $container->services()->alias(ClockInterface::class, PsrOnlyClock::class)->public();
         }
+        if ($this->serviceFixture !== null) {
+            $namespace = 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\RemovedPorts\\' . $this->serviceFixture . '\\';
+            if ($this->serviceFixture === 'ConfiguredTaskProvider') {
+                $container->services()->set($namespace . 'OldTasks');
+            } else {
+                $container->services()->defaults()->autowire()->autoconfigure()
+                    ->load($namespace, __DIR__ . '/../Fixtures/RemovedPorts/' . $this->serviceFixture . '/*');
+            }
+        }
         $container->extension('twig', [
             'paths' => [__DIR__ . '/../Fixtures/templates' => 'TimeTrackTest'],
         ]);
@@ -265,20 +277,14 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
     }
 
     /**
-     * Since 1.23.0: `TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER=1` runs the suite with `database.private_entity_manager: true`
-     * (CI job "Functional suite - private entity manager"); a test's own configuration still wins.
+     * Since 1.23.0: `TIME_TRACK_TEST_MAPPING_TYPE=xml` runs the suite on the shipped XML mapping (REQ-ARCH-001 rule 2); a
+     * test's own configuration still wins. (Since 2.0 the private entity manager is the only mode.).
      *
      * @return array<string, mixed>
      */
     public static function privateEntityManager(): array
     {
-        $database = getenv('TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER') === '1' ? ['private_entity_manager' => true] : [];
-        // Since 1.23.0: `TIME_TRACK_TEST_MAPPING_TYPE=xml` runs the suite on the shipped XML mapping (REQ-ARCH-001 rule 2).
-        if (getenv('TIME_TRACK_TEST_MAPPING_TYPE') === 'xml') {
-            $database['mapping_type'] = 'xml';
-        }
-
-        return $database === [] ? [] : ['database' => $database];
+        return getenv('TIME_TRACK_TEST_MAPPING_TYPE') === 'xml' ? ['database' => ['mapping_type' => 'xml']] : [];
     }
 
     /**

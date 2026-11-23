@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamDirectoryInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

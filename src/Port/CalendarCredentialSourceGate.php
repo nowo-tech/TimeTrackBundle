@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Calendar\CalendarCredential;
-use Nowo\TimeTrackBundle\Calendar\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\Calendar\CalendarCredentialSourceInterface;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
+use Nowo\TimeTrackBundle\Port\Internal\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\ValueObject\CalendarConnectionRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 

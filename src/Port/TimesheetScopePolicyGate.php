@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Dto\TimeEntryView;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopePolicyInterface;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_map;

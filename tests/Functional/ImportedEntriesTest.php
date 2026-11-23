@@ -27,8 +27,8 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Import\InvalidImportedTimeEntryException;
+use Nowo\TimeTrackBundle\Port\Internal\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
-use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
@@ -38,7 +38,6 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryStore;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Group;
 use stdClass;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -95,7 +94,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
 
         $created = $writer->upsert($this->user, $this->data('e-1', description: $long));
         self::assertSame(ImportedTimeEntryOutcome::Created, $created->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $stored = $this->repository()->findByExternal(self::SOURCE, 'e-1');
         self::assertInstanceOf(TimeEntry::class, $stored);
@@ -231,7 +230,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
 
         self::assertSame(ImportedTimeEntryOutcome::Updated, $result->outcome);
         self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
         self::assertSame(1, $this->repository()->countByUsersAndPeriod([(string) $this->user->getId()], new DateTimeImmutable('2025-12-31'), new DateTimeImmutable('2026-01-02')));
         self::assertCount(1, $this->events);
@@ -256,7 +255,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
 
         self::assertSame(ImportedTimeEntryOutcome::Updated, $result->outcome);
         self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
         self::assertCount(1, $this->events);
     }
@@ -280,7 +279,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
         // Since 1.27.0 (Beacon spec 239): the race never resets the manager, so the caller's entities stay managed and a
         // later change of the application is written (1.26 reset the application's manager: this user was detached).
         self::assertTrue($this->entityManager()->contains($this->user), 'the application\'s user stays managed');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
         foreach (['e-2', 'e-3'] as $id) {
             $owner = $this->repository()->findByExternal(self::SOURCE, $id)?->getUser();
@@ -294,7 +293,6 @@ final class ImportedEntriesTest extends FunctionalTestCase
      * DBAL in savepoints), so the writer reads it again even without a registry; up to 1.26 the failed flush closed the
      * manager and only a registry reset (of the application's manager, by default) let the writer retry.
      */
-    #[Group('shared-entity-manager')]
     public function testWithoutARegistryTheRaceIsRetriedWithTheManagerOpen(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
@@ -307,7 +305,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
         self::assertSame(2, $racing->saveAllCalls, 'the unique violation is retried once');
         self::assertTrue($this->entityManager()->isOpen());
         self::assertTrue($this->entityManager()->contains($this->user), 'the application\'s entities stay managed');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(1800, $this->repository()->findByExternal(self::SOURCE, 'e-1')?->getDurationSeconds());
         self::assertNotNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
     }
@@ -334,11 +332,14 @@ final class ImportedEntriesTest extends FunctionalTestCase
         self::assertNull($this->repository()->findByExternal(self::SOURCE, 'e-2'));
     }
 
-    #[Group('shared-entity-manager')]
     public function testAttachUserReturnsAManagedUser(): void
     {
         $repository = $this->repository();
-        self::assertSame($this->user, $repository->attachUser($this->user), 'already managed');
+        // 2.0: the store holds TimeTrack's private manager: your user becomes that manager's reference to the same row.
+        $reference = $repository->attachUser($this->user);
+        self::assertNotSame($this->user, $reference);
+        self::assertTrue($this->bundleEntityManager()->contains($reference));
+        self::assertSame($reference, $repository->attachUser($reference), 'already managed');
 
         $memory = new InMemoryUser('memory', null);
         self::assertSame($memory, $repository->attachUser($memory), 'not an entity of the store');
@@ -346,12 +347,12 @@ final class ImportedEntriesTest extends FunctionalTestCase
         $unsaved = new AppUser('unsaved@example.com', 'secret', ['ROLE_USER']);
         self::assertSame($unsaved, $repository->attachUser($unsaved), 'no identifier yet');
 
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $attached = $repository->attachUser($this->user);
         self::assertNotSame($this->user, $attached);
         self::assertInstanceOf(AppUser::class, $attached);
         self::assertSame($this->user->getId(), $attached->getId());
-        self::assertTrue($this->entityManager()->contains($attached));
+        self::assertTrue($this->bundleEntityManager()->contains($attached));
     }
 
     public function testTimersIdleAndSwitchNeverTouchImportedEntries(): void

@@ -8,7 +8,7 @@ use Nowo\TimeTrackBundle\ValueObject\CalendarConnectionRef;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see CalendarCredentialProviderInterface} (REQ-ARCH-001 rules 1 and 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `CalendarCredentialProviderInterface` (REQ-ARCH-001 rules 1 and 3), same
  * `calendar.credential_provider` option: the user is a {@see TimeTrackUserRef}, the connection a
  * {@see CalendarConnectionRef} snapshot instead of the Doctrine entity.
  */

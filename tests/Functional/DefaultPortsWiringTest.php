@@ -6,15 +6,15 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
-use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 
 /**

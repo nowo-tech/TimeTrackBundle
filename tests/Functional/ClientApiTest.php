@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 
+use function array_column;
 use function in_array;
 
 /**
@@ -26,7 +27,6 @@ final class ClientApiTest extends FunctionalTestCase
         yield 'timer' => ['GET', '/api/time-track/timer'];
         yield 'timer start' => ['POST', '/api/time-track/timer/start'];
         yield 'timer stop' => ['POST', '/api/time-track/timer/stop'];
-        yield 'heartbeat' => ['POST', '/api/time-track/heartbeat'];
         yield 'entries' => ['GET', '/api/time-track/entries'];
     }
 
@@ -112,7 +112,8 @@ final class ClientApiTest extends FunctionalTestCase
         $this->api('GET', '/api/time-track/timer', null, $token);
         self::assertResponseStatusCodeSame(204);
 
-        $this->api('POST', '/api/time-track/heartbeat', ['isIdle' => true], $token);
+        // 2.0: POST heartbeat (deprecated since 1.9) is removed with its route.
+        $this->client->request('POST', '/api/time-track/heartbeat', server: ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]);
         self::assertResponseStatusCodeSame(404);
 
         $this->api('POST', '/api/time-track/timer/stop', null, $token);
@@ -144,13 +145,6 @@ final class ClientApiTest extends FunctionalTestCase
         self::assertResponseIsSuccessful();
         self::assertSame('task-1', $timer['timer']['taskId'] ?? null);
 
-        $beat = $this->api('POST', '/api/time-track/heartbeat', ['isIdle' => true], $token);
-        self::assertResponseIsSuccessful();
-        self::assertNull($beat['timer']['metadata']['isIdle'] ?? null, 'isIdle is ignored since 1.9');
-        self::assertTrue($beat['deprecated'] ?? null);
-        self::assertResponseHeaderSame('Deprecation', 'true');
-        self::assertSame(300, $beat['idleThresholdSeconds'] ?? null);
-
         $stopped = $this->api('POST', '/api/time-track/timer/stop', null, $token);
         self::assertResponseIsSuccessful();
         self::assertSame('task-1', $stopped['entry']['taskId'] ?? null);
@@ -164,9 +158,11 @@ final class ClientApiTest extends FunctionalTestCase
         self::assertResponseIsSuccessful();
         self::assertCount(1, $own['entries'] ?? []);
 
-        $other = $this->createUser('other@example.com');
-        $this->api('GET', '/api/time-track/entries?userId=' . $other->getId(), null, $token);
-        self::assertResponseStatusCodeSame(403);
+        // 2.0: `userId` (deprecated since 1.9) is ignored: another user's id still answers the caller's own entries.
+        $other  = $this->createUser('other@example.com');
+        $theirs = $this->api('GET', '/api/time-track/entries?userId=' . $other->getId(), null, $token);
+        self::assertResponseIsSuccessful();
+        self::assertSame(array_column($own['entries'] ?? [], 'id'), array_column($theirs['entries'] ?? [], 'id'));
     }
 
     public function testLogoutRevokesTheToken(): void

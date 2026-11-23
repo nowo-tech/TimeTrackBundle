@@ -6,10 +6,10 @@ namespace Nowo\TimeTrackBundle\Retention;
 
 use DateTimeImmutable;
 use LogicException;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;

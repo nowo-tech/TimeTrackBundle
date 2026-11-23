@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Timesheet;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see TimesheetApproverProviderInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `TimesheetApproverProviderInterface` (REQ-ARCH-001 rule 3), same
  * `timesheets.approver_provider` option. Who approves whose timesheets, per tenant scope. The bundle never lets anybody
  * approve their own timesheet, whatever this policy says. Must be scope-safe and side-effect free.
  */

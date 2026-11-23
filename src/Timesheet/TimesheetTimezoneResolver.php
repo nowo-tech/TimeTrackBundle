@@ -6,8 +6,9 @@ namespace Nowo\TimeTrackBundle\Timesheet;
 
 use DateTimeZone;
 use Exception;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function is_string;

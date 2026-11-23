@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Timesheet;
 
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

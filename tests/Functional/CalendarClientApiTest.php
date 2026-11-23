@@ -27,7 +27,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
-use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -133,7 +132,6 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
-    #[Group('shared-entity-manager')]
     public function testSuggestionsAreGroupedAndAcceptedPerOccurrence(): void
     {
         $connection = $this->connect();
@@ -195,7 +193,6 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['groupKey' => 'series:aaaaaaaaaaaaaaaa:W'], $token)['dismissed'] ?? null, 'already accepted');
     }
 
-    #[Group('shared-entity-manager')]
     public function testAcceptIsSerialisedAndAtomicPerOccurrence(): void
     {
         $connection = $this->connect();
@@ -223,7 +220,7 @@ class CalendarClientApiTest extends FunctionalTestCase
 
         self::assertResponseIsSuccessful();
         self::assertSame(['not_found', 'internal_error', null], array_map(static fn (array $o): ?string => $o['error'] ?? null, $accepted['outcomes'] ?? []), 'GG-L1: the raced one is not accepted twice; GG-L2: a failure is per occurrence');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $rows = $this->entityManager()->getConnection()->fetchAllKeyValue('SELECT id, status FROM time_track_calendar_suggestions');
         self::assertSame(['pending', 'accepted'], [$rows[$broken->getId()], $rows[$fine->getId()]], 'the failed occurrence left nothing behind');
         self::assertSame(1, (int) $this->entityManager()->getConnection()->fetchOne("SELECT COUNT(*) FROM time_track_entries WHERE source = 'calendar'"));
@@ -239,7 +236,6 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertSame([], $this->api('POST', '/api/time-track/suggestions/dismiss', ['ids' => [$dismissed->getId()]], $token)['dismissed'] ?? null, 'a decided row is not dismissed');
     }
 
-    #[Group('shared-entity-manager')]
     public function testAGroupCanBeDismissedAndRefreshIsRateLimited(): void
     {
         $connection = $this->connect();
@@ -361,7 +357,11 @@ class CalendarClientApiTest extends FunctionalTestCase
 
     private function suggestion(CalendarConnection $connection, string $taskId, DateTimeImmutable $start, int $seconds, ?string $groupKey): CalendarSuggestion
     {
-        $suggestion = new CalendarSuggestion($connection, $this->managedUser(), hash('sha256', 'ref-' . ++$this->refs), null, $groupKey, $taskId, CalendarMatchKind::Key, $start, $start->modify('+' . $seconds . ' seconds'), $start->modify('+14 days'), new DateTimeImmutable());
+        // 2.0: the connection CalendarConnectionService returned belongs to TimeTrack's private manager; a row the
+        // application writes with its own manager references it by id (UPGRADING "Private manager only").
+        $reference = $this->entityManager()->getReference(CalendarConnection::class, $connection->getId());
+        self::assertInstanceOf(CalendarConnection::class, $reference);
+        $suggestion = new CalendarSuggestion($reference, $this->managedUser(), hash('sha256', 'ref-' . ++$this->refs), null, $groupKey, $taskId, CalendarMatchKind::Key, $start, $start->modify('+' . $seconds . ' seconds'), $start->modify('+14 days'), new DateTimeImmutable());
         $this->entityManager()->persist($suggestion);
 
         return $suggestion;

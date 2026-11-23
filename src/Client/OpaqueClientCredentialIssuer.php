@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Client;
 
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 use Symfony\Component\Security\Core\User\UserInterface;
 

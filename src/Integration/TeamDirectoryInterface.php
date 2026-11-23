@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Integration;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see TeamContextProviderInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `TeamContextProviderInterface` (REQ-ARCH-001 rule 3), same
  * `team_context_provider` option. Team membership and manager relationships for reports and ACL.
  */
 interface TeamDirectoryInterface

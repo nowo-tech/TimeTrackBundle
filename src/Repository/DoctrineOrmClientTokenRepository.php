@@ -9,7 +9,6 @@ use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\OwnedRows;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Dto\ClientSessionRecord;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
@@ -36,14 +35,15 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
      * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
      * @param ClockInterface|null $clock Time source of the expiry checks (defaults to the system clock)
-     * @param TimeTrackHostFlushProbe|null $hostFlushProbe 1.33.0: the probe of the shared manager (null with the private one)
+     * @param object|null $hostFlushProbe @deprecated since 2.0, ignored (the 1.33 host-flush probe of the removed shared manager); removed in 3.0
      * @param TimeTrackTransactionRunner|null $runner 1.34.0: the bundle's transaction runner of {@see self::removeSessionById()} (null = one on this manager)
      */
+    // @phpstan-ignore constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         ?ClockInterface $clock = null,
-        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
+        ?object $hostFlushProbe = null,
         private ?TimeTrackTransactionRunner $runner = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
@@ -55,7 +55,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
     public function save(ClientToken $token): void
     {
         $this->entityManager->persist($token);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -64,7 +64,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
     public function remove(ClientToken $token): void
     {
         $this->entityManager->remove($token);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -126,7 +126,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
         if ($userId === '' || !DoctrineUserReferenceResolver::isExactId($userId)) {
             return 0;
         }
-        $runner = $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
+        $runner = $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
 
         return (int) $runner->runStatements(fn (): int => OwnedRows::delete($this->entityManager, ClientToken::class, OwnedRows::ids($this->entityManager, ClientToken::class, $userId, true)));
     }
@@ -173,7 +173,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
             ->where('t.id = :id')
             ->setParameter('id', $sessionId)
             ->getQuery();
-        $runner = $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
+        $runner = $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
 
         return (int) $runner->runStatements(fn (): mixed => TimeTrackSavepoint::execute($query, $this->entityManager));
     }

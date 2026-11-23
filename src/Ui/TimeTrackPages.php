@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Ui;
 
 use DateTimeImmutable;
+use LogicException;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Dto\TimeEntryPage;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -30,7 +31,6 @@ use Twig\Error\Error as TwigError;
 use function implode;
 use function in_array;
 use function sprintf;
-use function trigger_deprecation;
 
 /**
  * View models of the manage UI pages (REQ-UI-003) and their layout.
@@ -39,20 +39,18 @@ use function trigger_deprecation;
  * tasks (row action Start, header action Stop and a "Running" status while a timer runs), the reports page lists the
  * time entries of the period with the UiKit pagination. Labels are `NowoTimeTrackBundle` translation keys.
  *
- * Layout: `web_ui.layout_template` (null = `nowo_ui_kit.layouts.admin`). A 1.x layout that does not render the UiKit
- * canonical blocks (no `nowo_ui_page_header`) is wrapped in `_legacy_layout.html.twig` (deprecated since 1.8); the
- * 1.x default `@NowoTimeTrackBundle/layout.html.twig` maps to null.
+ * Layout: `web_ui.layout_template` (null = `nowo_ui_kit.layouts.admin`). Since 2.0 a layout that does not render the
+ * UiKit canonical blocks (no `nowo_ui_page_header`) fails the page with a `LogicException` (the 1.x bridge
+ * `_legacy_layout.html.twig`, deprecated since 1.8, is removed), and so does the removed 1.x default
+ * `@NowoTimeTrackBundle/layout.html.twig`.
  */
 final readonly class TimeTrackPages
 {
     /** Bundle name of the theme exceptions (`nowo_ui_kit.theme.bundles.NowoTimeTrackBundle`). */
     public const BUNDLE = 'NowoTimeTrackBundle';
 
-    /** 1.x default of `templates.layout`: maps to the UiKit admin layout. */
+    /** The 1.x default layout `templates.layout` (removed in 2.0, with the key). */
     public const LEGACY_DEFAULT_LAYOUT = '@NowoTimeTrackBundle/layout.html.twig';
-
-    /** Bridge between a 1.x host layout and the scaffolds (deprecated, removed in 2.0). */
-    public const LEGACY_LAYOUT_BRIDGE = '@NowoTimeTrackBundle/_legacy_layout.html.twig';
 
     /** UiKit canonical blocks a host layout may render itself. */
     public const CANONICAL_BLOCKS = ['nowo_ui_document_title', 'nowo_ui_head', 'nowo_ui_styles', 'nowo_ui_page_header', 'nowo_ui_flashes', 'nowo_ui_content', 'nowo_ui_modals', 'nowo_ui_scripts'];
@@ -207,48 +205,39 @@ final readonly class TimeTrackPages
     }
 
     /**
-     * Layout of the pages: null (UiKit admin layout), the configured layout, or the 1.x bridge.
+     * Layout of the pages: null (UiKit admin layout) or the configured layout. Not memoized (no state in the service,
+     * worker safe); Twig caches the compiled layout.
+     *
+     * @throws LogicException when the configured layout is the removed 1.x default or renders no UiKit page header
      */
     public function layout(): ?string
     {
-        return $this->resolve()[0];
+        $layout = $this->layoutTemplate;
+        if ($layout === null || $layout === '') {
+            return null;
+        }
+        if ($layout === self::LEGACY_DEFAULT_LAYOUT) {
+            throw new LogicException(sprintf('nowo_time_track.web_ui.layout_template is "%s", the 1.x layout that 2.0 removed: unset it (the pages use nowo_ui_kit.layouts.admin) or point it at your layout; see UPGRADING "To 2.0.0".', $layout));
+        }
+
+        $blocks = $this->renderedCanonicalBlocks($layout);
+        if ($blocks === null || in_array('nowo_ui_page_header', $blocks, true)) {
+            return $layout;
+        }
+
+        throw new LogicException(sprintf('The TimeTrack layout "%s" does not render the UiKit canonical blocks (nowo_ui_page_header, nowo_ui_content, ...). 2.0 removed the 1.x bridge that wrapped such layouts: render the canonical blocks, or unset nowo_time_track.web_ui.layout_template and set nowo_ui_kit.layouts.admin instead; see UPGRADING "To 2.0.0".', $layout));
     }
 
     /**
-     * Render context for the 1.x bridge (empty when no bridge is used).
+     * Since 2.0 always empty (the 1.x layout bridge is removed).
+     *
+     * @deprecated since 2.0, always empty; removed in 3.0
      *
      * @return array<string, mixed>
      */
     public function layoutContext(): array
     {
-        [$layout, $legacy, $blocks] = $this->resolve();
-
-        return $layout === self::LEGACY_LAYOUT_BRIDGE
-            ? ['nowo_time_track_legacy_layout' => $legacy, 'nowo_time_track_legacy_blocks' => $blocks]
-            : [];
-    }
-
-    /**
-     * Resolved [page layout, 1.x host layout, canonical blocks it renders]; not memoized (no state in the service,
-     * worker safe) — Twig caches the compiled layout.
-     *
-     * @return array{0: string|null, 1: string|null, 2: list<string>}
-     */
-    private function resolve(): array
-    {
-        $layout = $this->layoutTemplate;
-        if (in_array($layout, [null, '', self::LEGACY_DEFAULT_LAYOUT], true)) {
-            return [null, null, []];
-        }
-
-        $blocks = $this->renderedCanonicalBlocks($layout);
-        if ($blocks === null || in_array('nowo_ui_page_header', $blocks, true)) {
-            return [$layout, null, []];
-        }
-
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.8', sprintf('The TimeTrack layout "%s" does not render the UiKit canonical blocks (nowo_ui_page_header, nowo_ui_content, ...); it is wrapped in a bridge that is removed in 2.0. Render the canonical blocks or set nowo_ui_kit.layouts.admin instead (see docs/UPGRADING.md).', $layout));
-
-        return [self::LEGACY_LAYOUT_BRIDGE, $layout, $blocks];
+        return [];
     }
 
     /**

@@ -241,6 +241,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+2.0.0 (major, REQ-ARCH-001 closure): only the changes 1.x announced (deprecated since 1.5–1.39, runtime notices since
+1.33.0 / 1.39.0). An application that runs 1.39 without TimeTrack deprecation notices upgrades without code changes.
+See [UPGRADING](UPGRADING.md#unreleased).
+
+### Changed
+
+- **BREAKING:** the private entity manager is the only mode (REQ-ARCH-001 rule 6, opt-in since 1.23.0). TimeTrack
+  reads and writes its rows only through `TimeTrackEntityManager` (on the connection and mapping of
+  `database.entity_manager`) and never flushes, clears, closes or resets the application's entity manager. A change of
+  the application that was only stored because a TimeTrack write flushed its manager is no longer stored, and a
+  TimeTrack row changed and flushed with the application's manager is no longer written (see UPGRADING).
+- **BREAKING:** `database.private_entity_manager: false` fails the container build; `true` (and unset) is the 2.0
+  behaviour (`true` is a deprecated no-op, removed in 3.0).
+- **BREAKING:** the client API allows exact origins only: `"*"` in `clients.cors_allowed_origins`,
+  `clients.cors_allow_any_extension_origin: true` and `client_api.allow_tauri_webview_origins: true` (the 1.x
+  default) fail the container build; the Tauri webview origins (`tauri://localhost`, `http(s)://tauri.localhost`) are
+  no longer allowed. `false` for the two options is a deprecated no-op (removed in 3.0).
+  `ClientApiSettings::$allowTauriWebviewOrigins` (default now `false`) and the `$kernelEnvironment` /
+  `$allowAnyExtensionOrigin` arguments of `ClientResponseFactory` are accepted and ignored.
+- **BREAKING:** `GET /api/time-track/entries` (and its v1 twin) returns the caller's own entries only; the 1.x
+  `userId` parameter (deprecated since 1.9) is ignored.
+- **BREAKING:** `web_ui.layout_template` pointing at a layout without the UiKit page header block, or at the removed
+  `@NowoTimeTrackBundle/layout.html.twig`, fails the page with a `LogicException` (the 1.x bridge is removed).
+  `TimeTrackPages::layoutContext()` returns `[]` (deprecated, removed in 3.0).
+- **BREAKING:** `TimeTrack:LedgerTable` and `TimeTrack:TimesheetWeekGrid` render their dialogs on demand only: a
+  dialog action (`reversal`, `add_adjustment`; `reject`, `reopen`) with `options.action_urls` but without
+  `options.dialog_urls` fails the render with a `LogicException`. `addForm` / `reversalForm` of the ledger view are
+  always `null`; `_action.html.twig` renders the plain button only.
+- UiKit seeding: without `nowo_ui_kit.css_framework` / `icon_set` the bundle still seeds `tabler` / `tabler-icons`
+  (the 1.x default); the removed `templates.css_framework` no longer chooses the seed.
+- The bundle's own default port services (stub task provider, single scope, Doctrine user reference resolver, ...)
+  implement internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`, `@internal`); a host service is asked only
+  through the 1.23 twin of its port.
+
+### Removed
+
+- **BREAKING:** the 22 host port interfaces deprecated in 1.23.0 (notices since 1.33.0): `Integration\TaskProviderInterface`,
+  `Integration\BatchTaskProviderInterface`, `Integration\TeamContextProviderInterface`,
+  `Integration\UserReferenceResolverInterface`, `Timesheet\TimesheetScopeProviderInterface`,
+  `Timesheet\TimesheetApproverProviderInterface`, `Calendar\TaskKeyResolverInterface`,
+  `Calendar\CalendarCredentialProviderInterface`, `Meeting\MeetingProviderInterface`, `Workday\WorkdayProviderInterface`,
+  `Client\IdleCheckSettingsProviderInterface`, `Client\ClientCredentialIssuerInterface`,
+  `Security\TaskAccessCheckerInterface`, `Client\ClientUserProfileProviderInterface`,
+  `Client\ClientUserLocaleProviderInterface`, `Client\ClientUserDaysOffProviderInterface`,
+  `Client\ClientUserPrivacyProviderInterface`, `WorkingTime\WorkingCalendarProviderInterface`,
+  `WorkingTime\WorkedTimeSourceInterface`, `Repository\ImportedTimeEntryRepositoryInterface`,
+  `Repository\FilteredImportedTimeEntryRepositoryInterface`, `Repository\EntryOwnersRepositoryInterface`. Implement
+  the 1.23 twin with the same option. A service still on one of them (configured, aliased or decorated under its id,
+  or an autodiscovered class that implements it) fails the container build with a message naming the service, the
+  removed interface and the twin (W1-1, `DependencyInjection\Compiler\RemovedPortsPass`), instead of being dropped
+  silently. The service `Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface` and
+  `ImportedTimeEntryRepositoryResolver::resolve()` go with them (`resolveStore()` stays).
+- **BREAKING:** `getUser()` of `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`,
+  `TaskEffortAccessCheckEvent`, `getViewer()` of `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`, and
+  `ClientAuthResult::getUser()` (deprecated since 1.23.0): read `userRef()` / `viewerRef()` (or `getUserId()` /
+  `getViewerId()`).
+- **BREAKING:** `RecoveringFlusher::resetIfClosed()` (a no-op since 1.27.0).
+- **BREAKING:** `POST /api/time-track/heartbeat` (and its v1 twin), the `clients.routes.heartbeat` key and the
+  `heartbeat` route key of `client_api.routes.include` (deprecated since 1.9): a configuration that still names it
+  fails the container build.
+- **BREAKING:** the `templates.*` keys (`layout`, `css_framework`, `index`, `reports`; deprecated since 1.8), the
+  container parameters `nowo_time_track.templates`, `nowo_time_track.templates.layout`,
+  `nowo_time_track.templates.css_framework`, the Twig globals `nowo_time_track_layout` /
+  `nowo_time_track_css_framework`, `Configuration::LEGACY_LAYOUT` and `TimeTrackPages::LEGACY_LAYOUT_BRIDGE`. Any
+  `templates` key fails the container build. `Configuration::CSS_FRAMEWORKS` is deprecated (removed in 3.0).
+- **BREAKING:** the templates `@NowoTimeTrackBundle/layout.html.twig` and `@NowoTimeTrackBundle/_legacy_layout.html.twig`
+  (deprecated since 1.8).
+- **BREAKING:** `security.manager_can_edit_entries` (deprecated since 1.5): `false` fails the container build (refuse
+  managers in a `nowo_time_track.time_entry.access_check` listener); `true` is a deprecated no-op (removed in 3.0).
+- The 1.33.0 deprecation layer: the host-flush probe (`Doctrine\TimeTrackHostFlushProbe`, `@internal`), its wiring
+  and calls, and the 1.33 notices (`TimeTrackExtension::DEPRECATION_PACKAGE`, `DEPRECATION_SINCE`,
+  `PRIVATE_ENTITY_MANAGER_NOTICE`, `CORS_WILDCARD_NOTICE`, `TAURI_WEBVIEW_ORIGINS_NOTICE`, `Ports::deprecateLegacy()`,
+  `TimeTrackPortsPass::EXTRAS`). The `$hostFlushProbe` constructor argument of `TimeTrackTransactionRunner` and of the
+  Doctrine stores, and the third argument of `RecoveringFlusher::flush()`, are accepted and ignored (deprecated,
+  removed in 3.0).
+- Unused since the removals and kept in the signature, ignored (deprecated, removed in 3.0): the `$teamAccessGuard`
+  and `$idleThresholdSeconds` arguments of `TimeTrackClientApiController`, the `$layoutTemplate` / `$cssFramework`
+  arguments of `TimeTrackTwigExtension`.
+
+### Security
+
+- After 2.0.0 the 1.x line receives security fixes for 6 months: Moderate and higher are backported to the last 1.x
+  minor; Low ones are fixed in 2.x only.
+
 ## [1.39.0] - 2026-11-23
 
 ### Fixed (Unreleased)

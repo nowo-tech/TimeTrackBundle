@@ -6,8 +6,8 @@ namespace Nowo\TimeTrackBundle\Port;
 
 use DateTimeImmutable;
 use LogicException;
+use Nowo\TimeTrackBundle\Port\Internal\EntryOwnersRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\EntryOwnerRefsRepositoryInterface;
-use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
 
 /**
  * Asks a store implementing only {@see EntryOwnerRefsRepositoryInterface} (1.23.0) where the auto-lock asks the

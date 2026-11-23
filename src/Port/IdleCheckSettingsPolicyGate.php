@@ -6,7 +6,7 @@ namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Client\IdleCheckSettings;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsPolicyInterface;
-use Nowo\TimeTrackBundle\Client\IdleCheckSettingsProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\IdleCheckSettingsProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

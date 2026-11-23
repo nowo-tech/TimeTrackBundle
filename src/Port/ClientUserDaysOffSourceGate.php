@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use DateTimeImmutable;
-use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserDaysOffSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserDaysOffProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
