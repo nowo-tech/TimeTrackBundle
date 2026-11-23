@@ -8,263 +8,250 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Fixed (Unreleased)](#fixed-unreleased)
+  - [Added (Unreleased)](#added-unreleased)
+  - [Deprecated (Unreleased)](#deprecated-unreleased)
+- [[1.38.0] - 2026-11-23](#1380---2026-11-23)
+  - [Fixed](#fixed)
+  - [Documentation](#documentation)
+  - [Changed](#changed)
+  - [Added](#added)
+  - [Fixed](#fixed-1)
+  - [Tests](#tests)
 - [[1.37.0] - 2026-11-22](#1370---2026-11-22)
   - [Added (1.37.0)](#added-1370)
   - [Changed (1.37.0)](#changed-1370)
 - [[1.36.0] - 2026-11-22](#1360---2026-11-22)
-  - [Added](#added)
-- [[1.35.0] - 2026-11-21](#1350---2026-11-21)
   - [Added](#added-1)
-  - [Fixed](#fixed)
-  - [Changed](#changed)
+- [[1.35.0] - 2026-11-21](#1350---2026-11-21)
+  - [Added](#added-2)
+  - [Fixed](#fixed-2)
+  - [Changed](#changed-1)
 - [[1.34.0] - 2026-11-20](#1340---2026-11-20)
-  - [Added (Unreleased)](#added-unreleased)
-  - [Fixed (Unreleased)](#fixed-unreleased)
+  - [Added (Unreleased)](#added-unreleased-1)
+  - [Fixed (Unreleased)](#fixed-unreleased-1)
 - [[1.33.0] - 2026-11-20](#1330---2026-11-20)
   - [Added (1.33.0)](#added-1330)
   - [Changed (1.33.0)](#changed-1330)
   - [Deprecated (1.33.0)](#deprecated-1330)
 - [[1.32.1] - 2026-11-20](#1321---2026-11-20)
-  - [Changed](#changed-1)
-  - [Fixed](#fixed-1)
-- [[1.32.0] - 2026-11-20](#1320---2026-11-20)
   - [Changed](#changed-2)
-  - [Fixed](#fixed-2)
-- [[1.31.0] - 2026-11-18](#1310---2026-11-18)
-  - [Added](#added-2)
-  - [Changed](#changed-3)
   - [Fixed](#fixed-3)
-- [[1.30.0] - 2026-11-17](#1300---2026-11-17)
-  - [Changed](#changed-4)
+- [[1.32.0] - 2026-11-20](#1320---2026-11-20)
+  - [Changed](#changed-3)
+  - [Fixed](#fixed-4)
+- [[1.31.0] - 2026-11-18](#1310---2026-11-18)
   - [Added](#added-3)
-- [[1.29.0] - 2026-11-17](#1290---2026-11-17)
-  - [Added](#added-4)
-- [[1.28.0] - 2026-11-17](#1280---2026-11-17)
+  - [Changed](#changed-4)
+  - [Fixed](#fixed-5)
+- [[1.30.0] - 2026-11-17](#1300---2026-11-17)
   - [Changed](#changed-5)
-  - [Documentation](#documentation)
+  - [Added](#added-4)
+- [[1.29.0] - 2026-11-17](#1290---2026-11-17)
+  - [Added](#added-5)
+- [[1.28.0] - 2026-11-17](#1280---2026-11-17)
+  - [Changed](#changed-6)
+  - [Documentation](#documentation-1)
   - [Demo](#demo)
 - [[1.27.0] - 2026-11-15](#1270---2026-11-15)
-  - [Added](#added-5)
-  - [Changed](#changed-6)
-  - [Fixed](#fixed-4)
-  - [Known issues](#known-issues)
-- [[1.26.0] - 2026-11-14](#1260---2026-11-14)
   - [Added](#added-6)
   - [Changed](#changed-7)
-  - [Tests](#tests)
-- [[1.25.0] - 2026-11-13](#1250---2026-11-13)
+  - [Fixed](#fixed-6)
+  - [Known issues](#known-issues)
+- [[1.26.0] - 2026-11-14](#1260---2026-11-14)
   - [Added](#added-7)
   - [Changed](#changed-8)
   - [Tests](#tests-1)
-- [[1.24.2] - 2026-11-13](#1242---2026-11-13)
-  - [Fixed](#fixed-5)
-  - [Tests](#tests-2)
+- [[1.25.0] - 2026-11-13](#1250---2026-11-13)
+  - [Added](#added-8)
   - [Changed](#changed-9)
+  - [Tests](#tests-2)
+- [[1.24.2] - 2026-11-13](#1242---2026-11-13)
+  - [Fixed](#fixed-7)
+  - [Tests](#tests-3)
+  - [Changed](#changed-10)
 - [[1.24.1] - 2026-11-13](#1241---2026-11-13)
   - [Security](#security)
-  - [Fixed](#fixed-6)
-  - [Documentation](#documentation-1)
-- [[1.24.0] - 2026-11-13](#1240---2026-11-13)
-  - [Added](#added-8)
-- [[1.23.1] - 2026-11-12](#1231---2026-11-12)
-  - [Fixed](#fixed-7)
-- [[1.23.0] - 2026-11-12](#1230---2026-11-12)
-  - [Added](#added-9)
-  - [Deprecated](#deprecated)
-- [[1.22.1] - 2026-11-12](#1221---2026-11-12)
   - [Fixed](#fixed-8)
   - [Documentation](#documentation-2)
-- [[1.22.0] - 2026-11-12](#1220---2026-11-12)
+- [[1.24.0] - 2026-11-13](#1240---2026-11-13)
+  - [Added](#added-9)
+- [[1.23.1] - 2026-11-12](#1231---2026-11-12)
+  - [Fixed](#fixed-9)
+- [[1.23.0] - 2026-11-12](#1230---2026-11-12)
   - [Added](#added-10)
-  - [Changed](#changed-10)
-- [[1.21.0] - 2026-11-12](#1210---2026-11-12)
+  - [Deprecated](#deprecated)
+- [[1.22.1] - 2026-11-12](#1221---2026-11-12)
+  - [Fixed](#fixed-10)
+  - [Documentation](#documentation-3)
+- [[1.22.0] - 2026-11-12](#1220---2026-11-12)
   - [Added](#added-11)
   - [Changed](#changed-11)
-- [[1.20.0] - 2026-11-11](#1200---2026-11-11)
+- [[1.21.0] - 2026-11-12](#1210---2026-11-12)
   - [Added](#added-12)
+  - [Changed](#changed-12)
+- [[1.20.0] - 2026-11-11](#1200---2026-11-11)
+  - [Added](#added-13)
   - [Security](#security-1)
   - [Unchanged](#unchanged)
-  - [Tests](#tests-3)
+  - [Tests](#tests-4)
   - [Docs](#docs)
 - [[1.19.1] - 2026-11-11](#1191---2026-11-11)
-  - [Fixed](#fixed-9)
-  - [Tests](#tests-4)
-- [[1.19.0] - 2026-11-11](#1190---2026-11-11)
-  - [Added](#added-13)
-  - [Security (audit LZ)](#security-audit-lz)
-  - [Changed](#changed-12)
-  - [Documentation](#documentation-3)
+  - [Fixed](#fixed-11)
   - [Tests](#tests-5)
-- [[1.18.0] - 2026-11-09](#1180---2026-11-09)
+- [[1.19.0] - 2026-11-11](#1190---2026-11-11)
   - [Added](#added-14)
+  - [Security (audit LZ)](#security-audit-lz)
   - [Changed](#changed-13)
   - [Documentation](#documentation-4)
-- [[1.17.1] - 2026-11-08](#1171---2026-11-08)
-  - [Fixed](#fixed-10)
-- [[1.17.0] - 2026-11-08](#1170---2026-11-08)
+  - [Tests](#tests-6)
+- [[1.18.0] - 2026-11-09](#1180---2026-11-09)
   - [Added](#added-15)
-- [[1.16.2] - 2026-11-07](#1162---2026-11-07)
-  - [Fixed](#fixed-11)
   - [Changed](#changed-14)
-- [[1.16.1] - 2026-11-07](#1161---2026-11-07)
+  - [Documentation](#documentation-5)
+- [[1.17.1] - 2026-11-08](#1171---2026-11-08)
   - [Fixed](#fixed-12)
-  - [Changed](#changed-15)
-- [[1.16.0] - 2026-11-07](#1160---2026-11-07)
+- [[1.17.0] - 2026-11-08](#1170---2026-11-08)
   - [Added](#added-16)
+- [[1.16.2] - 2026-11-07](#1162---2026-11-07)
   - [Fixed](#fixed-13)
-- [[1.15.0] - 2026-11-06](#1150---2026-11-06)
-  - [Added](#added-17)
+  - [Changed](#changed-15)
+- [[1.16.1] - 2026-11-07](#1161---2026-11-07)
+  - [Fixed](#fixed-14)
   - [Changed](#changed-16)
-- [[1.14.0] - 2026-11-06](#1140---2026-11-06)
+- [[1.16.0] - 2026-11-07](#1160---2026-11-07)
+  - [Added](#added-17)
+  - [Fixed](#fixed-15)
+- [[1.15.0] - 2026-11-06](#1150---2026-11-06)
   - [Added](#added-18)
   - [Changed](#changed-17)
-- [[1.13.0] - 2026-11-05](#1130---2026-11-05)
+- [[1.14.0] - 2026-11-06](#1140---2026-11-06)
   - [Added](#added-19)
   - [Changed](#changed-18)
-  - [Security](#security-2)
-- [[1.12.0] - 2026-11-05](#1120---2026-11-05)
+- [[1.13.0] - 2026-11-05](#1130---2026-11-05)
   - [Added](#added-20)
   - [Changed](#changed-19)
-  - [Documentation](#documentation-5)
-- [[1.11.0] - 2026-11-05](#1110---2026-11-05)
+  - [Security](#security-2)
+- [[1.12.0] - 2026-11-05](#1120---2026-11-05)
   - [Added](#added-21)
   - [Changed](#changed-20)
   - [Documentation](#documentation-6)
-- [[1.10.3] - 2026-11-04](#1103---2026-11-04)
+- [[1.11.0] - 2026-11-05](#1110---2026-11-05)
+  - [Added](#added-22)
   - [Changed](#changed-21)
   - [Documentation](#documentation-7)
-- [[1.10.2] - 2026-11-04](#1102---2026-11-04)
+- [[1.10.3] - 2026-11-04](#1103---2026-11-04)
   - [Changed](#changed-22)
   - [Documentation](#documentation-8)
-- [[1.10.1] - 2026-11-04](#1101---2026-11-04)
-  - [Added](#added-22)
-- [[1.10.0] - 2026-11-04](#1100---2026-11-04)
-  - [Added](#added-23)
+- [[1.10.2] - 2026-11-04](#1102---2026-11-04)
   - [Changed](#changed-23)
+  - [Documentation](#documentation-9)
+- [[1.10.1] - 2026-11-04](#1101---2026-11-04)
+  - [Added](#added-23)
+- [[1.10.0] - 2026-11-04](#1100---2026-11-04)
+  - [Added](#added-24)
+  - [Changed](#changed-24)
 - [[1.9.2] - 2026-11-04](#192---2026-11-04)
   - [Security](#security-3)
 - [[1.9.1] - 2026-11-02](#191---2026-11-02)
-  - [Added](#added-24)
-  - [Fixed](#fixed-14)
-- [[1.9.0] - 2026-11-02](#190---2026-11-02)
   - [Added](#added-25)
-  - [Changed](#changed-24)
+  - [Fixed](#fixed-16)
+- [[1.9.0] - 2026-11-02](#190---2026-11-02)
+  - [Added](#added-26)
+  - [Changed](#changed-25)
   - [Deprecated](#deprecated-1)
   - [Security](#security-4)
 - [[1.8.0] - 2026-11-02](#180---2026-11-02)
-  - [Added](#added-26)
-  - [Changed](#changed-25)
-  - [Deprecated](#deprecated-2)
-  - [Tests](#tests-6)
-  - [Documentation](#documentation-9)
-- [[1.7.0] - 2026-10-30](#170---2026-10-30)
-  - [Changed](#changed-26)
-- [[1.6.0] - 2026-10-26](#160---2026-10-26)
   - [Added](#added-27)
+  - [Changed](#changed-26)
+  - [Deprecated](#deprecated-2)
+  - [Tests](#tests-7)
+  - [Documentation](#documentation-10)
+- [[1.7.0] - 2026-10-30](#170---2026-10-30)
   - [Changed](#changed-27)
-- [[1.5.2] - 2026-10-18](#152---2026-10-18)
+- [[1.6.0] - 2026-10-26](#160---2026-10-26)
+  - [Added](#added-28)
   - [Changed](#changed-28)
-- [[1.5.1] - 2026-10-13](#151---2026-10-13)
+- [[1.5.2] - 2026-10-18](#152---2026-10-18)
   - [Changed](#changed-29)
+- [[1.5.1] - 2026-10-13](#151---2026-10-13)
+  - [Changed](#changed-30)
 - [[1.5.0] - 2026-10-13](#150---2026-10-13)
   - [Security](#security-5)
   - [Deprecated](#deprecated-3)
-  - [Fixed](#fixed-15)
+  - [Fixed](#fixed-17)
 - [[1.4.0] - 2026-10-13](#140---2026-10-13)
   - [Security](#security-6)
-  - [Fixed](#fixed-16)
+  - [Fixed](#fixed-18)
 - [[1.3.7] - 2026-10-13](#137---2026-10-13)
-  - [Changed](#changed-30)
+  - [Changed](#changed-31)
   - [Dependencies](#dependencies)
 - [[1.3.6] - 2026-10-09](#136---2026-10-09)
   - [Dependencies](#dependencies-1)
 - [[1.3.5] - 2026-09-28](#135---2026-09-28)
   - [Security](#security-7)
-  - [Changed](#changed-31)
-- [[1.3.4] - 2026-09-27](#134---2026-09-27)
-  - [Added](#added-28)
   - [Changed](#changed-32)
-  - [Fixed](#fixed-17)
+- [[1.3.4] - 2026-09-27](#134---2026-09-27)
+  - [Added](#added-29)
+  - [Changed](#changed-33)
+  - [Fixed](#fixed-19)
   - [Notes](#notes)
 - [[1.3.3] - 2026-08-24](#133---2026-08-24)
-  - [Changed](#changed-33)
+  - [Changed](#changed-34)
   - [Notes](#notes-1)
 - [[1.3.2] - 2026-08-19](#132---2026-08-19)
-  - [Changed](#changed-34)
-- [[1.3.1] - 2026-08-18](#131---2026-08-18)
   - [Changed](#changed-35)
-- [[1.3.0] - 2026-08-04](#130---2026-08-04)
-  - [Added](#added-29)
+- [[1.3.1] - 2026-08-18](#131---2026-08-18)
   - [Changed](#changed-36)
-- [[1.2.0] - 2026-08-03](#120---2026-08-03)
+- [[1.3.0] - 2026-08-04](#130---2026-08-04)
   - [Added](#added-30)
   - [Changed](#changed-37)
-  - [Compatibility](#compatibility)
-- [[1.1.0] - 2026-07-30](#110---2026-07-30)
+- [[1.2.0] - 2026-08-03](#120---2026-08-03)
   - [Added](#added-31)
   - [Changed](#changed-38)
-- [[1.0.6] - 2026-07-29](#106---2026-07-29)
-  - [Security](#security-8)
+  - [Compatibility](#compatibility)
+- [[1.1.0] - 2026-07-30](#110---2026-07-30)
   - [Added](#added-32)
   - [Changed](#changed-39)
-- [[1.0.5] - 2026-07-16](#105---2026-07-16)
+- [[1.0.6] - 2026-07-29](#106---2026-07-29)
+  - [Security](#security-8)
   - [Added](#added-33)
   - [Changed](#changed-40)
-- [[1.0.4] - 2026-07-13](#104---2026-07-13)
+- [[1.0.5] - 2026-07-16](#105---2026-07-16)
   - [Added](#added-34)
   - [Changed](#changed-41)
-  - [Fixed](#fixed-18)
-- [[1.0.3] - 2026-07-08](#103---2026-07-08)
+- [[1.0.4] - 2026-07-13](#104---2026-07-13)
   - [Added](#added-35)
   - [Changed](#changed-42)
-  - [Documentation](#documentation-10)
-- [[1.0.2] - 2026-07-07](#102---2026-07-07)
-  - [Changed](#changed-43)
-- [[1.0.1] - 2026-07-06](#101---2026-07-06)
-  - [Fixed](#fixed-19)
-- [[1.0.0] - 2026-07-06](#100---2026-07-06)
+  - [Fixed](#fixed-20)
+- [[1.0.3] - 2026-07-08](#103---2026-07-08)
   - [Added](#added-36)
+  - [Changed](#changed-43)
+  - [Documentation](#documentation-11)
+- [[1.0.2] - 2026-07-07](#102---2026-07-07)
+  - [Changed](#changed-44)
+- [[1.0.1] - 2026-07-06](#101---2026-07-06)
+  - [Fixed](#fixed-21)
+- [[1.0.0] - 2026-07-06](#100---2026-07-06)
+  - [Added](#added-37)
   - [Configuration](#configuration)
   - [Testing](#testing)
-  - [Documentation](#documentation-11)
+  - [Documentation](#documentation-12)
 
 ## [Unreleased]
 
-### Fixed
+### Fixed (Unreleased)
 
 - Dialogs load their content on demand (symfony-beacon rule 2026-11-23): `TimeTrack:LedgerTable` printed a UiKit
   confirm dialog with the full reversal form (reason, date, CSRF token) for **every** ledger row, plus the adjustment
   form, and `TimeTrack:TimesheetWeekGrid` printed the reject / reopen dialogs with their comment form, whether the
   user opened them or not. With the new `options.dialog_urls` the components render a link per action and **one**
   empty remote UiKit dialog per component (`remote_form_dialog`, `nowo_ui_remote_form_opener()`): no form and no
-  dialog body per row. Measured with 50 ledger rows: 198,657 bytes inline, 67,248 bytes on demand (51 forms and 51
+  dialog body per row. Measured with 50 ledger rows: 198,725 bytes inline, 67,248 bytes on demand (51 forms and 51
   dialogs before, 0 forms and 1 dialog after). The link is a real link to the host's dialog page, so it works without
   JavaScript.
 
-- REQ-SEC-006: with `user_mapping: id` the bundle's exact-key declaration (`TimeTrackExactKeyColumns`) now also declares
-  the identity columns it already collates: `<prefix>_host_users.id` and the `user_id` of the entries, active timers,
-  client tokens, device codes, timesheets, balance ledger, calendar connections, calendar suggestions and calendar
-  rules tables (the schema tool copies the exact collation of the host users `id` to every foreign key that references
-  it). They were binary but neither declared nor listed as deliberately not declared. They are inactive with
-  `user_mapping: relation`, and the `time_track_monitoring_*` `user_id` columns stay undeclared. A unit test now
-  cross-checks the declaration against the listener's reference fields and the entities' `user` associations.
-
-### Deprecated
-
-- The inline dialog forms of the components: `action_urls.add_adjustment` / `action_urls.reversal` of
-  `TimeTrack:LedgerTable` and `action_urls.reject` / `action_urls.reopen` of `TimeTrack:TimesheetWeekGrid` without
-  the matching `dialog_urls` entry still print the form inside the page (1.37 behaviour) and now trigger a
-  deprecation; 2.0 removes the inline mode. Plain one-button actions (submit, withdraw, approve) are not dialogs and
-  are not deprecated. See UPGRADING.
-
-### Documentation
-
-- PHPDoc for `StorageFailureConflictFormatter::format()` and `TimeEntryAccess::canViewEntry()` / `canEditEntry()` / `viewableEntry()` (`make validate-phpdoc` passes again). Comments only, no code change.
-
-### Changed
-
-- CI: new `release-gates` job runs the four release gates (`make rector-dry`, `validate-phpdoc`, `validate-translations`, `check-twig-extra`) in full mode, so a gate failure shows on the PR instead of at release time (CI only, no change to shipped code).
-### Added
+### Added (Unreleased)
 
 - `options.dialog_urls` on `TimeTrack:LedgerTable` (`add_adjustment`, `reversal`: the line id is added as `line=<id>`,
   or replaces a `{line}` placeholder) and `TimeTrack:TimesheetWeekGrid` (`reject`, `reopen`, `approve`: the timesheet
@@ -287,6 +274,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo: `/team/ledger`, the hours balance of a fixture colleague the demo user reviews, with the add and reversal
   dialogs on demand (`/team/ledger/adjust`, `/team/ledger/reverse?line=`), and Playwright e2e for them (fragment,
   422 in place, 204 + redirect, the page without JavaScript).
+
+### Deprecated (Unreleased)
+
+- The inline dialog forms of the components: `action_urls.add_adjustment` / `action_urls.reversal` of
+  `TimeTrack:LedgerTable` and `action_urls.reject` / `action_urls.reopen` of `TimeTrack:TimesheetWeekGrid` without
+  the matching `dialog_urls` entry still print the form inside the page (1.37 behaviour) and now trigger a
+  deprecation; 2.0 removes the inline mode. Plain one-button actions (submit, withdraw, approve) are not dialogs and
+  are not deprecated. See UPGRADING.
+
+## [1.38.0] - 2026-11-23
+
+### Fixed
+
+- REQ-SEC-006: with `user_mapping: id` the bundle's exact-key declaration (`TimeTrackExactKeyColumns`) now also declares
+  the identity columns it already collates: `<prefix>_host_users.id` and the `user_id` of the entries, active timers,
+  client tokens, device codes, timesheets, balance ledger, calendar connections, calendar suggestions and calendar
+  rules tables (the schema tool copies the exact collation of the host users `id` to every foreign key that references
+  it). They were binary but neither declared nor listed as deliberately not declared. They are inactive with
+  `user_mapping: relation`, and the `time_track_monitoring_*` `user_id` columns stay undeclared. A unit test now
+  cross-checks the declaration against the listener's reference fields and the entities' `user` associations.
+
+### Documentation
+
+- PHPDoc for `StorageFailureConflictFormatter::format()` and `TimeEntryAccess::canViewEntry()` / `canEditEntry()` / `viewableEntry()` (`make validate-phpdoc` passes again). Comments only, no code change.
+
+### Changed
+
+- CI: new `release-gates` job runs the four release gates (`make rector-dry`, `validate-phpdoc`, `validate-translations`, `check-twig-extra`) in full mode, so a gate failure shows on the PR instead of at release time (CI only, no change to shipped code).
+### Added
+
 - REQ-SEC-006: the bundle now declares its own identity / access-key columns, so the knowledge of which columns are
   exact keys lives in the bundle that owns the tables instead of in every host.
   `Nowo\TimeTrackBundle\Doctrine\TimeTrackExactKeyColumns` implements
@@ -2334,7 +2351,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.37.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.38.0...HEAD
+[1.38.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.34.0...v1.35.0

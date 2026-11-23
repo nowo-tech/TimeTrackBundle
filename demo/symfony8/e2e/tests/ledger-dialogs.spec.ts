@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * TimeTrack 1.38 (symfony-beacon rule "every dialog loads its content on demand"): the team ledger page renders links
+ * TimeTrack 1.39 (symfony-beacon rule "every dialog loads its content on demand"): the team ledger page renders links
  * and one empty remote dialog, never a form or a dialog body per row. Opening a dialog fetches its form (X-Nowo-Dialog),
  * an invalid post is answered in place (422), a saved one closes the dialog and reloads the page (204 +
  * X-Nowo-Redirect), and without JavaScript the same links open the full page with the same form.

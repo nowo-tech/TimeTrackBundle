@@ -1,7 +1,7 @@
 {#
   TimeTrack:LedgerTable (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::ledgerTable()): rows (ledger
   lines + reversed + reversalForm / reversalUrl), columns (effectiveDate, kind, seconds, reason, createdAt), addForm /
-  addUrl (null = not allowed or no URL), dialogId, labels, density. Since 1.38.0, with options.dialog_urls the add and
+  addUrl (null = not allowed or no URL), dialogId, labels, density. Since 1.39.0, with options.dialog_urls the add and
   reversal actions are links to the host's dialog pages, loaded on demand into ONE remote UiKit dialog (no form and no
   dialog body per row); without it the deprecated inline dialogs (UiKit 2.29 anatomy) stay.
 #}
@@ -41,6 +41,6 @@
             </tbody>
         </table>
     </div>
-    {#- Since 1.38.0: one empty dialog for every opener of the table; its form is fetched when it opens. -#}
+    {#- Since 1.39.0: one empty dialog for every opener of the table; its form is fetched when it opens. -#}
     {% if view.dialogId ?? null %}{{ include(nowo_ui_partial('remote_form_dialog'), {id: view.dialogId, title: (_l.title ?? 'ledger.title')|trans, size: 'md', bundle: _b}) }}{% endif %}
 </section>

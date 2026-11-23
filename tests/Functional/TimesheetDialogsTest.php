@@ -39,7 +39,7 @@ use function substr_count;
 use const STDERR;
 
 /**
- * Since 1.38.0 (symfony-beacon rule 2026-11-23, "every dialog loads its content on demand"): with `dialog_urls` the
+ * Since 1.39.0 (symfony-beacon rule 2026-11-23, "every dialog loads its content on demand"): with `dialog_urls` the
  * ledger table and the week grid render links and ONE empty remote dialog, never a form or a dialog body per row; the
  * dialog URL serves the fragment for `X-Nowo-Dialog: 1` and the full page otherwise, answers 422 in place, 409 on a
  * conflict, 204 + `X-Nowo-Redirect` once saved, and refuses access exactly as the post does.

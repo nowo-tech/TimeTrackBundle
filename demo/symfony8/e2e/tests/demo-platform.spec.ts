@@ -11,7 +11,7 @@ const PAGES: Array<{ name: string; path: string; auth?: boolean; bundleOwned?: s
   { name: 'reports', path: '/tools/time-track/reports' },
   // bundle-owned finding: the TimeTrack week grid scrolls inside a table wrap that is not keyboard focusable (axe scrollable-region-focusable)
   { name: 'timesheet', path: '/timesheet', axeExclude: ['.nowo-time-track-week-grid .nowo-ui-table-wrap'] },
-  // TimeTrack 1.38: the team ledger (dialogs on demand); same bundle-owned table wrap finding as the week grid
+  // TimeTrack 1.39: the team ledger (dialogs on demand); same bundle-owned table wrap finding as the week grid
   { name: 'team-ledger', path: '/team/ledger', axeExclude: ['.nowo-time-track-ledger .nowo-ui-table-wrap'] },
   // bundle-owned findings: the TaskBoard 1.x board page ships Tabler / Bootstrap classes (row, col, btn, card, form-control) and a bare form
   { name: 'board', path: '/tools/task-board', bundleOwned: ['form-outside-card', 'framework-class:row', 'framework-class:col', 'framework-class:col-auto', 'framework-class:col-12', 'framework-class:btn', 'framework-class:card', 'framework-class:card-header', 'framework-class:card-title', 'framework-class:card-body', 'framework-class:form-control', 'target-under-44px:btn'] },

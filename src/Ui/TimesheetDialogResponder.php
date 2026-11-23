@@ -28,7 +28,7 @@ use function in_array;
 use function is_array;
 
 /**
- * Since 1.38.0: the host page behind a dialog URL of the timesheet components (`options.dialog_urls`; every dialog
+ * Since 1.39.0: the host page behind a dialog URL of the timesheet components (`options.dialog_urls`; every dialog
  * loads its content on demand). One host route (GET and POST) per dialog hands its request here:
  *
  *     #[Route('/team/{id}/ledger/reverse', methods: ['GET', 'POST'])]

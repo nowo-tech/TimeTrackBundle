@@ -50,7 +50,7 @@ final readonly class TimesheetViewBuilder
 {
     public const DENSITIES = ['comfortable', 'compact'];
 
-    /** Since 1.38.0: the week-grid actions a dialog URL (`options.dialog_urls`) can serve. */
+    /** Since 1.39.0: the week-grid actions a dialog URL (`options.dialog_urls`) can serve. */
     public const DIALOG_ACTIONS = ['approve', 'reject', 'reopen'];
 
     /**
@@ -126,7 +126,7 @@ final readonly class TimesheetViewBuilder
             $url       = $options['action_urls'][$action] ?? null;
             $dialogUrl = in_array($action, self::DIALOG_ACTIONS, true) ? ($options['dialog_urls'][$action] ?? null) : null;
             if (is_string($dialogUrl)) {
-                // Since 1.38.0: a link to the host's dialog page; the form is built only when the dialog opens.
+                // Since 1.39.0: a link to the host's dialog page; the form is built only when the dialog opens.
                 $actions[$action] = ['form' => null, 'dialog' => true, 'url' => $this->withQuery($dialogUrl, 'timesheet', $timesheet->getId())];
             } elseif (is_string($url) && ($action === 'submit' || $action === 'withdraw' ? !$readOnly : true)) {
                 $dialog = in_array($action, TimesheetFormHandler::COMMENT_ACTIONS, true);
@@ -238,7 +238,7 @@ final readonly class TimesheetViewBuilder
         foreach ($lines as $line) {
             $reversible = $canAdjust && in_array('reversal', $options['actions'], true) && (is_string($reversalDialog) || is_string($reversalUrl))
                 && !isset($reversed[$line->getId()]) && $line->getKind() !== LedgerKind::Reversal && $line->getKind() !== LedgerKind::OvertimeRatified;
-            // Since 1.38.0: with dialog_urls.reversal a link per row (the form is built when its dialog opens).
+            // Since 1.39.0: with dialog_urls.reversal a link per row (the form is built when its dialog opens).
             $opener = $reversible && is_string($reversalDialog) ? $this->withQuery($reversalDialog, 'line', $line->getId()) : null;
             $form   = $reversible && $opener === null && is_string($reversalUrl) ? $this->forms->ledgerForm($reversalUrl, $line->getId())->createView() : null;
             $inline = $inline || $form instanceof FormView;
@@ -269,7 +269,7 @@ final readonly class TimesheetViewBuilder
     }
 
     /**
-     * Since 1.38.0: `$url` with `{<name>}` replaced by the value, else with `<name>=<value>` added to its query.
+     * Since 1.39.0: `$url` with `{<name>}` replaced by the value, else with `<name>=<value>` added to its query.
      */
     private function withQuery(string $url, string $name, string $value): string
     {
@@ -283,12 +283,12 @@ final readonly class TimesheetViewBuilder
     }
 
     /**
-     * Since 1.38.0: the inline dialog forms (a form and a dialog body per action, rendered whether opened or not)
+     * Since 1.39.0: the inline dialog forms (a form and a dialog body per action, rendered whether opened or not)
      * break the on-demand dialog rule; 2.0 removes them.
      */
     private function deprecateInlineDialog(string $component, string $action): void
     {
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.38', sprintf('Rendering the "%s" dialog form of the TimeTrack %s inline (options.action_urls without options.dialog_urls.%s) is deprecated and 2.0 removes it: pass options.dialog_urls.%s, the URL of a page served by Nowo\\TimeTrackBundle\\Ui\\TimesheetDialogResponder, so the dialog loads its form on demand.', $action, $component, $action, $action));
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.39', sprintf('Rendering the "%s" dialog form of the TimeTrack %s inline (options.action_urls without options.dialog_urls.%s) is deprecated and 2.0 removes it: pass options.dialog_urls.%s, the URL of a page served by Nowo\\TimeTrackBundle\\Ui\\TimesheetDialogResponder, so the dialog loads its form on demand.', $action, $component, $action, $action));
     }
 
     /**

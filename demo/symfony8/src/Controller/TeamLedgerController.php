@@ -17,7 +17,7 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * TimeTrack 1.38 showcase: the hours balance ledger of a colleague the demo user reviews (TimeTrack:LedgerTable). The
+ * TimeTrack 1.39 showcase: the hours balance ledger of a colleague the demo user reviews (TimeTrack:LedgerTable). The
  * add and reversal dialogs load their form on demand: the table renders links to the two dialog routes below and one
  * empty remote dialog; each route serves the fragment (X-Nowo-Dialog: 1) or the full page, and handles the post
  * through TimesheetDialogResponder (422 in place, 409 on a conflict, 204 + X-Nowo-Redirect once saved).

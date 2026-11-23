@@ -15,7 +15,7 @@ use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
- * TimeTrack 1.38 showcase (/team/ledger): a colleague the demo user reviews, with a few balance movements written by
+ * TimeTrack 1.39 showcase (/team/ledger): a colleague the demo user reviews, with a few balance movements written by
  * the demo user through the ledger (hash chain). Idempotent: skipped when the colleague exists (`make up` appends).
  */
 final class TeamLedgerFixtures extends Fixture implements DependentFixtureInterface

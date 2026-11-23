@@ -200,7 +200,7 @@ final readonly class BalanceLedger
     }
 
     /**
-     * Since 1.38.0: refuses a ledger dialog exactly as {@see add()} refuses its post before the line is checked
+     * Since 1.39.0: refuses a ledger dialog exactly as {@see add()} refuses its post before the line is checked
      * (`forbidden` without the right to adjust; for a reversal `not_found`, `not_reversible`, `already_reversed`), so
      * the dialog's form is only served to whoever may post it. Read only, no lock: {@see add()} checks again under it.
      *

@@ -367,7 +367,7 @@ final readonly class TimesheetService
     }
 
     /**
-     * Since 1.38.0: the timesheet an approve / reject / reopen dialog acts on, refused exactly as {@see approve()} /
+     * Since 1.39.0: the timesheet an approve / reject / reopen dialog acts on, refused exactly as {@see approve()} /
      * {@see reject()} / {@see reopen()} refuse it before the comment is read (`not_found` without the right,
      * `invalid_transition` in the wrong status), so the dialog's form is only served to whoever may post it.
      *

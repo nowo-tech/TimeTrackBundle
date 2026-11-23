@@ -88,7 +88,7 @@ final readonly class TimesheetFormHandler
     }
 
     /**
-     * Since 1.38.0: {@see handleDecision()} that keeps an invalid form instead of throwing, so a remote dialog
+     * Since 1.39.0: {@see handleDecision()} that keeps an invalid form instead of throwing, so a remote dialog
      * re-renders it in place (422) with its errors; `$actionUrl` is the form's action on that re-render. A refused
      * action still throws the service's code (`conflict`, `stale`, `not_found`…). An invalid or missing CSRF token is
      * an invalid result whose form carries no field error ({@see TimesheetFormResult::$csrfFailed}).
@@ -122,7 +122,7 @@ final readonly class TimesheetFormHandler
     }
 
     /**
-     * Since 1.38.0: the form of an approve / reject / reopen dialog (posted to `$actionUrl`), served only to whoever
+     * Since 1.39.0: the form of an approve / reject / reopen dialog (posted to `$actionUrl`), served only to whoever
      * may post it: the same refusals as the action ({@see TimesheetService::decisionTarget()}).
      *
      * @throws TimesheetException `invalid_request` for an owner action; `not_found` / `invalid_transition` otherwise
@@ -169,7 +169,7 @@ final readonly class TimesheetFormHandler
     }
 
     /**
-     * Since 1.38.0: {@see handleLedger()} that keeps an invalid form instead of throwing, so a remote dialog re-renders
+     * Since 1.39.0: {@see handleLedger()} that keeps an invalid form instead of throwing, so a remote dialog re-renders
      * it in place (422); `$actionUrl` is the form's action on that re-render. A refused line still throws the ledger's
      * code (`conflict`, `forbidden`, `already_reversed`…).
      *
@@ -209,7 +209,7 @@ final readonly class TimesheetFormHandler
     }
 
     /**
-     * Since 1.38.0: the form of an adjustment dialog, or with `$reverses` of the reversal of that line (posted to
+     * Since 1.39.0: the form of an adjustment dialog, or with `$reverses` of the reversal of that line (posted to
      * `$actionUrl`), served only to whoever may post it: the same refusals as the post
      * ({@see BalanceLedger::assertAddable()}).
      *

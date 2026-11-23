@@ -32,7 +32,7 @@ use Nowo\TimeTrackBundle\UserRef\UserMapping;
  * Every table name is **configurable** (`nowo_time_track.table_prefix`), so the declaration builds them from the
  * same prefix the schema is built from; there is not one literal table name here.
  *
- * - since 1.37.1, with `user_mapping: id`, the host users table's `id` and the `user_id` of every table that references
+ * - since 1.38.0, with `user_mapping: id`, the host users table's `id` and the `user_id` of every table that references
  *   it (the schema tool copies the collation of the referenced column to the foreign key).
  *
  * Deliberately **not** declared, because a declaration is a claim about identity and an untrue one is worse than
@@ -68,7 +68,7 @@ final readonly class TimeTrackExactKeyColumns implements ExactKeyColumnsInterfac
         'active_timers'        => '_active_timers',
         'calendar_connections' => '_calendar_connections',
         'calendar_rules'       => '_calendar_rules',
-        // Since 1.37.1: the tables whose `user_id` is the foreign key to the bundle-owned host users table.
+        // Since 1.38.0: the tables whose `user_id` is the foreign key to the bundle-owned host users table.
         'host_users'           => '_host_users',
         'client_tokens'        => '_client_tokens',
         'device_codes'         => '_device_codes',
@@ -131,7 +131,7 @@ final readonly class TimeTrackExactKeyColumns implements ExactKeyColumnsInterfac
             $columns[] = new ExactKeyColumn($table($key), $column, self::OWNER, $purpose, $condition, $byId);
         }
 
-        // Since 1.37.1: the identity of the bundle-owned host user row and every `user_id` that references it. Only a
+        // Since 1.38.0: the identity of the bundle-owned host user row and every `user_id` that references it. Only a
         // mode-id column: with the relation mapping the id belongs to the host's own users table.
         $columns[] = new ExactKeyColumn($table('host_users'), 'id', self::OWNER, 'host user id (opaque user id the bundle owns)', $condition, $byId);
         foreach (self::USER_ID_TABLES as $key) {

@@ -1300,7 +1300,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$approverSeesNotes' => $timesheets['approver_sees_notes'],
                 '$timerService'      => new Reference(TimerService::class),
             ]));
-        // Since 1.38.0: the host pages behind the components' dialog URLs (dialogs load their form on demand).
+        // Since 1.39.0: the host pages behind the components' dialog URLs (dialogs load their form on demand).
         $container->setDefinition(TimesheetDialogResponder::class, (new Definition(TimesheetDialogResponder::class))
             ->setPublic(true)
             ->setArguments([

@@ -806,7 +806,7 @@ Components for host pages (no template overrides):
 ```
 
 The posted forms go to your routes; hand the request to `Timesheet\TimesheetFormHandler::handleDecision()` /
-`handleLedger()`. Since 1.38.0 the dialogs (ledger adjustment and reversal, reject, reopen) load on demand: pass
+`handleLedger()`. Since 1.39.0 the dialogs (ledger adjustment and reversal, reject, reopen) load on demand: pass
 `options.dialog_urls` (one host route per dialog, GET and POST, handed to `Ui\TimesheetDialogResponder::ledger()` /
 `decision()`) and the components render links plus one empty remote dialog instead of a form per row:
 

@@ -5,6 +5,7 @@
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
   - [Dialogs of the timesheet components load on demand](#dialogs-of-the-timesheet-components-load-on-demand)
+- [To 1.38.0](#to-1380)
   - [The bundle declares its own identity / access-key columns (REQ-SEC-006)](#the-bundle-declares-its-own-identity--access-key-columns-req-sec-006)
 - [To 1.37.0](#to-1370)
 - [To 1.36.0](#to-1360)
@@ -118,7 +119,7 @@ deprecation log is free of `nowo-tech/time-track-bundle` notices on the last 1.x
 | `"*"` in `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true` (the 1.x default) | removed: exact origins only | 1.33 (container build, client API on) |
 | `clients.cors_allow_any_extension_origin`, the `templates.*` keys, `security.manager_can_edit_entries` | removed | when set (1.5 / 1.8 / 1.9) |
 | `@NowoTimeTrackBundle/layout.html.twig`, `_legacy_layout.html.twig` | removed: the UiKit layout | 1.33 / 1.8 (when rendered) |
-| Inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` (`action_urls` without `dialog_urls`) | removed: pass `dialog_urls` (pages served by `TimesheetDialogResponder`) | 1.38 (when rendered) |
+| Inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` (`action_urls` without `dialog_urls`) | removed: pass `dialog_urls` (pages served by `TimesheetDialogResponder`) | 1.39 (when rendered) |
 
 The installed-client API aliases stay in 2.0: they are not deprecated.
 
@@ -157,6 +158,14 @@ without JavaScript the links open the full page. `action_urls` for those actions
 overrides: none; a host that themed `components/_action.html.twig` for these dialogs should theme
 `components/dialog_form.html.twig` instead.
 
+## To 1.38.0
+
+From **1.37.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
 ### The bundle declares its own identity / access-key columns (REQ-SEC-006)
 
 Nothing to do: the declaration is discovered by autoconfiguration, and a host that does not install
@@ -189,7 +198,7 @@ the reference columns), or it was restored from a dump, and it still carries the
 `ALTER` the check prints.
 
 With `user_mapping: id` the host users `id` and the `user_id` of the bundle's tables that reference it are declared too
-(since 1.37.1; `time_track_monitoring_*` excluded): hosts in id mode can drop their `ignore_columns` entries for
+(since 1.38.0; `time_track_monitoring_*` excluded): hosts in id mode can drop their `ignore_columns` entries for
 `<prefix>_host_users.id` and for those `user_id` columns.
 
 With `user_mapping: relation` the reference columns are reported as **skipped** with that setting, never as a

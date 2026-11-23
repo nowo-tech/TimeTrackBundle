@@ -9,7 +9,7 @@ use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Symfony\Component\Form\FormInterface;
 
 /**
- * Since 1.38.0: the outcome of a posted timesheet / ledger form ({@see TimesheetFormHandler::submitDecision()} /
+ * Since 1.39.0: the outcome of a posted timesheet / ledger form ({@see TimesheetFormHandler::submitDecision()} /
  * {@see TimesheetFormHandler::submitLedger()}): the written timesheet or ledger line, or nothing when the form was not
  * valid. The form is kept either way, so a remote dialog re-renders it in place (422) with its errors and typed values.
  * `csrfFailed`: the form was valid but its token was missing, invalid or expired (nothing ran).

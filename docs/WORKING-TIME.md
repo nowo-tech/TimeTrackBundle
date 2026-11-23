@@ -170,11 +170,11 @@ templates are never overridden:
 
 | Component | Service | Options |
 | --- | --- | --- |
-| `TimeTrack:TimesheetWeekGrid` | `Ui\TimesheetViewBuilder::weekGrid()` | `labels`, `actions` (submit, withdraw, approve, reject, reopen), `action_urls`, `dialog_urls` (1.38: reject, reopen, approve), `density` (`comfortable` / `compact`), `show_expected`, `show_diff`, `read_only` |
+| `TimeTrack:TimesheetWeekGrid` | `Ui\TimesheetViewBuilder::weekGrid()` | `labels`, `actions` (submit, withdraw, approve, reject, reopen), `action_urls`, `dialog_urls` (1.39: reject, reopen, approve), `density` (`comfortable` / `compact`), `show_expected`, `show_diff`, `read_only` |
 | `TimeTrack:BalanceCard` | `::balanceCard()` | `labels`, `range` (week / month / year / custom), `show_overtime`, `legal_badge` |
-| `TimeTrack:LedgerTable` | `::ledgerTable()` | `labels`, `columns`, `actions` (add_adjustment, reversal), `action_urls`, `dialog_urls` (1.38: add_adjustment, reversal), `density` |
+| `TimeTrack:LedgerTable` | `::ledgerTable()` | `labels`, `columns`, `actions` (add_adjustment, reversal), `action_urls`, `dialog_urls` (1.39: add_adjustment, reversal), `density` |
 
-An action appears only when the guard allows it for the viewer **and** the host gave its URL. Since 1.38.0 reject,
+An action appears only when the guard allows it for the viewer **and** the host gave its URL. Since 1.39.0 reject,
 reopen, adjustment and reversal load on demand: with `dialog_urls` each is a link to a host page (GET + POST, handed to
 `Ui\TimesheetDialogResponder`) whose form is fetched into one remote UiKit dialog when it opens (fragment for
 `X-Nowo-Dialog: 1`, the full page without JavaScript; 422 in place, 409 on a conflict, 204 + `X-Nowo-Redirect` once
