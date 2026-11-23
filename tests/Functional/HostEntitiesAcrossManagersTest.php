@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use LogicException;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -106,7 +107,7 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
         $host->persist($unsaved);
         $line = new BalanceLedgerLine($unsaved, 'u-1', 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable(), null, 'x');
 
-        $failure = $this->failureOf(fn () => TimeTrackRows::insert($this->bundleEntityManager(), $line));
+        $failure = $this->failureOf(fn (): ?UniqueConstraintViolationException => TimeTrackRows::insert($this->bundleEntityManager(), $line));
 
         self::assertInstanceOf(LogicException::class, $failure);
         self::assertStringContainsString('has no row yet (persisted but not flushed, or not saved at all). Flush your', $failure->getMessage());
