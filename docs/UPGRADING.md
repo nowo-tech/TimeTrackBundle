@@ -131,6 +131,20 @@ minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
 
+Target **1.40.1** (patch). From **1.40.0**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+migration change. Check these only if you use the 1.40 writes by id or the free-text erasure:
+
+- **Corrections moving the start far back** are refused beyond `manual_entries.max_age_days` (`entry_too_old`); pass
+  `new TimeEntryCorrection(…, maxAgeDays: N)` (0 to 3650) when your own window is wider.
+- **Large metadata:** a correction that grows an entry past 32 keys or 16 KB answers `metadata_too_large`; a
+  `ManualTimeEntryDraft` with more, or with null / nested / non-finite / invalid UTF-8 values, a reserved key or an age
+  out of 0..3650, throws `InvalidArgumentException` when built.
+- **`erase($userId, TimeEntryErasure::FreeText)`** now also clears string metadata values other than `closed_by`,
+  `origin` and `provider`. Keep host flags as booleans or numbers if they must survive it.
+- **`revokeSession()`** answers `NotFound` for a reference whose class is not `user_class` or an accepted class.
+- **Transactions:** the overlap and period-lock reads take shared locks until your transaction ends; on PostgreSQL keep
+  READ COMMITTED for a transaction around these calls.
+
 ## To 1.40.0
 
 From **1.39.0**:

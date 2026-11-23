@@ -25,6 +25,7 @@ use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Entity\TimesheetEvent;
+use Nowo\TimeTrackBundle\Entry\EntryMetadataRules;
 use Nowo\TimeTrackBundle\Exception\PersonalDataErasureRefusedException;
 use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
 use Nowo\TimeTrackBundle\Query\ClientSessionView;
@@ -44,12 +45,12 @@ use Psr\Log\NullLogger;
 use SortDirection;
 
 use function array_column;
-use function array_key_exists;
 use function array_map;
 use function count;
 use function in_array;
 use function is_array;
 use function is_scalar;
+use function is_string;
 
 use const DATE_ATOM;
 
@@ -374,7 +375,8 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
     }
 
     /**
-     * {@see TimeEntryErasure::FreeText}: clears the description and `metadata.note` of the entries the user still owns,
+     * {@see TimeEntryErasure::FreeText}: clears the description, `metadata.note` and (since 1.40.1) every other string value
+     * of the metadata except the structural keys ({@see EntryMetadataRules::STRUCTURAL_KEYS}) of the entries the user still owns,
      * locked by id in id order batch by batch (a concurrent note change waits). Anonymised entries are never written.
      */
     private function clearFreeText(string $userId): int
@@ -400,12 +402,11 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 ->getArrayResult();
             foreach ($rows as $row) {
                 $after    = is_scalar($row['id']) ? (string) $row['id'] : $after;
-                $metadata = is_array($row['metadata']) ? $row['metadata'] : null;
-                $hasNote  = $metadata !== null && array_key_exists('note', $metadata);
-                if (!is_scalar($row['ownerId']) || (string) $row['ownerId'] !== $userId || ($row['description'] === null && !$hasNote)) {
+                $stored   = is_array($row['metadata']) ? $row['metadata'] : null;
+                $metadata = $this->withoutFreeText($stored);
+                if (!is_scalar($row['ownerId']) || (string) $row['ownerId'] !== $userId || ($row['description'] === null && $metadata === $stored)) {
                     continue;
                 }
-                unset($metadata['note']);
                 $cleared += (int) TimeTrackSavepoint::execute($this->entityManager->createQueryBuilder()
                     ->update(TimeEntry::class, 'e')
                     ->set('e.description', 'NULL')
@@ -422,6 +423,28 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         } while (count($rows) === self::BATCH);
 
         return $cleared;
+    }
+
+    /**
+     * Since 1.40.1 (audit ZAN-4): the metadata without personal free text: the note and every other string value except
+     * the bundle's structural keys ({@see EntryMetadataRules::STRUCTURAL_KEYS}); numbers, booleans and nested values stay.
+     *
+     * @param array<array-key, mixed>|null $metadata
+     *
+     * @return array<array-key, mixed>|null
+     */
+    private function withoutFreeText(?array $metadata): ?array
+    {
+        if ($metadata === null) {
+            return null;
+        }
+        foreach ($metadata as $key => $value) {
+            if (is_string($value) && !in_array($key, EntryMetadataRules::STRUCTURAL_KEYS, true)) {
+                unset($metadata[$key]);
+            }
+        }
+
+        return $metadata;
     }
 
     /**

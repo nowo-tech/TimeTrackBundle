@@ -670,6 +670,9 @@
 | `Event/TimeEntryCorrectedEvent.php` | An entry was corrected (read models) | FR-OPS-001 |
 | `Support/EntryOverlap.php` | Overlap with live entries and the running timer | FR-OPS-001 |
 | `Client/ClientSessionRevokerInterface.php` | Client sessions revoked by ids (port) | FR-OPS-002 |
+| `Entry/EntryMetadataRules.php` | Metadata and age rules of the writes by id (1.40.1) | FR-OPS-001 |
+| `Repository/LockingOverlappingTimeEntryRepositoryInterface.php` | Overlap query under a shared lock (1.40.1) | FR-OPS-001 |
+| `Repository/SharedLockGuardTimesheetRepositoryInterface.php` | Period-lock query under a shared lock (1.40.1) | FR-OPS-001 |
 
 ## Coverage summary
 
@@ -677,8 +680,8 @@
 | --- | ---: | ---: |
 | PHP classes (`src/**/*.php`) | 429 | 429 |
 | Id-based access, read ports, personal data and client sessions (1.33-1.37) | 32 | 32 |
-| Writes by id (1.40) | 9 | 9 |
+| Writes by id (1.40) | 12 | 12 |
 | Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
-| **Total production sources** | **502** | **502** |
+| **Total production sources** | **505** | **505** |
 
-Audit command: `git ls-files src | wc -l` → 507 at 1.40.0 (5 files added in 1.38–1.39 are not mapped here yet).
+Audit command: `git ls-files src | wc -l` → 510 at 1.40.1 (5 files added in 1.38–1.39 are not mapped here yet).

@@ -19,7 +19,9 @@ enum TimeEntryErasure: string
     case Anonymise = 'anonymise';
 
     /**
-     * Only the person's free text goes: the description and `metadata.note` of each entry the user still owns. The owner
+     * Only the person's free text goes: the description and `metadata.note` of each entry the user still owns, and since
+     * 1.40.1 (audit ZAN-4) every other string value of its metadata except the bundle's structural keys (`closed_by`,
+     * `origin`, `provider`): a host key such as `comment` may hold personal text. Numbers and booleans stay. The owner
      * stays, so the hours keep counting in the user's worked time, balance and timesheets. For a host that keeps an
      * anonymised account row (its own erasure blanks the account). Entries left under the user's former reference
      * (`user:<id>`) are anonymised in both modes.

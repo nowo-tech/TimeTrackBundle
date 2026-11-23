@@ -9,6 +9,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use InvalidArgumentException;
@@ -41,7 +42,7 @@ use function max;
 /**
  * Doctrine ORM store of the closed time entries (pages in the database, REQ-PERF-001).
  */
-final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, OverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, LockingFindableTimeEntryRepositoryInterface, OriginFilteredTimeEntryRepositoryInterface, TasklessScopedTimeEntryRepositoryInterface
+final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedTimeEntryRepositoryInterface, LatestTimeEntryRepositoryInterface, ScopeBackfillRepositoryInterface, EntryOwnersRepositoryInterface, TaskEffortRepositoryInterface, LockingOverlappingTimeEntryRepositoryInterface, UserSerialisedTimeEntryRepositoryInterface, FormerPersonTimeEntryRepositoryInterface, ImportedTimeEntryOwnerRepositoryInterface, TaskTimeMoveRepositoryInterface, LockingFindableTimeEntryRepositoryInterface, OriginFilteredTimeEntryRepositoryInterface, TasklessScopedTimeEntryRepositoryInterface
 {
     /** Since 1.12: task ids bound in one `IN (...)` of a task-scope removal (below every driver's parameter limit). */
     public const TASK_IDS_PER_QUERY = 1000;
@@ -373,8 +374,24 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
      */
     public function findLiveOverlapping(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
     {
-        /** @var list<TimeEntry> $result */
-        $result = $this->entityManager->createQueryBuilder()
+        return $this->liveOverlapping($userId, $from, $to, false);
+    }
+
+    /**
+     * Since 1.40.1 (audit ZAN-1): {@see self::findLiveOverlapping()} under a shared lock (`LOCK IN SHARE MODE` / `FOR
+     * SHARE`) when a transaction is open, so a host's earlier REPEATABLE READ snapshot cannot hide a committed entry.
+     */
+    public function findLiveOverlappingLocked(string $userId, DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        return $this->liveOverlapping($userId, $from, $to, $this->entityManager->getConnection()->isTransactionActive());
+    }
+
+    /**
+     * @return list<TimeEntry>
+     */
+    private function liveOverlapping(string $userId, DateTimeImmutable $from, DateTimeImmutable $to, bool $sharedLock): array
+    {
+        $query = $this->entityManager->createQueryBuilder()
             ->select('e')
             ->from(TimeEntry::class, 'e')
             ->where('IDENTITY(e.user) = :userId')
@@ -386,8 +403,10 @@ final readonly class DoctrineOrmTimeEntryRepository implements FilteredImportedT
             ->setParameter('to', $to)
             ->setParameter('import', TimeEntrySource::Import->value)
             ->orderBy('e.startedAt', SortDirection::Ascending)
-            ->getQuery()
-            ->getResult();
+            ->getQuery();
+        /** @var list<TimeEntry> $result */
+        // A locked read also refreshes entries this manager already holds, so the PHP re-check sees the committed times.
+        $result = ($sharedLock ? $query->setLockMode(LockMode::PESSIMISTIC_READ)->setHint(Query::HINT_REFRESH, true) : $query)->getResult();
 
         return $this->exactOwners($result, [$userId]);
     }
