@@ -12,6 +12,7 @@
 - [Read ports and personal data (1.35)](#read-ports-and-personal-data-135)
 - [Entries without a task (1.36, Beacon spec 250)](#entries-without-a-task-136-beacon-spec-250)
 - [Entry access by id (1.37)](#entry-access-by-id-137)
+- [Writes by id (1.40)](#writes-by-id-140)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
 - [Working time and timesheets (1.13)](#working-time-and-timesheets-113)
 - [Calendar suggestions (1.14)](#calendar-suggestions-114)
@@ -533,7 +534,7 @@ $running = $timers->runningOf($userId);                         // RunningTimerV
 $page    = $timers->startedBefore($cutOff, $afterTimerId, 200); // e.g. a forgotten-timer job, keyset by timer id
 ```
 
-Stopping a timer stays with the timer services (`HostTimerApi`, `TimerService`); id-based operations come in 1.36.
+Stopping a timer stays with the timer services (`HostTimerApi`, `TimerService`). Entry corrections and manual entries by id: [Writes by id (1.40)](#writes-by-id-140).
 
 ### Client sessions and device sign-ins: `Query\ClientAccessQueryInterface`
 
@@ -690,6 +691,171 @@ $entryAccess->canViewEntry(TimeTrackUserRef::ofId(User::class, $id, '', $roles),
 - Worker mode (kernel reset false): nothing is kept between calls; the entry and your ports are read at every call. An
   answer holds as of the check only: write through the bundle's services, which under the owner's lock re-check the
   entry's owner, its state and the period lock (REQ-RUNTIME-003).
+
+## Writes by id (1.40)
+
+Since 1.40.0 a host corrects and creates entries and ends client sessions **by ids**, through public ports that take
+user ids or a `TimeTrackUserRef` (never a Symfony user, never an entity) and return read models. With them a host no
+longer writes the bundle's tables with its own entity manager (`persist(new TimeEntry(…))`, a DBAL `UPDATE` of
+`time_track_entries`, `remove($clientToken)`), so it can turn on `database.private_entity_manager: true`. Every write
+goes through the bundle's own manager and stores, in both modes (private and shared manager), with both user mappings
+(`relation` and `id`). The ports are not deprecated: 2.0 keeps them.
+
+| Port (public service id) | Method | Replaces in the host |
+|---|---|---|
+| `Client\ClientSessionRevokerInterface` | `revokeSession(ClientSessionId\|string $sessionId, TimeTrackUserRef\|string\|int $actor): ClientSessionRevocation` | removing a `ClientToken` with your manager |
+| | `revokeAllForUser(string $userId): int` | a DQL `DELETE` of the user's tokens |
+| `Entry\TimeEntryOperationsInterface` | `correct(TimeTrackUserRef\|string\|int $owner, string $entryId, string $expectedVersion, TimeEntryCorrection $correction): TimeEntryCorrectionResult` | a DBAL `UPDATE` of an entry |
+| | `createManual(TimeTrackUserRef\|string\|int $owner, ManualTimeEntryDraft $draft): TimeEntryRecord` | `persist(new TimeEntry(…))` |
+| `Query\TimeEntryQueryInterface` (1.35) | `find(string $entryId): ?TimeEntryRecord`, with `TimeEntryRecord::version()` (1.40) | reading `TimeEntry` with your manager |
+
+The host authorises every call (who may act for that owner); the bundle scopes the write to the owner and applies its
+own rules. Ids compare byte for byte: `'07'` is not `7`, `ABC` is not `abc`, and an id with a leading or trailing blank
+or an invisible character names nobody.
+
+### Read an entry by id
+
+```php
+use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
+
+$record = $entries->find($entryId);         // TimeEntryRecord|null: no lock, no access rule, no entity
+if ($record === null || $record->entry->userId !== $userId) {
+    throw new NotFoundHttpException();       // also for another user's entry
+}
+$record->entry->startedAt;                   // TimeEntryView: ids, task, board, scope, times, source
+$record->note;                               // metadata.note
+$record->metadata;                           // the stored metadata (e.g. your `auto_stopped` mark)
+$version = $record->version();               // pass it back to correct()
+```
+
+Use it wherever you read an entry for a notice, a form or a revision (e.g. a timer auto-stop notice that keeps only the
+entry id). `TimeEntryAccessInterface::viewableEntry()` (1.37) does the same with the bundle's access rules.
+
+### Correct an entry (GDPR art. 16)
+
+```php
+use Nowo\TimeTrackBundle\Entry\TimeEntryCorrection;
+use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
+use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
+
+final class OwnEntryCorrector
+{
+    public function __construct(
+        private TimeEntryOperationsInterface $timeEntries,
+        private Connection $connection,              // the connection of `database.entity_manager`
+        private TimeEntryRevisionRepository $revisions, // your own classes from here on
+        private TaskTotals $taskTotals,
+    ) {}
+
+    public function correct(string $userId, string $entryId, string $version, DateTimeImmutable $start, DateTimeImmutable $end, ?string $note, string $reason): void
+    {
+        $correction = TimeEntryCorrection::times($start, $end)->withNote($note);   // duration = the new span
+
+        // One transaction: the bundle's write is a savepoint of it, so the revision and the entry commit together.
+        $this->connection->transactional(function () use ($userId, $entryId, $version, $correction, $reason): void {
+            $result = $this->timeEntries->correct($userId, $entryId, $version, $correction);
+            if (!$result->changed) {
+                throw new EntryCorrectionRefused('unchanged');
+            }
+            // $result->before / ->after are TimeEntryRecord read models; ->changedFields lists the columns.
+            $this->revisions->add(TimeEntryRevision::fromRecords($result->before, $result->after, $reason));
+            $this->taskTotals->adjust($result->after->entry->taskIdOrNull(), $result->after->entry->durationSeconds - $result->before->entry->durationSeconds);
+        });
+    }
+}
+```
+
+- **Scope.** Only the entry's owner: an unknown id, another owner's entry, an ownerless or anonymised entry and a
+  look-alike id all answer `TimeEntryCorrectionException('not_found')` (no oracle). An imported entry is `read_only`.
+- **Optimistic concurrency.** `$expectedVersion` is `TimeEntryRecord::version()` of the record you read (show it in
+  the form as a hidden field). Under the owner's lock the row is read again with a row lock (`SELECT … FOR UPDATE`):
+  when anything changed meanwhile (times, duration, note or other metadata, billable flag, task, board, scope, owner)
+  the answer is `conflict` (409) and nothing is written; read the entry again. Never a lost update.
+- **Values.** A null start or end keeps the stored one; without a duration the new span becomes the duration when the
+  times change (a duration-only correction keeps the times). Refused: `invalid_range` (end not after start),
+  `entry_too_long` (more than 24 h), `entry_in_future` (a changed end beyond the 2-minute skew), `invalid_duration`
+  (longer than the span), `overlap` (another live entry of the owner or the running timer; not for a service account).
+  Your own rules (a correction window, a reason) stay in your code, before the call.
+- **Metadata** is a patch: `['auto_stopped' => true]` sets a key, `['key' => null]` removes it, other keys stay. Keys
+  are 1–64 characters `[a-z][a-z0-9_]*`, values scalars (strings up to 2 000 bytes); `note` is cleaned and cut like
+  every note (`withNote(null)` or a blank note removes it); `closed_by` is the bundle's own timer mark and is refused
+  (`InvalidArgumentException` when the correction is built).
+- **Period lock** (owner decision FR-008): the period of the old start **and** of the new start must be neither locked
+  (approved included) nor submitted, else `PeriodLockedException` / `PeriodSubmittedException` (409). No role or listener
+  overrides it.
+- **Nothing changes** (same values): nothing is written and nothing dispatched; `$result->changed` is false.
+- **Event** `nowo_time_track.time_entry.corrected` (`TimeEntryCorrectedEvent`: entry id, owner id, `before`, `after`,
+  `changedFields`, `occurredAt`) after the bundle's unit, once per real change; a listener that throws is logged and does
+  not undo the correction.
+
+| Refusal | Class | Status |
+|---|---|---|
+| `not_found` | `TimeEntryCorrectionException` | 404 |
+| `read_only` | `TimeEntryCorrectionException` | 403 |
+| `conflict`, `overlap` | `TimeEntryCorrectionException` | 409 |
+| `invalid_range`, `entry_too_long`, `entry_in_future`, `invalid_duration` | `TimeEntryCorrectionException` | 422 |
+| `period_locked`, `period_submitted` | `PeriodWriteRefusedException` | 409 |
+| lock wait, deadlock | `Nowo\TransactionContract\TransientStorageFailure` | 409 `CONFLICT_001`: retry |
+
+`httpStatus()` on both exception classes gives the status.
+
+### Create a manual entry for a user id
+
+```php
+use Nowo\TimeTrackBundle\Entry\ManualTimeEntryDraft;
+
+// Store-reviewer demo data: three past entries for the reviewer account.
+foreach ($samples as [$taskId, $start, $minutes]) {
+    $record = $this->timeEntries->createManual($reviewerId, new ManualTimeEntryDraft(
+        $taskId, $start, $start->modify("+{$minutes} minutes"),
+        metadata: ['origin' => 'store_review'],
+        maxAgeDays: 60,            // older than manual_entries.max_age_days is allowed here
+    ));
+    $record->entry->id;            // TimeEntryRecord of the new entry
+}
+```
+
+- The rules of `POST entries` (`ManualEntryService::create()`, source `manual`): the task must be one the owner may track
+  (`client_api.task_access_checker` and the task provider), or none with `entries.allow_without_task`; end after start,
+  at most 24 h, not in the future, not older than `maxAgeDays` (default `manual_entries.max_age_days`), no overlap
+  (except a service account), period neither locked nor submitted. `manual_entries.enabled` is not required (it gates
+  the client API route only). `nowo_time_track.time_entry.created` is dispatched.
+- The owner: with `user_mapping: relation` the `user_class` row with exactly that id (an id its identifier column cannot
+  hold, e.g. `'abc'` or `'07'` for integer ids, is never sent to SQL); with `user_mapping: id` the bundle's host-user row,
+  created with the first entry. A `TimeTrackUserRef` that carries your security user object is used as that user. An
+  unknown owner is `ManualEntryException('unknown_user')` (404).
+
+### Revoke a client session by id
+
+```php
+use Nowo\TimeTrackBundle\Client\ClientSessionRevokerInterface;
+
+$revoker->revokeSession($sessionId, $userId);    // "sign out this device": Revoked, or NotFound (unknown / not yours)
+$revoker->revokeSession($sessionId, TimeTrackUserRef::ofId(User::class, $adminId, '', ['ROLE_ADMIN'])); // admin rule
+$revoker->revokeAllForUser($userId);              // "sign out everywhere": how many were ended
+```
+
+- Owner by id (byte for byte); `security.admin_roles` from the roles the reference carries (or its user object); then
+  the `nowo_time_track.client_session.access_check` listeners (they receive the reference). Every other case answers
+  `ClientSessionRevocation::NotFound`, idempotent. A real revocation records `session_revoked` (reason `owner` or
+  `other`) on the client API audit event, like `revokeById()`.
+- One `DELETE` statement on the bundle's manager: nothing is loaded into your manager, nothing flushed or cleared.
+
+### Transactions, erasure and worker mode
+
+- Each write is one unit of the bundle's runner under the owner's row lock: its own transaction when none is open, a
+  **savepoint of yours** when you opened one on the same connection (the private manager shares it). Your commit or
+  rollback decides; a rollback of yours undoes the bundle's write.
+- **GDPR paths join your transaction.** A correction (art. 16) or an erasure (art. 17, `TimeTrackPersonalDataInterface::erase()`,
+  1.35) called inside your transaction is part of it, so your own audit or revision rows commit with it or not at all.
+  Called outside a transaction, each runs in the bundle's own unit and is committed when the call returns.
+- Events (`time_entry.corrected`, `time_entry.created`, `session_revoked`) are dispatched when the bundle's unit ends:
+  inside your transaction that is **before your commit**. A listener that must only see committed data defers its work
+  (Messenger, a post-commit hook of yours).
+- A lock conflict surfaces as `TransientStorageFailure` with nothing of the unit committed (`CONFLICT_001`, retry); inside
+  your transaction, roll it back and retry the whole unit.
+- Stateless: nothing is kept between calls (FrankenPHP worker mode, kernel reset false).
 
 ## Task time follows a board move (Unreleased)
 
