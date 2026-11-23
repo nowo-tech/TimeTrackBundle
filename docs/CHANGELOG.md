@@ -230,6 +230,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- REQ-SEC-006: with `user_mapping: id` the bundle's exact-key declaration (`TimeTrackExactKeyColumns`) now also declares
+  the identity columns it already collates: `<prefix>_host_users.id` and the `user_id` of the entries, active timers,
+  client tokens, device codes, timesheets, balance ledger, calendar connections, calendar suggestions and calendar
+  rules tables (the schema tool copies the exact collation of the host users `id` to every foreign key that references
+  it). They were binary but neither declared nor listed as deliberately not declared. They are inactive with
+  `user_mapping: relation`, and the `time_track_monitoring_*` `user_id` columns stay undeclared. A unit test now
+  cross-checks the declaration against the listener's reference fields and the entities' `user` associations.
+
 ### Documentation
 
 - PHPDoc for `StorageFailureConflictFormatter::format()` and `TimeEntryAccess::canViewEntry()` / `canEditEntry()` / `viewableEntry()` (`make validate-phpdoc` passes again). Comments only, no code change.

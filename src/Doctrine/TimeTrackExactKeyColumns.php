@@ -32,9 +32,12 @@ use Nowo\TimeTrackBundle\UserRef\UserMapping;
  * Every table name is **configurable** (`nowo_time_track.table_prefix`), so the declaration builds them from the
  * same prefix the schema is built from; there is not one literal table name here.
  *
+ * - since 1.37.1, with `user_mapping: id`, the host users table's `id` and the `user_id` of every table that references
+ *   it (the schema tool copies the collation of the referenced column to the foreign key).
+ *
  * Deliberately **not** declared, because a declaration is a claim about identity and an untrue one is worse than
  * none: the task and client identifiers that are opaque strings the bundle only stores and gives back, the
- * `client_tokens` / `device_codes` digests and the monitoring tables' ids (the bundle does not give those an exact
+ * `client_tokens` / `device_codes` digests and the monitoring tables' ids and `user_id` (the bundle does not give those an exact
  * collation today, and a declared column that was never collated reports a failure on every host — raising them is a
  * schema decision for its own release), the state and timestamp columns, and the `uuid` / integer primary keys,
  * which carry no collation at all.
@@ -65,6 +68,28 @@ final readonly class TimeTrackExactKeyColumns implements ExactKeyColumnsInterfac
         'active_timers'        => '_active_timers',
         'calendar_connections' => '_calendar_connections',
         'calendar_rules'       => '_calendar_rules',
+        // Since 1.37.1: the tables whose `user_id` is the foreign key to the bundle-owned host users table.
+        'host_users'           => '_host_users',
+        'client_tokens'        => '_client_tokens',
+        'device_codes'         => '_device_codes',
+        'calendar_suggestions' => '_calendar_suggestions',
+    ];
+
+    /**
+     * Tables whose `user_id` references `<prefix>_host_users.id` with `user_mapping: id`
+     * ({@see TimeTrackMetadataListener::mapHostUsers()} collates the target, and the schema tool copies that collation
+     * to every referencing column). The `time_track_monitoring_*` tables are deliberately left out.
+     */
+    public const USER_ID_TABLES = [
+        'entries',
+        'active_timers',
+        'client_tokens',
+        'device_codes',
+        'timesheets',
+        'balance_ledger',
+        'calendar_connections',
+        'calendar_suggestions',
+        'calendar_rules',
     ];
 
     /**
@@ -104,6 +129,13 @@ final readonly class TimeTrackExactKeyColumns implements ExactKeyColumnsInterfac
             ['entries', 'person_ref', 'person the time entry belongs to, also after the account is gone'],
         ] as [$key, $column, $purpose]) {
             $columns[] = new ExactKeyColumn($table($key), $column, self::OWNER, $purpose, $condition, $byId);
+        }
+
+        // Since 1.37.1: the identity of the bundle-owned host user row and every `user_id` that references it. Only a
+        // mode-id column: with the relation mapping the id belongs to the host's own users table.
+        $columns[] = new ExactKeyColumn($table('host_users'), 'id', self::OWNER, 'host user id (opaque user id the bundle owns)', $condition, $byId);
+        foreach (self::USER_ID_TABLES as $key) {
+            $columns[] = new ExactKeyColumn($table($key), 'user_id', self::OWNER, 'foreign key to the host user id (inherits its exact collation)', $condition, $byId);
         }
 
         return $columns;
