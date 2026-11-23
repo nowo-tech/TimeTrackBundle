@@ -283,6 +283,9 @@ authorisation, no released version affected).
   host's REPEATABLE READ transaction that had already read (MySQL, MariaDB), an entry or a period lock another request
   committed since its snapshot was invisible: the correction could overlap it or write into a just-locked period. The
   residual risk for PostgreSQL REPEATABLE READ is documented ([CONCURRENCY](CONCURRENCY.md#residual-risks)).
+- With doctrine/dbal 3 the shared-lock timesheet read (`DoctrineOrmTimesheetRepository::findGuardingForMove()`, imported
+  entry moves since 1.16, and the new `findGuardingShared()`) failed with a `TypeError` (`LockMode` is a class of `int`
+  constants there, an enum in 4); the lock mode is now accepted in both forms.
 - **ZAN-I3:** `entry_too_long` is checked only when the start or the end changes, so a forgotten timer's entry longer
   than 24 h can get a note-only or duration-only correction.
 

@@ -192,11 +192,12 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
+     * @param LockMode|int|null $lock The lock mode (an `int` constant with doctrine/dbal 3, an enum with 4; null = none)
      * @param bool $refresh Whether rows this manager already holds are refreshed from the database
      *
      * @return list<Timesheet>
      */
-    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate, ?LockMode $lock = null, bool $refresh = false): array
+    private function guarding(string $ownerCondition, string $owner, ?string $scopeKey, string $fromDate, string $toDate, LockMode|int|null $lock = null, bool $refresh = false): array
     {
         $query = $this->entityManager->createQueryBuilder()
             ->select('t')
@@ -219,7 +220,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
             $built->setHint(Query::HINT_REFRESH, true);
         }
         /** @var list<Timesheet> $result */
-        $result = ($lock instanceof LockMode ? $built->setLockMode($lock) : $built)->getResult();
+        $result = ($lock !== null ? $built->setLockMode($lock) : $built)->getResult();
 
         return $scopeKey === null ? $result : $this->inScope($result, $scopeKey);
     }
