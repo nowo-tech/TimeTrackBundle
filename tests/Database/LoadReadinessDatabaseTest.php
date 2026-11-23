@@ -12,13 +12,18 @@ use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Tools\DsnParser;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
+use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entry\TimeEntryCorrection;
+use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -54,6 +59,9 @@ use const PHP_BINARY;
  * - 1.36.0: two processes starting timers without a task for one user leave exactly one running.
  * - 1.34.0: two processes revoking the same client sessions by id revoke each once; a revocation behind a row lock
  *   fails with nothing committed (CONFLICT_001) and the retry revokes.
+ * - 1.40.0: two processes correcting one entry by id with the version they read never lose an update (every lost race
+ *   is `conflict`); a correction behind the owner's lock fails with nothing committed and the retry corrects; two
+ *   processes revoking the same sessions through `revokeSession()` revoke each once.
  */
 final class LoadReadinessDatabaseTest extends FunctionalTestCase
 {
@@ -257,6 +265,92 @@ final class LoadReadinessDatabaseTest extends FunctionalTestCase
         self::assertSame(ClientSessionRevocation::Revoked, $revoker->revokeById($id, $this->user), 'the retry succeeds');
         $this->api('GET', '/api/time-track/me', null, $token);
         self::assertResponseStatusCodeSame(401);
+    }
+
+    /**
+     * 1.40.0 (REQ-RUNTIME-003 rule 4, optimistic version): two processes increment a metadata counter of one entry by
+     * read-version-write at the same moment. Every success is counted in the row (no lost update); every lost race is the
+     * domain answer `conflict` (or a transient failure with nothing committed); no error, nothing detached.
+     */
+    public function testTwoProcessesCorrectingOneEntryNeverLoseAnUpdate(): void
+    {
+        $start = (new DateTimeImmutable('today -2 days'))->setTime(9, 0);
+        $this->entityManager()->persist(new TimeEntry($this->user, 'task-1', 'Task', null, $start, $start->modify('+1 hour'), 3600, TimeEntrySource::Web));
+        $this->entityManager()->flush();
+
+        $reports = $this->workers('correct', 15, 2);
+
+        $won = 0;
+        foreach ($reports as $report) {
+            self::assertSame([], $report['errors'], (string) json_encode($report));
+            self::assertSame(0, $report['detached']);
+            self::assertSame(15, $report['ok'] + ($report['refused']['conflict'] ?? 0) + ($report['refused']['transient'] ?? 0), (string) json_encode($report));
+            $won += $report['ok'];
+        }
+        $metadata = json_decode((string) $this->entityManager()->getConnection()->fetchOne('SELECT metadata FROM time_track_entries'), true);
+        self::assertIsArray($metadata);
+        self::assertSame($won, $metadata['n'] ?? null, 'every committed correction is in the row: no lost update');
+        self::assertGreaterThan(0, $won);
+    }
+
+    /**
+     * 1.40.0 (REQ-RUNTIME-003 rule 6): a correction waiting on the owner's lock fails with nothing committed
+     * (CONFLICT_001), the connection is back at its entry level, and the retry with the same version corrects.
+     */
+    public function testACorrectionBehindTheOwnersLockFailsWithNothingCommittedAndTheRetryCorrects(): void
+    {
+        $start = (new DateTimeImmutable('today -2 days'))->setTime(9, 0);
+        $entry = new TimeEntry($this->user, 'task-1', 'Task', null, $start, $start->modify('+1 hour'), 3600, TimeEntrySource::Web);
+        $this->entityManager()->persist($entry);
+        $this->entityManager()->flush();
+        $operations = self::getContainer()->get(TimeEntryOperationsInterface::class);
+        self::assertInstanceOf(TimeEntryOperationsInterface::class, $operations);
+        $query = self::getContainer()->get(TimeEntryQueryInterface::class);
+        self::assertInstanceOf(TimeEntryQueryInterface::class, $query);
+        $version = ($query->find($entry->getId()) ?? self::fail())->version();
+        $this->shortLockWait($this->entityManager()->getConnection());
+
+        $blocker = $this->otherConnection();
+        $blocker->beginTransaction();
+        $blocker->executeQuery('SELECT id FROM app_user WHERE id = ? FOR UPDATE', [$this->user->getId()]);
+        $failure = null;
+        try {
+            $operations->correct((string) $this->user->getId(), $entry->getId(), $version, new TimeEntryCorrection(durationSeconds: 60));
+        } catch (TransientStorageFailure $exception) {
+            $failure = $exception;
+        } finally {
+            $blocker->rollBack(); // @phpstan-ignore frankenphp.worker.noRollbackAfterNestedBegin (the test plays another request's transaction)
+            $blocker->close();
+        }
+
+        self::assertInstanceOf(TransientStorageFailure::class, $failure);
+        self::assertSame('CONFLICT_001', ConflictCode::forFailure($failure)->value);
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+        self::assertSame(3600, (int) $this->entityManager()->getConnection()->fetchOne('SELECT duration_seconds FROM time_track_entries'), 'nothing committed');
+
+        self::assertSame(60, $operations->correct((string) $this->user->getId(), $entry->getId(), $version, new TimeEntryCorrection(durationSeconds: 60))->after->entry->durationSeconds, 'the retry corrects');
+        self::assertSame(60, (int) $this->entityManager()->getConnection()->fetchOne('SELECT duration_seconds FROM time_track_entries'));
+    }
+
+    /**
+     * 1.40.0: the same as {@see self::testTwoProcessesRevokingTheSameSessionsRevokeEachOnce()} through the id-based
+     * `ClientSessionRevokerInterface::revokeSession()`.
+     */
+    public function testTwoProcessesRevokingSessionsByIdsRevokeEachOnce(): void
+    {
+        $auth = self::getContainer()->get(ClientAuthService::class);
+        self::assertInstanceOf(ClientAuthService::class, $auth);
+        for ($i = 0; $i < 20; ++$i) {
+            $auth->issueToken($this->user, ClientType::Desktop, 'app-password-' . $i);
+        }
+
+        $revoked = 0;
+        foreach ($this->workers('revoke-session', 20, 2) as $report) {
+            self::assertSame([], $report['errors'], (string) json_encode($report));
+            $revoked += $report['ok'];
+        }
+        self::assertSame(20, $revoked, 'every session revoked exactly once');
+        self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_client_tokens'));
     }
 
     /**

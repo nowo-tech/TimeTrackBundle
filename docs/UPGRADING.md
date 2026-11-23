@@ -9,6 +9,8 @@
   - [Composer](#composer)
   - [Private manager only](#private-manager-only)
   - [1.x support](#1x-support)
+- [To 1.40.0](#to-1400)
+  - [Stop writing TimeTrack rows with your entity manager](#stop-writing-timetrack-rows-with-your-entity-manager)
 - [To 1.39.0](#to-1390)
   - [Dialogs of the timesheet components load on demand](#dialogs-of-the-timesheet-components-load-on-demand)
 - [To 1.38.0](#to-1380)
@@ -111,7 +113,7 @@
 
 ## Unreleased
 
-From **1.39.0** (a major version: widen your constraint):
+From **1.40.0** (a major version: widen your constraint):
 
 ```bash
 composer require nowo-tech/time-track-bundle:^2.0 -W
@@ -122,11 +124,11 @@ minor without deprecation notices from this bundle upgrades without code changes
 line receives security fixes for 6 months: fixes rated Moderate and above are backported to the last 1.x minor;
 Low ones are fixed in 2.x only.
 
-No schema change, no new requirement: the same PHP, Symfony, Doctrine and database ranges as 1.39.
+No schema change, no new requirement: the same PHP, Symfony, Doctrine and database ranges as 1.40.
 
 ### Before you upgrade
 
-On 1.39, run your test suite and a deploy cycle of production traffic with the deprecation log on, and clear every
+On 1.40 (or 1.39), run your test suite and a deploy cycle of production traffic with the deprecation log on, and clear every
 notice of `nowo-tech/time-track-bundle`:
 
 1. **The private entity manager notice** (container build, 1.33.0):
@@ -266,6 +268,41 @@ included). What breaks:
 
 The 1.x line (from 1.39) receives security fixes for 6 months after 2.0.0: Moderate and higher are backported to the
 last 1.x minor; Low ones are fixed in 2.x only (upgrade to get them).
+## To 1.40.0
+
+From **1.39.0**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Target **1.40.0** (minor). From **1.39.0**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+migration change; nothing to do unless you write TimeTrack rows yourself.
+
+### Stop writing TimeTrack rows with your entity manager
+
+New public ports write by ids through the bundle's own manager ([USAGE, Writes by id](USAGE.md#writes-by-id-140)). Move
+these host writes to them, then turn on the private entity manager (`database.private_entity_manager: true`, the only
+mode in 2.0):
+
+| Your code today | 1.40 |
+|---|---|
+| `$em->remove($clientToken); $em->flush();` (sign out one device) | `ClientSessionRevokerInterface::revokeSession($sessionId, $userId)` |
+| DQL `DELETE` of a user's `ClientToken` rows | `ClientSessionRevokerInterface::revokeAllForUser($userId)` |
+| DBAL `UPDATE time_track_entries …` (correct start, end, duration, metadata) | `TimeEntryOperationsInterface::correct($userId, $entryId, $record->version(), $correction)` |
+| `$em->persist(new TimeEntry(…)); $em->flush();` | `TimeEntryOperationsInterface::createManual($userId, new ManualTimeEntryDraft(…))` |
+| `$em->getRepository(TimeEntry::class)->find…()` | `TimeEntryQueryInterface::find($entryId)` (1.35) or `TimeEntryAccessInterface::viewableEntry()` (1.37) |
+
+- A correction needs the version of the entry you read (`TimeEntryRecord::version()`): carry it through your form, or
+  read the entry right before the call. A changed entry is refused with `conflict` instead of being overwritten.
+- Keep your own checks (correction window, reason, notifications) before the call; the bundle adds the owner scope,
+  the period lock (old and new start), the overlap check and the value checks.
+- Called inside your transaction, the write is a savepoint of it (same connection): your own revision or audit rows and
+  the bundle's change commit together. Events are dispatched before your commit (see USAGE).
+- An entity of yours that maps a relation to `TimeEntry` (e.g. an auto-stop notice) should keep the entry id (a string
+  column) and read the entry through `TimeEntryQueryInterface::find()`.
+- `ClientTokenRevoker` takes a new optional constructor argument `$userClass` (last position); hosts that build it
+  themselves need no change.
 
 ## To 1.39.0
 

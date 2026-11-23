@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.40.0] - 2026-11-23](#1400---2026-11-23)
 - [[1.39.0] - 2026-11-23](#1390---2026-11-23)
 - [[1.38.0] - 2026-11-23](#1380---2026-11-23)
 - [[1.37.0] - 2026-11-22](#1370---2026-11-22)
@@ -163,6 +164,52 @@ See [UPGRADING](UPGRADING.md#unreleased).
 
 - After 2.0.0 the 1.x line receives security fixes for 6 months: Moderate and higher are backported to the last 1.x
   minor; Low ones are fixed in 2.x only.
+  - [Added](#added-38)
+  - [Configuration](#configuration)
+  - [Testing](#testing)
+  - [Documentation](#documentation-12)
+
+## [1.40.0] - 2026-11-23
+
+### Added
+
+- **Writes by id for DDD hosts and the private entity manager** (Beacon; REQ-ARCH-001 rules 3 and 6, REQ-RUNTIME-003).
+  A host corrects and creates entries and ends client sessions without writing TimeTrack rows through its own entity
+  manager, so it can turn on `database.private_entity_manager: true`. The ports take user ids or a `TimeTrackUserRef`
+  and return read models (no Symfony user, no entity), work with the private and the shared manager and with both user
+  mappings, and are not deprecated (2.0 keeps them). See [USAGE, Writes by id](USAGE.md#writes-by-id-140).
+  - `Entry\TimeEntryOperationsInterface` (public service): `correct($owner, $entryId, $expectedVersion, TimeEntryCorrection)`
+    returns `TimeEntryCorrectionResult` (the entry `before` and `after` as `TimeEntryRecord`, the changed columns) for
+    the host's own revision record; `createManual($owner, ManualTimeEntryDraft)` returns the new entry's
+    `TimeEntryRecord` (the rules of `POST entries`; for demo data `maxAgeDays` may widen the allowed age).
+  - Corrections are scoped to the entry owner (anything else is `not_found`, no oracle), refuse imported entries
+    (`read_only`), check the values (`invalid_range`, `entry_too_long`, `entry_in_future`, `invalid_duration`),
+    overlaps with the owner's live entries and running timer (`overlap`; not for service accounts) and the period lock
+    of the old and of the new start (`PeriodWriteRefusedException`: locked, approved and submitted periods never change).
+    Optimistic concurrency: under the owner's lock the row is read again `FOR UPDATE` and compared with
+    `$expectedVersion` (`TimeEntryRecord::version()`, new): a concurrent change is `conflict` (409), never a lost update.
+    The metadata is a patch (`null` removes a key; `note` cleaned and cut; `closed_by` reserved).
+  - Event `nowo_time_track.time_entry.corrected` (`TimeEntryCorrectedEvent`: ids, `before` / `after` read models,
+    changed columns), after the bundle's unit, once per real change.
+  - `Client\ClientSessionRevokerInterface` (public service, implemented by `ClientTokenRevoker`): `revokeSession($sessionId,
+    $actor)` with the actor as a user id or `TimeTrackUserRef` (owner by id, admin roles from the reference, the
+    access-check event, the `session_revoked` audit event; idempotent) and `revokeAllForUser($userId)`.
+  - `TimeEntryRecord::version()` and `TimeEntryRecord::fromEntry()`; `ManualEntryException::UNKNOWN_USER` (404) for an
+    owner id that names no user.
+  - Transactions: each write is one unit of the bundle's runner under the owner's row lock, its own transaction or a
+    savepoint of the host's (same connection): GDPR corrections and erasures called inside the host's transaction commit
+    or roll back with it ([CONCURRENCY](CONCURRENCY.md#write-paths)).
+
+### Tests
+
+- `TimeEntryOperationsTest` and `ClientSessionRevokerTest` (unit: every refusal, the version check against a row changed
+  meanwhile, the period lock of the old and the new start, overlaps and service accounts, a store without locks);
+  `EntryOperationsStandardTest` and `EntryOperationsDddHostTest` (functional: reads through the query port, a stale
+  version, the host's transaction rolled back and committed, manual entries by id, a new host-user row, look-alike and
+  out-of-range ids, sessions revoked by ids, nothing in the host manager with the private one); in the load-readiness
+  job (MySQL 8.4, MariaDB 11.4, PostgreSQL 16) two processes correcting one entry by read-version-write never lose an
+  update, a correction behind the owner's lock fails with `CONFLICT_001` and nothing committed and the retry corrects,
+  and two processes revoking sessions through `revokeSession()` revoke each once.
 
 ## [1.39.0] - 2026-11-23
 
@@ -2277,7 +2324,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.39.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.0...HEAD
+[1.40.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.36.0...v1.37.0

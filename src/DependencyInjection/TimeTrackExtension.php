@@ -73,6 +73,8 @@ use Nowo\TimeTrackBundle\Doctrine\TimeTrackExactKeyColumns;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
+use Nowo\TimeTrackBundle\Entry\TimeEntryOperations;
+use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureConflictFormatter;
@@ -447,6 +449,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerBillable($container);
         $this->registerServiceAccounts($container, $config['service_account_policy'] ?? null);
         $this->registerEntriesWithoutTask($container, $config);
+        $this->registerEntryOperations($container, $emRef);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -622,6 +625,30 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$entryAccess'     => new Reference(TimeEntryAccessInterface::class),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
+    }
+
+    /**
+     * Since 1.40.0 (Beacon): the id-based entry writes (public port {@see TimeEntryOperationsInterface}) on the bundle's
+     * stores and entity manager.
+     */
+    private function registerEntryOperations(ContainerBuilder $container, Reference $emRef): void
+    {
+        $container->setDefinition(TimeEntryOperations::class, (new Definition(TimeEntryOperations::class))
+            ->setArguments([
+                '$entries'         => new Reference(TimeEntryRepositoryInterface::class),
+                '$timers'          => new Reference(ActiveTimerRepositoryInterface::class),
+                '$manualEntries'   => new Reference(ManualEntryService::class),
+                '$entityManager'   => $emRef,
+                '$userClass'       => '%nowo_time_track.user_class%',
+                '$userReferences'  => new Reference(UserReferenceResolverInterface::class),
+                '$periodLockGuard' => new Reference(PeriodLockGuard::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$serviceAccounts' => new Reference(ServiceAccountPolicyInterface::class),
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'           => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setAlias(TimeEntryOperationsInterface::class, TimeEntryOperations::class)->setPublic(true);
     }
 
     /**

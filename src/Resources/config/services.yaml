@@ -24,6 +24,8 @@ services:
             - '../../Query/'
             # Since 1.37.0: the id-based entry access port is defined by the extension.
             - '../../Access/'
+            # Since 1.40.0: the id-based entry operations are defined by the extension (the bundle's entity manager).
+            - '../../Entry/'
             - '../../PersonalData/'
             - '../../EventSubscriber/'
             - '../../Client/ClientLoginRateLimiter.php'
@@ -157,8 +159,14 @@ services:
         public: true
         arguments:
             $adminRoles: '%nowo_time_track.security.admin_roles%'
+            $userClass: '%nowo_time_track.user_class%'
         tags:
             - { name: monolog.logger, channel: time_track }
+
+    # 1.40.0: the same by ids (revokeSession(): actor id or TimeTrackUserRef; revokeAllForUser()), framework-free.
+    Nowo\TimeTrackBundle\Client\ClientSessionRevokerInterface:
+        alias: Nowo\TimeTrackBundle\Client\ClientTokenRevoker
+        public: true
 
     # 1.24 host entry point: build a TimeTrackUserRef from a Symfony user (autowire it by class; stateless).
     Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory:

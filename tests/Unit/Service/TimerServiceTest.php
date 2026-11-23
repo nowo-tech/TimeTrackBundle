@@ -118,11 +118,11 @@ final class TimerServiceTest extends TestCase
     public function testHeartbeatWithoutActiveTimerReturnsNull(): void
     {
         self::assertNull($this->service->heartbeat($this->user));
+        self::assertNull($this->service->keepAlive($this->user));
     }
 
     public function testKeepAliveTouchesTheRunningTimerWithoutAnActivitySignal(): void
     {
-        self::assertNull($this->service->keepAlive($this->user));
         $this->service->start($this->user, 'task-1', ClientType::Web);
 
         $timer = $this->service->keepAlive($this->user);

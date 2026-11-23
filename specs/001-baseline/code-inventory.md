@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-22 (v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
+**Last audited**: 2026-11-23 (1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -657,13 +657,28 @@
 | `Event/TimerStartedWithoutTaskEvent.php` | A timer without a task was started | FR-EVT-005 |
 | `Doctrine/TimeTrackHostFlushProbe.php` | Host flush migration list (shared manager mode) | FR-PEM-004 |
 
+## Writes by id (1.40)
+
+| Source file | Spec section | Requirement IDs |
+| --- | --- | --- |
+| `Entry/TimeEntryOperationsInterface.php` | Entry writes by ids (port) | FR-OPS-001 |
+| `Entry/TimeEntryOperations.php` | Default entry writes by ids | FR-OPS-001 |
+| `Entry/TimeEntryCorrection.php` | What a correction changes (VO) | FR-OPS-001 |
+| `Entry/TimeEntryCorrectionResult.php` | Before / after of a correction (VO) | FR-OPS-001 |
+| `Entry/ManualTimeEntryDraft.php` | A manual entry to create by owner id (VO) | FR-OPS-001 |
+| `Exception/TimeEntryCorrectionException.php` | Refusals of a correction | FR-OPS-001 |
+| `Event/TimeEntryCorrectedEvent.php` | An entry was corrected (read models) | FR-OPS-001 |
+| `Support/EntryOverlap.php` | Overlap with live entries and the running timer | FR-OPS-001 |
+| `Client/ClientSessionRevokerInterface.php` | Client sessions revoked by ids (port) | FR-OPS-002 |
+
 ## Coverage summary
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
 | PHP classes (`src/**/*.php`) | 429 | 429 |
 | Id-based access, read ports, personal data and client sessions (1.33-1.37) | 32 | 32 |
+| Writes by id (1.40) | 9 | 9 |
 | Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
-| **Total production sources** | **493** | **493** |
+| **Total production sources** | **502** | **502** |
 
-Audit command: `git ls-files src | wc -l` → 493.
+Audit command: `git ls-files src | wc -l` → 507 at 1.40.0 (5 files added in 1.38–1.39 are not mapped here yet).

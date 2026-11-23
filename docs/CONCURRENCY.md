@@ -36,9 +36,23 @@ first lock of a unit ([One lock order](HIGH-LOAD.md#one-lock-order)).
 | Calendar suggestions accepted as entries (`entries` with `Idempotency-Key` too) | One transaction per occurrence under the owner lock; the suggestion is read again, the entry and the accepted status commit together | Owner lock; a concurrent accept or dismiss wins | 409 + `CONFLICT_001`; the loser's outcome is `not_found` |
 | Personal-data erasure (`TimeTrackPersonalDataInterface::erase()`, 1.35.0) | One statement-only unit (a savepoint inside the host's transaction): the running-timer check, the deletes and the entry pass commit together; no entity manager is flushed | The deletes read and lock the owner's rows (`FOR UPDATE`, id order), check the owner byte for byte and delete by id in batches; the free-text pass locks the owner's entries by primary key in id order, batch by batch, and writes only rows still owned and not anonymised; the anonymise pass reuses the former-person statements and takes no row lock (rows read unlocked, then one `UPDATE` by id per row: a concurrent change to such a row is overwritten by the anonymisation, which is the intended outcome); idempotent | `TransientStorageFailure` with nothing committed (409 + `CONFLICT_001` on a bundle route): replay. A running timer is the domain refusal `timer_running`; a timer started by another request after the check is not seen, so a host blocks the account (or signs it out) before it erases |
 | Sign out everywhere (`ClientTokenRevoker::revokeAllForUser()`, 1.35.0) | One statement-only unit | The user's tokens read and locked by owner (`FOR UPDATE`), checked byte for byte, deleted by id; idempotent | `TransientStorageFailure`, nothing committed |
+| Entry correction by id (`TimeEntryOperationsInterface::correct()`, 1.40.0) | One unit under the owner lock (a savepoint inside the host's transaction) | Owner lock, then the entry read again `FOR UPDATE` and compared byte for byte (owner, id) and with the caller's version (`TimeEntryRecord::version()`: optimistic check); period lock of the old and the new start and the overlap check read under the locks | A changed version is the domain answer `conflict` (409, nothing written: read again); a lock wait is `TransientStorageFailure` / 409 + `CONFLICT_001` |
+| Manual entry by owner id (`TimeEntryOperationsInterface::createManual()`, 1.40.0) | The unit of manual entries (owner lock); with `user_mapping: id` the host-user row of a new owner is inserted first (savepoint, a concurrent insert of the same row tolerated) | As manual entries | As manual entries |
+| Client session by ids (`ClientSessionRevokerInterface::revokeSession()`, 1.40.0) | One statement | The `DELETE` by id: of two concurrent calls one revokes, the other answers `NotFound`; idempotent | `TransientStorageFailure`, nothing committed |
 | Retention purge, console commands | Statement-only units in batches | Idempotent batches | Console error: run it again |
 
-Side effects (timer, entry, timesheet, ledger and import events, a revocation) run after the outermost commit. The read
+Side effects (timer, entry, timesheet, ledger and import events, a revocation) run after the bundle's unit: after the
+commit when the bundle opened the transaction, before the host's commit when the host opened it.
+
+**Writes by id and the host's transaction (1.40.0).** The id-based writes (`correct()`, `createManual()`,
+`revokeSession()`) and the personal-data erasure (`erase()`, 1.35.0) never open a connection or manager of their own:
+they run on the bundle's manager (private or shared), which shares the connection of `database.entity_manager`. Without
+an open transaction each is its own unit and is committed when the call returns. Inside a transaction the host opened on
+that connection each is a savepoint of it: **the GDPR paths (art. 16 correction, art. 17 erasure) join the host
+transaction**, so the host's own revision, audit or erasure-log rows commit or roll back together with the bundle's
+change; a rollback of the host undoes the bundle's write (with the private manager its identity map is replaced, DBAL 4
+at once, DBAL 3 at the next boundary). A lock conflict inside the host's transaction rolls back to the bundle's savepoint
+and surfaces as `TransientStorageFailure`; the host rolls back and retries its whole unit. The read
 ports of 1.35.0 (`Query\*`) take no lock and write nothing. The entry access port of 1.37.0 (`Access\TimeEntryAccessInterface`)
 takes no lock and writes nothing either: a grant holds as of the check only (time of check). The bundle's write services
 do not rely on it: under the owner's lock they re-read the entry and check again its owner, its state (imported,
@@ -87,7 +101,7 @@ subscriber no longer maps them to 409 (1.27.0 to 1.30.0 answered a unique violat
 - **Domain answers with their own error key** (never `CONFLICT_*`): `ActiveTimerConflictException` (`timer_running`),
   `TimesheetException('conflict')` for a first view or transition that lost an optimistic or unique race on a store
   without the owner lock, `LedgerRefusedException('conflict')` for a ledger chain fork, `duplicate` for a second
-  screenshot intent. They are expected results of a lost "only one" race, answered 409 by the client API with those
+  screenshot intent, since 1.40.0 `TimeEntryCorrectionException('conflict')` for a correction whose version is stale. They are expected results of a lost "only one" race, answered 409 by the client API with those
   keys; retrying gives the answer the winner made.
 - **Anything else** (a unique violation your listeners or hosts cause, a lost connection, a constraint) is a real error:
   it reaches your error handling and answers 500.
@@ -125,6 +139,10 @@ to `TransactionRunnerInterface`.
 - Conflict mapping: `tests/Unit/EventSubscriber/StorageFailureSubscriberTest.php` (001 with `Retry-After`, 002 without,
   the lost savepoint, 503 opt-in, a unique violation left alone), `StorageFailureConflictFormatterTest.php`,
   `tests/Unit/TaskMove/TaskTimeMoverTest.php` (002 after a saved batch).
+- Writes by id (1.40.0): `tests/Database/LoadReadinessDatabaseTest.php` (two processes correcting one entry by
+  read-version-write: no lost update; a correction behind the owner's lock: `CONFLICT_001`, nothing committed;
+  sessions revoked by ids once), `tests/Functional/EntryOperations*Test.php` (the host's transaction rolled back and
+  committed, both user mappings, private and shared manager).
 - Races: `tests/Functional/ConcurrencyWaveTest.php` (QO-L3 import under the owner locks, QO-L4 audit row under the
   timesheet lock), `LoadReadiness*Test.php`, `MonitoringLoadReadinessTest.php`, `ImportedEntriesTest.php`.
 
