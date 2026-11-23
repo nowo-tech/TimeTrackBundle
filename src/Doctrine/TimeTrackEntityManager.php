@@ -266,7 +266,9 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
                 }
                 $target     = $live->getClassMetadata($value::class);
                 $identifier = $target->getIdentifierValues($value);
-                $reference  = $identifier === [] || in_array(null, $identifier, true) ? null : $live->getReference($target->getName(), $identifier);
+                // A row your manager only scheduled (an id from a sequence or the constructor, not inserted yet) is not one either.
+                $unsaved   = $identifier === [] || in_array(null, $identifier, true) || $this->source()->getUnitOfWork()->isScheduledForInsert($value);
+                $reference = $unsaved ? null : $live->getReference($target->getName(), $identifier);
                 if ($reference === null) {
                     // W1-2 (XS-I1 / XS-I2): an unsaved (or vanished) object of yours is never treated as a new row.
                     throw new LogicException(sprintf('TimeTrack: the %s row points at a %s ("%s") that has no row yet (persisted but not flushed, or not saved at all). Flush your %s first; TimeTrack wrote nothing.', $entity::class, $target->getName(), $field, $target->getName()));

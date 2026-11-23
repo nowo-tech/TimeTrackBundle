@@ -40,6 +40,7 @@ use function array_map;
 use function array_values;
 use function count;
 use function hash;
+use function ksort;
 use function str_repeat;
 use function substr;
 use function urlencode;
@@ -167,7 +168,11 @@ class CalendarClientApiTest extends FunctionalTestCase
         self::assertSame([null, null, null, 'period_locked', 'overlap', 'not_found'], $errors, 'AC-16: the locked occurrence and the overlap are reported, the rest is created');
         $entry = $this->entityManager()->find(TimeEntry::class, $accepted['outcomes'][0]['entryId'] ?? '');
         self::assertInstanceOf(TimeEntry::class, $entry);
-        self::assertSame([TimeEntrySource::Calendar, ['origin' => 'calendar', 'provider' => 'google', 'note' => 'from the calendar'], 'org-a'], [$entry->getSource(), $entry->getMetadata(), $entry->getScopeKey()]);
+        // Read back from the database (2.0: the request wrote it through TimeTrack's private manager): a JSON column may
+        // return its keys in another order (MySQL).
+        $metadata = $entry->getMetadata() ?? [];
+        ksort($metadata);
+        self::assertSame([TimeEntrySource::Calendar, ['note' => 'from the calendar', 'origin' => 'calendar', 'provider' => 'google'], 'org-a'], [$entry->getSource(), $metadata, $entry->getScopeKey()]);
         self::assertCount(3, array_filter($this->events, static fn (object $e): bool => $e instanceof TimeEntryCreatedEvent && $e->origin === 'calendar'));
         $decided = array_values(array_filter($this->events, static fn (object $e): bool => $e instanceof CalendarSuggestionDecidedEvent));
         self::assertSame(['accepted', 3, 3], [$decided[0]->decision, count($decided[0]->suggestionIds), count($decided[0]->entryIds)]);
