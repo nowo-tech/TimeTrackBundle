@@ -10,7 +10,7 @@ use RuntimeException;
  * Since 1.14: an entry without a timer was refused (`POST entries`, an accepted suggestion). The message is the stable
  * code: `invalid_range` (end ≤ start), `entry_too_long` (> 24 h), `entry_in_future`, `entry_too_old`
  * (`manual_entries.max_age_days`, or `calendar.lookback_days` for suggestions), `not_trackable`, `overlap` (a live entry
- * or the running timer of the user), since 1.21 `billable_forbidden`. Period locks are {@see PeriodWriteRefusedException}.
+ * or the running timer of the user), since 1.21 `billable_forbidden`, since 1.40.0 `unknown_user`. Period locks are {@see PeriodWriteRefusedException}.
  */
 final class ManualEntryException extends RuntimeException
 {
@@ -24,6 +24,9 @@ final class ManualEntryException extends RuntimeException
     /** Since 1.21 (audit MV-T-L3): an explicit `billable` the `edit_billable` access check refused (403). */
     public const BILLABLE_FORBIDDEN = 'billable_forbidden';
 
+    /** Since 1.40.0 (`TimeEntryOperationsInterface::createManual()`): the owner id names no user (404). */
+    public const UNKNOWN_USER = 'unknown_user';
+
     /**
      * @param string $errorCode One of the class constants
      */
@@ -33,13 +36,14 @@ final class ManualEntryException extends RuntimeException
     }
 
     /**
-     * HTTP status of the client API answer: 403 (task), 409 (overlap) or 422 (the times).
+     * HTTP status of the client API answer: 403 (task), 409 (overlap), 404 (since 1.40.0, unknown user) or 422 (the times).
      */
     public function httpStatus(): int
     {
         return match ($this->errorCode) {
             self::NOT_TRACKABLE, self::BILLABLE_FORBIDDEN => 403,
             self::OVERLAP                                 => 409,
+            self::UNKNOWN_USER                            => 404,
             default                                       => 422,
         };
     }

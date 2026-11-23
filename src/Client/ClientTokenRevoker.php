@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Client;
 
 use LogicException;
+use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Dto\ClientSessionRecord;
 use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
@@ -16,6 +17,7 @@ use Nowo\TimeTrackBundle\Repository\CredentialClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserClientTokenRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\ClientSessionId;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Nowo\TransactionContract\TransientStorageFailure;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -24,6 +26,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Throwable;
 
 use function array_intersect;
+use function is_int;
 use function is_string;
 
 /**
@@ -32,12 +35,14 @@ use function is_string;
  * - {@see self::revokeByCredential()} ends every session of a credential at once (the user deletes an app password /
  *   device);
  * - since 1.34.0, {@see self::revokeById()} ends **one** session by its id ("sign out this device"), authorised for its
- *   owner and `security.admin_roles`, then {@see ClientSessionAccessCheckEvent}.
+ *   owner and `security.admin_roles`, then {@see ClientSessionAccessCheckEvent};
+ * - since 1.40.0, {@see self::revokeSession()} does the same with the actor given by id or {@see TimeTrackUserRef}
+ *   ({@see ClientSessionRevokerInterface}, no Symfony user object).
  *
  * The per-request {@see ClientCredentialStateInterface} check covers everything else (disabled user, sign out
  * everywhere, ...). Stateless: safe in a FrankenPHP worker with kernel reset off.
  */
-final readonly class ClientTokenRevoker
+final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
 {
     private LoggerInterface $logger;
 
@@ -47,6 +52,7 @@ final readonly class ClientTokenRevoker
      *
      * @param ClientSessionRepositoryInterface|null $sessions Store of {@see self::revokeById()} (null: the token store when it implements it)
      * @param list<string> $adminRoles `security.admin_roles`: may revoke any session (no role hierarchy)
+     * @param string $userClass Since 1.40.0: `user_class` (the class of the reference built from a bare actor id)
      */
     public function __construct(
         private CredentialClientTokenRepositoryInterface $tokens,
@@ -55,6 +61,7 @@ final readonly class ClientTokenRevoker
         private ?EventDispatcherInterface $eventDispatcher = null,
         private array $adminRoles = [],
         ?LoggerInterface $logger = null,
+        private string $userClass = '',
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -103,35 +110,34 @@ final readonly class ClientTokenRevoker
      */
     public function revokeById(ClientSessionId|string $sessionId, UserInterface $actor): ClientSessionRevocation
     {
-        $id = is_string($sessionId) ? ClientSessionId::tryFromString($sessionId) : $sessionId;
-        if (!$id instanceof ClientSessionId) {
-            return ClientSessionRevocation::NotFound;
-        }
-        $store   = $this->sessionStore();
-        $session = $store->findSessionById($id->toString());
-        if (!$session instanceof ClientSessionRecord) {
-            return ClientSessionRevocation::NotFound;
-        }
-        $isOwner = UserIdResolver::idOf($actor) === $session->ownerId;
-        if (!$this->isGranted($actor, $session, $isOwner)) {
-            $this->logger->info('TimeTrack client session revocation refused.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'reason' => 'forbidden']);
+        return $this->revoke($sessionId, TimeTrackUserRefs::fromUser($actor), UserIdResolver::idOf($actor), $actor->getRoles());
+    }
 
-            return ClientSessionRevocation::NotFound;
+    /**
+     * Since 1.40.0: {@see self::revokeById()} with the actor given by id or {@see TimeTrackUserRef}
+     * ({@see ClientSessionRevokerInterface::revokeSession()}). A bare id is the owner rule only (no roles); a reference
+     * carries its role names for `security.admin_roles` (the user object's, when it carries one); a reference whose user
+     * object has another id than the reference is answered `NotFound`.
+     *
+     * @throws LogicException when the configured token store cannot look up sessions by id
+     * @throws TransientStorageFailure when the storage failed transiently (deadlock, lock wait timeout): nothing was committed, retry
+     */
+    public function revokeSession(ClientSessionId|string $sessionId, TimeTrackUserRef|string|int $actor): ClientSessionRevocation
+    {
+        if (!$actor instanceof TimeTrackUserRef) {
+            $id = is_int($actor) ? (string) $actor : $actor;
+            if ($id === '' || !DoctrineUserReferenceResolver::isExactId($id)) {
+                return ClientSessionRevocation::NotFound;
+            }
+
+            return $this->revoke($sessionId, TimeTrackUserRef::ofId($this->userClass, $id), $id, []);
         }
-        // @igor-ignore - Request-scoped value or I/O delegate (repository call); no worker state.
-        if ($store->removeSessionById($session->id) === 0) {
-            // A concurrent call revoked it first (or the purge removed it): the same answer as an unknown id.
+        $object = $actor->user();
+        if ($actor->id === null || ($object !== null && UserIdResolver::idOf($object) !== $actor->id)) {
             return ClientSessionRevocation::NotFound;
         }
 
-        try {
-            $this->auditor?->recordForUserId(ClientApiAuditAction::SessionRevoked, $session->ownerId, $session->credentialId, $session->clientType, null, $isOwner ? 'owner' : 'other');
-        } catch (Throwable $exception) {
-            $this->logger->warning('TimeTrack client session audit listener failed.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'exception' => $exception::class]);
-        }
-        $this->logger->info('TimeTrack client session revoked.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'client' => $session->clientType->value]);
-
-        return ClientSessionRevocation::Revoked;
+        return $this->revoke($sessionId, $actor, $actor->id, $object instanceof UserInterface ? $object->getRoles() : $actor->roles);
     }
 
     /**
@@ -159,6 +165,42 @@ final readonly class ClientTokenRevoker
         return $count;
     }
 
+    /**
+     * @param array<string> $roles The actor's role names (no hierarchy)
+     */
+    private function revoke(ClientSessionId|string $sessionId, TimeTrackUserRef $actorRef, ?string $actorId, array $roles): ClientSessionRevocation
+    {
+        $id = is_string($sessionId) ? ClientSessionId::tryFromString($sessionId) : $sessionId;
+        if (!$id instanceof ClientSessionId) {
+            return ClientSessionRevocation::NotFound;
+        }
+        $store   = $this->sessionStore();
+        $session = $store->findSessionById($id->toString());
+        if (!$session instanceof ClientSessionRecord) {
+            return ClientSessionRevocation::NotFound;
+        }
+        $isOwner = $actorId !== null && $actorId === $session->ownerId;
+        if (!$this->isGranted($actorRef, $roles, $session, $isOwner)) {
+            $this->logger->info('TimeTrack client session revocation refused.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'reason' => 'forbidden']);
+
+            return ClientSessionRevocation::NotFound;
+        }
+        // @igor-ignore - Request-scoped value or I/O delegate (repository call); no worker state.
+        if ($store->removeSessionById($session->id) === 0) {
+            // A concurrent call revoked it first (or the purge removed it): the same answer as an unknown id.
+            return ClientSessionRevocation::NotFound;
+        }
+
+        try {
+            $this->auditor?->recordForUserId(ClientApiAuditAction::SessionRevoked, $session->ownerId, $session->credentialId, $session->clientType, null, $isOwner ? 'owner' : 'other');
+        } catch (Throwable $exception) {
+            $this->logger->warning('TimeTrack client session audit listener failed.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'exception' => $exception::class]);
+        }
+        $this->logger->info('TimeTrack client session revoked.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'client' => $session->clientType->value]);
+
+        return ClientSessionRevocation::Revoked;
+    }
+
     private function sessionStore(): ClientSessionRepositoryInterface
     {
         if ($this->sessions instanceof ClientSessionRepositoryInterface) {
@@ -171,13 +213,16 @@ final readonly class ClientTokenRevoker
         throw new LogicException('The TimeTrack token store does not implement ' . ClientSessionRepositoryInterface::class . ': it cannot revoke one session by its id.');
     }
 
-    private function isGranted(UserInterface $actor, ClientSessionRecord $session, bool $isOwner): bool
+    /**
+     * @param array<string> $roles
+     */
+    private function isGranted(TimeTrackUserRef $actorRef, array $roles, ClientSessionRecord $session, bool $isOwner): bool
     {
-        $granted = $isOwner || array_intersect($this->adminRoles, $actor->getRoles()) !== [];
+        $granted = $isOwner || array_intersect($this->adminRoles, $roles) !== [];
         if (!$this->eventDispatcher instanceof EventDispatcherInterface) {
             return $granted;
         }
-        $event = new ClientSessionAccessCheckEvent(TimeTrackUserRefs::fromUser($actor), $session->id, $session->ownerId, $session->credentialId, $session->clientType, ClientSessionAccessCheckEvent::ACTION_REVOKE, $granted);
+        $event = new ClientSessionAccessCheckEvent($actorRef, $session->id, $session->ownerId, $session->credentialId, $session->clientType, ClientSessionAccessCheckEvent::ACTION_REVOKE, $granted);
         $this->eventDispatcher->dispatch($event, TimeTrackEvents::CLIENT_SESSION_ACCESS_CHECK);
 
         return $event->isGranted();
