@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.40.1] - 2026-11-23](#1401---2026-11-23)
 - [[1.40.0] - 2026-11-23](#1400---2026-11-23)
 - [[1.39.0] - 2026-11-23](#1390---2026-11-23)
 - [[1.38.0] - 2026-11-23](#1380---2026-11-23)
@@ -174,6 +175,58 @@ See [UPGRADING](UPGRADING.md#unreleased).
   - [Configuration](#configuration)
   - [Testing](#testing)
   - [Documentation](#documentation-12)
+
+## [1.40.1] - 2026-11-23
+
+Target **1.40.1** (patch): the Low findings of audit ZAN on the 1.40.0 writes by id. No GHSA (new APIs, host-side
+authorisation, no released version affected).
+
+### Security
+
+- **ZAN-5: `ClientSessionRevokerInterface::revokeSession()` refuses another principal class.** A `TimeTrackUserRef` whose
+  class is neither `user_class` nor an `accepted_user_classes` entry (nor a subclass; `''` is accepted) answers
+  `NotFound`: an API client or admin entity whose id equals a user's id no longer counts as that user's owner. The
+  phpdoc warns that the roles of a reference without a user object are trusted as given (build them from the current
+  security user, never from a queued message, a cache or request input). `ClientTokenRevoker` takes a new optional last
+  constructor argument `$acceptedUserClasses`, wired by the extension.
+- **ZAN-4: entry metadata is bounded and erasure clears free text in every key.** A correction may not grow an entry's
+  metadata past 32 keys or 16 KB of JSON (`TimeEntryCorrectionException::METADATA_TOO_LARGE`, `metadata_too_large`, 422;
+  a patch holds at most 32 keys; an entry stored larger before may still shrink). `TimeTrackPersonalDataInterface::erase()`
+  with `TimeEntryErasure::FreeText` now clears every string value of the metadata except the structural keys `closed_by`,
+  `origin` and `provider` (before: only `note`), so personal text a host kept under another key (`comment`) is erased
+  too; numbers and booleans stay. Chosen over documenting the gap: an erasure must not depend on the host knowing which
+  keys hold personal text, and string flags are rare (`EntryMetadataRules::STRUCTURAL_KEYS`).
+- **ZAN-3: `ManualTimeEntryDraft` validates itself.** `maxAgeDays` must be 0 to 3650 (a negative or huge value no longer
+  turns into "everything too old" or a float overflow that accepted any start), and the metadata follows the rules of
+  corrections: key pattern, finite scalars only (no null, nested array, NaN or INF), valid UTF-8 strings up to 2 000
+  bytes, `closed_by` refused, at most 32 keys and 16 KB (`InvalidArgumentException` when the draft is built).
+- **ZAN-2: a corrected start has an age limit.** `TimeEntryCorrection` takes an optional `maxAgeDays` (0 to 3650; null =
+  `manual_entries.max_age_days`): a new start older than that is refused (`entry_too_old`, 422), as for manual entries.
+  Only a changed start is checked, so an old entry can still get a note or duration fix.
+
+### Fixed
+
+- **ZAN-1: checks read under a shared lock inside the host's transaction.** The overlap check (new
+  `Repository\LockingOverlappingTimeEntryRepositoryInterface::findLiveOverlappingLocked()`) and the period lock (new
+  `Repository\SharedLockGuardTimesheetRepositoryInterface::findGuardingShared()`, `PeriodLockGuard::assertWritable(…,
+  $sharedLock)`) of corrections and manual entries read with Doctrine's `PESSIMISTIC_READ` (`LOCK IN SHARE MODE` on
+  MySQL / MariaDB, `FOR SHARE` on PostgreSQL) and refresh the rows they return, when a transaction is open. Inside a
+  host's REPEATABLE READ transaction that had already read (MySQL, MariaDB), an entry or a period lock another request
+  committed since its snapshot was invisible: the correction could overlap it or write into a just-locked period. The
+  residual risk for PostgreSQL REPEATABLE READ is documented ([CONCURRENCY](CONCURRENCY.md#residual-risks)).
+- With doctrine/dbal 3 the shared-lock timesheet read (`DoctrineOrmTimesheetRepository::findGuardingForMove()`, imported
+  entry moves since 1.16, and the new `findGuardingShared()`) failed with a `TypeError` (`LockMode` is a class of `int`
+  constants there, an enum in 4); the lock mode is now accepted in both forms.
+- **ZAN-I3:** `entry_too_long` is checked only when the start or the end changes, so a forgotten timer's entry longer
+  than 24 h can get a note-only or duration-only correction.
+
+### Tests
+
+- `EntryWritesHardeningTest` (draft and correction validation, metadata limits and legacy shrink, age limit, long
+  entries, the overlap store without locks), `ClientSessionRevokerTest` (another principal class, subclasses, `''`,
+  a revoker without `user_class`), `EntryOperations*Test` (configured age, principal class through the container),
+  `HostReadPortsTestCase` (free-text erasure of other string keys), and in the load-readiness job
+  `testChecksInsideAnOlderHostSnapshotSeeWhatOthersCommittedSince` (MySQL 8.4, MariaDB 11.4, PostgreSQL 16).
 
 ## [1.40.0] - 2026-11-23
 
@@ -2330,7 +2383,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.1...HEAD
+[1.40.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.0...v1.40.1
 [1.40.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.37.0...v1.38.0

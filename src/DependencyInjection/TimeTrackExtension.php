@@ -41,6 +41,7 @@ use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
+use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
@@ -449,7 +450,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerBillable($container);
         $this->registerServiceAccounts($container, $config['service_account_policy'] ?? null);
         $this->registerEntriesWithoutTask($container, $config);
-        $this->registerEntryOperations($container, $emRef);
+        $this->registerEntryOperations($container, $emRef, $acceptedUserClasses);
 
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
@@ -629,10 +630,15 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
     /**
      * Since 1.40.0 (Beacon): the id-based entry writes (public port {@see TimeEntryOperationsInterface}) on the bundle's
-     * stores and entity manager.
+     * stores and entity manager. Since 1.40.1 the corrections' default allowed age (`manual_entries.max_age_days`) and the
+     * accepted user classes of `ClientTokenRevoker::revokeSession()` (audit ZAN-2, ZAN-5).
+     *
+     * @param list<class-string> $acceptedUserClasses `accepted_user_classes`
      */
-    private function registerEntryOperations(ContainerBuilder $container, Reference $emRef): void
+    private function registerEntryOperations(ContainerBuilder $container, Reference $emRef, array $acceptedUserClasses): void
     {
+        /** @var array{enabled: bool, max_age_days: int} $manual */
+        $manual = $container->getParameter('nowo_time_track.manual_entries');
         $container->setDefinition(TimeEntryOperations::class, (new Definition(TimeEntryOperations::class))
             ->setArguments([
                 '$entries'         => new Reference(TimeEntryRepositoryInterface::class),
@@ -646,9 +652,11 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$clock'           => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$logger'          => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+                '$maxAgeDays'      => $manual['max_age_days'],
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setAlias(TimeEntryOperationsInterface::class, TimeEntryOperations::class)->setPublic(true);
+        $container->getDefinition(ClientTokenRevoker::class)->setArgument('$acceptedUserClasses', $acceptedUserClasses);
     }
 
     /**

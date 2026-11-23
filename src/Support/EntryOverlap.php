@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Support;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\LockingOverlappingTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\OverlappingTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 
@@ -20,7 +21,9 @@ final class EntryOverlap
 {
     /**
      * Whether `[start, end)` overlaps the user's running timer (started before the end) or a live entry of the user other
-     * than `$exceptEntryId`.
+     * than `$exceptEntryId`. Since 1.40.1 (audit ZAN-1) the entries are read under a shared lock when the store can
+     * ({@see LockingOverlappingTimeEntryRepositoryInterface}), so an earlier snapshot of the host's transaction cannot hide
+     * an entry committed meanwhile.
      */
     public static function exists(TimeEntryRepositoryInterface $entries, ActiveTimerRepositoryInterface $timers, string $userId, DateTimeImmutable $start, DateTimeImmutable $end, ?string $exceptEntryId = null): bool
     {
@@ -28,9 +31,11 @@ final class EntryOverlap
         if ($timer instanceof ActiveTimer && $timer->getStartedAt() < $end) {
             return true;
         }
-        $candidates = $entries instanceof OverlappingTimeEntryRepositoryInterface
-            ? $entries->findLiveOverlapping($userId, $start, $end)
-            : $entries->findByUserAndPeriod($userId, $start->modify('-2 days'), $end);
+        $candidates = match (true) {
+            $entries instanceof LockingOverlappingTimeEntryRepositoryInterface => $entries->findLiveOverlappingLocked($userId, $start, $end),
+            $entries instanceof OverlappingTimeEntryRepositoryInterface        => $entries->findLiveOverlapping($userId, $start, $end),
+            default                                                            => $entries->findByUserAndPeriod($userId, $start->modify('-2 days'), $end),
+        };
         foreach ($candidates as $entry) {
             if ($entry->getId() !== $exceptEntryId && $entry->getSource()->isLive() && $entry->getStartedAt() < $end && $entry->getEndedAt() > $start) {
                 return true;

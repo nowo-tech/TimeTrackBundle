@@ -27,7 +27,13 @@ use Nowo\TransactionContract\TransientStorageFailure;
  * Each write is one unit of the bundle's runner (`nowo_time_track.transaction_runner`) under the owner's row lock: its
  * own transaction, or a savepoint of the transaction you opened on the same connection (the private manager shares the
  * connection), so your commit or rollback decides. A lock conflict surfaces as {@see TransientStorageFailure} with
- * nothing of the unit committed (REQ-RUNTIME-003 `CONFLICT_001`: retry). Events are dispatched after the unit.
+ * nothing of the unit committed (REQ-RUNTIME-003 `CONFLICT_001`: retry). Events are dispatched after the unit: inside
+ * your transaction that is before your commit, so a listener with side effects outside the database defers its work to
+ * your own post-commit hook (audit ZAN-I1).
+ *
+ * Since 1.40.1 (audit ZAN-1) the overlap check and the period lock are read under a shared lock, so on MySQL and MariaDB
+ * an earlier REPEATABLE READ snapshot of your transaction cannot hide an entry or a period lock committed since. On
+ * PostgreSQL keep READ COMMITTED (the default) for a transaction around these calls (docs/CONCURRENCY.md, Residual risks).
  *
  * Reads: {@see TimeEntryQueryInterface::find()} returns one entry by id as a {@see TimeEntryRecord} (with
  * {@see TimeEntryRecord::version()}); it takes no lock and applies no access rule.
@@ -46,7 +52,11 @@ interface TimeEntryOperationsInterface
      * `conflict`, never overwritten. Then the new values are checked (end after start, at most 24 h, not in the future,
      * a duration of at most the span), the period lock of the old and of the new start
      * ({@see PeriodWriteRefusedException}: locked, approved or submitted periods are never changed), and, when the times
-     * change, overlaps with the owner's other live entries and running timer (not for a service account). A correction
+     * change, overlaps with the owner's other live entries and running timer (not for a service account). Since 1.40.1 a
+     * new start may be at most {@see TimeEntryCorrection::$maxAgeDays} days old (default `manual_entries.max_age_days`;
+     * `entry_too_old`; only when the start changes), the 24 h cap applies only when the times change (a forgotten timer's
+     * long entry can still get a note or duration fix), and the metadata may not grow past
+     * 32 keys / 16 KB (`metadata_too_large`). A correction
      * that changes nothing writes nothing and dispatches nothing ({@see TimeEntryCorrectionResult::$changed} false).
      *
      * @param int|string|TimeTrackUserRef $owner The entry owner (see the class comment)
@@ -55,7 +65,8 @@ interface TimeEntryOperationsInterface
      *
      * @throws TimeEntryCorrectionException `not_found` (unknown id or owner, another owner's, ownerless or anonymised entry:
      *                                      one answer), `read_only`, `conflict`, `invalid_range`, `entry_too_long`,
-     *                                      `entry_in_future`, `invalid_duration`, `overlap`
+     *                                      `entry_in_future`, `entry_too_old`, `invalid_duration`, `metadata_too_large`,
+     *                                      `overlap`
      * @throws PeriodWriteRefusedException When the old or the new start is in a locked or submitted period
      * @throws TransientStorageFailure When the storage failed transiently (deadlock, lock wait timeout): nothing was
      *                                 committed, retry
@@ -67,7 +78,9 @@ interface TimeEntryOperationsInterface
      * owner may track (or none, with `entries.allow_without_task`), end after start, at most 24 h, not in the future,
      * not older than the allowed age, no overlap (except for a service account), period not locked or submitted.
      * Dispatches `nowo_time_track.time_entry.created`. With `user_mapping: relation` the owner must be a row of
-     * `user_class`; with `user_mapping: id` the bundle's host-user row is created when needed.
+     * `user_class`; with `user_mapping: id` the bundle's host-user row is created when needed (before the entry's unit: a
+     * refused entry leaves that row, as a first timer start would). Since 1.40.1 the draft validates its allowed age and
+     * metadata when it is built ({@see ManualTimeEntryDraft}).
      *
      * @param int|string|TimeTrackUserRef $owner The owner (see the class comment)
      *

@@ -568,8 +568,10 @@ $result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep t
   treats the entries as you choose:
   - `TimeEntryErasure::Anonymise` (default, as `FormerPersonTimeEntries::anonymiseUser()`): the time stays, the person
     goes. The entries lose their owner and free text and leave the user's worked time, balance and timesheets.
-  - `TimeEntryErasure::FreeText`: the description and `metadata.note` of each owned entry are cleared, the owner and
-    your other metadata keys stay. For a host that keeps an anonymised account row.
+  - `TimeEntryErasure::FreeText`: the description and `metadata.note` of each owned entry are cleared, and since
+    1.40.1 every other string value of the metadata except `closed_by`, `origin` and `provider` (a key such as
+    `comment` may hold personal text); the owner and your number and boolean keys stay. For a host that keeps an
+    anonymised account row.
   In both modes the entries under `user:<id>` are anonymised, **no entry is deleted and no time changes** (owner rule),
   and a locked or submitted period does not block it (the timesheet hash covers ids, tasks, times and sources only).
 - **Kept:** timesheets and their audit trail (the working-time register, GDPR art. 17.3.b) and calendar connections:
@@ -770,13 +772,19 @@ final class OwnEntryCorrector
   the answer is `conflict` (409) and nothing is written; read the entry again. Never a lost update.
 - **Values.** A null start or end keeps the stored one; without a duration the new span becomes the duration when the
   times change (a duration-only correction keeps the times). Refused: `invalid_range` (end not after start),
-  `entry_too_long` (more than 24 h), `entry_in_future` (a changed end beyond the 2-minute skew), `invalid_duration`
-  (longer than the span), `overlap` (another live entry of the owner or the running timer; not for a service account).
-  Your own rules (a correction window, a reason) stay in your code, before the call.
+  `entry_too_long` (more than 24 h; since 1.40.1 only when the times change, so a forgotten timer's long entry still gets
+  a note or duration fix), `entry_in_future` (a changed end beyond the 2-minute skew), `entry_too_old` (since 1.40.1: a
+  changed start older than `TimeEntryCorrection::$maxAgeDays`, default `manual_entries.max_age_days`; 0 to 3650),
+  `invalid_duration` (longer than the span), `overlap` (another live entry of the owner or the running timer; not for a
+  service account). Your own stricter rules (a correction window, a reason) stay in your code, before the call.
 - **Metadata** is a patch: `['auto_stopped' => true]` sets a key, `['key' => null]` removes it, other keys stay. Keys
-  are 1–64 characters `[a-z][a-z0-9_]*`, values scalars (strings up to 2 000 bytes); `note` is cleaned and cut like
-  every note (`withNote(null)` or a blank note removes it); `closed_by` is the bundle's own timer mark and is refused
-  (`InvalidArgumentException` when the correction is built).
+  are 1–64 characters `[a-z][a-z0-9_]*`, values finite scalars (valid UTF-8 strings up to 2 000 bytes), at most 32 keys
+  per patch; `note` is cleaned and cut like every note (`withNote(null)` or a blank note removes it); `closed_by` is the
+  bundle's own timer mark and is refused (`InvalidArgumentException` when the correction is built). Since 1.40.1 the
+  stored metadata may not grow past 32 keys or 16 KB of JSON (`metadata_too_large`, 422); an entry stored larger before
+  may still shrink. Only `note` is shown by the bundle; on `erase(…, TimeEntryErasure::FreeText)` every string value
+  except `closed_by`, `origin` and `provider` is cleared (numbers and booleans stay), so keep personal text in string
+  keys and flags in booleans.
 - **Period lock** (owner decision FR-008): the period of the old start **and** of the new start must be neither locked
   (approved included) nor submitted, else `PeriodLockedException` / `PeriodSubmittedException` (409). No role or listener
   overrides it.
@@ -790,7 +798,7 @@ final class OwnEntryCorrector
 | `not_found` | `TimeEntryCorrectionException` | 404 |
 | `read_only` | `TimeEntryCorrectionException` | 403 |
 | `conflict`, `overlap` | `TimeEntryCorrectionException` | 409 |
-| `invalid_range`, `entry_too_long`, `entry_in_future`, `invalid_duration` | `TimeEntryCorrectionException` | 422 |
+| `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `invalid_duration`, `metadata_too_large` | `TimeEntryCorrectionException` | 422 |
 | `period_locked`, `period_submitted` | `PeriodWriteRefusedException` | 409 |
 | lock wait, deadlock | `Nowo\TransactionContract\TransientStorageFailure` | 409 `CONFLICT_001`: retry |
 
@@ -814,7 +822,8 @@ foreach ($samples as [$taskId, $start, $minutes]) {
 
 - The rules of `POST entries` (`ManualEntryService::create()`, source `manual`): the task must be one the owner may track
   (`client_api.task_access_checker` and the task provider), or none with `entries.allow_without_task`; end after start,
-  at most 24 h, not in the future, not older than `maxAgeDays` (default `manual_entries.max_age_days`), no overlap
+  at most 24 h, not in the future, not older than `maxAgeDays` (default `manual_entries.max_age_days`; 0 to 3650, checked
+  with the metadata rules of corrections when the draft is built, since 1.40.1), no overlap
   (except a service account), period neither locked nor submitted. `manual_entries.enabled` is not required (it gates
   the client API route only). `nowo_time_track.time_entry.created` is dispatched.
 - The owner: with `user_mapping: relation` the `user_class` row with exactly that id (an id its identifier column cannot
@@ -832,7 +841,11 @@ $revoker->revokeSession($sessionId, TimeTrackUserRef::ofId(User::class, $adminId
 $revoker->revokeAllForUser($userId);              // "sign out everywhere": how many were ended
 ```
 
-- Owner by id (byte for byte); `security.admin_roles` from the roles the reference carries (or its user object); then
+- Owner by id (byte for byte); `security.admin_roles` from the roles the reference carries (or its user object). **The
+  roles of a reference without a user object are trusted as given**: build them from the current security user at call
+  time, never from a queued message, a cache or request input. Since 1.40.1 a reference whose class is neither
+  `user_class` nor an `accepted_user_classes` entry answers `NotFound` (another principal with the same id is not that
+  user). Then
   the `nowo_time_track.client_session.access_check` listeners (they receive the reference). Every other case answers
   `ClientSessionRevocation::NotFound`, idempotent. A real revocation records `session_revoked` (reason `owner` or
   `other`) on the client API audit event, like `revokeById()`.
@@ -846,6 +859,9 @@ $revoker->revokeAllForUser($userId);              // "sign out everywhere": how 
 - **GDPR paths join your transaction.** A correction (art. 16) or an erasure (art. 17, `TimeTrackPersonalDataInterface::erase()`,
   1.35) called inside your transaction is part of it, so your own audit or revision rows commit with it or not at all.
   Called outside a transaction, each runs in the bundle's own unit and is committed when the call returns.
+- Since 1.40.1 the overlap and period-lock checks read under a shared lock, so an earlier REPEATABLE READ snapshot of
+  your transaction (MySQL, MariaDB) cannot hide what others committed since; on PostgreSQL keep READ COMMITTED (the
+  default) for such a transaction ([CONCURRENCY, Residual risks](CONCURRENCY.md#residual-risks)).
 - Events (`time_entry.corrected`, `time_entry.created`, `session_revoked`) are dispatched when the bundle's unit ends:
   inside your transaction that is **before your commit**. A listener that must only see committed data defers its work
   (Messenger, a post-commit hook of yours).

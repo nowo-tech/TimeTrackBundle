@@ -187,7 +187,8 @@ final readonly class ManualEntryService
             // Since 1.24.1 (audit OM TT-L2): an unusable host key is no scope (warning), never a failed request. Since
             // 1.36.0 an entry without a task has the scope checked above.
             $scopeKey = $task instanceof TaskReference ? ScopeKeys::fromHost($this->scopeProvider?->scopeKeyForTask($user, $task->id, $task->boardId), $this->logger, 'manual_entry_scope') : $tasklessScope;
-            $this->periodLockGuard?->assertWritable($user, $scopeKey, $start, WriteKind::EntryCreate);
+            // Since 1.40.1 (audit ZAN-1): under a shared lock, like the overlap check.
+            $this->periodLockGuard?->assertWritable($user, $scopeKey, $start, WriteKind::EntryCreate, true);
             // Since 1.25.0: a service account's entries may overlap (asked per call, never memoised).
             $serviceAccount = $this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false;
             if (!$serviceAccount && $this->overlaps($user, $start, $end)) {

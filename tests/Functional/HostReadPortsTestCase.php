@@ -54,6 +54,7 @@ use function bin2hex;
 use function gc_collect_cycles;
 use function is_object;
 use function json_encode;
+use function ksort;
 use function memory_get_usage;
 use function method_exists;
 use function random_bytes;
@@ -337,8 +338,10 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
 
     public function testErasureOfTheFreeTextKeepsTheOwnerAndTheHours(): void
     {
-        $ana      = $this->person('ana');
-        $noted    = $this->entry($ana, 'task-1', '2026-11-02 09:00', 60, metadata: ['note' => 'Standup', 'auto_stopped' => true]);
+        $ana = $this->person('ana');
+        // 1.40.1 (audit ZAN-4): every string value but the structural keys goes too (`comment` may be personal text).
+        $noted    = $this->entry($ana, 'task-1', '2026-11-02 09:00', 60, metadata: ['note' => 'Standup', 'auto_stopped' => true, 'comment' => 'Called the doctor', 'origin' => 'meeting', 'provider' => 'google', 'level' => 3]);
+        $textOnly = $this->entry($ana, 'task-1', '2026-11-02 13:00', 60, metadata: ['comment' => 'Private']);
         $onlyNote = $this->entry($ana, 'task-1', '2026-11-02 11:00', 60, metadata: ['note' => 'Short']);
         $plain    = $this->entry($ana, 'task-2', '2026-11-03 09:00', 30);
         $imported = $this->imported($ana, 'task-1', '2026-11-04 09:00', 30, 'Imported text');
@@ -346,15 +349,17 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         self::assertInstanceOf(TimeEntry::class, $loaded);
 
         $result = $this->personalData()->erase($this->idOf($ana), TimeEntryErasure::FreeText);
-        self::assertSame([3, 0], [$result->entriesCleared, $result->entriesAnonymised]);
+        self::assertSame([4, 0], [$result->entriesCleared, $result->entriesAnonymised]);
         self::assertFalse($this->bundleManager()->contains($loaded), 'a loaded entry is detached, never flushed back');
 
         $records = $this->query()->list(TimeEntryCriteria::ofOwner($this->idOf($ana)), TimeEntrySort::StartedAtAscending);
-        self::assertSame([$noted, $onlyNote, $plain, $imported], $this->ids($records), 'the owner stays');
-        self::assertSame([null, null], [$records[0]->note, $records[3]->description]);
-        self::assertSame(['auto_stopped' => true], $records[0]->metadata, 'the host\'s own metadata stays');
-        self::assertSame([], $records[1]->metadata);
-        self::assertSame(3 * 3600, $this->query()->totalSeconds(TimeEntryCriteria::ofOwner($this->idOf($ana))));
+        self::assertSame([$noted, $onlyNote, $textOnly, $plain, $imported], $this->ids($records), 'the owner stays');
+        self::assertSame([null, null], [$records[0]->note, $records[4]->description]);
+        $kept = $records[0]->metadata;
+        ksort($kept);
+        self::assertSame(['auto_stopped' => true, 'level' => 3, 'origin' => 'meeting', 'provider' => 'google'], $kept, 'numbers, booleans and structural keys stay');
+        self::assertSame([[], []], [$records[1]->metadata, $records[2]->metadata]);
+        self::assertSame(4 * 3600, $this->query()->totalSeconds(TimeEntryCriteria::ofOwner($this->idOf($ana))));
     }
 
     public function testErasureRefusesWhileTheTimerRunsOrForALookAlikeId(): void

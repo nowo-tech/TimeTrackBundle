@@ -22,6 +22,8 @@ use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
 use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_keys;
@@ -137,6 +139,36 @@ abstract class EntryOperationsTestCase extends FunctionalTestCase
         self::assertSame(ClientSessionRevocation::NotFound, $revoker->revokeSession($sessionId, $this->idOf($ana)), 'idempotent');
         self::assertSame(0, (int) $this->bundleManager()->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_client_tokens'));
         $this->assertNoBundleEntityInTheHostManager(ClientToken::class);
+    }
+
+    /**
+     * 1.40.1 (audit ZAN-2): the default allowed age of a new start is `manual_entries.max_age_days` (31 by default).
+     */
+    public function testANewStartOlderThanTheConfiguredAgeIsRefused(): void
+    {
+        $ana  = $this->person('ana');
+        $id   = $this->entry($ana, '-3 days 09:00', 3600);
+        $back = new DateTimeImmutable('today -40 days 09:00');
+
+        $this->refused(TimeEntryCorrectionException::TOO_OLD, fn (): TimeEntryCorrectionResult => $this->operations()->correct($this->idOf($ana), $id, $this->version($id), TimeEntryCorrection::times($back, $back->modify('+1 hour'))));
+        self::assertTrue($this->operations()->correct($this->idOf($ana), $id, $this->version($id), new TimeEntryCorrection($back, $back->modify('+1 hour'), maxAgeDays: 60))->changed);
+    }
+
+    /**
+     * 1.40.1 (audit ZAN-5): a reference of a class that is not a user class of the bundle revokes nothing.
+     */
+    public function testASessionIsNotRevokedForAnotherPrincipalClass(): void
+    {
+        $ana  = $this->person('ana');
+        $auth = self::getContainer()->get(ClientAuthService::class);
+        self::assertInstanceOf(ClientAuthService::class, $auth);
+        $auth->issueToken($ana, ClientType::Desktop, 'app-password-1');
+        $sessionId = (string) $this->bundleManager()->getConnection()->fetchOne('SELECT id FROM time_track_client_tokens');
+        $revoker   = self::getContainer()->get(ClientSessionRevokerInterface::class);
+        self::assertInstanceOf(ClientSessionRevokerInterface::class, $revoker);
+
+        self::assertSame(ClientSessionRevocation::NotFound, $revoker->revokeSession($sessionId, TimeTrackUserRef::ofId('App\\ApiClient', $this->idOf($ana))));
+        self::assertTrue($revoker->revokeSession($sessionId, TimeTrackUserRef::ofId(AppUser::class, $this->idOf($ana)))->isRevoked(), 'user_class or an accepted class');
     }
 
     protected function operations(): TimeEntryOperationsInterface

@@ -110,8 +110,27 @@ final class ClientSessionRevokerTest extends TestCase
         self::assertNotNull($this->tokens->findValidByTokenHash('hash-1'));
     }
 
+    /**
+     * 1.40.1 (audit ZAN-5): a reference whose class is neither `user_class` nor an accepted class (nor a subclass) is not a
+     * user: another principal whose id equals the owner's id revokes nothing. An unknown class (`''`) is accepted; a
+     * revoker built without `user_class` checks nothing.
+     */
+    public function testAReferenceOfAnotherPrincipalClassRevokesNothing(): void
+    {
+        $revoker = $this->revoker();
+
+        self::assertSame(ClientSessionRevocation::NotFound, $revoker->revokeSession($this->token->getId(), TimeTrackUserRef::ofId('App\\ApiClient', '7')));
+        self::assertSame(ClientSessionRevocation::NotFound, $revoker->revokeSession($this->token->getId(), TimeTrackUserRef::ofId(self::class, '7', '', ['ROLE_ADMIN'])));
+        self::assertNotNull($this->tokens->findValidByTokenHash('hash-1'));
+        self::assertTrue($revoker->revokeSession($this->token->getId(), TimeTrackUserRef::ofId('', '7'))->isRevoked());
+
+        $again = new ClientToken('hash-3', new DateTimeImmutable('+1 hour'), new TestUser('7', 'ana'), ClientType::Desktop);
+        $this->tokens->save($again);
+        self::assertTrue((new ClientTokenRevoker($this->tokens))->revokeSession($again->getId(), TimeTrackUserRef::ofId('App\\ApiClient', '7'))->isRevoked());
+    }
+
     private function revoker(): ClientSessionRevokerInterface
     {
-        return new ClientTokenRevoker($this->tokens, new ClientApiAuditor($this->dispatcher), null, $this->dispatcher, ['ROLE_ADMIN'], userClass: 'App\\User');
+        return new ClientTokenRevoker($this->tokens, new ClientApiAuditor($this->dispatcher), null, $this->dispatcher, ['ROLE_ADMIN'], userClass: 'App\\User', acceptedUserClasses: [TestUser::class]);
     }
 }
