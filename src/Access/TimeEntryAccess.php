@@ -44,16 +44,34 @@ final readonly class TimeEntryAccess implements TimeEntryAccessInterface
     ) {
     }
 
+    /**
+     * Whether the user may see the entry; false for an unknown entry, a refusal and a failing store alike.
+     *
+     * @param int|string|TimeTrackUserRef $user The user (reference or bare id)
+     * @param string $entryId The exact id of the entry
+     */
     public function canViewEntry(TimeTrackUserRef|string|int $user, string $entryId): bool
     {
         return $this->reachable($user, $entryId, self::VIEW) instanceof TimeEntry;
     }
 
+    /**
+     * Whether the user may change the entry; false for an unknown entry, a refusal and a failing store alike.
+     *
+     * @param int|string|TimeTrackUserRef $user The user (reference or bare id)
+     * @param string $entryId The exact id of the entry
+     */
     public function canEditEntry(TimeTrackUserRef|string|int $user, string $entryId): bool
     {
         return $this->reachable($user, $entryId, self::EDIT) instanceof TimeEntry;
     }
 
+    /**
+     * The read-only view of the entry when the user may see it, else null.
+     *
+     * @param int|string|TimeTrackUserRef $user The user (reference or bare id)
+     * @param string $entryId The exact id of the entry
+     */
     public function viewableEntry(TimeTrackUserRef|string|int $user, string $entryId): ?TimeEntryView
     {
         $entry = $this->reachable($user, $entryId, self::VIEW);

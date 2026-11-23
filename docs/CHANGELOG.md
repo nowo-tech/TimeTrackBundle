@@ -230,6 +230,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- PHPDoc for `StorageFailureConflictFormatter::format()` and `TimeEntryAccess::canViewEntry()` / `canEditEntry()` / `viewableEntry()` (`make validate-phpdoc` passes again). Comments only, no code change.
+
+### Changed
+
+- CI: new `release-gates` job runs the four release gates (`make rector-dry`, `validate-phpdoc`, `validate-translations`, `check-twig-extra`) in full mode, so a gate failure shows on the PR instead of at release time (CI only, no change to shipped code).
 ### Added
 
 - REQ-SEC-006: the bundle now declares its own identity / access-key columns, so the knowledge of which columns are
