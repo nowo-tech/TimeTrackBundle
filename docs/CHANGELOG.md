@@ -8,20 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Security](#security)
+  - [Fixed](#fixed)
+  - [Tests](#tests)
 - [[1.40.0] - 2026-11-23](#1400---2026-11-23)
   - [Added](#added)
-  - [Tests](#tests)
+  - [Tests](#tests-1)
 - [[1.39.0] - 2026-11-23](#1390---2026-11-23)
   - [Fixed (Unreleased)](#fixed-unreleased)
   - [Added (Unreleased)](#added-unreleased)
   - [Deprecated (Unreleased)](#deprecated-unreleased)
 - [[1.38.0] - 2026-11-23](#1380---2026-11-23)
-  - [Fixed](#fixed)
+  - [Fixed](#fixed-1)
   - [Documentation](#documentation)
   - [Changed](#changed)
   - [Added](#added-1)
-  - [Fixed](#fixed-1)
-  - [Tests](#tests-1)
+  - [Fixed](#fixed-2)
+  - [Tests](#tests-2)
 - [[1.37.0] - 2026-11-22](#1370---2026-11-22)
   - [Added (1.37.0)](#added-1370)
   - [Changed (1.37.0)](#changed-1370)
@@ -29,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Added](#added-2)
 - [[1.35.0] - 2026-11-21](#1350---2026-11-21)
   - [Added](#added-3)
-  - [Fixed](#fixed-2)
+  - [Fixed](#fixed-3)
   - [Changed](#changed-1)
 - [[1.34.0] - 2026-11-20](#1340---2026-11-20)
   - [Added (Unreleased)](#added-unreleased-1)
@@ -40,14 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Deprecated (1.33.0)](#deprecated-1330)
 - [[1.32.1] - 2026-11-20](#1321---2026-11-20)
   - [Changed](#changed-2)
-  - [Fixed](#fixed-3)
+  - [Fixed](#fixed-4)
 - [[1.32.0] - 2026-11-20](#1320---2026-11-20)
   - [Changed](#changed-3)
-  - [Fixed](#fixed-4)
+  - [Fixed](#fixed-5)
 - [[1.31.0] - 2026-11-18](#1310---2026-11-18)
   - [Added](#added-4)
   - [Changed](#changed-4)
-  - [Fixed](#fixed-5)
+  - [Fixed](#fixed-6)
 - [[1.30.0] - 2026-11-17](#1300---2026-11-17)
   - [Changed](#changed-5)
   - [Added](#added-5)
@@ -60,33 +63,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.27.0] - 2026-11-15](#1270---2026-11-15)
   - [Added](#added-7)
   - [Changed](#changed-7)
-  - [Fixed](#fixed-6)
+  - [Fixed](#fixed-7)
   - [Known issues](#known-issues)
 - [[1.26.0] - 2026-11-14](#1260---2026-11-14)
   - [Added](#added-8)
   - [Changed](#changed-8)
-  - [Tests](#tests-2)
+  - [Tests](#tests-3)
 - [[1.25.0] - 2026-11-13](#1250---2026-11-13)
   - [Added](#added-9)
   - [Changed](#changed-9)
-  - [Tests](#tests-3)
-- [[1.24.2] - 2026-11-13](#1242---2026-11-13)
-  - [Fixed](#fixed-7)
   - [Tests](#tests-4)
+- [[1.24.2] - 2026-11-13](#1242---2026-11-13)
+  - [Fixed](#fixed-8)
+  - [Tests](#tests-5)
   - [Changed](#changed-10)
 - [[1.24.1] - 2026-11-13](#1241---2026-11-13)
-  - [Security](#security)
-  - [Fixed](#fixed-8)
+  - [Security](#security-1)
+  - [Fixed](#fixed-9)
   - [Documentation](#documentation-2)
 - [[1.24.0] - 2026-11-13](#1240---2026-11-13)
   - [Added](#added-10)
 - [[1.23.1] - 2026-11-12](#1231---2026-11-12)
-  - [Fixed](#fixed-9)
+  - [Fixed](#fixed-10)
 - [[1.23.0] - 2026-11-12](#1230---2026-11-12)
   - [Added](#added-11)
   - [Deprecated](#deprecated)
 - [[1.22.1] - 2026-11-12](#1221---2026-11-12)
-  - [Fixed](#fixed-10)
+  - [Fixed](#fixed-11)
   - [Documentation](#documentation-3)
 - [[1.22.0] - 2026-11-12](#1220---2026-11-12)
   - [Added](#added-12)
@@ -96,36 +99,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Changed](#changed-12)
 - [[1.20.0] - 2026-11-11](#1200---2026-11-11)
   - [Added](#added-14)
-  - [Security](#security-1)
+  - [Security](#security-2)
   - [Unchanged](#unchanged)
-  - [Tests](#tests-5)
+  - [Tests](#tests-6)
   - [Docs](#docs)
 - [[1.19.1] - 2026-11-11](#1191---2026-11-11)
-  - [Fixed](#fixed-11)
-  - [Tests](#tests-6)
+  - [Fixed](#fixed-12)
+  - [Tests](#tests-7)
 - [[1.19.0] - 2026-11-11](#1190---2026-11-11)
   - [Added](#added-15)
   - [Security (audit LZ)](#security-audit-lz)
   - [Changed](#changed-13)
   - [Documentation](#documentation-4)
-  - [Tests](#tests-7)
+  - [Tests](#tests-8)
 - [[1.18.0] - 2026-11-09](#1180---2026-11-09)
   - [Added](#added-16)
   - [Changed](#changed-14)
   - [Documentation](#documentation-5)
 - [[1.17.1] - 2026-11-08](#1171---2026-11-08)
-  - [Fixed](#fixed-12)
+  - [Fixed](#fixed-13)
 - [[1.17.0] - 2026-11-08](#1170---2026-11-08)
   - [Added](#added-17)
 - [[1.16.2] - 2026-11-07](#1162---2026-11-07)
-  - [Fixed](#fixed-13)
+  - [Fixed](#fixed-14)
   - [Changed](#changed-15)
 - [[1.16.1] - 2026-11-07](#1161---2026-11-07)
-  - [Fixed](#fixed-14)
+  - [Fixed](#fixed-15)
   - [Changed](#changed-16)
 - [[1.16.0] - 2026-11-07](#1160---2026-11-07)
   - [Added](#added-18)
-  - [Fixed](#fixed-15)
+  - [Fixed](#fixed-16)
 - [[1.15.0] - 2026-11-06](#1150---2026-11-06)
   - [Added](#added-19)
   - [Changed](#changed-17)
@@ -135,7 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.13.0] - 2026-11-05](#1130---2026-11-05)
   - [Added](#added-21)
   - [Changed](#changed-19)
-  - [Security](#security-2)
+  - [Security](#security-3)
 - [[1.12.0] - 2026-11-05](#1120---2026-11-05)
   - [Added](#added-22)
   - [Changed](#changed-20)
@@ -156,20 +159,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Added](#added-25)
   - [Changed](#changed-24)
 - [[1.9.2] - 2026-11-04](#192---2026-11-04)
-  - [Security](#security-3)
+  - [Security](#security-4)
 - [[1.9.1] - 2026-11-02](#191---2026-11-02)
   - [Added](#added-26)
-  - [Fixed](#fixed-16)
+  - [Fixed](#fixed-17)
 - [[1.9.0] - 2026-11-02](#190---2026-11-02)
   - [Added](#added-27)
   - [Changed](#changed-25)
   - [Deprecated](#deprecated-1)
-  - [Security](#security-4)
+  - [Security](#security-5)
 - [[1.8.0] - 2026-11-02](#180---2026-11-02)
   - [Added](#added-28)
   - [Changed](#changed-26)
   - [Deprecated](#deprecated-2)
-  - [Tests](#tests-8)
+  - [Tests](#tests-9)
   - [Documentation](#documentation-10)
 - [[1.7.0] - 2026-10-30](#170---2026-10-30)
   - [Changed](#changed-27)
@@ -181,24 +184,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.5.1] - 2026-10-13](#151---2026-10-13)
   - [Changed](#changed-30)
 - [[1.5.0] - 2026-10-13](#150---2026-10-13)
-  - [Security](#security-5)
-  - [Deprecated](#deprecated-3)
-  - [Fixed](#fixed-17)
-- [[1.4.0] - 2026-10-13](#140---2026-10-13)
   - [Security](#security-6)
+  - [Deprecated](#deprecated-3)
   - [Fixed](#fixed-18)
+- [[1.4.0] - 2026-10-13](#140---2026-10-13)
+  - [Security](#security-7)
+  - [Fixed](#fixed-19)
 - [[1.3.7] - 2026-10-13](#137---2026-10-13)
   - [Changed](#changed-31)
   - [Dependencies](#dependencies)
 - [[1.3.6] - 2026-10-09](#136---2026-10-09)
   - [Dependencies](#dependencies-1)
 - [[1.3.5] - 2026-09-28](#135---2026-09-28)
-  - [Security](#security-7)
+  - [Security](#security-8)
   - [Changed](#changed-32)
 - [[1.3.4] - 2026-09-27](#134---2026-09-27)
   - [Added](#added-30)
   - [Changed](#changed-33)
-  - [Fixed](#fixed-19)
+  - [Fixed](#fixed-20)
   - [Notes](#notes)
 - [[1.3.3] - 2026-08-24](#133---2026-08-24)
   - [Changed](#changed-34)
@@ -218,7 +221,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Added](#added-33)
   - [Changed](#changed-39)
 - [[1.0.6] - 2026-07-29](#106---2026-07-29)
-  - [Security](#security-8)
+  - [Security](#security-9)
   - [Added](#added-34)
   - [Changed](#changed-40)
 - [[1.0.5] - 2026-07-16](#105---2026-07-16)
@@ -227,7 +230,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.4] - 2026-07-13](#104---2026-07-13)
   - [Added](#added-36)
   - [Changed](#changed-42)
-  - [Fixed](#fixed-20)
+  - [Fixed](#fixed-21)
 - [[1.0.3] - 2026-07-08](#103---2026-07-08)
   - [Added](#added-37)
   - [Changed](#changed-43)
@@ -235,7 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [[1.0.2] - 2026-07-07](#102---2026-07-07)
   - [Changed](#changed-44)
 - [[1.0.1] - 2026-07-06](#101---2026-07-06)
-  - [Fixed](#fixed-21)
+  - [Fixed](#fixed-22)
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
   - [Added](#added-38)
   - [Configuration](#configuration)
@@ -243,6 +246,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+Target **1.40.1** (patch): the Low findings of audit ZAN on the 1.40.0 writes by id. No GHSA (new APIs, host-side
+authorisation, no released version affected).
+
+### Security
+
+- **ZAN-5: `ClientSessionRevokerInterface::revokeSession()` refuses another principal class.** A `TimeTrackUserRef` whose
+  class is neither `user_class` nor an `accepted_user_classes` entry (nor a subclass; `''` is accepted) answers
+  `NotFound`: an API client or admin entity whose id equals a user's id no longer counts as that user's owner. The
+  phpdoc warns that the roles of a reference without a user object are trusted as given (build them from the current
+  security user, never from a queued message, a cache or request input). `ClientTokenRevoker` takes a new optional last
+  constructor argument `$acceptedUserClasses`, wired by the extension.
+- **ZAN-4: entry metadata is bounded and erasure clears free text in every key.** A correction may not grow an entry's
+  metadata past 32 keys or 16 KB of JSON (`TimeEntryCorrectionException::METADATA_TOO_LARGE`, `metadata_too_large`, 422;
+  a patch holds at most 32 keys; an entry stored larger before may still shrink). `TimeTrackPersonalDataInterface::erase()`
+  with `TimeEntryErasure::FreeText` now clears every string value of the metadata except the structural keys `closed_by`,
+  `origin` and `provider` (before: only `note`), so personal text a host kept under another key (`comment`) is erased
+  too; numbers and booleans stay. Chosen over documenting the gap: an erasure must not depend on the host knowing which
+  keys hold personal text, and string flags are rare (`EntryMetadataRules::STRUCTURAL_KEYS`).
+- **ZAN-3: `ManualTimeEntryDraft` validates itself.** `maxAgeDays` must be 0 to 3650 (a negative or huge value no longer
+  turns into "everything too old" or a float overflow that accepted any start), and the metadata follows the rules of
+  corrections: key pattern, finite scalars only (no null, nested array, NaN or INF), valid UTF-8 strings up to 2 000
+  bytes, `closed_by` refused, at most 32 keys and 16 KB (`InvalidArgumentException` when the draft is built).
+- **ZAN-2: a corrected start has an age limit.** `TimeEntryCorrection` takes an optional `maxAgeDays` (0 to 3650; null =
+  `manual_entries.max_age_days`): a new start older than that is refused (`entry_too_old`, 422), as for manual entries.
+  Only a changed start is checked, so an old entry can still get a note or duration fix.
+
+### Fixed
+
+- **ZAN-1: checks read under a shared lock inside the host's transaction.** The overlap check (new
+  `Repository\LockingOverlappingTimeEntryRepositoryInterface::findLiveOverlappingLocked()`) and the period lock (new
+  `Repository\SharedLockGuardTimesheetRepositoryInterface::findGuardingShared()`, `PeriodLockGuard::assertWritable(…,
+  $sharedLock)`) of corrections and manual entries read with Doctrine's `PESSIMISTIC_READ` (`LOCK IN SHARE MODE` on
+  MySQL / MariaDB, `FOR SHARE` on PostgreSQL) and refresh the rows they return, when a transaction is open. Inside a
+  host's REPEATABLE READ transaction that had already read (MySQL, MariaDB), an entry or a period lock another request
+  committed since its snapshot was invisible: the correction could overlap it or write into a just-locked period. The
+  residual risk for PostgreSQL REPEATABLE READ is documented ([CONCURRENCY](CONCURRENCY.md#residual-risks)).
+- With doctrine/dbal 3 the shared-lock timesheet read (`DoctrineOrmTimesheetRepository::findGuardingForMove()`, imported
+  entry moves since 1.16, and the new `findGuardingShared()`) failed with a `TypeError` (`LockMode` is a class of `int`
+  constants there, an enum in 4); the lock mode is now accepted in both forms.
+- **ZAN-I3:** `entry_too_long` is checked only when the start or the end changes, so a forgotten timer's entry longer
+  than 24 h can get a note-only or duration-only correction.
+
+### Tests
+
+- `EntryWritesHardeningTest` (draft and correction validation, metadata limits and legacy shrink, age limit, long
+  entries, the overlap store without locks), `ClientSessionRevokerTest` (another principal class, subclasses, `''`,
+  a revoker without `user_class`), `EntryOperations*Test` (configured age, principal class through the container),
+  `HostReadPortsTestCase` (free-text erasure of other string keys), and in the load-readiness job
+  `testChecksInsideAnOlderHostSnapshotSeeWhatOthersCommittedSince` (MySQL 8.4, MariaDB 11.4, PostgreSQL 16).
 
 ## [1.40.0] - 2026-11-23
 

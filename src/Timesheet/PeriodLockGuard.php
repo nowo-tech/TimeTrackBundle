@@ -17,6 +17,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Repository\FormerOwnerTimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\LockingGuardTimesheetRepositoryInterface;
+use Nowo\TimeTrackBundle\Repository\SharedLockGuardTimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -63,12 +64,16 @@ final readonly class PeriodLockGuard
     /**
      * Refuses a write of the user's time at `$instant` in the scope (null = every scope of the user).
      *
+     * @param bool $sharedLock Since 1.40.1 (audit ZAN-1): read the timesheets under a shared lock when the store can
+     *                         ({@see SharedLockGuardTimesheetRepositoryInterface}) and a transaction is open, so an earlier
+     *                         REPEATABLE READ snapshot of the host's transaction cannot hide a lock committed meanwhile
+     *
      * @throws PeriodLockedException When the period is locked (409 `period_locked`)
      * @throws PeriodSubmittedException When the period is submitted (409 `period_submitted`)
      */
-    public function assertWritable(UserInterface $user, ?string $scopeKey, DateTimeInterface $instant, WriteKind $kind): void
+    public function assertWritable(UserInterface $user, ?string $scopeKey, DateTimeInterface $instant, WriteKind $kind, bool $sharedLock = false): void
     {
-        $refusal = $this->refusal($user, $scopeKey, $instant, $kind);
+        $refusal = $this->refusal($user, $scopeKey, $instant, $kind, $sharedLock);
         if ($refusal instanceof PeriodWriteRefusedException) {
             throw $refusal;
         }
@@ -76,10 +81,12 @@ final readonly class PeriodLockGuard
 
     /**
      * The refusal a write would get (null = writable), after dispatching {@see PeriodLockRefusedEvent} for it.
+     *
+     * @param bool $sharedLock Since 1.40.1: see {@see self::assertWritable()}
      */
-    public function refusal(UserInterface $user, ?string $scopeKey, DateTimeInterface $instant, WriteKind $kind): ?PeriodWriteRefusedException
+    public function refusal(UserInterface $user, ?string $scopeKey, DateTimeInterface $instant, WriteKind $kind, bool $sharedLock = false): ?PeriodWriteRefusedException
     {
-        $timesheet = $this->blockingTimesheet($user, $scopeKey, $instant);
+        $timesheet = $this->blocking($this->candidates(UserIdResolver::getId($user), $scopeKey, $instant, $sharedLock));
         if (!$timesheet instanceof Timesheet) {
             return null;
         }
@@ -110,7 +117,16 @@ final readonly class PeriodLockGuard
      */
     public function blockingTimesheetOf(string $ownerId, ?string $scopeKey, DateTimeInterface $instant): ?Timesheet
     {
-        $candidates = $this->candidates($ownerId, $scopeKey, $instant);
+        return $this->blocking($this->candidates($ownerId, $scopeKey, $instant));
+    }
+
+    /**
+     * The locked timesheet among the candidates, else the submitted one, else null.
+     *
+     * @param list<Timesheet> $candidates
+     */
+    private function blocking(array $candidates): ?Timesheet
+    {
         foreach ($candidates as $timesheet) {
             if ($timesheet->isLocked()) {
                 return $timesheet;
@@ -286,7 +302,7 @@ final readonly class PeriodLockGuard
     /**
      * @return list<Timesheet> the locked or submitted timesheets of the user whose period may contain the instant
      */
-    private function candidates(string $ownerId, ?string $scopeKey, DateTimeInterface $instant): array
+    private function candidates(string $ownerId, ?string $scopeKey, DateTimeInterface $instant, bool $sharedLock = false): array
     {
         if (!$this->enabled) {
             return [];
@@ -294,12 +310,11 @@ final readonly class PeriodLockGuard
 
         // Any zone is at most 14 h from UTC: a day either side of the UTC date covers every local date of the instant.
         $utc        = new DateTimeImmutable('@' . $instant->getTimestamp());
-        $timesheets = $this->timesheets->findGuarding(
-            $ownerId,
-            $scopeKey,
-            $utc->modify('-1 day')->format('Y-m-d'),
-            $utc->modify('+1 day')->format('Y-m-d'),
-        );
+        $from       = $utc->modify('-1 day')->format('Y-m-d');
+        $to         = $utc->modify('+1 day')->format('Y-m-d');
+        $timesheets = $sharedLock && $this->timesheets instanceof SharedLockGuardTimesheetRepositoryInterface
+            ? $this->timesheets->findGuardingShared($ownerId, $scopeKey, $from, $to)
+            : $this->timesheets->findGuarding($ownerId, $scopeKey, $from, $to);
 
         $covering = [];
         foreach ($timesheets as $timesheet) {

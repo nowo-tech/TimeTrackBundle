@@ -68,6 +68,7 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
      * @param EntityManagerInterface $entityManager The bundle's entity manager (private or `database.entity_manager`): owners by id
      * @param string $userClass `user_class`
      * @param UserReferenceResolverInterface|null $userReferences Creates the host-user row of a new owner (`user_mapping: id`)
+     * @param int $maxAgeDays Since 1.40.1: `manual_entries.max_age_days`, the default oldest new start of a correction
      */
     public function __construct(
         private TimeEntryRepositoryInterface $entries,
@@ -81,6 +82,7 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         private ?EventDispatcherInterface $eventDispatcher = null,
         ?ClockInterface $clock = null,
         ?LoggerInterface $logger = null,
+        private int $maxAgeDays = 31,
     ) {
         $this->clock  = $clock ?? new NativeClock();
         $this->logger = $logger ?? new NullLogger();
@@ -168,12 +170,19 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         $timesChanged = $startChanged || $end->getTimestamp() !== $current->getEndedAt()->getTimestamp();
         $span         = $end->getTimestamp() - $start->getTimestamp();
         $this->assertTimes($end, $span, $timesChanged);
+        // Audit ZAN-2: a new start no older than the allowed age (the correction's, else `manual_entries.max_age_days`).
+        if ($startChanged && $start->getTimestamp() < $this->clock->now()->getTimestamp() - ($correction->maxAgeDays ?? $this->maxAgeDays) * 86_400) {
+            throw new TimeEntryCorrectionException(TimeEntryCorrectionException::TOO_OLD);
+        }
         $duration = $correction->durationSeconds ?? ($timesChanged ? $span : $current->getDurationSeconds());
         if ($duration > $span) {
             throw new TimeEntryCorrectionException(TimeEntryCorrectionException::INVALID_DURATION);
         }
         $oldMetadata = $current->getMetadata() ?? [];
         $metadata    = $this->patched($oldMetadata, $correction->metadata);
+        if (EntryMetadataRules::grewBeyondLimits($oldMetadata, $metadata)) {
+            throw new TimeEntryCorrectionException(TimeEntryCorrectionException::METADATA_TOO_LARGE);
+        }
 
         $fields = [];
         foreach (['started_at' => $startChanged, 'ended_at' => $end->getTimestamp() !== $current->getEndedAt()->getTimestamp(), 'duration_seconds' => $duration !== $current->getDurationSeconds(), 'metadata' => $metadata !== $oldMetadata] as $field => $changed) {
@@ -185,10 +194,11 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
             return new TimeEntryCorrectionResult($before, $before, []);
         }
 
-        // The period of the old start and of the new one: a locked, approved or submitted period never changes.
-        $this->periodLockGuard?->assertWritable($user, $current->getScopeKey(), $oldStart, WriteKind::Edit);
+        // The period of the old start and of the new one: a locked, approved or submitted period never changes. Read under
+        // a shared lock (audit ZAN-1), like the overlap check below.
+        $this->periodLockGuard?->assertWritable($user, $current->getScopeKey(), $oldStart, WriteKind::Edit, true);
         if ($startChanged) {
-            $this->periodLockGuard?->assertWritable($user, $current->getScopeKey(), $start, WriteKind::Edit);
+            $this->periodLockGuard?->assertWritable($user, $current->getScopeKey(), $start, WriteKind::Edit, true);
         }
         // Asked per call, never memoised: a service account's entries may overlap (as for manual entries).
         if ($timesChanged && !($this->serviceAccounts?->isServiceAccount(TimeTrackUserRefs::fromUser($user)) ?? false) && EntryOverlap::exists($this->entries, $this->timers, $ownerId, $start, $end, $entryId)) {
@@ -208,7 +218,9 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         if ($span <= 0) {
             throw new TimeEntryCorrectionException(TimeEntryCorrectionException::INVALID_RANGE);
         }
-        if ($span > ManualEntryService::MAX_SECONDS) {
+        // Audit ZAN-I3: only a change is checked against the 24 h cap, so a forgotten timer's long entry can still get a
+        // note or duration fix.
+        if ($timesChanged && $span > ManualEntryService::MAX_SECONDS) {
             throw new TimeEntryCorrectionException(TimeEntryCorrectionException::TOO_LONG);
         }
         // Only a change is checked against the clock: an entry stored within the accepted skew keeps its end.

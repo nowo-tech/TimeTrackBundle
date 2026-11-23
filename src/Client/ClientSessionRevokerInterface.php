@@ -32,6 +32,10 @@ interface ClientSessionRevokerInterface
      * actor may not revoke all answer {@see ClientSessionRevocation::NotFound} with nothing written. A real revocation
      * dispatches the audit event `session_revoked` (user = the owner, reason `owner` or `other`), as `revokeById()` does.
      *
+     * Since 1.40.1 a reference whose class is not `user_class` or one of `accepted_user_classes` answers `NotFound`.
+     * **The roles of a reference without a user object are trusted as given**: build them from the current security user
+     * at call time, never from a queued message, a cache or request input.
+     *
      * Two concurrent calls for one session: one gets `Revoked`, the other `NotFound`. Inside a transaction you opened on
      * the same connection the delete is part of it (your commit or rollback decides).
      *
