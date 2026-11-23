@@ -192,7 +192,7 @@ final readonly class DoctrineOrmTimesheetRepository implements TimesheetReposito
     }
 
     /**
-     * @param LockMode|int|null $lock The lock mode (an `int` constant with doctrine/dbal 3, an enum with 4; null = none)
+     * @param int|LockMode|null $lock The lock mode (an `int` constant with doctrine/dbal 3, an enum with 4; null = none)
      * @param bool $refresh Whether rows this manager already holds are refreshed from the database
      *
      * @return list<Timesheet>
