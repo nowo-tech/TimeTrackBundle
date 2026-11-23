@@ -9,8 +9,8 @@ use Nowo\TimeTrackBundle\Port\Internal\ClientUserPrivacyProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see ClientUserPrivacySourceInterface} (1.23.0) where the bundle asks the deprecated
- * {@see ClientUserPrivacyProviderInterface}. Exceptions propagate. Built by {@see Ports}; stateless.
+ * Asks a host {@see ClientUserPrivacySourceInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see ClientUserPrivacyProviderInterface} (the 1.x interface of that name was removed in 2.0). Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal
  */

@@ -320,11 +320,21 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
      */
     public function persist(object $object): void
     {
-        $live = $this->live();
-        if (isset($this->loaded[$object]) && !$live->contains($object)) {
+        $this->refuseLoadedElsewhere($object);
+        $this->live()->persist($object);
+    }
+
+    /**
+     * Since 2.0 (W1-2, audit ZAR-4): refuses a TimeTrack row that another manager loaded and this one does not hold,
+     * also on the bundle's DBAL insert path ({@see TimeTrackRows::insert()}).
+     *
+     * @throws LogicException when the row was loaded by another manager
+     */
+    public function refuseLoadedElsewhere(object $object): void
+    {
+        if (isset($this->loaded[$object]) && !$this->live()->contains($object)) {
             throw new LogicException(sprintf('TimeTrack: this %s row was loaded by another entity manager (your application\'s, or TimeTrack\'s in an earlier request) and would be inserted again. Change TimeTrack rows on instances loaded through TimeTrack in the same request (its services and repositories); nothing was written. See UPGRADING "To 2.0.0", "Private manager only".', $object::class));
         }
-        $live->persist($object);
     }
 
     /**

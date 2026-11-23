@@ -297,7 +297,7 @@ final class ImportedEntriesTest extends FunctionalTestCase
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
 
-        $racing = new RacingImportedTimeEntryRepository(new DoctrineOrmTimeEntryRepository($this->entityManager()));
+        $racing = new RacingImportedTimeEntryRepository(new DoctrineOrmTimeEntryRepository($this->bundleEntityManager()));
         $racing->staleReads(1);
         $result = (new ImportedTimeEntryWriter($racing))->upsertMany([[$this->user, $this->data('e-1', seconds: 1800)], [$this->user, $this->data('e-2')]]);
 

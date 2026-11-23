@@ -6,6 +6,8 @@ namespace Nowo\TimeTrackBundle\Transaction;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
+use LogicException;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TransactionContract\TransactionRunnerInterface;
 use Nowo\TransactionContract\TransientStorageFailure;
@@ -20,6 +22,7 @@ use function max;
 use function min;
 use function random_int;
 use function spl_object_id;
+use function sprintf;
 use function usleep;
 
 /**
@@ -87,7 +90,7 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
      */
     public function run(callable $operation): mixed
     {
-        $manager = $this->entityManager;
+        $manager = $this->privateManager();
         // Pending work first, on its own: a failed TimeTrack unit never rolls it back behind the manager's back.
         $this->flush($manager);
 
@@ -111,7 +114,25 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
      */
     public function runStatements(callable $operation): mixed
     {
+        $this->privateManager();
+
         return $this->onConnection($operation);
+    }
+
+    /**
+     * Since 2.0 (audit ZAR-1): the runner only drives TimeTrack's private manager. Built by hand with any other manager
+     * (the application's), a failed unit would close, reset or clear it in the middle of the request, detaching the
+     * application's entities; it is refused before anything runs.
+     *
+     * @throws LogicException when the runner was built with another entity manager
+     */
+    private function privateManager(): TimeTrackEntityManager
+    {
+        if (!$this->entityManager instanceof TimeTrackEntityManager) {
+            throw new LogicException(sprintf('TimeTrack: %s only runs units of work on %s (the bundle\'s private entity manager, with %s), never on %s: use the "%s" service, or build it (and the TimeTrack stores) with those two; see UPGRADING "To 2.0.0".', self::class, TimeTrackEntityManager::class, TimeTrackManagerRegistry::class, $this->entityManager::class, self::SERVICE_ID));
+        }
+
+        return $this->entityManager;
     }
 
     /**

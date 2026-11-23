@@ -29,6 +29,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
+use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -251,7 +252,9 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
         $writer->upsert($this->user, $this->data('moves', '2026-02-02 14:00:00'));
         $thief  = $this->createUser('thief@example.com');
         $target = $this->createUser('target@example.com');
-        $em     = $this->entityManager();
+        $em     = $this->bundleEntityManager();
+        $runner = self::getContainer()->get(TimeTrackTransactionRunner::class);
+        self::assertInstanceOf(TimeTrackTransactionRunner::class, $runner);
         // Runs right before the second query of a read, the locking one: the rows the first query saw change owner there.
         $store = new DoctrineOrmTimeEntryRepository(new class($em, (int) $thief->getId()) extends EntityManagerDecorator {
             private int $queries = 0;
@@ -271,7 +274,7 @@ final class ImportedOwnerMoveLockTest extends FunctionalTestCase
 
                 return parent::createQueryBuilder();
             }
-        });
+        }, runner: $runner);
 
         $result = (new ImportedTimeEntryWriter($store, periodLockGuard: $this->guard(), scopeProvider: $this->scopes()))->moveBetweenUsers(self::SOURCE, $this->user, $target);
 

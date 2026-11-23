@@ -11,7 +11,7 @@ use Nowo\TimeTrackBundle\Repository\EntryOwnerRefsRepositoryInterface;
 
 /**
  * Asks a store implementing only {@see EntryOwnerRefsRepositoryInterface} (1.23.0) where the auto-lock asks the
- * deprecated {@see EntryOwnersRepositoryInterface}: each reference must carry the security user (`LogicException`
+ * internal {@see EntryOwnersRepositoryInterface} (the 1.x interface was removed in 2.0): each reference must carry the security user (`LogicException`
  * otherwise, before anything is locked). Built by {@see Ports}; stateless.
  *
  * @internal

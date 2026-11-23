@@ -11,7 +11,7 @@ use Nowo\TimeTrackBundle\Port\Internal\BatchTaskProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see BatchTaskDirectoryInterface} (1.23.0) where the bundle asks the deprecated {@see BatchTaskProviderInterface}.
+ * Asks a host {@see BatchTaskDirectoryInterface} (1.23.0) where the bundle asks its internal shape {@see BatchTaskProviderInterface} (the 1.x interface of that name was removed in 2.0).
  * Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal

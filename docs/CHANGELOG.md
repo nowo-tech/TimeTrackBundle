@@ -116,6 +116,12 @@ See [UPGRADING](UPGRADING.md#unreleased).
   only scheduled for insert) fails the TimeTrack write with a `LogicException` ("flush your user first") before
   anything is written. TimeTrack writes your users as its own reference to the same row and never detaches what your
   manager holds.
+- **BREAKING:** `TimeTrackTransactionRunner` only runs units of work on TimeTrack's private entity manager
+  (`TimeTrackEntityManager`): a runner, or a TimeTrack store, built by hand with another manager (yours) refuses each
+  unit with a `LogicException` before touching that manager, instead of flushing it and closing, resetting or clearing
+  it after a failure (audit ZAR-1). Use the `nowo_time_track.transaction_runner` service, or build them with
+  `TimeTrackEntityManager` and `TimeTrackManagerRegistry`. The bundle's DBAL insert path refuses a TimeTrack row that
+  another manager loaded too (ZAR-4).
 - UiKit seeding: without `nowo_ui_kit.css_framework` / `icon_set` the bundle still seeds `tabler` / `tabler-icons`
   (the 1.x default); the removed `templates.css_framework` no longer chooses the seed.
 - The bundle's own default port services (stub task provider, single scope, Doctrine user reference resolver, ...)
@@ -151,7 +157,9 @@ See [UPGRADING](UPGRADING.md#unreleased).
 - **BREAKING:** the `templates.*` keys (`layout`, `css_framework`, `index`, `reports`; deprecated since 1.8), the
   container parameters `nowo_time_track.templates`, `nowo_time_track.templates.layout`,
   `nowo_time_track.templates.css_framework`, the Twig globals `nowo_time_track_layout` /
-  `nowo_time_track_css_framework`, `Configuration::LEGACY_LAYOUT` and `TimeTrackPages::LEGACY_LAYOUT_BRIDGE`. Any
+  `nowo_time_track_css_framework` with the constants `TimeTrackTwigExtension::GLOBAL_LAYOUT` /
+  `GLOBAL_CSS_FRAMEWORK` (and `TimeTrackTwigExtension` no longer implements `GlobalsInterface`),
+  `Configuration::LEGACY_LAYOUT` and `TimeTrackPages::LEGACY_LAYOUT_BRIDGE`. Any
   `templates` key fails the container build. `Configuration::CSS_FRAMEWORKS` is deprecated (removed in 3.0).
 - **BREAKING:** the templates `@NowoTimeTrackBundle/layout.html.twig` and `@NowoTimeTrackBundle/_legacy_layout.html.twig`
   (deprecated since 1.8).
@@ -171,10 +179,6 @@ See [UPGRADING](UPGRADING.md#unreleased).
 
 - After 2.0.0 the 1.x line receives security fixes for 6 months: Moderate and higher are backported to the last 1.x
   minor; Low ones are fixed in 2.x only.
-  - [Added](#added-38)
-  - [Configuration](#configuration)
-  - [Testing](#testing)
-  - [Documentation](#documentation-12)
 
 ## [1.40.1] - 2026-11-23
 

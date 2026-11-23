@@ -253,7 +253,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $this->expectTimesheetError('not_found', fn (): Timesheet => $this->timesheets->submit($this->approver, 'org-x', $this->week));
 
         // A running timer that started inside the period of the same scope refuses the submit.
-        $timers = new DoctrineOrmActiveTimerRepository($this->entityManager());
+        $timers = new DoctrineOrmActiveTimerRepository($this->bundleEntityManager());
         $timers->save(new ActiveTimer($this->user, 'task-1', 'T', 'board-1', ClientType::Web, null, $this->week->startsAt('UTC')->modify('+1 hour')));
         $this->expectTimesheetError('timer_running', fn (): Timesheet => $this->timesheets->submit($this->user, 'org-a', $this->week));
         $this->timesheets->submit($this->user, 'org-b', $this->week);
@@ -271,7 +271,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
      */
     public function testARunningTimerWithoutATaskRefusesTheSubmitOfItsOwnScopeOnly(): void
     {
-        $timers = new DoctrineOrmActiveTimerRepository($this->entityManager());
+        $timers = new DoctrineOrmActiveTimerRepository($this->bundleEntityManager());
         $timers->save(ActiveTimer::withoutTask($this->user, ClientType::Web, 'ACME', 'org-b', null, $this->week->startsAt('UTC')->modify('+1 hour')));
 
         $this->expectTimesheetError('timer_running', fn (): Timesheet => $this->timesheets->submit($this->user, 'org-b', $this->week));
@@ -307,7 +307,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertSame(0, $off->execute([]));
         self::assertStringContainsString('Auto-lock is off', $off->getDisplay());
 
-        $command = new TimesheetsAutoLockCommand($this->timesheets, new DoctrineOrmTimeEntryRepository($this->entityManager()), $this->resolver(), 1);
+        $command = new TimesheetsAutoLockCommand($this->timesheets, new DoctrineOrmTimeEntryRepository($this->bundleEntityManager()), $this->resolver(), 1);
         $tester  = new CommandTester($command);
         self::assertSame(0, $tester->execute(['--lookback-days' => '40']));
         self::assertStringContainsString('Locked 1 period(s).', $tester->getDisplay());
@@ -337,16 +337,19 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $purge = new CommandTester($application->find('nowo:time-track:timesheets:purge'));
         self::assertSame(0, $purge->execute([]));
         self::assertStringContainsString('Purged 0 timesheet(s)', $purge->getDisplay());
-        $later = new CommandTester(new TimesheetsPurgeCommand(new DoctrineOrmTimesheetRepository($this->entityManager()), 4, new MockClock((new DateTimeImmutable('+5 years'))->format('Y-m-d H:i:s'))));
+        $later = new CommandTester(new TimesheetsPurgeCommand(new DoctrineOrmTimesheetRepository($this->bundleEntityManager()), 4, new MockClock((new DateTimeImmutable('+5 years'))->format('Y-m-d H:i:s'))));
         self::assertSame(0, $later->execute(['--batch' => '1']));
         self::assertStringContainsString('Purged 1 timesheet(s)', $later->getDisplay());
+        // 2.0: the purge never detaches the copy the application's manager loaded (audit ZAR-5): drop it, then read.
+        self::assertTrue($this->entityManager()->contains($kept));
+        $this->entityManager()->clear();
         self::assertNull($this->entityManager()->find(Timesheet::class, $locked->getId()));
     }
 
     public function testAPurgedLedgerChainStillVerifiesAndATruncatedOneDoesNot(): void
     {
         $owner  = (string) $this->user->getId();
-        $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $ledger = new DoctrineOrmBalanceLedgerRepository($this->bundleEntityManager());
         $first  = new BalanceLedgerLine($this->user, $owner, 'org-a', '2020-01-01', LedgerKind::Opening, 3600, new DateTimeImmutable('2020-01-01 10:00:00'), null, 'Opening');
         $second = new BalanceLedgerLine($this->user, $owner, 'org-a', '2020-02-01', LedgerKind::Adjustment, 60, new DateTimeImmutable('2020-02-01 10:00:00'), $first->getHash(), 'Two');
         $third  = new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-01', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-10-01 10:00:00'), $second->getHash(), 'Three');
@@ -358,7 +361,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         self::assertInstanceOf(AuditChainVerifier::class, $verifier);
 
         // GB-L3: the purge removes the old prefix; verify keeps passing (no false tamper alarm).
-        self::assertSame(2, (new DoctrineOrmTimesheetRepository($this->entityManager()))->purgeBefore('2021-01-01')['ledger']);
+        self::assertSame(2, (new DoctrineOrmTimesheetRepository($this->bundleEntityManager()))->purgeBefore('2021-01-01')['ledger']);
         self::assertSame([], $verifier->verify());
 
         // Removing the mark (or deleting a chain's oldest lines by hand) is reported.
@@ -378,7 +381,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         } catch (PeriodLockedException) {
         }
         // Idle resolve inside the week.
-        $timers = new DoctrineOrmActiveTimerRepository($this->entityManager());
+        $timers = new DoctrineOrmActiveTimerRepository($this->bundleEntityManager());
         $timers->save(new ActiveTimer($this->user, 'task-1', 'T', 'board-1', ClientType::Web, null, $monday->modify('+6 days +22 hours')));
         try {
             $this->timer($clock, $timers)->resolveIdle($this->user, $monday->modify('+6 days +22 hours +10 minutes'), $monday->modify('+6 days +22 hours +20 minutes'), IdleResolution::Discard);
@@ -391,7 +394,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $dispatcher = new EventDispatcher();
         $dispatcher->addListener(TimeTrackEvents::TIME_ENTRY_ACCESS_CHECK, static fn (TimeEntryAccessCheckEvent $e) => $e->grant());
         $guard   = new TeamAccessGuard(new NullTeamContextProvider(), $dispatcher, ['ROLE_ADMIN'], true, true, null, $this->lockGuard());
-        $entries = (new DoctrineOrmTimeEntryRepository($this->entityManager()))->findByUserAndPeriod((string) $this->user->getId(), $monday, $monday->modify('+7 days'));
+        $entries = (new DoctrineOrmTimeEntryRepository($this->bundleEntityManager()))->findByUserAndPeriod((string) $this->user->getId(), $monday, $monday->modify('+7 days'));
         foreach ($entries as $entry) {
             if ($entry->getScopeKey() === 'org-a') {
                 self::assertFalse($guard->canEditEntry($this->admin, $entry));
@@ -424,7 +427,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
     private function entry(DateTimeImmutable $start, int $seconds, string $scope): TimeEntry
     {
         $entry = (new TimeEntry($this->user, 'task-1', 'T', $scope === 'org-b' ? 'board-2' : 'board-1', $start, $start->modify('+' . $seconds . ' seconds'), $seconds, TimeEntrySource::Web))->assignScopeKey($scope);
-        (new DoctrineOrmTimeEntryRepository($this->entityManager()))->save($entry);
+        (new DoctrineOrmTimeEntryRepository($this->bundleEntityManager()))->save($entry);
 
         return $entry;
     }
@@ -434,7 +437,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $scopes = self::getContainer()->get(FixedScopeProvider::class);
         self::assertInstanceOf(FixedScopeProvider::class, $scopes);
 
-        return new ImportedTimeEntryWriter(new DoctrineOrmTimeEntryRepository($this->entityManager()), periodLockGuard: $this->lockGuard(), scopeProvider: $scopes);
+        return new ImportedTimeEntryWriter(new DoctrineOrmTimeEntryRepository($this->bundleEntityManager()), periodLockGuard: $this->lockGuard(), scopeProvider: $scopes);
     }
 
     private function timer(MockClock $clock, ?DoctrineOrmActiveTimerRepository $timers = null): TimerService
@@ -442,7 +445,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
         $scopes = self::getContainer()->get(FixedScopeProvider::class);
         self::assertInstanceOf(FixedScopeProvider::class, $scopes);
 
-        return new TimerService(new StubTaskProvider(), $timers ?? new DoctrineOrmActiveTimerRepository($this->entityManager()), new DoctrineOrmTimeEntryRepository($this->entityManager()), new EventDispatcher(), $clock, null, $this->lockGuard(), $scopes);
+        return new TimerService(new StubTaskProvider(), $timers ?? new DoctrineOrmActiveTimerRepository($this->bundleEntityManager()), new DoctrineOrmTimeEntryRepository($this->bundleEntityManager()), new EventDispatcher(), $clock, null, $this->lockGuard(), $scopes);
     }
 
     private function lockGuard(): PeriodLockGuard
@@ -466,7 +469,7 @@ final class TimesheetWorkflowDatabaseTest extends FunctionalTestCase
      */
     private function ledgerLines(LedgerKind $kind): array
     {
-        $lines = (new DoctrineOrmBalanceLedgerRepository($this->entityManager()))->findByOwner((string) $this->user->getId(), 'org-a');
+        $lines = (new DoctrineOrmBalanceLedgerRepository($this->bundleEntityManager()))->findByOwner((string) $this->user->getId(), 'org-a');
 
         return array_values(array_filter($lines, static fn (BalanceLedgerLine $l): bool => $l->getKind() === $kind));
     }

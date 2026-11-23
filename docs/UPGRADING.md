@@ -198,7 +198,7 @@ notice of `nowo-tech/time-track-bundle`:
 | `getUser()` of `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`, `TaskEffortAccessCheckEvent`; `getViewer()` of `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`; `ClientAuthResult::getUser()` | 1.23.0 | `userRef()` / `viewerRef()` (the object through `->user()`), or `getUserId()` / `getViewerId()` |
 | `RecoveringFlusher::resetIfClosed()` | 1.27.0 | nothing (drop the call) |
 | `POST /api/time-track/heartbeat` (and `/v1/heartbeat`), `clients.routes.heartbeat` | 1.9 | `timer/discard-idle` (the 1.9+ clients never call it) |
-| `templates.*`, the parameters `nowo_time_track.templates`, `nowo_time_track.templates.layout`, `nowo_time_track.templates.css_framework`, the Twig globals `nowo_time_track_layout`, `nowo_time_track_css_framework`, `Configuration::LEGACY_LAYOUT`, `TimeTrackPages::LEGACY_LAYOUT_BRIDGE` | 1.8 | `web_ui.layout_template`, `web_ui.templates.*`, `nowo_ui_kit.css_framework`, `nowo_ui_layout.admin` |
+| `templates.*`, the parameters `nowo_time_track.templates`, `nowo_time_track.templates.layout`, `nowo_time_track.templates.css_framework`, the Twig globals `nowo_time_track_layout`, `nowo_time_track_css_framework` with the constants `TimeTrackTwigExtension::GLOBAL_LAYOUT` / `GLOBAL_CSS_FRAMEWORK` (`TimeTrackTwigExtension` no longer implements `GlobalsInterface`; reading a constant is an "Undefined constant" error), `Configuration::LEGACY_LAYOUT`, `TimeTrackPages::LEGACY_LAYOUT_BRIDGE` | 1.8 | `web_ui.layout_template`, `web_ui.templates.*`, `nowo_ui_kit.css_framework`, `nowo_ui_layout.admin` |
 | `@NowoTimeTrackBundle/layout.html.twig`, `@NowoTimeTrackBundle/_legacy_layout.html.twig` | 1.8 | extend `nowo_ui_layout.admin` (or your layout) and fill the UiKit blocks |
 | The inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` | 1.39.0 | `options.dialog_urls` |
 | The 1.33 host-flush probe (`Doctrine\TimeTrackHostFlushProbe`, internal) and its notices | (2.0) | nothing: the private manager never flushes your manager |
@@ -247,7 +247,14 @@ included). What breaks:
   Change TimeTrack rows through TimeTrack's services (`TimesheetService`, `TimerService`, `BalanceLedger`,
   `TimeEntryBillableService`, `ClientTokenRevoker`, ...; see the table in [To 1.33.0](#reading-the-host-flush-probe-as-a-migration-list)),
   or through its repositories with rows loaded through them, or through `Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager`
-  and flush that one.
+  and flush that one. **Erasure and retention:** after `TimeTrackPersonalDataInterface::erase()` (or a retention purge)
+  drop the copies of TimeTrack rows your own manager holds (`detach()` them, or end the unit of work): a later flush of
+  yours that changed a field on such a copy would write it back onto the anonymised row (GDPR art. 17). TimeTrack no
+  longer detaches them for you.
+- **Runners and stores you build by hand** get `Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager` and
+  `TimeTrackManagerRegistry`, never your manager: a `TimeTrackTransactionRunner` (or a TimeTrack Doctrine store) built
+  with another manager refuses each unit of work with a `LogicException`. The `nowo_time_track.transaction_runner`
+  service and the stores of the container are already wired this way.
 - **A port of yours that only changed a managed TimeTrack row** (a custom time entry store, a decorator of a TimeTrack
   repository) must commit its own change: TimeTrack no longer flushes the manager it shares with you.
 - **TimeTrack rows your manager loaded are refused by TimeTrack's stores.** Handing an entry, timer or timesheet that
@@ -267,7 +274,7 @@ included). What breaks:
 
 ### 1.x support
 
-The 1.x line (from 1.39) receives security fixes for 6 months after 2.0.0: Moderate and higher are backported to the
+The 1.x line (from 1.40) receives security fixes for 6 months after 2.0.0: Moderate and higher are backported to the
 last 1.x minor; Low ones are fixed in 2.x only (upgrade to get them).
 ## To 1.40.1
 

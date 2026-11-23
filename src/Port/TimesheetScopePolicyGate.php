@@ -12,8 +12,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use function array_map;
 
 /**
- * Asks a host {@see TimesheetScopePolicyInterface} (1.23.0) where the bundle asks the deprecated
- * {@see TimesheetScopeProviderInterface}: users become references, entries {@see TimeEntryView} snapshots. Exceptions
+ * Asks a host {@see TimesheetScopePolicyInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see TimesheetScopeProviderInterface} (the 1.x interface of that name was removed in 2.0): users become references, entries {@see TimeEntryView} snapshots. Exceptions
  * propagate. Built by {@see Ports}; stateless.
  *
  * @internal

@@ -10,8 +10,8 @@ use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeRecordInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see WorkedTimeRecordInterface} (1.23.0) where the bundle asks the deprecated
- * {@see WorkedTimeSourceInterface}. Exceptions propagate. Built by {@see Ports}; stateless.
+ * Asks a host {@see WorkedTimeRecordInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see WorkedTimeSourceInterface} (the 1.x interface of that name was removed in 2.0). Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal
  */

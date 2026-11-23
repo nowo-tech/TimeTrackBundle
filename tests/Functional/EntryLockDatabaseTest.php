@@ -18,7 +18,7 @@ final class EntryLockDatabaseTest extends FunctionalTestCase
     public function testUsersAreLockedByIdWhenNotManaged(): void
     {
         $logger = new RecordingLogger();
-        $repo   = new DoctrineOrmTimeEntryRepository($this->entityManager(), null, $logger);
+        $repo   = new DoctrineOrmTimeEntryRepository($this->bundleEntityManager(), null, $logger);
 
         self::assertSame('managed', $repo->inUserTransaction($this->user, static fn (): string => 'managed'));
         $this->entityManager()->detach($this->user);

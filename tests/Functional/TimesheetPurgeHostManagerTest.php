@@ -34,14 +34,15 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
 
     public function testThePurgeNeitherFlushesNorDetachesTheHostsEntities(): void
     {
-        $em                                      = $this->entityManager();
+        $em                                      = $this->bundleEntityManager();
+        $host                                    = $this->entityManager();
         $repository                              = new DoctrineOrmTimesheetRepository($em);
         $owner                                   = (string) $this->user->getId();
         [$old, $event, $opening, $kept, $recent] = $this->seed($repository, $owner);
 
         // The host's pending work on the same manager: a new entity to insert and a change to a managed bundle entity.
         $pendingUser = new AppUser('pending@example.com', 'secret', ['ROLE_USER']);
-        $em->persist($pendingUser);
+        $host->persist($pendingUser);
         $recent->applySubmit(new DateTimeImmutable('2026-11-10 09:00:00'), $owner, str_repeat('b', 64), null);
 
         self::assertSame(['timesheets' => 1, 'events' => 1, 'ledger' => 1], $repository->purgeBefore('2021-01-01'));
@@ -49,10 +50,10 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
         $connection = $em->getConnection();
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM app_user WHERE email = ?', ['pending@example.com']), 'the host insert is not flushed');
         self::assertSame(TimesheetStatus::Open->value, $connection->fetchOne('SELECT status FROM time_track_timesheets WHERE id = ?', [$recent->getId()]), 'the host update is not flushed');
-        self::assertTrue($em->getUnitOfWork()->isScheduledForInsert($pendingUser));
-        self::assertTrue($em->contains($this->user), 'host entities stay managed');
+        self::assertTrue($host->getUnitOfWork()->isScheduledForInsert($pendingUser));
+        self::assertTrue($host->contains($this->user), 'host entities stay managed');
         self::assertTrue($em->contains($recent));
-        self::assertTrue($em->contains($pendingUser));
+        self::assertTrue($host->contains($pendingUser));
 
         // Only what the purge deleted or marked is detached, so a later read sees the database.
         self::assertFalse($em->contains($old));
@@ -62,7 +63,8 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
         self::assertNull($repository->find($old->getId()));
         self::assertSame('2021-01-01', $em->find(BalanceLedgerLine::class, $kept->getId())?->getPurgedBefore());
 
-        // The host flushes its own work when it decides to.
+        // The host flushes its own work when it decides to (2.0: TimeTrack's pending change goes with TimeTrack's manager).
+        $host->flush();
         $em->flush();
         self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM app_user WHERE email = ?', ['pending@example.com']));
         self::assertSame(TimesheetStatus::Submitted->value, $connection->fetchOne('SELECT status FROM time_track_timesheets WHERE id = ?', [$recent->getId()]));
@@ -70,13 +72,13 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
         // Next request of a kept-alive worker (no kernel reset): the same repository and manager, the host entity is the
         // same managed instance and nothing is left to purge.
         self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 0], $repository->purgeBefore('2021-01-01'));
-        self::assertSame($this->user, $em->find(AppUser::class, $this->user->getId()));
+        self::assertSame($this->user, $host->find(AppUser::class, $this->user->getId()));
         self::assertSame($recent, $repository->find($recent->getId()));
     }
 
     public function testThePurgeNestsInAnOpenHostTransaction(): void
     {
-        $em         = $this->entityManager();
+        $em         = $this->bundleEntityManager();
         $connection = $em->getConnection();
         $repository = new DoctrineOrmTimesheetRepository($em);
         $owner      = (string) $this->user->getId();
@@ -100,7 +102,7 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
 
     public function testAFailedStatementInsideAnOpenHostTransactionOnlyRollsBackThePurge(): void
     {
-        $em         = $this->entityManager();
+        $em         = $this->bundleEntityManager();
         $connection = $em->getConnection();
         $repository = new DoctrineOrmTimesheetRepository($em);
         // Outside any transaction (MySQL commits implicitly on DDL): the first statement of the purge will fail.
@@ -131,7 +133,7 @@ final class TimesheetPurgeHostManagerTest extends FunctionalTestCase
      */
     private function seed(DoctrineOrmTimesheetRepository $repository, string $owner): array
     {
-        $em     = $this->entityManager();
+        $em     = $this->bundleEntityManager();
         $old    = new Timesheet($this->user, $owner, '', Period::fromKey(TimesheetPeriodKind::Week, '2020-W10'), 'UTC', new DateTimeImmutable('2020-03-01 08:00:00'));
         $recent = new Timesheet($this->user, $owner, '', Period::fromKey(TimesheetPeriodKind::Week, '2026-W45'), 'UTC', new DateTimeImmutable('2026-11-01 08:00:00'));
         $repository->save($old);

@@ -51,6 +51,10 @@ final class TimeTrackRows
      */
     public static function insert(EntityManagerInterface $entityManager, object $entity, bool $manage = false): ?UniqueConstraintViolationException
     {
+        if ($entityManager instanceof TimeTrackEntityManager) {
+            // 2.0 (audit ZAR-4): a row your manager loaded is refused here too, never reported as "written meanwhile".
+            $entityManager->refuseLoadedElsewhere($entity);
+        }
         $metadata = $entityManager->getClassMetadata($entity::class);
         if ($metadata->isVersioned && $metadata->versionField !== null) {
             // The TimeTrack versions are integers (Timesheet): a new row starts at 1, as the ORM's own insert does.

@@ -11,13 +11,17 @@ use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\ProbeEntity\EntryNote;
+use Nowo\TimeTrackBundle\Timesheet\Period;
 use ReflectionProperty;
 use Throwable;
 
@@ -139,6 +143,24 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
         $own->markBillable(true);
         $this->entries()->save($own);
         self::assertTrue((bool) $host->getConnection()->fetchOne('SELECT billable FROM time_track_entries WHERE id = ?', [$id]));
+    }
+
+    public function testATimesheetLoadedByTheApplicationIsRefusedOnTheDbalInsertPathToo(): void
+    {
+        $host      = $this->entityManager();
+        $timesheet = new Timesheet($this->user, (string) $this->user->getId(), '', Period::fromKey(TimesheetPeriodKind::Week, '2026-W40'), 'UTC', new DateTimeImmutable('2026-10-01 08:00:00'));
+        $this->bundleEntityManager()->persist($timesheet);
+        $this->bundleEntityManager()->flush();
+        $this->clearEntityManagers();
+        $loaded = $host->find(Timesheet::class, $timesheet->getId());
+        self::assertInstanceOf(Timesheet::class, $loaded);
+        $store = new DoctrineOrmTimesheetRepository($this->bundleEntityManager());
+
+        $failure = $this->failureOf(static fn () => $store->save($loaded));
+
+        self::assertInstanceOf(LogicException::class, $failure);
+        self::assertStringContainsString('was loaded by another entity manager', $failure->getMessage());
+        self::assertSame(1, (int) $host->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_timesheets'), 'no duplicate row');
     }
 
     public function testAHostEntityReferencingATimeTrackRowByIdIsWritten(): void
