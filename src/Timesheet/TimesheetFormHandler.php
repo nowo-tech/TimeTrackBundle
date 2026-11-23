@@ -79,25 +79,63 @@ final readonly class TimesheetFormHandler
      */
     public function handleDecision(Request $request, UserInterface $actor, string $action): Timesheet
     {
+        $result = $this->submitDecision($request, $actor, $action);
+        if (!$result->timesheet instanceof Timesheet) {
+            throw new TimesheetException('invalid_request');
+        }
+
+        return $result->timesheet;
+    }
+
+    /**
+     * Since 1.39.0: {@see handleDecision()} that keeps an invalid form instead of throwing, so a remote dialog
+     * re-renders it in place (422) with its errors; `$actionUrl` is the form's action on that re-render. A refused
+     * action still throws the service's code (`conflict`, `stale`, `not_found`…). An invalid or missing CSRF token is
+     * an invalid result whose form carries no field error ({@see TimesheetFormResult::$csrfFailed}).
+     *
+     * @throws TimesheetException `invalid_request` for an unknown action; the service's codes otherwise
+     */
+    public function submitDecision(Request $request, UserInterface $actor, string $action, ?string $actionUrl = null): TimesheetFormResult
+    {
         if (!in_array($action, self::ACTIONS, true)) {
             throw new TimesheetException('invalid_request');
         }
-        $form = $this->decisionForm($action);
+        $form = $this->decisionForm($action, null, $actionUrl);
         $form->handleRequest($request);
-        if (!$form->isSubmitted() || !$form->isValid() || !$this->validCsrf($request, $form, TimesheetDecisionType::CSRF_TOKEN_ID)) {
-            throw new TimesheetException('invalid_request');
+        if (!$form->isSubmitted() || !$form->isValid()) {
+            return new TimesheetFormResult($form);
+        }
+        if (!$this->validCsrf($request, $form, TimesheetDecisionType::CSRF_TOKEN_ID)) {
+            return new TimesheetFormResult($form, csrfFailed: true);
         }
         /** @var array{timesheet?: mixed, comment?: mixed, scope?: mixed, period?: mixed} $data */
         $data    = $form->getData();
         $id      = is_string($data['timesheet'] ?? null) ? $data['timesheet'] : '';
         $comment = is_string($data['comment'] ?? null) ? $data['comment'] : '';
 
-        return match ($action) {
+        return new TimesheetFormResult($form, match ($action) {
             'approve' => $this->timesheets->approve($actor, $id),
             'reject'  => $this->timesheets->reject($actor, $id, $comment),
             'reopen'  => $this->timesheets->reopen($actor, $id, $comment),
             default   => $this->ownerAction($actor, $id, is_string($data['scope'] ?? null) ? $data['scope'] : '', is_string($data['period'] ?? null) ? $data['period'] : null, $action === 'submit'),
-        };
+        });
+    }
+
+    /**
+     * Since 1.39.0: the form of an approve / reject / reopen dialog (posted to `$actionUrl`), served only to whoever
+     * may post it: the same refusals as the action ({@see TimesheetService::decisionTarget()}).
+     *
+     * @throws TimesheetException `invalid_request` for an owner action; `not_found` / `invalid_transition` otherwise
+     *
+     * @return FormInterface<mixed>
+     */
+    public function decisionDialogForm(UserInterface $actor, string $action, string $timesheetId, ?string $actionUrl = null): FormInterface
+    {
+        if (!in_array($action, ['approve', 'reject', 'reopen'], true)) {
+            throw new TimesheetException('invalid_request');
+        }
+
+        return $this->decisionForm($action, $this->timesheets->decisionTarget($actor, $timesheetId, $action), $actionUrl);
     }
 
     /**
@@ -122,13 +160,33 @@ final readonly class TimesheetFormHandler
      */
     public function handleLedger(Request $request, UserInterface $actor, UserInterface $owner, string $scopeKey, bool $reversal = false): BalanceLedgerLine
     {
+        $result = $this->submitLedger($request, $actor, $owner, $scopeKey, $reversal);
+        if (!$result->line instanceof BalanceLedgerLine) {
+            throw new LedgerRefusedException('invalid_request');
+        }
+
+        return $result->line;
+    }
+
+    /**
+     * Since 1.39.0: {@see handleLedger()} that keeps an invalid form instead of throwing, so a remote dialog re-renders
+     * it in place (422); `$actionUrl` is the form's action on that re-render. A refused line still throws the ledger's
+     * code (`conflict`, `forbidden`, `already_reversed`…).
+     *
+     * @throws LedgerRefusedException `forbidden` without working time; the ledger's codes otherwise
+     */
+    public function submitLedger(Request $request, UserInterface $actor, UserInterface $owner, string $scopeKey, bool $reversal = false, ?string $actionUrl = null): TimesheetFormResult
+    {
         if (!$this->ledger instanceof BalanceLedger) {
             throw new LedgerRefusedException('forbidden');
         }
-        $form = $this->ledgerForm(null, $reversal ? '' : null);
+        $form = $this->ledgerForm($actionUrl, $reversal ? '' : null);
         $form->handleRequest($request);
-        if (!$form->isSubmitted() || !$form->isValid() || !$this->validCsrf($request, $form, LedgerLineType::CSRF_TOKEN_ID)) {
-            throw new LedgerRefusedException('invalid_request');
+        if (!$form->isSubmitted() || !$form->isValid()) {
+            return new TimesheetFormResult($form);
+        }
+        if (!$this->validCsrf($request, $form, LedgerLineType::CSRF_TOKEN_ID)) {
+            return new TimesheetFormResult($form, csrfFailed: true);
         }
         /** @var array<string, mixed> $data */
         $data   = $form->getData();
@@ -136,7 +194,7 @@ final readonly class TimesheetFormHandler
         $reason = is_string($data['reason'] ?? null) ? $data['reason'] : null;
         if ($reversal) {
             // @igor-ignore - I/O delegate (ledger append); no worker state.
-            return $this->ledger->add($actor, $owner, $scopeKey, LedgerKind::Reversal, 0, $date, $reason, is_string($data['reverses'] ?? null) ? $data['reverses'] : '');
+            return new TimesheetFormResult($form, line: $this->ledger->add($actor, $owner, $scopeKey, LedgerKind::Reversal, 0, $date, $reason, is_string($data['reverses'] ?? null) ? $data['reverses'] : ''));
         }
         // The choice field only accepts LedgerLineType::MANUAL_KINDS.
         $kind    = LedgerKind::from(is_string($data['kind'] ?? null) ? $data['kind'] : '');
@@ -147,7 +205,26 @@ final readonly class TimesheetFormHandler
         }
 
         // @igor-ignore - I/O delegate (ledger append); no worker state.
-        return $this->ledger->add($actor, $owner, $scopeKey, $kind, $minutes * 60, $date, $reason);
+        return new TimesheetFormResult($form, line: $this->ledger->add($actor, $owner, $scopeKey, $kind, $minutes * 60, $date, $reason));
+    }
+
+    /**
+     * Since 1.39.0: the form of an adjustment dialog, or with `$reverses` of the reversal of that line (posted to
+     * `$actionUrl`), served only to whoever may post it: the same refusals as the post
+     * ({@see BalanceLedger::assertAddable()}).
+     *
+     * @throws LedgerRefusedException `forbidden` (also without working time), `not_found`, `not_reversible`, `already_reversed`
+     *
+     * @return FormInterface<mixed>
+     */
+    public function ledgerDialogForm(UserInterface $actor, string $ownerId, string $scopeKey, ?string $actionUrl = null, ?string $reverses = null): FormInterface
+    {
+        if (!$this->ledger instanceof BalanceLedger) {
+            throw new LedgerRefusedException('forbidden');
+        }
+        $this->ledger->assertAddable($actor, $ownerId, $scopeKey, $reverses);
+
+        return $this->ledgerForm($actionUrl, $reverses);
     }
 
     /**

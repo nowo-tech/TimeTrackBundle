@@ -367,6 +367,37 @@ final readonly class TimesheetService
     }
 
     /**
+     * Since 1.39.0: the timesheet an approve / reject / reopen dialog acts on, refused exactly as {@see approve()} /
+     * {@see reject()} / {@see reopen()} refuse it before the comment is read (`not_found` without the right,
+     * `invalid_transition` in the wrong status), so the dialog's form is only served to whoever may post it.
+     *
+     * @throws TimesheetException
+     */
+    public function decisionTarget(UserInterface $actor, string $timesheetId, string $action): Timesheet
+    {
+        if ($action === TimesheetAccessGuard::REOPEN) {
+            $timesheet = $this->enabled ? $this->timesheets->find($timesheetId) : null;
+            if (!$timesheet instanceof Timesheet || !$this->accessGuard->canReopen($actor, $timesheet->getOwnerRef(), $timesheet->getScopeKey())) {
+                throw new TimesheetException('not_found');
+            }
+            if (!$timesheet->isLocked()) {
+                throw new TimesheetException('invalid_transition');
+            }
+
+            return $timesheet;
+        }
+        if ($action !== TimesheetAccessGuard::APPROVE && $action !== TimesheetAccessGuard::REJECT) {
+            throw new TimesheetException('invalid_request');
+        }
+        $timesheet = $this->decidable($actor, $timesheetId, $action);
+        if ($timesheet->getStatus() !== TimesheetStatus::Submitted) {
+            throw new TimesheetException('invalid_transition');
+        }
+
+        return $timesheet;
+    }
+
+    /**
      * Rejects a submitted timesheet with a comment (10–1000 characters, shown to the owner until the next submit).
      *
      * @throws TimesheetException

@@ -165,18 +165,20 @@ templates are never overridden:
     density: 'compact', show_expected: true, labels: {task: 'my_app.timesheet.task'},
 }}) }}
 {{ nowo_time_track_component('TimeTrack:BalanceCard', {report: report, options: {range: 'month', show_overtime: true}}) }}
-{{ nowo_time_track_component('TimeTrack:LedgerTable', {lines: lines, viewer: app.user, owner_id: ownerId, scope_key: scope, options: {action_urls: {add_adjustment: path('app_ledger_add'), reversal: path('app_ledger_reverse')}}}) }}
+{{ nowo_time_track_component('TimeTrack:LedgerTable', {lines: lines, viewer: app.user, owner_id: ownerId, scope_key: scope, options: {dialog_urls: {add_adjustment: path('app_ledger_add'), reversal: path('app_ledger_reverse')}}}) }}
 ```
 
 | Component | Service | Options |
 | --- | --- | --- |
-| `TimeTrack:TimesheetWeekGrid` | `Ui\TimesheetViewBuilder::weekGrid()` | `labels`, `actions` (submit, withdraw, approve, reject, reopen), `action_urls`, `density` (`comfortable` / `compact`), `show_expected`, `show_diff`, `read_only` |
+| `TimeTrack:TimesheetWeekGrid` | `Ui\TimesheetViewBuilder::weekGrid()` | `labels`, `actions` (submit, withdraw, approve, reject, reopen), `action_urls`, `dialog_urls` (1.39: reject, reopen, approve), `density` (`comfortable` / `compact`), `show_expected`, `show_diff`, `read_only` |
 | `TimeTrack:BalanceCard` | `::balanceCard()` | `labels`, `range` (week / month / year / custom), `show_overtime`, `legal_badge` |
-| `TimeTrack:LedgerTable` | `::ledgerTable()` | `labels`, `columns`, `actions` (add_adjustment, reversal), `action_urls`, `density` |
+| `TimeTrack:LedgerTable` | `::ledgerTable()` | `labels`, `columns`, `actions` (add_adjustment, reversal), `action_urls`, `dialog_urls` (1.39: add_adjustment, reversal), `density` |
 
-An action appears only when the guard allows it for the viewer **and** the host gave its URL. Reject, reopen,
-adjustment and reversal open a UiKit 2.29 dialog with the anatomy (header, scrolling body with the form, footer with
-Cancel and the primary submit). Approvers see task titles masked when they cannot see the task, and notes only with
+An action appears only when the guard allows it for the viewer **and** the host gave its URL. Since 1.39.0 reject,
+reopen, adjustment and reversal load on demand: with `dialog_urls` each is a link to a host page (GET + POST, handed to
+`Ui\TimesheetDialogResponder`) whose form is fetched into one remote UiKit dialog when it opens (fragment for
+`X-Nowo-Dialog: 1`, the full page without JavaScript; 422 in place, 409 on a conflict, 204 + `X-Nowo-Redirect` once
+saved). Without `dialog_urls` (deprecated) they still print a UiKit 2.29 dialog with the form inside the page. Approvers see task titles masked when they cannot see the task, and notes only with
 `timesheets.approver_sees_notes: true`; imported entries of a task the owner can no longer see are masked for everybody,
 the owner included. The grid and the ledger table refuse (`TimesheetException('not_found')`) a viewer who may not see the
 owner's data in that scope, and the ledger table drops lines of another owner or scope — still, load the data through

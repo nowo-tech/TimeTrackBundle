@@ -806,7 +806,19 @@ Components for host pages (no template overrides):
 ```
 
 The posted forms go to your routes; hand the request to `Timesheet\TimesheetFormHandler::handleDecision()` /
-`handleLedger()`. The `nowo_time_track_duration` filter formats seconds as `H:MM` (`|nowo_time_track_duration(true)` adds
+`handleLedger()`. Since 1.39.0 the dialogs (ledger adjustment and reversal, reject, reopen) load on demand: pass
+`options.dialog_urls` (one host route per dialog, GET and POST, handed to `Ui\TimesheetDialogResponder::ledger()` /
+`decision()`) and the components render links plus one empty remote dialog instead of a form per row:
+
+```twig
+{{ nowo_time_track_component('TimeTrack:LedgerTable', {lines: lines, viewer: app.user, owner_id: ownerId, scope_key: scope, options: {
+    dialog_urls: {add_adjustment: path('app_ledger_adjust'), reversal: path('app_ledger_reverse')},
+}}) }}
+```
+
+The reversal URL gets `line=<id>` (or replace a `{line}` placeholder), the week grid's `timesheet=<id>`. The responder
+serves the fragment for `X-Nowo-Dialog: 1` and the full page otherwise (works without JavaScript), answers 422 in
+place, 409 on a conflict, 204 + `X-Nowo-Redirect` once saved, and refuses access exactly as the post. The `nowo_time_track_duration` filter formats seconds as `H:MM` (`|nowo_time_track_duration(true)` adds
 the sign).
 
 ## Calendar suggestions (1.14)

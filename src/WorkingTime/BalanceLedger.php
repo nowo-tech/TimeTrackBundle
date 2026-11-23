@@ -200,6 +200,33 @@ final readonly class BalanceLedger
     }
 
     /**
+     * Since 1.39.0: refuses a ledger dialog exactly as {@see add()} refuses its post before the line is checked
+     * (`forbidden` without the right to adjust; for a reversal `not_found`, `not_reversible`, `already_reversed`), so
+     * the dialog's form is only served to whoever may post it. Read only, no lock: {@see add()} checks again under it.
+     *
+     * @throws LedgerRefusedException
+     */
+    public function assertAddable(UserInterface $actor, string $ownerId, string $scopeKey, ?string $reversesId = null): void
+    {
+        if (!$this->accessGuard->canAdjustBalance($actor, $ownerId, $scopeKey)) {
+            throw new LedgerRefusedException('forbidden');
+        }
+        if ($reversesId === null) {
+            return;
+        }
+        $reversed = $this->lines->find($reversesId);
+        if (!$reversed instanceof BalanceLedgerLine || $reversed->getOwnerRef() !== $ownerId || $reversed->getScopeKey() !== $scopeKey) {
+            throw new LedgerRefusedException('not_found');
+        }
+        if ($reversed->getKind() === LedgerKind::Reversal) {
+            throw new LedgerRefusedException('not_reversible');
+        }
+        if ($this->lines->findReversalOf($reversed->getId()) instanceof BalanceLedgerLine) {
+            throw new LedgerRefusedException('already_reversed');
+        }
+    }
+
+    /**
      * Lines of an owner and scope in a date range (chain order).
      *
      * @return list<BalanceLedgerLine>

@@ -17,6 +17,7 @@ use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetFormHandler;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceReport;
+use Symfony\Component\Form\FormView;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -26,8 +27,14 @@ use function array_filter;
 use function array_intersect;
 use function array_values;
 use function count;
+use function explode;
 use function in_array;
 use function is_string;
+use function rawurlencode;
+use function sprintf;
+use function str_contains;
+use function str_replace;
+use function trigger_deprecation;
 
 /**
  * Since 1.13: view models of the configurable Twig components (contract §16a; hosts compose their pages from them, no
@@ -42,6 +49,9 @@ use function is_string;
 final readonly class TimesheetViewBuilder
 {
     public const DENSITIES = ['comfortable', 'compact'];
+
+    /** Since 1.39.0: the week-grid actions a dialog URL (`options.dialog_urls`) can serve. */
+    public const DIALOG_ACTIONS = ['approve', 'reject', 'reopen'];
 
     /**
      * @param bool $approverSeesNotes `timesheets.approver_sees_notes`
@@ -70,13 +80,14 @@ final readonly class TimesheetViewBuilder
             throw new TimesheetException('not_found');
         }
         $resolver = new OptionsResolver();
-        $resolver->setDefaults(['labels' => [], 'actions' => TimesheetFormHandler::ACTIONS, 'action_urls' => [], 'density' => 'comfortable', 'show_expected' => true, 'show_diff' => true, 'read_only' => null]);
+        $resolver->setDefaults(['labels' => [], 'actions' => TimesheetFormHandler::ACTIONS, 'action_urls' => [], 'dialog_urls' => [], 'density' => 'comfortable', 'show_expected' => true, 'show_diff' => true, 'read_only' => null]);
         $resolver->setAllowedValues('density', self::DENSITIES);
         $resolver->setAllowedTypes('labels', 'array');
         $resolver->setAllowedTypes('actions', 'array');
         $resolver->setAllowedTypes('action_urls', 'array');
+        $resolver->setAllowedTypes('dialog_urls', 'array');
         $resolver->setAllowedTypes('read_only', ['null', 'bool']);
-        /** @var array{labels: array<string, string>, actions: list<string>, action_urls: array<string, string>, density: string, show_expected: bool, show_diff: bool, read_only: bool|null} $options */
+        /** @var array{labels: array<string, string>, actions: list<string>, action_urls: array<string, string>, dialog_urls: array<string, string>, density: string, show_expected: bool, show_diff: bool, read_only: bool|null} $options */
         $options = $resolver->resolve($options);
 
         $owner    = UserIdResolver::getId($viewer) === $timesheet->getOwnerRef();
@@ -112,11 +123,20 @@ final readonly class TimesheetViewBuilder
         $readOnly = $options['read_only'] ?? !$owner;
         $actions  = [];
         foreach (array_intersect($options['actions'], $this->allowedActions($timesheet, $viewer, $owner)) as $action) {
-            $url = $options['action_urls'][$action] ?? null;
-            if (is_string($url) && ($action === 'submit' || $action === 'withdraw' ? !$readOnly : true)) {
-                $actions[$action] = ['form' => $this->forms->decisionForm($action, $timesheet, $url)->createView(), 'dialog' => in_array($action, TimesheetFormHandler::COMMENT_ACTIONS, true)];
+            $url       = $options['action_urls'][$action] ?? null;
+            $dialogUrl = in_array($action, self::DIALOG_ACTIONS, true) ? ($options['dialog_urls'][$action] ?? null) : null;
+            if (is_string($dialogUrl)) {
+                // Since 1.39.0: a link to the host's dialog page; the form is built only when the dialog opens.
+                $actions[$action] = ['form' => null, 'dialog' => true, 'url' => $this->withQuery($dialogUrl, 'timesheet', $timesheet->getId())];
+            } elseif (is_string($url) && ($action === 'submit' || $action === 'withdraw' ? !$readOnly : true)) {
+                $dialog = in_array($action, TimesheetFormHandler::COMMENT_ACTIONS, true);
+                if ($dialog) {
+                    $this->deprecateInlineDialog('weekGrid', $action);
+                }
+                $actions[$action] = ['form' => $this->forms->decisionForm($action, $timesheet, $url)->createView(), 'dialog' => $dialog, 'url' => null];
             }
         }
+        $lazy = array_filter($actions, static fn (array $a): bool => $a['url'] !== null) !== [];
 
         return [
             'id'              => $timesheet->getId(),
@@ -136,6 +156,7 @@ final readonly class TimesheetViewBuilder
             'legalRecord'     => $report?->legalRecord,
             'unassigned'      => $owner ? count($snapshot->unassigned) : 0,
             'actions'         => $actions,
+            'dialogId'        => $lazy ? 'time-track-week-dialog-' . $timesheet->getId() : null,
             'labels'          => $options['labels'],
             'density'         => $options['density'],
             'readOnly'        => $readOnly,
@@ -192,13 +213,14 @@ final readonly class TimesheetViewBuilder
             throw new TimesheetException('not_found');
         }
         $resolver = new OptionsResolver();
-        $resolver->setDefaults(['labels' => [], 'columns' => ['effectiveDate', 'kind', 'seconds', 'reason', 'createdAt'], 'actions' => ['add_adjustment', 'reversal'], 'action_urls' => [], 'density' => 'comfortable']);
+        $resolver->setDefaults(['labels' => [], 'columns' => ['effectiveDate', 'kind', 'seconds', 'reason', 'createdAt'], 'actions' => ['add_adjustment', 'reversal'], 'action_urls' => [], 'dialog_urls' => [], 'density' => 'comfortable']);
         $resolver->setAllowedValues('density', self::DENSITIES);
         $resolver->setAllowedTypes('labels', 'array');
         $resolver->setAllowedTypes('columns', 'array');
         $resolver->setAllowedTypes('actions', 'array');
         $resolver->setAllowedTypes('action_urls', 'array');
-        /** @var array{labels: array<string, string>, columns: list<string>, actions: list<string>, action_urls: array<string, string>, density: string} $options */
+        $resolver->setAllowedTypes('dialog_urls', 'array');
+        /** @var array{labels: array<string, string>, columns: list<string>, actions: list<string>, action_urls: array<string, string>, dialog_urls: array<string, string>, density: string} $options */
         $options = $resolver->resolve($options);
 
         $canAdjust = $this->timesheets->accessGuard()->canAdjustBalance($viewer, $ownerId, $scopeKey);
@@ -209,22 +231,64 @@ final readonly class TimesheetViewBuilder
                 $reversed[$line->getReversesId()] = true;
             }
         }
-        $reversalUrl = $options['action_urls']['reversal'] ?? null;
-        $rows        = [];
+        $reversalUrl    = $options['action_urls']['reversal'] ?? null;
+        $reversalDialog = $options['dialog_urls']['reversal'] ?? null;
+        $rows           = [];
+        $inline         = false;
         foreach ($lines as $line) {
-            $reversible = $canAdjust && in_array('reversal', $options['actions'], true) && is_string($reversalUrl)
+            $reversible = $canAdjust && in_array('reversal', $options['actions'], true) && (is_string($reversalDialog) || is_string($reversalUrl))
                 && !isset($reversed[$line->getId()]) && $line->getKind() !== LedgerKind::Reversal && $line->getKind() !== LedgerKind::OvertimeRatified;
-            $rows[] = $line->toArray() + ['reversed' => isset($reversed[$line->getId()]), 'reversalForm' => $reversible ? $this->forms->ledgerForm($reversalUrl, $line->getId())->createView() : null];
+            // Since 1.39.0: with dialog_urls.reversal a link per row (the form is built when its dialog opens).
+            $opener = $reversible && is_string($reversalDialog) ? $this->withQuery($reversalDialog, 'line', $line->getId()) : null;
+            $form   = $reversible && $opener === null && is_string($reversalUrl) ? $this->forms->ledgerForm($reversalUrl, $line->getId())->createView() : null;
+            $inline = $inline || $form instanceof FormView;
+            $rows[] = $line->toArray() + ['reversed' => isset($reversed[$line->getId()]), 'reversalForm' => $form, 'reversalUrl' => $opener];
         }
-        $addUrl = $options['action_urls']['add_adjustment'] ?? null;
+        if ($inline) {
+            $this->deprecateInlineDialog('ledgerTable', 'reversal');
+        }
+        $addAllowed = $canAdjust && in_array('add_adjustment', $options['actions'], true);
+        $addDialog  = $options['dialog_urls']['add_adjustment'] ?? null;
+        $addUrl     = $options['action_urls']['add_adjustment'] ?? null;
+        $addOpener  = $addAllowed && is_string($addDialog) ? $addDialog : null;
+        $addForm    = $addAllowed && $addOpener === null && is_string($addUrl) ? $this->forms->ledgerForm($addUrl)->createView() : null;
+        if ($addForm instanceof FormView) {
+            $this->deprecateInlineDialog('ledgerTable', 'add_adjustment');
+        }
+        $lazy = $addOpener !== null || array_filter($rows, static fn (array $row): bool => $row['reversalUrl'] !== null) !== [];
 
         return [
-            'rows'    => $rows,
-            'columns' => $options['columns'],
-            'addForm' => $canAdjust && in_array('add_adjustment', $options['actions'], true) && is_string($addUrl) ? $this->forms->ledgerForm($addUrl)->createView() : null,
-            'labels'  => $options['labels'],
-            'density' => $options['density'],
+            'rows'     => $rows,
+            'columns'  => $options['columns'],
+            'addForm'  => $addForm,
+            'addUrl'   => $addOpener,
+            'dialogId' => $lazy ? 'time-track-ledger-dialog' : null,
+            'labels'   => $options['labels'],
+            'density'  => $options['density'],
         ];
+    }
+
+    /**
+     * Since 1.39.0: `$url` with `{<name>}` replaced by the value, else with `<name>=<value>` added to its query.
+     */
+    private function withQuery(string $url, string $name, string $value): string
+    {
+        $placeholder = '{' . $name . '}';
+        if (str_contains($url, $placeholder)) {
+            return str_replace($placeholder, rawurlencode($value), $url);
+        }
+        [$path, $fragment] = str_contains($url, '#') ? explode('#', $url, 2) : [$url, null];
+
+        return $path . (str_contains($path, '?') ? '&' : '?') . rawurlencode($name) . '=' . rawurlencode($value) . ($fragment === null ? '' : '#' . $fragment);
+    }
+
+    /**
+     * Since 1.39.0: the inline dialog forms (a form and a dialog body per action, rendered whether opened or not)
+     * break the on-demand dialog rule; 2.0 removes them.
+     */
+    private function deprecateInlineDialog(string $component, string $action): void
+    {
+        trigger_deprecation('nowo-tech/time-track-bundle', '1.39', sprintf('Rendering the "%s" dialog form of the TimeTrack %s inline (options.action_urls without options.dialog_urls.%s) is deprecated and 2.0 removes it: pass options.dialog_urls.%s, the URL of a page served by Nowo\\TimeTrackBundle\\Ui\\TimesheetDialogResponder, so the dialog loads its form on demand.', $action, $component, $action, $action));
     }
 
     /**

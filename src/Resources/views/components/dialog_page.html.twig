@@ -1,0 +1,21 @@
+{#
+  The full page of a TimeTrack dialog URL (since 1.39.0): what the opener link shows without JavaScript, and after a
+  failed load of the dialog. Same form as the fragment (dialog_form.html.twig) inside the host layout.
+  Variables: layout (host layout, default nowo_ui_layout.admin), title (translated), and the fragment's variables.
+#}
+{% extends layout|default(nowo_ui_layout.admin) %}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
+
+{% block nowo_ui_document_title %}{{ title }}{% endblock %}
+
+{% block nowo_ui_page_header %}
+    {{ include(nowo_ui_partial('page_header'), {title: title}) }}
+{% endblock %}
+
+{% block nowo_ui_content %}
+    <section class="{{ nowo_ui_class('card', 'time_track') }} nowo-time-track-dialog-page" data-testid="time-track-dialog-page">
+        <div class="{{ nowo_ui_class('card_body', 'time_track') }}">
+            {{ include('@NowoTimeTrackBundle/components/dialog_form.html.twig') }}
+        </div>
+    </section>
+{% endblock %}

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Fixed (Unreleased)](#fixed-unreleased)
+  - [Added (Unreleased)](#added-unreleased)
+  - [Deprecated (Unreleased)](#deprecated-unreleased)
 - [[1.38.0] - 2026-11-23](#1380---2026-11-23)
   - [Fixed](#fixed)
   - [Documentation](#documentation)
@@ -25,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Fixed](#fixed-2)
   - [Changed](#changed-1)
 - [[1.34.0] - 2026-11-20](#1340---2026-11-20)
-  - [Added (Unreleased)](#added-unreleased)
-  - [Fixed (Unreleased)](#fixed-unreleased)
+  - [Added (Unreleased)](#added-unreleased-1)
+  - [Fixed (Unreleased)](#fixed-unreleased-1)
 - [[1.33.0] - 2026-11-20](#1330---2026-11-20)
   - [Added (1.33.0)](#added-1330)
   - [Changed (1.33.0)](#changed-1330)
@@ -236,6 +239,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+### Fixed (Unreleased)
+
+- Dialogs load their content on demand (symfony-beacon rule 2026-11-23): `TimeTrack:LedgerTable` printed a UiKit
+  confirm dialog with the full reversal form (reason, date, CSRF token) for **every** ledger row, plus the adjustment
+  form, and `TimeTrack:TimesheetWeekGrid` printed the reject / reopen dialogs with their comment form, whether the
+  user opened them or not. With the new `options.dialog_urls` the components render a link per action and **one**
+  empty remote UiKit dialog per component (`remote_form_dialog`, `nowo_ui_remote_form_opener()`): no form and no
+  dialog body per row. Measured with 50 ledger rows: 198,725 bytes inline, 67,248 bytes on demand (51 forms and 51
+  dialogs before, 0 forms and 1 dialog after). The link is a real link to the host's dialog page, so it works without
+  JavaScript.
+
+### Added (Unreleased)
+
+- `options.dialog_urls` on `TimeTrack:LedgerTable` (`add_adjustment`, `reversal`: the line id is added as `line=<id>`,
+  or replaces a `{line}` placeholder) and `TimeTrack:TimesheetWeekGrid` (`reject`, `reopen`, `approve`: the timesheet
+  id as `timesheet=<id>` or `{timesheet}`): the GET URL of the host page that serves the dialog. The view models carry
+  `addUrl` / `reversalUrl` / `actions.*.url` and `dialogId` (null without dialog URLs).
+- `Nowo\TimeTrackBundle\Ui\TimesheetDialogResponder` (public service): one host route (GET + POST) per dialog hands
+  its request to `ledger()` or `decision()`. GET answers the form as the fragment for `X-Nowo-Dialog: 1` and as the
+  full page otherwise (`components/dialog_page.html.twig` in the host's `layout`); POST answers `422` + the form again
+  when invalid or when the ledger / service refuses the values, `409` + the form on a conflict (REQ-RUNTIME-003:
+  `conflict`, `stale`, `already_reversed`, `invalid_transition`, a locked period), `204` + `X-Nowo-Redirect` once saved
+  for a dialog request (`303` otherwise, through UiKit's `RemoteDialogResponder`). `forbidden` is a 403 and
+  `not_found` a 404. Templates `components/dialog_form.html.twig` (fragment: the first field gets `autofocus`, the
+  actions row moves into the dialog footer) and `components/dialog_page.html.twig`.
+- `TimesheetFormHandler::submitLedger()` / `submitDecision()`: `handleLedger()` / `handleDecision()` that return a
+  `Timesheet\TimesheetFormResult` (the form, the written line or timesheet, `csrfFailed`) instead of throwing
+  `invalid_request`, so an invalid form is re-rendered in place; the two old methods now delegate to them (same
+  behaviour). `ledgerDialogForm()` / `decisionDialogForm()` build a dialog's form only for whoever may post it:
+  `BalanceLedger::assertAddable()` and `TimesheetService::decisionTarget()` apply the post's own refusals (`forbidden`,
+  `not_found`, `not_reversible`, `already_reversed`; `not_found`, `invalid_transition`), read only.
+- Demo: `/team/ledger`, the hours balance of a fixture colleague the demo user reviews, with the add and reversal
+  dialogs on demand (`/team/ledger/adjust`, `/team/ledger/reverse?line=`), and Playwright e2e for them (fragment,
+  422 in place, 204 + redirect, the page without JavaScript).
+
+### Deprecated (Unreleased)
+
+- The inline dialog forms of the components: `action_urls.add_adjustment` / `action_urls.reversal` of
+  `TimeTrack:LedgerTable` and `action_urls.reject` / `action_urls.reopen` of `TimeTrack:TimesheetWeekGrid` without
+  the matching `dialog_urls` entry still print the form inside the page (1.37 behaviour) and now trigger a
+  deprecation; 2.0 removes the inline mode. Plain one-button actions (submit, withdraw, approve) are not dialogs and
+  are not deprecated. See UPGRADING.
 
 ## [1.38.0] - 2026-11-23
 
