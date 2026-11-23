@@ -6,9 +6,12 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
 use LogicException;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
@@ -94,6 +97,21 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
         self::assertStringContainsString('has no row yet (persisted but not flushed, or not saved at all). Flush your', $failure->getMessage());
         self::assertSame(0, (int) $host->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'), 'nothing written');
         self::assertTrue($host->getUnitOfWork()->isScheduledForInsert($unsaved), 'the application\'s scheduled insert stays');
+    }
+
+    public function testARowWrittenBesideTheUnitOfWorkRefusesAnUnsavedHostUser(): void
+    {
+        $host    = $this->entityManager();
+        $unsaved = new AppUser('unsaved-line@example.com', 'secret');
+        $host->persist($unsaved);
+        $line = new BalanceLedgerLine($unsaved, 'u-1', 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable(), null, 'x');
+
+        $failure = $this->failureOf(fn () => TimeTrackRows::insert($this->bundleEntityManager(), $line));
+
+        self::assertInstanceOf(LogicException::class, $failure);
+        self::assertStringContainsString('has no row yet (persisted but not flushed, or not saved at all). Flush your', $failure->getMessage());
+        self::assertSame(0, (int) $host->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_balance_ledger'), 'nothing written');
+        self::assertTrue($host->getUnitOfWork()->isScheduledForInsert($unsaved));
     }
 
     public function testATimeTrackRowLoadedByTheApplicationIsNeverInsertedTwice(): void
