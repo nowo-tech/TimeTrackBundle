@@ -364,14 +364,16 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         $this->writer()->upsert($this->user, $this->data('e-1'));
         $this->clearEntityManagers();
         $this->enforceForeignKeys();
-        $user                        = $this->managedUser();
-        $loaded                      = $this->reload('e-1');
+        $user = $this->managedUser();
+        // An entry the application's own manager loaded: the listener reads it again after the flush.
+        $loaded = $this->entityManager()->find(TimeEntry::class, $this->reload('e-1')->getId());
+        self::assertInstanceOf(TimeEntry::class, $loaded);
         $this->host()->removeOnFlush = $user;
 
         $this->entityManager()->flush();
 
         self::assertNotNull($this->entityManager()->find(AppUser::class, $user->getId()), 'Doctrine deleted nothing');
-        self::assertSame((string) $user->getId(), $loaded->getUserId(), 'a loaded entry is read again (TimeTrack\'s own reference to the same user)');
+        self::assertSame($user, $loaded->getUser(), 'a loaded entry is read again');
         self::assertNull($loaded->getPersonRef());
         $this->entityManager()->flush();
         $this->clearEntityManagers();

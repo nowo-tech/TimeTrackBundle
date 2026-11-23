@@ -39,8 +39,8 @@ None: both pages extend a scaffold.
 ## Per-page overrides
 
 - `nowo_time_track.web_ui.templates.<page>` (`index`, `reports`): a host template that extends
-  `@!NowoTimeTrackBundle/<template>` and overrides a data block (`nowo_ui_list_row`, `nowo_ui_list_after`, …). The
-  deprecated `templates.index` / `templates.reports` keys feed the same values until 2.0.
+  `@!NowoTimeTrackBundle/<template>` and overrides a data block (`nowo_ui_list_row`, `nowo_ui_list_after`, …). (The 1.x
+  `templates.index` / `templates.reports` keys are removed in 2.0.)
 - Prefer theming the UiKit slots (`nowo_ui_kit.theme`) and scaffolds once for every bundle. Record such overrides
   in the application's override inventory.
 
@@ -53,8 +53,6 @@ the freeze rule and the upgrade-safe alternatives are in [USAGE](USAGE.md#overri
 | --- | --- |
 | `time_track/index.html.twig` | Timer page (list scaffold) |
 | `time_track/reports.html.twig` | Reports page (list scaffold, `nowo_ui_list_row`) |
-| `layout.html.twig` | Deprecated 1.x default layout, kept as a shim for 1.x templates that extend it (maps `title`, `stylesheets`, `body`, `javascripts` into the UiKit admin layout); removed in 2.0 |
-| `_legacy_layout.html.twig` | Deprecated bridge for a 1.x host layout without the UiKit canonical blocks; removed in 2.0 |
 
 Renaming or removing a `<subpath>` or a data block listed here is a breaking change (see [UPGRADING](UPGRADING.md)).
 

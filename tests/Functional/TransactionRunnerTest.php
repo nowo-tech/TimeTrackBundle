@@ -9,10 +9,14 @@ use Doctrine\DBAL\Driver\AbstractException;
 use Doctrine\DBAL\Exception\DeadlockException;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
+use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Support\AttemptCounter;
+use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
 use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Nowo\TransactionContract\TransientStorageFailure;
 use RuntimeException;
@@ -72,6 +76,41 @@ final class TransactionRunnerTest extends FunctionalTestCase
         self::assertTrue($em->getUnitOfWork()->isScheduledForInsert($pending), 'the application\'s pending work stays pending');
         self::assertSame(0, (int) $em->getConnection()->fetchOne("SELECT COUNT(*) FROM app_user WHERE email = 'runner-pending@example.com'"));
         self::assertSame(1, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
+    }
+
+    public function testAFailedStatementsUnitForgetsOnlyTheTimeTrackRowsItTouched(): void
+    {
+        $em        = $this->bundleEntityManager();
+        $kept      = $this->entry('task-1');
+        $changed   = $this->entry('task-2');
+        $timesheet = TimesheetFixtures::open($this->user, 'org-a', '2026-W40');
+        $pointing  = new BalanceLedgerLine(null, '7', 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable(), null, 'x', $timesheet);
+        foreach ([$kept, $changed, $timesheet, $pointing] as $row) {
+            $em->persist($row);
+        }
+        $em->flush();
+        $added = $this->entry('task-3');
+
+        $failure = $this->failureOf(function () use ($em, $changed, $added, $timesheet): void {
+            $this->runner()->runStatements(static function () use ($em, $changed, $added, $timesheet): never {
+                $changed->markBillable(true);
+                $timesheet->applyLock(new DateTimeImmutable(), TimesheetLockReason::Manual);
+                $em->persist($added);
+
+                throw new RuntimeException('refused');
+            });
+        });
+        self::assertInstanceOf(RuntimeException::class, $failure);
+        self::assertSame('refused', $failure->getMessage());
+
+        self::assertTrue($em->isOpen());
+        self::assertTrue($this->entityManager()->contains($this->user), 'the application\'s entities stay managed');
+        self::assertTrue($em->contains($kept), 'a row the unit did not change stays managed');
+        self::assertFalse($em->contains($changed), 'a row the unit changed is forgotten');
+        self::assertFalse($em->contains($added), 'a row the unit added is forgotten');
+        self::assertFalse($em->contains($timesheet));
+        self::assertFalse($em->contains($pointing), 'a kept row that points at a forgotten one goes too');
+        self::assertSame(2, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'));
     }
 
     public function testAStatementsOnlyUnitNeverFlushesTheApplicationsPendingWork(): void

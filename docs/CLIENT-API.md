@@ -9,25 +9,12 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 ## Table of contents
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
-  - [Publishing only some routes (`client_api.routes.include`, 1.30)](#publishing-only-some-routes-client_apiroutesinclude-130)
-  - [Route table](#route-table)
-  - [Alias policy](#alias-policy)
-  - [Hosts must check](#hosts-must-check)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
 - [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
-  - [GET me: `monitoring`](#get-me-monitoring)
-  - [POST monitoring/acknowledge](#post-monitoringacknowledge)
-  - [Screenshot upload (two steps)](#screenshot-upload-two-steps)
-  - [POST monitoring/screenshots/discarded](#post-monitoringscreenshotsdiscarded)
-  - [DELETE monitoring/screenshots/{id}](#delete-monitoringscreenshotsid)
-  - [POST monitoring/activity](#post-monitoringactivity)
-  - [Client checklist](#client-checklist)
 - [Changes in 1.22 (leave, spec 204)](#changes-in-122-leave-spec-204)
 - [Changes in 1.21 (billable)](#changes-in-121-billable)
-  - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
 - [Changes in 1.19 (links.workingTime)](#changes-in-119-linksworkingtime)
 - [Changes in 1.14 (calendar suggestions, manual entries)](#changes-in-114-calendar-suggestions-manual-entries)
-  - [GET me/meetings (1.14)](#get-memeetings-114)
 - [Changes in 1.13 (working time, timesheets, task effort)](#changes-in-113-working-time-timesheets-task-effort)
 - [Notes](#notes)
 - [Changes in 1.11 (imported entries)](#changes-in-111-imported-entries)
@@ -38,21 +25,6 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Scopes](#scopes)
 - [Errors](#errors)
 - [Endpoints](#endpoints)
-  - [POST login](#post-login)
-  - [POST logout](#post-logout)
-  - [GET me](#get-me)
-  - [GET tasks](#get-tasks)
-  - [GET timer](#get-timer)
-  - [POST timer/start](#post-timerstart)
-  - [POST timer/stop](#post-timerstop)
-  - [POST timer/switch](#post-timerswitch)
-  - [POST timer/discard-idle](#post-timerdiscard-idle)
-  - [POST heartbeat (deprecated)](#post-heartbeat-deprecated)
-  - [GET entries](#get-entries)
-  - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
-  - [GET export](#get-export)
-  - [POST device/code](#post-devicecode)
-  - [POST device/token](#post-devicetoken)
 - [Device verification page](#device-verification-page)
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
@@ -86,7 +58,7 @@ lists the route **keys** it wants (the first column of the route table below):
 nowo_time_track:
     client_api:
         routes:
-            include: [login, logout, me, tasks, timer, timer_start, timer_stop, timer_switch, heartbeat, entries]
+            include: [login, logout, me, tasks, timer, timer_start, timer_stop, timer_switch, entries]
 ```
 
 The list applies to the unversioned paths and to the v1 twins alike. A route that is not listed **does not exist**: it
@@ -121,7 +93,6 @@ the container build with a `LogicException` naming the missing key:
 | `timer` | GET, OPTIONS | `/api/time-track/timer` `nowo_time_track_api_timer` | `/api/time-track/v1/timer` `nowo_time_track_api_v1_timer` |
 | `timer_start` | POST, OPTIONS | `/api/time-track/timer/start` `nowo_time_track_api_timer_start` | `/api/time-track/v1/timer/start` `nowo_time_track_api_v1_timer_start` |
 | `timer_stop` | POST, OPTIONS | `/api/time-track/timer/stop` `nowo_time_track_api_timer_stop` | `/api/time-track/v1/timer/stop` `nowo_time_track_api_v1_timer_stop` |
-| `heartbeat` | POST, OPTIONS | `/api/time-track/heartbeat` `nowo_time_track_api_heartbeat` | `/api/time-track/v1/heartbeat` `nowo_time_track_api_v1_heartbeat` |
 | `entries` | GET, OPTIONS | `/api/time-track/entries` `nowo_time_track_api_entries` | `/api/time-track/v1/entries` `nowo_time_track_api_v1_entries` |
 | `timer_switch` | POST, OPTIONS | `/api/time-track/timer/switch` `nowo_time_track_api_timer_switch` | `/api/time-track/v1/timer/switch` `nowo_time_track_api_v1_timer_switch` |
 | `timer_discard_idle` | POST, OPTIONS | `/api/time-track/timer/discard-idle` `nowo_time_track_api_timer_discard_idle` | `/api/time-track/v1/timer/discard-idle` `nowo_time_track_api_v1_timer_discard_idle` |
@@ -732,8 +703,7 @@ grant.
 | 401 | `invalid_token` | Missing, unknown, expired, revoked token, inactive credential or (since 1.29) an account refused by the user checker (`WWW-Authenticate: Bearer error="invalid_token"`) |
 | 403 | `insufficient_scope` | Token lacks the endpoint scope |
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |
-| 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
-| 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
+| 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle` without a running timer |
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
 | 409 | `overlap` | Since 1.14: `POST entries` / an accepted suggestion overlaps a live entry or the running timer |
 | 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
@@ -948,16 +918,16 @@ and a foreign task) → `404` without a timer → `400` when `taskId` is the run
 timer → `404` when a concurrent stop won → `409` when a concurrent start took the follow-up slot (entries kept). Both
 entries are written in one unit of work and each dispatches `nowo_time_track.timer.stop`.
 
-### POST heartbeat (deprecated)
+### POST heartbeat (removed in 2.0)
 
-Deprecated since 1.9, removed in 2.0 (`Deprecation: true` header). Scope `timer:write`. `isIdle` is ignored; answers
-`{"timer", "idleThresholdSeconds", "deprecated": true}` or `404`.
+Deprecated since 1.9 and removed in 2.0: the route no longer exists (`404`), and naming it in
+`client_api.routes.include` fails the container build. Clients answer idle time with `timer/discard-idle`.
 
 ### GET entries
 
 Scope `entries:read`. Own entries, newest first: `?from=&to=&limit=1..100&offset=` → `200 {"entries": [...], "limit",
-"offset"}`. `from` / `to`: RFC 3339 or `Y-m-d`, default the last 7 days, span capped at 366 days. The deprecated
-`userId` parameter keeps the 1.x team view through `TeamAccessGuard`.
+"offset"}`. `from` / `to`: RFC 3339 or `Y-m-d`, default the last 7 days, span capped at 366 days. Since 2.0 the
+1.x `userId` parameter (deprecated since 1.9) is ignored: the caller's own entries only.
 Each entry carries `billable` (`true`, `false`, `null`); change it with [PATCH entries/{id}](#patch-entriesid-121) (1.21).
 
 ### GET export
@@ -1035,6 +1005,6 @@ recorded time, so `endedAt` has no `max_backdate` bound. The overlap check cover
 
 The clients detect idle time locally and ask the user what to do with it, using `features.idle_check` and
 `limits.idle_check` of `GET me` (organisation settings: `client_api.idle_check.*` or the host's
-`IdleCheckSettingsProviderInterface`). **The server only ever receives the user's decision** through
+`IdleCheckSettingsPolicyInterface`). **The server only ever receives the user's decision** through
 `POST timer/discard-idle` (`keep`, `discard`, `split`, `reassign`). No activity signal, idle counter, input count or
-screen data is sent to the server or stored by it; the deprecated `heartbeat` ignores `isIdle`.
+screen data is sent to the server or stored by it (the 1.x `heartbeat`, removed in 2.0, ignored `isIdle`).

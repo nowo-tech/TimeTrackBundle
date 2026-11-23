@@ -9,7 +9,6 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Routes (REQ-SF-004)](#routes-req-sf-004)
 - [Reports (REQ-PERF-001)](#reports-req-perf-001)
 - [Web UI and templates (REQ-UI-001 / REQ-UI-003)](#web-ui-and-templates-req-ui-001--req-ui-003)
-  - [Deprecated `templates.*` keys (1.x, removed in 2.0)](#deprecated-templates-keys-1x-removed-in-20)
 - [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Client API 1.9](#client-api-19)
@@ -41,7 +40,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 | `user_mapping` | `relation` | Since 1.23.0 (REQ-ARCH-001 rule 2). `relation`: the bundle rows reference `user_class` through Doctrine relations (foreign keys to your users table), the 1.22 behaviour. `id`: they reference a bundle-owned row per user (`<table_prefix>host_users`: your user's id, at most 128 characters, and class), so `user_class` need not be a Doctrine entity of the bundle's entity manager. Ids compare byte for byte: NO PAD binary collation (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB) on the id and person reference columns, PHP re-checks, and ids with leading or trailing blanks or invisible characters are refused. See [UPGRADING](UPGRADING.md#user-reference-by-id-user_mapping-id) |
 | `database.mapping_type` | `attribute` | Since 1.23.0 (REQ-ARCH-001 rule 2): `xml` maps the bundle entities from the shipped XML (`src/Resources/config/doctrine`, plus `doctrine-host-users` with `user_mapping: id`), the same mapping as the attributes (checked by `XmlMappingParityTest`) |
 | `database.entity_manager` | `default` | Doctrine entity manager the bundle tables are mapped on and written through |
-| `database.private_entity_manager` | `false` | **`false` (unset included) is deprecated: one notice per container build since 1.33.0, plus the host-flush probe ([UPGRADING](UPGRADING.md#to-1330)); `true` is the only mode in 2.0.** Since 1.23.0 (REQ-ARCH-001 rule 6): `true` writes and reads the bundle rows through a **private** entity manager created on the connection and mapping of `database.entity_manager`, so the bundle never flushes, clears or closes that manager (yours). Same tables and connection: a transaction you open includes the bundle's rows (savepoints). Dropped and recreated at every request, Messenger message and outermost console command, and when a failed write closed it; with doctrine/dbal 4 also after a rollback undid its rows. `false` keeps the 1.22 behaviour (deprecated: the only mode in 2.0). See [UPGRADING](UPGRADING.md#private-entity-manager-databaseprivate_entity_manager) |
+| `database.private_entity_manager` | (removed) | **Removed in 2.0 (REQ-ARCH-001 rule 6): the private entity manager is the only mode.** The bundle writes and reads its rows through a **private** entity manager created on the connection and mapping of `database.entity_manager`, so it never flushes, clears or closes that manager (yours). Same tables and connection: a transaction you open includes the bundle's rows (savepoints). Dropped and recreated at every request, Messenger message and outermost console command, and when a failed write closed it; with doctrine/dbal 4 also after a rollback undid its rows. `true` is accepted as a deprecated no-op (removed in 3.0); `false` fails the container build. See [UPGRADING](UPGRADING.md#private-manager-only) |
 
 ## Routes (REQ-SF-004)
 
@@ -59,7 +58,7 @@ nowo_time_track:
 | `routes.index.path` / `.name` | `/tools/time-track` / `nowo_time_track_index` | Timer page (GET, POST) |
 | `routes.reports.path` / `.name` | `/tools/time-track/reports` / `nowo_time_track_reports` | Reports page (GET) |
 | `routes.device_verify.path` / `.name` | `/tools/time-track/device` / `nowo_time_track_device_verify` | Default device verification page (GET, POST; only when `client_api.device_flow.enabled` and `default_page`; session-authenticated, keep it behind the host firewall) |
-| `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `timer_switch`, `timer_discard_idle`, `heartbeat`, `entries`, `export`; `device_code`, `device_token` only with the device flow; only when `clients.enabled`) |
+| `clients.routes.<action>.path` / `.name` | `/api/time-track/...` / `nowo_time_track_api_<action>` | Client API (`login`, `logout`, `me`, `tasks`, `timer`, `timer_start`, `timer_stop`, `timer_switch`, `timer_discard_idle`, `entries`, `export`; `device_code`, `device_token` only with the device flow; only when `clients.enabled`) |
 | `client_api.prefix` | `/api` | Since 1.29: host API prefix of the **v1** client routes, `<route_prefix><prefix>/time-track/v1/<suffix>` named `nowo_time_track_api_v1_<key>` (one per client route above; the `clients.routes.*` options configure the unversioned routes only, which stay as permanent aliases). See [CLIENT-API](CLIENT-API.md#paths-and-versions-129) |
 | `client_api.routes.include` | `[]` | Since 1.30: client route keys the route import publishes (unversioned paths and v1 twins alike); `[]` = every client route. A route that is not listed does not exist (404 from the router). Unknown keys, and a list that leaves out a route another listed route needs (e.g. `login` without `logout`), fail the container build. See [CLIENT-API](CLIENT-API.md#publishing-only-some-routes-client_apiroutesinclude-130) |
 
@@ -136,7 +135,7 @@ The page contract is in [TEMPLATES](TEMPLATES.md).
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `web_ui.layout_template` | `null` | Layout of the pages. `null` = `nowo_ui_kit.layouts.admin` (set that once for every UiKit page of the host). A layout that renders the UiKit canonical blocks (`nowo_ui_page_header`, `nowo_ui_flashes`, `nowo_ui_content`, …) is used as is; a 1.x layout (`title`, `stylesheets`, `body`, `javascripts`) is wrapped in a deprecated bridge (removed in 2.0). |
+| `web_ui.layout_template` | `null` | Layout of the pages. `null` = `nowo_ui_kit.layouts.admin` (set that once for every UiKit page of the host). A layout that renders the UiKit canonical blocks (`nowo_ui_page_header`, `nowo_ui_flashes`, `nowo_ui_content`, …) is used as is; since 2.0 a layout without `nowo_ui_page_header` (a 1.x layout: `title`, `stylesheets`, `body`, `javascripts`) fails the page with a `LogicException` (the 1.x bridge is removed). |
 | `web_ui.templates.index` | `@NowoTimeTrackBundle/time_track/index.html.twig` | Timer page template (a host template extending `@!NowoTimeTrackBundle/time_track/index.html.twig`) |
 | `web_ui.templates.reports` | `@NowoTimeTrackBundle/time_track/reports.html.twig` | Reports page template |
 
@@ -164,20 +163,17 @@ One-file bridge onto the project shell (the UiKit `_bridge.html.twig` prints the
 {% block javascripts %}{{ parent() }}{{ block('nowo_ui_bridge_end') }}{% endblock %}
 ```
 
-### Deprecated `templates.*` keys (1.x, removed in 2.0)
+### Removed `templates.*` keys (2.0)
 
-Each key triggers a configuration deprecation and keeps working until 2.0:
+The 1.x `templates.*` keys (deprecated since 1.8) are removed in 2.0, with the Twig globals they fed
+(`nowo_time_track_layout`, `nowo_time_track_css_framework`) and the templates `@NowoTimeTrackBundle/layout.html.twig`
+and `_legacy_layout.html.twig`. Any `templates` key fails the container build:
 
-| Deprecated key | Replacement | 1.8 behaviour |
-|----------------|-------------|---------------|
-| `templates.layout` | `web_ui.layout_template` | Feeds `web_ui.layout_template` unless that is set. The 1.x default `@NowoTimeTrackBundle/layout.html.twig` maps to `null` (UiKit admin layout). A 1.x layout without the canonical blocks is wrapped in `_legacy_layout.html.twig`. Still exposed as Twig global `nowo_time_track_layout`. |
-| `templates.css_framework` | `nowo_ui_kit.css_framework` | Seeds `nowo_ui_kit.css_framework` / `icon_set` when the host does not set them; Twig global `nowo_time_track_css_framework`. |
-| `templates.index` / `templates.reports` | `web_ui.templates.index` / `.reports` | Feed `web_ui.templates.*` unless those are set. |
-
-| Twig global | Source |
-|-------------|--------|
-| `nowo_time_track_layout` | `templates.layout` (deprecated) |
-| `nowo_time_track_css_framework` | `templates.css_framework` (deprecated) |
+| Removed key | Use instead |
+|-------------|-------------|
+| `templates.layout` | `web_ui.layout_template` |
+| `templates.css_framework` | `nowo_ui_kit.css_framework` (unset: the bundle seeds `tabler` / `tabler-icons`) |
+| `templates.index` / `templates.reports` | `web_ui.templates.index` / `.reports` |
 
 ## FormKit profile (REQ-TWIG-005)
 
@@ -206,8 +202,8 @@ prepend its default. The stock profile adds no classes.
 | `clients.enabled` | `false` | Enable REST API routes |
 | `clients.token_ttl` | `86400` | Bearer token lifetime (seconds) |
 | `clients.idle_threshold_seconds` | `300` | Desktop idle threshold |
-| `clients.cors_allowed_origins` | `[]` | Exact CORS origins, merged with `client_api.allowed_origins`. `*` (any origin outside `prod`) is deprecated since 1.9. No `Access-Control-Allow-Credentials` is sent (Bearer auth) |
-| `clients.cors_allow_any_extension_origin` | `false` | **Deprecated since 1.9** (removed in 2.0): allow every `chrome-extension://` / `moz-extension://` origin. List the exact origins instead |
+| `clients.cors_allowed_origins` | `[]` | Exact CORS origins, merged with `client_api.allowed_origins`. `*` fails the container build since 2.0 (deprecated since 1.9). No `Access-Control-Allow-Credentials` is sent (Bearer auth) |
+| `clients.cors_allow_any_extension_origin` | (removed) | **Removed in 2.0** (deprecated since 1.9): `true` fails the container build, `false` is a deprecated no-op (removed in 3.0). List the exact origins in `client_api.allowed_origins` |
 | `clients.login_rate_limit.enabled` | `true` | Throttle failed `POST` logins |
 | `clients.login_rate_limit.cache_pool` | `cache.app` | PSR-6 pool shared by all workers (no atomic increment: put a proxy/firewall limit in front for hard guarantees) |
 | `clients.login_rate_limit.max_attempts` | `10` | Failed logins per IP + username within the interval |
@@ -222,7 +218,7 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | Option | Default | Description |
 |--------|---------|-------------|
 | `client_api.allowed_origins` | `[]` | Exact CORS origins (`chrome-extension://<id>`, `moz-extension://<uuid>`, `extension://<id>`); a value with `*` is rejected |
-| `client_api.allow_tauri_webview_origins` | `true` | Deprecated 1.x behaviour (removed in 2.0; since 1.33.0 unset or `true` triggers a notice when the client API is on): also allow `tauri://localhost`, `http(s)://tauri.localhost` (1.x desktop agent calling from its webview). The 1.9 desktop app sends no Origin |
+| `client_api.allow_tauri_webview_origins` | (removed) | **Removed in 2.0**: the Tauri webview origins of the 1.x desktop agent (`tauri://localhost`, `http(s)://tauri.localhost`) are never allowed. `true` fails the container build, `false` is a deprecated no-op (removed in 3.0). The 1.9+ desktop app sends no Origin |
 | `client_api.allow_metadata` | `false` | Accept free `metadata` on `timer/start` (otherwise `400 metadata_not_allowed`; clients send `source` + `note`) |
 | `client_api.settings_provider` | `null` | `ClientApiSettingsProviderInterface` (origins + rate limits read per request, e.g. from DB settings) |
 | `client_api.credential_state` | `null` | `ClientCredentialStateInterface`, checked on every request (default: always active) |
@@ -558,7 +554,7 @@ nowo_time_track:
 | `security.allow_unauthenticated` | `false` | DEV/DEMO only — wires AllowAll checker; production MUST keep `false` |
 | `security.admin_roles` | `[ROLE_ADMIN]` | Full report access via `TeamAccessGuard` |
 | `security.manager_can_view_entries` | `true` | Managers see team entries |
-| `security.manager_can_edit_entries` | `true` | **Deprecated since 1.5** — the bundle ships no entry edit route; only `TeamAccessGuard::canEditEntry()` (host code) reads it. Decide edit access in a `nowo_time_track.time_entry.access_check` listener instead |
+| `security.manager_can_edit_entries` | (removed) | **Removed in 2.0** (deprecated since 1.5): team managers may edit in `TeamAccessGuard::canEditEntry()` (host code; the bundle ships no entry edit route). Refuse them in a `nowo_time_track.time_entry.access_check` listener. `false` fails the container build, `true` is a deprecated no-op (removed in 3.0) |
 
 Manage UI requires `symfony/security-bundle` when `allow_unauthenticated` is `false` (compile-time `LogicException` otherwise).
 

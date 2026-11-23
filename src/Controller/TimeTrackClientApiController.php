@@ -172,7 +172,7 @@ final readonly class TimeTrackClientApiController
      * @param MeetingContext|null $meetings Meetings API (`me.features.meetings`, `me.meetings`, `me.links.calendars`, 1.14; null = off)
      * @param MonitoringContext|null $monitoring Activity monitoring (`me.features.monitoring`, `me.monitoring`, 1.26; null = off)
      */
-    // @phpstan-ignore constructor.unusedParameter
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
         private ClientAuthService $authService,
         private TimerService $timerService,

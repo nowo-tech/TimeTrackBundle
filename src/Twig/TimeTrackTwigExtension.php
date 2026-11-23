@@ -26,7 +26,7 @@ final class TimeTrackTwigExtension extends AbstractExtension
      * @param string $layoutTemplate @deprecated since 2.0, ignored (the `nowo_time_track_layout` global is removed); removed in 3.0
      * @param string $cssFramework @deprecated since 2.0, ignored (the `nowo_time_track_css_framework` global is removed); removed in 3.0
      */
-    // @phpstan-ignore constructor.unusedParameter
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
         string $layoutTemplate = '',
         string $cssFramework = '',

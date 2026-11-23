@@ -120,6 +120,17 @@ final class TimerServiceTest extends TestCase
         self::assertNull($this->service->heartbeat($this->user));
     }
 
+    public function testKeepAliveTouchesTheRunningTimerWithoutAnActivitySignal(): void
+    {
+        self::assertNull($this->service->keepAlive($this->user));
+        $this->service->start($this->user, 'task-1', ClientType::Web);
+
+        $timer = $this->service->keepAlive($this->user);
+
+        self::assertNotNull($timer);
+        self::assertArrayNotHasKey('isIdle', $timer->getMetadata() ?? []);
+    }
+
     public function testStartInvalidTaskThrows(): void
     {
         $this->expectException(InvalidArgumentException::class);

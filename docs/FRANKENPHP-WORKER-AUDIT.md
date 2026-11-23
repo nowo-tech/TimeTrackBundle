@@ -13,7 +13,8 @@
 - [Re-audit 1.37 (entry access by id)](#re-audit-137-entry-access-by-id)
 - [Re-audit 1.36 (entries without a task, Beacon spec 250)](#re-audit-136-entries-without-a-task-beacon-spec-250)
 - [Re-audit 1.35 (read and personal-data ports)](#re-audit-135-read-and-personal-data-ports)
-- [Re-audit 1.33 (host-flush probe)](#re-audit-133-host-flush-probe)
+- [Re-audit 2.0 (private entity manager only)](#re-audit-20-private-entity-manager-only)
+- [Re-audit 1.33 (host-flush probe, removed in 2.0)](#re-audit-133-host-flush-probe-removed-in-20)
 - [Re-audit 1.27 (load readiness, Beacon spec 239)](#re-audit-127-load-readiness-beacon-spec-239)
 - [Re-audit 1.26 (activity monitoring, spec 199)](#re-audit-126-activity-monitoring-spec-199)
 - [Re-audit 1.25 (host timer API and service accounts)](#re-audit-125-host-timer-api-and-service-accounts)
@@ -25,9 +26,6 @@
 - [Summary](#summary)
 - [Services reviewed](#services-reviewed)
 - [Findings](#findings)
-  - [W-01 — Relies on Doctrine's reset to clear the EntityManager between requests (Medium, scenario B only)](#w-01--relies-on-doctrines-reset-to-clear-the-entitymanager-between-requests-medium-scenario-b-only)
-  - [W-02 — Login rate limiter depends on a shared, bounded cache pool (Low)](#w-02--login-rate-limiter-depends-on-a-shared-bounded-cache-pool-low)
-  - [W-03 — Route loader keeps a `$loaded` flag (Info)](#w-03--route-loader-keeps-a-loaded-flag-info)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
 
@@ -68,7 +66,15 @@ Test: `HostReadPortsTestCase::testRepeatedCallsForTwoUsersInOneKernelKeepNoState
 users in one kernel, on the standard and the id / XML / private-manager host: results per user, memory growth under
 256 KB, empty identity map).
 
-## Re-audit 1.33 (host-flush probe)
+## Re-audit 2.0 (private entity manager only)
+
+Removed in 2.0: the 1.33 host-flush probe (`Doctrine\TimeTrackHostFlushProbe`) and the shared-manager paths of the
+transaction runner. New state: `TimeTrackEntityManager::$loaded`, a `WeakMap` of the TimeTrack rows any manager
+loaded (keyed by the object itself, so an entry disappears with its object; kept across boundaries on purpose: an
+instance kept from an earlier request is refused by `persist()` instead of being inserted again). No request data,
+user or tenant is kept by it.
+
+## Re-audit 1.33 (host-flush probe, removed in 2.0)
 
 Scope: `Doctrine\TimeTrackHostFlushProbe` (registered only with `database.private_entity_manager: false`).
 
@@ -244,10 +250,8 @@ the timesheets, audit rows and ledger lines it deleted or marked (`TimesheetPurg
 (for example `EntityManager::clear()` on `kernel.terminate`), or keep the services resetter. Otherwise a user loaded in
 an earlier request and deleted out of band since then still counts as known to the resolver until the manager is
 cleared; databases that enforce the foreign keys still refuse the write at flush. Memory is not the issue: the worker
-test below shows the hot path keeps no growth with the same people. By default the bundle writes through
-`database.entity_manager` (the host's `default` manager unless configured otherwise), so this host duty applies
-(REQ-RUNTIME-002 rule 7). Since 1.23.0, `database.private_entity_manager: true` makes the bundle use its own private
-manager, which it drops itself at every boundary (see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager)):
+test below shows the hot path keeps no growth with the same people. Since 2.0 the bundle always uses its own private
+manager (opt-in since 1.23.0), which it drops itself at every boundary (see [Re-audit 1.23](#re-audit-123-req-arch-001-ports-and-private-entity-manager)):
 the host duty then covers only the host's own managers.
 
 ### Locks, handles, HTTP

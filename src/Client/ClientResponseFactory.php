@@ -39,7 +39,7 @@ final readonly class ClientResponseFactory
      * @param bool $allowAnyExtensionOrigin @deprecated since 2.0, ignored (`clients.cors_allow_any_extension_origin` is removed); removed in 3.0
      * @param ClientApiSettingsProviderInterface|null $settingsProvider instance settings (allowed origins); null = the constructor list only
      */
-    // @phpstan-ignore constructor.unusedParameter
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
         private array $allowedOrigins,
         string $kernelEnvironment = 'prod',

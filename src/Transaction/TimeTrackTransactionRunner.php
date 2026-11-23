@@ -70,7 +70,7 @@ final readonly class TimeTrackTransactionRunner implements TransactionRunnerInte
      * @param LoggerInterface|null $logger @deprecated since 2.0, ignored (it only warned about the removed shared manager); removed in 3.0
      * @param object|null $hostFlushProbe @deprecated since 2.0, ignored (the 1.33 host-flush probe of the removed shared manager); removed in 3.0
      */
-    // @phpstan-ignore constructor.unusedParameter
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $registry = null,

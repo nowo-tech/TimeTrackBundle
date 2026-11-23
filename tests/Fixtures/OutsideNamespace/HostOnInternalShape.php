@@ -24,6 +24,6 @@ final class HostOnInternalShape implements MeetingProviderInterface
 
     public function stateFor(UserInterface $user): MeetingSyncState
     {
-        return new MeetingSyncState(MeetingSyncStatus::Connected, null);
+        return new MeetingSyncState(MeetingSyncStatus::Connected);
     }
 }

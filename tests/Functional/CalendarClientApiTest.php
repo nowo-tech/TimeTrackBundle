@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
+use Nowo\TimeTrackBundle\Calendar\CalendarSuggestionService;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarSuggestion;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -345,6 +346,25 @@ class CalendarClientApiTest extends FunctionalTestCase
             $this->api('POST', '/api/time-track/entries', $body, $token, ['HTTP_IDEMPOTENCY_KEY' => 'flood-' . $i]);
         }
         self::assertResponseStatusCodeSame(429);
+    }
+
+    /**
+     * GG-L1 (private manager only since 2.0): a suggestion this request loaded as pending that a concurrent request
+     * decided meanwhile is re-read under the lock and refused; nothing is written.
+     */
+    public function testASuggestionDecidedMeanwhileIsReReadAndRefused(): void
+    {
+        $connection = $this->connect();
+        $private    = $this->bundleEntityManager();
+        $suggestion = new CalendarSuggestion($connection, $this->managedUser(), hash('sha256', 'ref-race'), null, null, 'task-1', CalendarMatchKind::Key, $this->day(3, 8), $this->day(3, 9), $this->day(3, 8)->modify('+14 days'), new DateTimeImmutable());
+        $private->persist($suggestion);
+        $private->flush();
+        $this->entityManager()->getConnection()->executeStatement("UPDATE time_track_calendar_suggestions SET status = 'accepted' WHERE id = ?", [$suggestion->getId()]);
+        $service = self::getContainer()->get(CalendarSuggestionService::class);
+        self::assertInstanceOf(CalendarSuggestionService::class, $service);
+
+        self::assertSame([['id' => $suggestion->getId(), 'error' => 'not_found']], $service->accept($this->user, [$suggestion->getId()], null));
+        self::assertSame(0, (int) $this->entityManager()->getConnection()->fetchOne("SELECT COUNT(*) FROM time_track_entries WHERE source = 'calendar'"));
     }
 
     private function connect(): CalendarConnection

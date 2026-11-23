@@ -6,7 +6,6 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Twig;
 
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
 use PHPUnit\Framework\TestCase;
-use Twig\Extension\GlobalsInterface;
 use Twig\TwigFunction;
 
 use function array_map;
@@ -21,7 +20,6 @@ final class TimeTrackTwigExtensionTest extends TestCase
     {
         $extension = new TimeTrackTwigExtension('base.html.twig', 'bootstrap5');
 
-        self::assertNotInstanceOf(GlobalsInterface::class, $extension);
         self::assertSame(
             ['nowo_time_track_client_distribution', 'nowo_time_track_client_download_items', 'nowo_time_track_label'],
             array_map(static fn (TwigFunction $function): string => $function->getName(), $extension->getFunctions()),

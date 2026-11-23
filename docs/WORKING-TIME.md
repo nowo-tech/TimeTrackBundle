@@ -178,7 +178,7 @@ An action appears only when the guard allows it for the viewer **and** the host 
 reopen, adjustment and reversal load on demand: with `dialog_urls` each is a link to a host page (GET + POST, handed to
 `Ui\TimesheetDialogResponder`) whose form is fetched into one remote UiKit dialog when it opens (fragment for
 `X-Nowo-Dialog: 1`, the full page without JavaScript; 422 in place, 409 on a conflict, 204 + `X-Nowo-Redirect` once
-saved). Without `dialog_urls` (deprecated) they still print a UiKit 2.29 dialog with the form inside the page. Approvers see task titles masked when they cannot see the task, and notes only with
+saved). Since 2.0 `dialog_urls` is required for them: `action_urls` of a dialog action without its `dialog_urls` entry fails the render with a `LogicException` (the 1.x inline dialogs, deprecated in 1.39, are removed). Approvers see task titles masked when they cannot see the task, and notes only with
 `timesheets.approver_sees_notes: true`; imported entries of a task the owner can no longer see are masked for everybody,
 the owner included. The grid and the ledger table refuse (`TimesheetException('not_found')`) a viewer who may not see the
 owner's data in that scope, and the ledger table drops lines of another owner or scope — still, load the data through

@@ -13,6 +13,7 @@
         }
     ],
     "require": {
+        "php": ">=8.4,<8.6",
         "doctrine/doctrine-bundle": "^2.10 || ^3.0",
         "doctrine/doctrine-fixtures-bundle": "^4.0",
         "doctrine/doctrine-migrations-bundle": "^3.3 || ^4.0",
@@ -20,11 +21,10 @@
         "doctrine/orm": "^3.0",
         "nowo-tech/form-kit-bundle": "^2.23",
         "nowo-tech/tag-input-bundle": "^1.0",
-        "nowo-tech/task-board-bundle": "^1.0",
+        "nowo-tech/task-board-bundle": "^2.32",
         "nowo-tech/time-track-bundle": "*",
         "nowo-tech/tiptap-editor-bundle": "^1.0",
         "nowo-tech/ui-kit-bundle": "^2.60",
-        "php": ">=8.4,<8.6",
         "symfony/asset": "8.1.*",
         "symfony/console": "8.1.*",
         "symfony/dotenv": "8.1.*",

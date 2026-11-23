@@ -32,8 +32,8 @@
   (`?page=`, `reports.page_size` entries per page — see [CONFIGURATION.md](CONFIGURATION.md#reports-req-perf-001))
 - **Pages (REQ-UI-003):** both pages extend the UiKit list scaffold and render inside `nowo_ui_kit.layouts.admin`
   (or `web_ui.layout_template`); classes come from the UiKit theme (`nowo_ui_kit.css_framework`). View models, data
-  blocks and per-page overrides: [TEMPLATES.md](TEMPLATES.md); layout options and the deprecated 1.x `templates.*`
-  keys: [CONFIGURATION.md](CONFIGURATION.md#web-ui-and-templates-req-ui-001--req-ui-003).
+  blocks and per-page overrides: [TEMPLATES.md](TEMPLATES.md); layout options and the 1.x `templates.*` keys removed in
+  2.0: [CONFIGURATION.md](CONFIGURATION.md#web-ui-and-templates-req-ui-001--req-ui-003).
 - **Override Twig (escape hatch):** `templates/bundles/NowoTimeTrackBundle/` — prefer the UiKit layout / theme and
   `web_ui.templates.*` (one data block) for upgrades.
 - **Forms (REQ-TWIG-005):** the start/stop buttons are Symfony Forms (`Nowo\TimeTrackBundle\Form\TimerActionType`, flat field names `_token` / `action` / `task_id`, CSRF id `nowo_time_track_manage`). The controller always passes `stop_form` and `start_forms` (keyed by task id) to `time_track/index.html.twig`. Render them with `form_start`, the child loop and `form_end`; hosts that override the page and demos must not reintroduce raw `<form>` / `<input>` markup:
@@ -86,8 +86,6 @@ re-apply only surgical customisations if still needed. Diff your copy against
 | --- | --- |
 | `time_track/index.html.twig` | Timer page (UiKit list scaffold, `page` view model; 1.x variables `active_timer`, `tasks`, `stop_form`, `start_forms`) |
 | `time_track/reports.html.twig` | Reports page (UiKit list scaffold, `page` view model, data block `nowo_ui_list_row`; 1.x variables `entries`, `entry_page`, `from`, `to`) |
-| `layout.html.twig` | Deprecated (1.8, removed in 2.0): 1.x default layout, kept as a shim for 1.x templates that extend `nowo_time_track_layout` |
-| `_legacy_layout.html.twig` | Deprecated (1.8, removed in 2.0): bridge for a 1.x host layout without the UiKit canonical blocks |
 
 Renaming or removing a `<subpath>` or a published block is a breaking change (see [UPGRADING](UPGRADING.md)).
 
@@ -129,7 +127,6 @@ Full reference with request / response examples: [CLIENT-API](CLIENT-API.md).
 | POST | `/api/time-track/timer/stop` | `timer:write` | `{note?}` |
 | POST | `/api/time-track/timer/switch` | `timer:write` | `{taskId, note?}`: stop + start |
 | POST | `/api/time-track/timer/discard-idle` | `timer:write` | `{from, to, action: keep\|discard\|split}` |
-| POST | `/api/time-track/heartbeat` | `timer:write` | Deprecated (removed in 2.0); `isIdle` ignored |
 | GET | `/api/time-track/entries` | `entries:read` | Own entries `?from=&to=&limit=1..100&offset=` |
 | GET | `/api/time-track/export` | `entries:read` | Own data `?from=&to=&format=csv\|json` |
 | POST | `/api/time-track/device/code` | — | Device flow start (with `device_flow.enabled`) |
@@ -667,8 +664,7 @@ $entryAccess->canViewEntry(TimeTrackUserRef::ofId(User::class, $id, '', $roles),
   checked by its id with the reference's role names, and your team / scope ports (`TeamDirectoryInterface`,
   `TimesheetScopePolicyInterface`) receive that reference (no user object). A reference whose object has another id
   than the reference (`getId()`, byte for byte) is refused.
-- Deprecated object ports (`TeamContextProviderInterface`, `TimesheetScopeProviderInterface`) and listeners of
-  `TimeEntryAccessCheckEvent` may receive an internal `UserInterface` that carries only the id and the role names (no
+- Listeners of `TimeEntryAccessCheckEvent` may receive an internal `UserInterface` that carries only the id and the role names (no
   login, no other data, not your class). Resolve it by `getId()` only, never by its identifier or login, and answer
   `[]` / `false` for a user object of a class you do not know.
 - Build a role-carrying reference (`TimeTrackUserRef::ofId(…, $roles)`) from your current data at check time; never
@@ -1497,7 +1493,8 @@ Tasks, teams, tenants, approvers, working calendars and meetings stay in your ap
 only through ports. Since 1.23.0 every port has a **framework-free twin** (REQ-ARCH-001 rule 3): it takes and returns
 only bundle value objects — the user is a `ValueObject\TimeTrackUserRef` (class, id string, identifier, role names;
 the object itself through `user()`), entities become snapshots (`Dto\TimeEntryView`, `ValueObject\CalendarConnectionRef`).
-Implement the twin and set the same option; the deprecated port keeps working until 2.0.
+Implement the twin and set the same option; since 2.0 the twins are the only host port interfaces (the 1.x ones are
+removed, see [UPGRADING](UPGRADING.md#removed)).
 
 #### Building a `TimeTrackUserRef` from a Symfony user (since 1.24.0)
 
@@ -1519,7 +1516,7 @@ final readonly class MyTaskDirectory
 }
 ```
 
-| Twin (1.23, implement this) | Deprecated port | Config key |
+| Port (1.23 twin, implement this) | 1.x interface (removed in 2.0) | Config key |
 |---|---|---|
 | `Integration\TaskDirectoryInterface` (+ `BatchTaskDirectoryInterface`) | `TaskProviderInterface` (+ `BatchTaskProviderInterface`) | `task_provider` |
 | `Integration\TeamDirectoryInterface` | `TeamContextProviderInterface` | `team_context_provider` |
@@ -1537,9 +1534,8 @@ final readonly class MyTaskDirectory
 | `Security\TimeTrackAccessCheckerInterface`, `WorkingTime\OvertimePolicyInterface`, `Integration\TimeEntryBillableDefaultProviderInterface` | — | already framework-free |
 | `Monitoring\MonitoringPolicySourceInterface`, `MonitoringEvidenceStoreInterface`, `MonitoringAcknowledgementStoreInterface`, `MonitoringUploadSignerInterface` (1.26) | — | `client_api.monitoring.*` (framework-free from the start; see [Activity monitoring ports](#activity-monitoring-ports-126)) |
 
-A service implementing the deprecated interface is asked through it (also when it implements the twin too); one
-implementing only the twin is asked through an internal gate. A configured service implementing neither fails the
-build (`TimeTrackPortsPass`). Implement them as infrastructure adapters that call your application services:
+A service is asked through an internal gate of its twin. A configured service that does not implement the twin fails the
+build (`TimeTrackPortsPass`), and so does any service still on a removed 1.x interface (`RemovedPortsPass`). Implement them as infrastructure adapters that call your application services:
 
 ```php
 final readonly class TaskDirectoryAdapter implements TaskDirectoryInterface
@@ -1583,8 +1579,8 @@ security user or the `TimeEntry` entity also expose scalar accessors, so a liste
 
 Since 1.23.0 the events that carry the Symfony user also give its framework-free reference: `userRef()` on
 `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent` and `TaskEffortAccessCheckEvent`,
-`viewerRef()` on `TimesheetAccessCheckEvent` and `TimeEntryListQueryEvent`. `getUser()` / `getViewer()` are deprecated
-and removed in 2.0.
+`viewerRef()` on `TimesheetAccessCheckEvent` and `TimeEntryListQueryEvent`. `getUser()` / `getViewer()` (deprecated
+since 1.23.0) are removed in 2.0.
 
 `getUserId()` is the **acting** user on the timer, idle and access-check events, and the entry **owner** on
 `TimeEntryCreatedEvent` / `TimeEntryImportedEvent` (`getEntryView()->userId` is always the owner): a listener that
@@ -1605,7 +1601,7 @@ public function onTimerStop(TimerStopEvent $event): void
 
 ### The user
 
-- Since 1.23.0, with `user_mapping: id` and `database.mapping_type: xml` (and `database.private_entity_manager: true`),
+- Since 1.23.0, with `user_mapping: id` and `database.mapping_type: xml` (and the private entity manager, the only mode since 2.0),
   `user_class` is just your security user class with a `getId()`: the bundle stores its class and id in its own
   `<table_prefix>host_users` rows, with no relation to your users table (`DddIdHostTest`). The points below describe the
   default `relation` mapping.
@@ -1662,24 +1658,20 @@ services:
 
 ### Units of work and events
 
-- By default the bundle's services write through `database.entity_manager` (default: your `default` entity manager),
-  one flush per call: call them **outside** your own unit of work (or after your own flush), since a service call
-  flushes whatever else is pending in that entity manager.
-- Since 1.23.0, `database.private_entity_manager: true` (recommended for DDD hosts; the only mode in 2.0) makes the
-  bundle write and read its rows through a private entity manager on the same connection and mapping: it never flushes,
-  clears or closes yours, your transaction includes its rows (savepoints), and it is dropped at every request, message
-  and command boundary. See [CONFIGURATION](CONFIGURATION.md) and [UPGRADING](UPGRADING.md#private-entity-manager-databaseprivate_entity_manager).
+- The bundle writes and reads its rows through a private entity manager on the connection and mapping of
+  `database.entity_manager` (opt-in since 1.23.0, the only mode since 2.0): it never flushes, clears or closes yours,
+  your transaction includes its rows (savepoints), and it is dropped at every request, message and command boundary.
+  Flush your own pending changes yourself, and change TimeTrack rows through the bundle's services. See
+  [CONFIGURATION](CONFIGURATION.md) and [UPGRADING](UPGRADING.md#private-manager-only).
 - `TimeTrackEvents` fire after the bundle's own flush or transaction. When you wrap a call in an outer transaction of
   your own, "after the bundle's flush" is not "after your commit": dispatch your domain events after your commit.
 
 ### Known limitations
 
-Since 1.23.0 REQ-ARCH-001 is met through opt-in paths (the defaults keep the 1.22 behaviour):
+Since 2.0 REQ-ARCH-001 is met by default (opt-in paths since 1.23.0):
 
-- Rules 1, 3, 4: framework-free twins of every host port and user references on the events (the deprecated ones go in
-  2.0).
-- Rule 6: `database.private_entity_manager: true` (the only mode in 2.0); by default the services flush
-  `database.entity_manager`, as in 1.22.
+- Rules 1, 3, 4: framework-free host ports (the 1.23 twins, the only ones since 2.0) and user references on the events.
+- Rule 6: the private entity manager is the only mode; the bundle never flushes your entity manager.
 - Rule 2: `database.mapping_type: xml` and `user_mapping: id` (your users need not be Doctrine entities of the bundle's
   entity manager). The bundle never asks your entities to extend a class or use a trait.
 - Services (`TimerService`, `TimesheetService`, …) are final classes without interfaces.

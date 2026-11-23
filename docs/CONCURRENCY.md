@@ -99,7 +99,6 @@ subscriber no longer maps them to 409 (1.27.0 to 1.30.0 answered a unique violat
 | `nowo_transaction_doctrine.conflict_response.status` | `409` | `409` or `503`. 503 keeps the 1.29 answer for every bundle that reads the shared policy, TimeTrack included; the codes stay. |
 | `nowo_transaction_doctrine.conflict_response.retry_after` | `1` | Seconds in `Retry-After` when the runner gives no hint. |
 | `nowo_transaction_doctrine.controller_routes` | none | Listing TimeTrack routes makes the library's responder answer them (the bundle's formatter keeps the client API body, plus `code`). |
-| `nowo_time_track.database.private_entity_manager` | `false` | `true` (recommended under load): the bundle never touches your entity manager. |
 | `nowo_time_track.timesheets.audit_blocked_edits` | `false` | `edit_blocked` rows, written under the timesheet lock since 1.31.0. |
 | `doctrine.dbal.use_savepoints: true` | — | Required with DBAL 3. |
 | `innodb_lock_wait_timeout` / `lock_timeout` | server | 5–10 s for web workers. |
@@ -112,9 +111,8 @@ to `TransactionRunnerInterface`.
 - FrankenPHP worker mode with the kernel not reset between requests: the runner, the subscriber, the formatter and the
   stores are stateless; nothing of a request survives in a service ([HIGH-LOAD, Workers](HIGH-LOAD.md#workers)).
 - Standard and DDD hosts: both are tested; with `user_mapping: id` the owner lock is on the bundle's host-user row.
-- Private entity manager: the bundle reads and writes through its own manager; a failed unit replaces only that one.
-  Shared manager (default until 2.0): a failed unit detaches only the TimeTrack rows it touched; a manager a failed
-  flush closed stays closed for the request and is replaced at the next boundary.
+- Private entity manager (the only mode since 2.0): the bundle reads and writes through its own manager; a failed unit
+  replaces only that one. Your entity manager is never flushed, cleared, closed or reset by the bundle.
 
 ## Tests and CI
 

@@ -15,8 +15,10 @@ use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\TaskAccessPolicyGate;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
+use Nowo\TimeTrackBundle\Security\TaskAccessPolicyInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -29,8 +31,8 @@ use function array_map;
  *
  * The host authenticates the principal and decides whether it may use the timer at all; it passes the account as a
  * {@see TimeTrackUserRef} carrying its security user object ({@see TimeTrackUserRefFactory}).
- * The bundle then checks the task through the configured {@see TaskAccessCheckerInterface} (`client_api.task_access_checker`,
- * or its framework-free twin `TaskAccessPolicyInterface`) **and** the task provider, and then the period lock, exactly as
+ * The bundle then checks the task through the configured {@see TaskAccessPolicyInterface} (`client_api.task_access_checker`)
+ * **and** the task provider, and then the period lock, exactly as
  * the client API does for `POST timer/start`. The app-password client API is unchanged.
  *
  * - One running timer per account. {@see self::start()} on an account whose timer runs stops that timer first and
@@ -44,11 +46,16 @@ use function array_map;
  */
 final readonly class HostTimerApi
 {
+    private TaskAccessCheckerInterface $taskAccess;
+
     /**
-     * Receives the timer use cases and the task access checker of the API (the same service the client API asks).
+     * Receives the timer use cases and the task access checker of the API (the same service the client API asks). Since
+     * 2.0 (planned in 1.25, audit PA) it also takes a {@see TaskAccessPolicyInterface} directly (the only host interface
+     * of the port); the container passes the bundle's own slot.
      */
-    public function __construct(private TimerService $timers, private TaskAccessCheckerInterface $taskAccess)
+    public function __construct(private TimerService $timers, TaskAccessPolicyInterface|TaskAccessCheckerInterface $taskAccess)
     {
+        $this->taskAccess = $taskAccess instanceof TaskAccessPolicyInterface ? new TaskAccessPolicyGate($taskAccess) : $taskAccess;
     }
 
     /**

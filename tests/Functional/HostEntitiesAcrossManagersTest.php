@@ -78,6 +78,23 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
         self::assertTrue($host->getUnitOfWork()->isScheduledForInsert($unsaved), 'the application\'s scheduled insert stays');
     }
 
+    public function testATimeTrackRowPointingAtAnUnsavedHostUserIsRefusedBeforeAnythingIsWritten(): void
+    {
+        $host    = $this->entityManager();
+        $private = $this->bundleEntityManager();
+        $unsaved = new AppUser('unsaved-row@example.com', 'secret');
+        $host->persist($unsaved);
+        $start = new DateTimeImmutable('2026-10-05 09:00:00');
+        $private->persist(new TimeEntry($unsaved, 'task-1', 'T', null, $start, $start->modify('+1 hour'), 3600, TimeEntrySource::Web));
+
+        $failure = $this->failureOf(static fn () => $private->flush());
+
+        self::assertInstanceOf(LogicException::class, $failure);
+        self::assertStringContainsString('has no row yet (persisted but not flushed, or not saved at all). Flush your', $failure->getMessage());
+        self::assertSame(0, (int) $host->getConnection()->fetchOne('SELECT COUNT(*) FROM time_track_entries'), 'nothing written');
+        self::assertTrue($host->getUnitOfWork()->isScheduledForInsert($unsaved), 'the application\'s scheduled insert stays');
+    }
+
     public function testATimeTrackRowLoadedByTheApplicationIsNeverInsertedTwice(): void
     {
         $host  = $this->entityManager();
@@ -110,7 +127,7 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
         $timer = $this->timers()->start($this->user, 'task-1', ClientType::Web);
         $entry = $this->timers()->stop($this->user);
         self::assertInstanceOf(TimeEntry::class, $entry);
-        self::assertNotNull($timer->getId());
+        self::assertFalse($host->contains($timer));
 
         $reference = $host->getReference(TimeEntry::class, $entry->getId());
         self::assertInstanceOf(TimeEntry::class, $reference);
@@ -123,9 +140,9 @@ final class HostEntitiesAcrossManagersTest extends FunctionalTestCase
 
     public function testATimeTrackWriteNeverFlushesClearsOrDetachesTheApplicationsManager(): void
     {
-        $host = $this->entityManager();
-        (new ReflectionProperty(AppUser::class, 'email'))->setValue($this->user, 'pending-change@example.com');
+        $host  = $this->entityManager();
         $other = $this->createUser('other@example.com');
+        (new ReflectionProperty(AppUser::class, 'email'))->setValue($this->user, 'pending-change@example.com');
 
         $this->timers()->start($this->user, 'task-1', ClientType::Web);
         $this->timers()->stop($this->user);

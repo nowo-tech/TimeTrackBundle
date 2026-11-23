@@ -23,6 +23,7 @@ use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Security\TaskAccessPolicyInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
@@ -274,6 +275,17 @@ final class HostTimerApiTest extends TestCase
         $service->start($this->agent, 'task-2', ClientType::Web);
         self::assertNotNull($service->stopForUserDeletion($this->agent));
         self::assertNull($service->getActive($this->agent));
+    }
+
+    public function testATaskAccessPolicyIsAskedThroughItsGate(): void
+    {
+        // 2.0: HostTimerApi also takes the framework-free TaskAccessPolicyInterface (the only host interface of the port).
+        $policy = $this->createMock(TaskAccessPolicyInterface::class);
+        $policy->expects(self::once())->method('mayTrack')->with(self::isInstanceOf(TimeTrackUserRef::class), 'task-1')->willReturn(false);
+        $api = new HostTimerApi($this->service(new InMemoryActiveTimerRepository()), $policy);
+
+        $this->expectException(TaskNotTrackableException::class);
+        $api->start($this->ref($this->person), 'task-1', null, 'api');
     }
 
     public function testAReferenceWithoutTheSecurityUserIsRefused(): void

@@ -4,9 +4,10 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    # 1.x: the maintenance branch of the 1.x line after 2.0.0 (security fixes for 6 months).
+    branches: [main, master, 1.x]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 1.x]
 
 # Superseded PR runs are cancelled. Push runs (main/master) get their own group (run_id), so a main run is never
 # cancelled, not even while pending: tag_when_green.sh needs a completed run on every release commit.
@@ -199,8 +200,9 @@ jobs:
 
   functional-databases:
     # Since 1.13: the whole functional suite (old and new tests) also runs on MySQL 8 and PostgreSQL 16.
-    # Since 1.23.0: each database also with `database.private_entity_manager: true` (the tests that assume one shared
-    # entity manager, group `shared-entity-manager`, are left out of those runs).
+    # Since 2.0 the private entity manager is the only mode: every cell runs it. The "- private entity manager" cells
+    # (1.23.0-1.x: the opt-in) are kept until the branch protection drops their required contexts; they run the same
+    # suite.
     name: Functional suite - ${{ matrix.database }}${{ matrix.private == '1' && ' - private entity manager' || '' }}${{ matrix.mapping == 'xml' && ' - XML mapping' || '' }}
     runs-on: ubuntu-latest
     needs: changes
@@ -320,13 +322,12 @@ jobs:
         env:
           SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
           TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
-          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: ${{ matrix.private }}
           TIME_TRACK_TEST_MAPPING_TYPE: ${{ matrix.mapping }}
-        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage ${{ matrix.private == '1' && '--exclude-group shared-entity-manager' || '' }}
+        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage
 
   functional-private-entity-manager:
-    # Since 1.23.0: the whole functional suite on SQLite with `database.private_entity_manager: true`, and with the
-    # shipped XML mapping (REQ-ARCH-001 rules 2 and 6).
+    # Since 1.23.0: the whole functional suite on SQLite with the private entity manager (the only mode since 2.0; the
+    # cell keeps its required context), and with the shipped XML mapping (REQ-ARCH-001 rules 2 and 6).
     name: Functional suite - SQLite - ${{ matrix.variant }}
     runs-on: ubuntu-latest
     needs: changes
@@ -371,9 +372,8 @@ jobs:
         if: env.HEAVY == 'true'
         env:
           SYMFONY_DEPRECATIONS_HELPER: 'max[direct]=0'
-          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: ${{ matrix.private }}
           TIME_TRACK_TEST_MAPPING_TYPE: ${{ matrix.mapping }}
-        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage ${{ matrix.private == '1' && '--exclude-group shared-entity-manager' || '' }}
+        run: php -d memory_limit=1G vendor/bin/phpunit --testsuite functional --no-coverage
 
   # 1.27.0 (Beacon spec 239): lock waits and concurrent processes on real servers (tests/Database, run with
   # fail-on-skipped), then the deterministic race replays and the runner tests on the same server, with doctrine/dbal 4
@@ -472,18 +472,7 @@ jobs:
           TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
         run: >-
           php -d memory_limit=1G vendor/bin/phpunit --no-coverage
-          --filter 'LoadReadiness|AuditQo|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest|HostFlushProbe'
-          tests/Functional
-
-      - name: The same with the private entity manager
-        if: env.HEAVY == 'true'
-        timeout-minutes: 10
-        env:
-          TIME_TRACK_TEST_DATABASE_URL: ${{ matrix.url }}
-          TIME_TRACK_TEST_PRIVATE_ENTITY_MANAGER: '1'
-        run: >-
-          php -d memory_limit=1G vendor/bin/phpunit --no-coverage --exclude-group shared-entity-manager
-          --filter 'LoadReadiness|AuditQo|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest|HostFlushProbe'
+          --filter 'LoadReadiness|TransactionRunner|TimeTrackRows|ImportedEntriesTest|EntriesIdempotencyRaceTest|BalanceLedgerChainTest|HostTimerApiDatabaseTest|DeviceFlowTest|HostEntitiesAcrossManagers|PrivateEntityManager'
           tests/Functional
 
   rollback-clients:
