@@ -16,6 +16,7 @@ change based on feedback and maintainer capacity.
   - [Later](#later)
   - [Considering](#considering)
 - [Non-goals](#non-goals)
+- [Requested for CrmKit (Beacon spec 254, 2026-11-23)](#requested-for-crmkit-beacon-spec-254-2026-11-23)
 
 ---
 
@@ -186,3 +187,19 @@ the worker sees it first, and nothing is a score. Productivity scoring and keyst
 
 - Productivity scoring and covert monitoring. Activity monitoring is off unless your organisation enables it with a
   recorded DPIA; you see it first.
+
+## Requested for CrmKit (Beacon spec 254, 2026-11-23)
+
+Beacon spec 254 "CRM HubSpot parity" (owner decision D-20261123-11) and the owner's reuse rule of 2026-11-23 ("if a
+nowo bundle already does, or nearly does, a CRM capability, use it or extend it") send these pieces here instead of
+building CRM-only copies in CrmKitBundle. Each piece is opt-in, generic (no CRM dependency) and gets its own contract
+revision before it is built. Versions are planned next minors and move if this bundle releases something else first.
+Plan and reuse matrix: [CrmKitBundle docs/ROADMAP.md](https://github.com/nowo-tech/CrmKitBundle/blob/main/docs/ROADMAP.md#reuse-matrix).
+
+| Version | Piece | Used by |
+| --- | --- | --- |
+| 1.40.0 | **Extra OAuth scopes**: the Google / Microsoft OAuth helpers (`CalendarOAuthClients`; Google's scopes are a constant today) accept configurable extra scopes, so one consent per person covers the calendar and the mailbox; tokens stay host-held | CrmKit B through MailKit 2.5 / 2.6 (Q-254-15, open) |
+| 1.41.0 | **Busy-window reader**: free / busy for a future window (start and end only, never titles or attendees), next to the read-only past-event readers (Google free/busy, Graph getSchedule; scopes settled in the contract revision) | CrmKit I booking links |
+
+Reused as they are: the read-only calendar readers and the meeting read model (Outlook / Google meetings on a CRM
+record's timeline through the host).
