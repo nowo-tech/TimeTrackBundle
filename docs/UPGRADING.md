@@ -212,7 +212,9 @@ for a decorator of a removed id: decorate the service you configured, or impleme
 `ValueObject\TimeTrackUserRef` (class, id, identifier, roles; your object through `user()`): compare users with
 `isSameUserAs()`, and build references with `Port\TimeTrackUserRefFactory`. The bundle's own defaults implement
 internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`): they are not ports, and a class of yours on one of them
-is refused like any other class that does not implement the twin.
+is refused like any other class that does not implement the twin. Code that injected a port by its 1.x id (for example
+`Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface`) injects the twin id instead
+(`Timesheet\TimesheetScopePolicyInterface`): the configured service is registered, public, under it.
 
 **Constructor arguments kept, ignored** (deprecated, removed in 3.0): `$hostFlushProbe` of `TimeTrackTransactionRunner`
 and of the Doctrine stores, the third argument of `RecoveringFlusher::flush()`, `$logger` of

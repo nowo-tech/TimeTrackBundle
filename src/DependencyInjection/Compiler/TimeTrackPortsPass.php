@@ -96,11 +96,13 @@ final class TimeTrackPortsPass implements CompilerPassInterface
         [$internal, $twin, $gate] = Ports::PORTS[$name];
         $target                   = $this->resolve($container, $slot);
         $class                    = $this->classOf($container, $target);
-        if ($class !== null && !is_a($class, $twin, true)) {
-            if (is_a($class, $internal, true) && Ports::isBundleClass($class)) {
-                return; // One of the bundle's own defaults.
-            }
+        if ($class !== null && is_a($class, $internal, true) && Ports::isBundleClass($class)) {
+            // One of the bundle's own defaults: asked as it is; its twin id too when it implements the twin.
+            $this->exposeTwin($container, $twin, $class, $target);
 
+            return;
+        }
+        if ($class !== null && !is_a($class, $twin, true)) {
             throw new LogicException(sprintf('nowo_time_track: the service "%s" (%s) of %s must implement "%s" (since 2.0 the only host interface of this port; see UPGRADING "To 2.0.0").', $target, $class, $option, $twin));
         }
 
@@ -119,6 +121,25 @@ final class TimeTrackPortsPass implements CompilerPassInterface
         }
         $container->setDefinition($gateId, $definition);
         $container->setAlias($slot, $gateId)->setPublic(false);
+        if ($class !== null) {
+            $this->exposeTwin($container, $twin, $class, $target);
+        }
+    }
+
+    /**
+     * Since 2.0: the configured service of a port is also available under its framework-free interface id (the 1.23
+     * twin), public, so another bundle (TaskBoard's timesheet scope bridge) injects the same service by that id instead
+     * of the removed 1.x id. Never overrides an id the application defined itself.
+     *
+     * @param class-string $twin
+     * @param class-string $class the class of the configured service, known to implement the twin
+     */
+    private function exposeTwin(ContainerBuilder $container, string $twin, string $class, string $target): void
+    {
+        if (!is_a($class, $twin, true) || $container->hasAlias($twin) || $container->hasDefinition($twin)) {
+            return;
+        }
+        $container->setAlias($twin, $target)->setPublic(true);
     }
 
     /**

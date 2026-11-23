@@ -124,6 +124,10 @@ See [UPGRADING](UPGRADING.md#unreleased).
   another manager loaded too (ZAR-4).
 - UiKit seeding: without `nowo_ui_kit.css_framework` / `icon_set` the bundle still seeds `tabler` / `tabler-icons`
   (the 1.x default); the removed `templates.css_framework` no longer chooses the seed.
+- The configured service of each host port is also registered, public, under its framework-free interface id (the
+  1.23 twin, e.g. `Timesheet\TimesheetScopePolicyInterface`) when it implements it and the application did not define
+  that id itself, so another bundle (TaskBoard's timesheet scope bridge) injects it there instead of the removed 1.x id.
+  The default `SingleScopeProvider` implements `TimesheetScopePolicyInterface` too.
 - The bundle's own default port services (stub task provider, single scope, Doctrine user reference resolver, ...)
   implement internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`, `@internal`); a host service is asked only
   through the 1.23 twin of its port.
