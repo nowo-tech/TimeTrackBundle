@@ -198,7 +198,7 @@ Plan and reuse matrix: [CrmKitBundle docs/ROADMAP.md](https://github.com/nowo-te
 
 | Version | Piece | Used by |
 | --- | --- | --- |
-| 1.40.0 | **Extra OAuth scopes**: the Google / Microsoft OAuth helpers (`CalendarOAuthClients`; Google's scopes are a constant today) accept configurable extra scopes, so one consent per person covers the calendar and the mailbox; tokens stay host-held | CrmKit B through MailKit 2.5 / 2.6 (Q-254-15, open) |
+| 1.40.0 | **Extra mail scopes on the PKCE helpers**: the Google / Microsoft OAuth helpers (`CalendarOAuthClients`; Google's scopes are a constant today) accept configurable extra scopes (Graph mail, Gmail), so one consent per person and provider covers the calendar and the mailbox. Tokens stay host-held: the host keeps one connection per person and provider, encrypted with DoctrineEncrypt, and hands MailKit the access token through MailKit's token port; MailKit has no OAuth flow of its own (Q-254-15, Decision 2026-11-23: (b)) | CrmKit B through MailKit 2.5 / 2.6 |
 | 1.41.0 | **Busy-window reader**: free / busy for a future window (start and end only, never titles or attendees), next to the read-only past-event readers (Google free/busy, Graph getSchedule; scopes settled in the contract revision) | CrmKit I booking links |
 
 Reused as they are: the read-only calendar readers and the meeting read model (Outlook / Google meetings on a CRM
