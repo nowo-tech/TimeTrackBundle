@@ -1,6 +1,7 @@
 demo:
   nav:
     timesheet: "Timesheet"
+    team_ledger: "Team ledger"
   timesheet:
     current: "This week"
     flash:

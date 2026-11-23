@@ -2,7 +2,8 @@
   TimeTrack:TimesheetWeekGrid (since 1.13, contract §16a). Variable: view (TimesheetViewBuilder::weekGrid()):
   dates, rows [{taskId, title|null (masked), imported, days{date: seconds}, total, notes, withoutTask}], daily, total,
   expected / diff per date (null = hidden or no balance), status, locked, lockReason, decisionComment, legalRecord,
-  unassigned (owner only), actions {name: {form, dialog}}, labels, density, readOnly.
+  unassigned (owner only), actions {name: {form, dialog, url}}, dialogId, labels, density, readOnly. Since 1.38.0 an
+  action with a url (options.dialog_urls: reject, reopen, approve) is a link loaded on demand into one remote dialog.
   1.36.0: withoutTask rows (entries without a task, task id '') show reports.no_task.
   Labels: view.labels.<slot> overrides the translation key (title, task, total, expected, diff, legal_notice, …).
 #}
@@ -62,8 +63,14 @@
     {% if view.actions is not empty %}
         <footer class="{{ nowo_ui_class('card_footer', _b) }}" data-testid="time-track-week-actions">
             {% for name, action in view.actions %}
-                {{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: action.form, label: (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans, dialog: action.dialog, dialog_id: 'time-track-' ~ name ~ '-' ~ view.id, title: ('timesheet.dialog.' ~ name ~ '_title')|trans, primary: name in ['submit', 'approve']}) }}
+                {% if action.url ?? null %}
+                    {#- Since 1.38.0 (options.dialog_urls): a link to the host's dialog page, loaded on demand. -#}
+                    <a href="{{ action.url }}" class="{{ nowo_ui_class(name in ['submit', 'approve'] ? 'btn_primary' : 'btn_secondary', _b) }}" data-testid="time-track-{{ name }}-{{ view.id }}"{{ nowo_ui_html_attrs(nowo_ui_remote_form_opener(view.dialogId, ('timesheet.dialog.' ~ name ~ '_title')|trans, false, action.url)) }}>{{ (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans }}</a>
+                {% else %}
+                    {{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: action.form, label: (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans, dialog: action.dialog, dialog_id: 'time-track-' ~ name ~ '-' ~ view.id, title: ('timesheet.dialog.' ~ name ~ '_title')|trans, primary: name in ['submit', 'approve']}) }}
+                {% endif %}
             {% endfor %}
         </footer>
     {% endif %}
+    {% if view.dialogId ?? null %}{{ include(nowo_ui_partial('remote_form_dialog'), {id: view.dialogId, size: 'md', bundle: _b}) }}{% endif %}
 </section>

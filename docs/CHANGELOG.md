@@ -232,6 +232,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dialogs load their content on demand (symfony-beacon rule 2026-11-23): `TimeTrack:LedgerTable` printed a UiKit
+  confirm dialog with the full reversal form (reason, date, CSRF token) for **every** ledger row, plus the adjustment
+  form, and `TimeTrack:TimesheetWeekGrid` printed the reject / reopen dialogs with their comment form, whether the
+  user opened them or not. With the new `options.dialog_urls` the components render a link per action and **one**
+  empty remote UiKit dialog per component (`remote_form_dialog`, `nowo_ui_remote_form_opener()`): no form and no
+  dialog body per row. Measured with 50 ledger rows: 198,657 bytes inline, 67,248 bytes on demand (51 forms and 51
+  dialogs before, 0 forms and 1 dialog after). The link is a real link to the host's dialog page, so it works without
+  JavaScript.
+
 - REQ-SEC-006: with `user_mapping: id` the bundle's exact-key declaration (`TimeTrackExactKeyColumns`) now also declares
   the identity columns it already collates: `<prefix>_host_users.id` and the `user_id` of the entries, active timers,
   client tokens, device codes, timesheets, balance ledger, calendar connections, calendar suggestions and calendar
@@ -239,6 +248,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it). They were binary but neither declared nor listed as deliberately not declared. They are inactive with
   `user_mapping: relation`, and the `time_track_monitoring_*` `user_id` columns stay undeclared. A unit test now
   cross-checks the declaration against the listener's reference fields and the entities' `user` associations.
+
+### Deprecated
+
+- The inline dialog forms of the components: `action_urls.add_adjustment` / `action_urls.reversal` of
+  `TimeTrack:LedgerTable` and `action_urls.reject` / `action_urls.reopen` of `TimeTrack:TimesheetWeekGrid` without
+  the matching `dialog_urls` entry still print the form inside the page (1.37 behaviour) and now trigger a
+  deprecation; 2.0 removes the inline mode. Plain one-button actions (submit, withdraw, approve) are not dialogs and
+  are not deprecated. See UPGRADING.
 
 ### Documentation
 
@@ -249,6 +266,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI: new `release-gates` job runs the four release gates (`make rector-dry`, `validate-phpdoc`, `validate-translations`, `check-twig-extra`) in full mode, so a gate failure shows on the PR instead of at release time (CI only, no change to shipped code).
 ### Added
 
+- `options.dialog_urls` on `TimeTrack:LedgerTable` (`add_adjustment`, `reversal`: the line id is added as `line=<id>`,
+  or replaces a `{line}` placeholder) and `TimeTrack:TimesheetWeekGrid` (`reject`, `reopen`, `approve`: the timesheet
+  id as `timesheet=<id>` or `{timesheet}`): the GET URL of the host page that serves the dialog. The view models carry
+  `addUrl` / `reversalUrl` / `actions.*.url` and `dialogId` (null without dialog URLs).
+- `Nowo\TimeTrackBundle\Ui\TimesheetDialogResponder` (public service): one host route (GET + POST) per dialog hands
+  its request to `ledger()` or `decision()`. GET answers the form as the fragment for `X-Nowo-Dialog: 1` and as the
+  full page otherwise (`components/dialog_page.html.twig` in the host's `layout`); POST answers `422` + the form again
+  when invalid or when the ledger / service refuses the values, `409` + the form on a conflict (REQ-RUNTIME-003:
+  `conflict`, `stale`, `already_reversed`, `invalid_transition`, a locked period), `204` + `X-Nowo-Redirect` once saved
+  for a dialog request (`303` otherwise, through UiKit's `RemoteDialogResponder`). `forbidden` is a 403 and
+  `not_found` a 404. Templates `components/dialog_form.html.twig` (fragment: the first field gets `autofocus`, the
+  actions row moves into the dialog footer) and `components/dialog_page.html.twig`.
+- `TimesheetFormHandler::submitLedger()` / `submitDecision()`: `handleLedger()` / `handleDecision()` that return a
+  `Timesheet\TimesheetFormResult` (the form, the written line or timesheet, `csrfFailed`) instead of throwing
+  `invalid_request`, so an invalid form is re-rendered in place; the two old methods now delegate to them (same
+  behaviour). `ledgerDialogForm()` / `decisionDialogForm()` build a dialog's form only for whoever may post it:
+  `BalanceLedger::assertAddable()` and `TimesheetService::decisionTarget()` apply the post's own refusals (`forbidden`,
+  `not_found`, `not_reversible`, `already_reversed`; `not_found`, `invalid_transition`), read only.
+- Demo: `/team/ledger`, the hours balance of a fixture colleague the demo user reviews, with the add and reversal
+  dialogs on demand (`/team/ledger/adjust`, `/team/ledger/reverse?line=`), and Playwright e2e for them (fragment,
+  422 in place, 204 + redirect, the page without JavaScript).
 - REQ-SEC-006: the bundle now declares its own identity / access-key columns, so the knowledge of which columns are
   exact keys lives in the bundle that owns the tables instead of in every host.
   `Nowo\TimeTrackBundle\Doctrine\TimeTrackExactKeyColumns` implements

@@ -4,6 +4,7 @@
 
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
+  - [Dialogs of the timesheet components load on demand](#dialogs-of-the-timesheet-components-load-on-demand)
   - [The bundle declares its own identity / access-key columns (REQ-SEC-006)](#the-bundle-declares-its-own-identity--access-key-columns-req-sec-006)
 - [To 1.37.0](#to-1370)
 - [To 1.36.0](#to-1360)
@@ -117,6 +118,7 @@ deprecation log is free of `nowo-tech/time-track-bundle` notices on the last 1.x
 | `"*"` in `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true` (the 1.x default) | removed: exact origins only | 1.33 (container build, client API on) |
 | `clients.cors_allow_any_extension_origin`, the `templates.*` keys, `security.manager_can_edit_entries` | removed | when set (1.5 / 1.8 / 1.9) |
 | `@NowoTimeTrackBundle/layout.html.twig`, `_legacy_layout.html.twig` | removed: the UiKit layout | 1.33 / 1.8 (when rendered) |
+| Inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` (`action_urls` without `dialog_urls`) | removed: pass `dialog_urls` (pages served by `TimesheetDialogResponder`) | 1.38 (when rendered) |
 
 The installed-client API aliases stay in 2.0: they are not deprecated.
 
@@ -124,6 +126,36 @@ The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and 
 minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
+
+### Dialogs of the timesheet components load on demand
+
+Nothing breaks: a host that passes only `action_urls` keeps the 1.37 markup, with a deprecation notice when an inline
+dialog form is rendered (the ledger adjustment and reversal, the week grid's reject and reopen). To load the dialogs
+on demand (no form and no dialog body per row), give each dialog a host route that serves it, GET and POST, and pass
+its URL as `dialog_urls`:
+
+```php
+#[Route('/team/{id}/ledger/reverse', name: 'app_ledger_reverse', methods: ['GET', 'POST'])]
+public function reverse(Request $request, string $id, TimesheetDialogResponder $dialogs): Response
+{
+    // Your own lookup and permission check of the owner, as for the ledger page itself.
+    return $dialogs->ledger($request, $this->getUser(), $owner, $scopeKey, $this->generateUrl('app_ledger', ['id' => $id]), $request->query->getString('line'), ['layout' => 'base.html.twig']);
+}
+```
+
+```twig
+{{ nowo_time_track_component('TimeTrack:LedgerTable', {lines: lines, viewer: app.user, owner_id: ownerId, scope_key: scope, options: {
+    dialog_urls: {add_adjustment: path('app_ledger_adjust', {id: id}), reversal: path('app_ledger_reverse', {id: id})},
+}}) }}
+```
+
+`decision($request, $actor, 'reject', $request->query->getString('timesheet'), $successUrl)` serves the week grid's
+reject / reopen (`dialog_urls.reject`, `dialog_urls.reopen`). The responder applies the action's own access decision,
+answers the fragment for `X-Nowo-Dialog: 1` and the full page otherwise, `422` in place, `409` on a conflict and
+`204` + `X-Nowo-Redirect` once saved. The page needs UiKit's `js/nowo-ui-dialog.js` (loaded by the UiKit document);
+without JavaScript the links open the full page. `action_urls` for those actions is no longer needed. Template
+overrides: none; a host that themed `components/_action.html.twig` for these dialogs should theme
+`components/dialog_form.html.twig` instead.
 
 ### The bundle declares its own identity / access-key columns (REQ-SEC-006)
 

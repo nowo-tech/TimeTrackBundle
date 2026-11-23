@@ -167,6 +167,7 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
 use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
 use Nowo\TimeTrackBundle\Twig\TimeTrackTwigExtension;
+use Nowo\TimeTrackBundle\Ui\TimesheetDialogResponder;
 use Nowo\TimeTrackBundle\Ui\TimesheetViewBuilder;
 use Nowo\TimeTrackBundle\UserRef\HostUserRows;
 use Nowo\TimeTrackBundle\UserRef\UserMapping;
@@ -180,6 +181,7 @@ use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
 use Nowo\TransactionDoctrine\HostFlushProbe;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponseFormatterInterface;
+use Nowo\UiKitBundle\Dialog\RemoteDialogResponder;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
@@ -1297,6 +1299,15 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$taskAccess'        => new Reference(TaskAccessCheckerInterface::class),
                 '$approverSeesNotes' => $timesheets['approver_sees_notes'],
                 '$timerService'      => new Reference(TimerService::class),
+            ]));
+        // Since 1.38.0: the host pages behind the components' dialog URLs (dialogs load their form on demand).
+        $container->setDefinition(TimesheetDialogResponder::class, (new Definition(TimesheetDialogResponder::class))
+            ->setPublic(true)
+            ->setArguments([
+                '$forms'      => new Reference(TimesheetFormHandler::class),
+                '$twig'       => new Reference('twig', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$translator' => new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$dialogs'    => new Reference(RemoteDialogResponder::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ]));
 
         $container->getDefinition(TimesheetsPurgeCommand::class)

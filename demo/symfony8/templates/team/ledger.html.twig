@@ -1,0 +1,21 @@
+{#
+  TimeTrack 1.38 showcase: a colleague's hours balance ledger. The add / reverse actions are links to their dialog pages,
+  loaded on demand into one remote dialog (options.dialog_urls): the page renders no form and no dialog body per row.
+#}
+{% extends 'base.html.twig' %}
+
+{% block nowo_ui_document_title %}Team ledger — Symfony 8{% endblock %}
+
+{% block nowo_ui_page_header %}
+    {{ include(nowo_ui_partial('page_header'), {title: 'Hours balance of ' ~ colleague.email}) }}
+{% endblock %}
+
+{% block nowo_ui_content %}
+    {% embed '@NowoUiKit/demo_platform/_section.html.twig' with {title: 'Balance ledger', kind: 'table', testid: 'demo-team-ledger', lines: lines, ownerId: ownerId, scope: scope} %}
+        {% block section_body %}
+            {{ nowo_time_track_component('TimeTrack:LedgerTable', {lines: lines, viewer: app.user, owner_id: ownerId, scope_key: scope, options: {
+                dialog_urls: {add_adjustment: path('app_team_ledger_adjust'), reversal: path('app_team_ledger_reverse')},
+            }}) }}
+        {% endblock %}
+    {% endembed %}
+{% endblock %}

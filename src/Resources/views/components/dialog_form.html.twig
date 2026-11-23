@@ -1,0 +1,29 @@
+{#
+  One TimeTrack dialog form (since 1.38.0): the fragment a remote UiKit dialog loads on demand (`X-Nowo-Dialog: 1`), and
+  the body of the full page that the same URL serves without it (dialog_page.html.twig). Rendered by
+  Nowo\TimeTrackBundle\Ui\TimesheetDialogResponder. The first visible field gets the focus (autofocus); the actions
+  row moves into the dialog footer (data-nowo-ui-dialog-actions): Cancel closes the dialog, or links back on the page.
+  Variables: form (FormView), form_id, testid, submit_label (translated), error (translated text or null),
+  cancel_url (page mode), danger (bool: the submit is destructive).
+#}
+{% trans_default_domain 'NowoTimeTrackBundle' %}
+{% set _b = 'time_track' %}
+{% set _dialog = nowo_ui_dialog_request() %}
+{% set _first = form.children|filter(c => 'hidden' not in c.vars.block_prefixes)|keys|first %}
+<div class="nowo-time-track-dialog-form" data-testid="{{ testid }}">
+    {{ form_start(form, {attr: {id: form_id, 'data-testid': testid ~ '-form'}}) }}
+        {% if error %}<p class="{{ nowo_ui_class('flash_error', _b) }}" role="alert" data-testid="time-track-dialog-error">{{ error }}</p>{% endif %}
+        {{ form_errors(form) }}
+        {% for name, child in form.children %}
+            {{ form_row(child, name == _first ? {attr: child.vars.attr|merge({autofocus: 'autofocus'})} : {}) }}
+        {% endfor %}
+        <div class="nowo-ui-form__actions" data-nowo-ui-dialog-actions>
+            {% if _dialog %}
+                <button type="button" class="{{ nowo_ui_class('btn_secondary', _b) }}" data-nowo-ui-dialog-close>{{ 'timesheet.dialog.cancel'|trans }}</button>
+            {% elseif cancel_url|default(null) %}
+                <a class="{{ nowo_ui_class('btn_secondary', _b) }}" href="{{ cancel_url }}">{{ 'timesheet.dialog.cancel'|trans }}</a>
+            {% endif %}
+            <button type="submit" class="{{ nowo_ui_class(danger|default(false) ? 'btn_danger' : 'btn_primary', _b) }}" data-testid="{{ testid }}-submit">{{ submit_label }}</button>
+        </div>
+    {{ form_end(form, {render_rest: false}) }}
+</div>
