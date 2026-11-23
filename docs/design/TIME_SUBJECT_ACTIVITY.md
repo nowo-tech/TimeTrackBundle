@@ -450,7 +450,7 @@ entry's own visibility is still decided by `TimeEntryAccess`, unchanged). Same p
 
 ## 9. Client API (desktop and extension)
 
-Contract bump to **v0.5** (additive; old clients keep working because every new field is optional and a task-less
+Contract addition **v0.4** after v0.3.1 + timetrack-next v1.1 (additive; old clients keep working because every new field is optional and a task-less
 `timer/start` was not allowed before).
 
 | Endpoint | Scope | Change |
@@ -837,7 +837,7 @@ Single minor **2.1.0**, after 2.0.0 is tagged, in this order (each a PR):
 2. Schema: entity / timer columns, exact-key declaration, `docs/sql/2.1.0/*`, check command.
 3. Write paths (§7) + events; `TimeEntryRecord::version()`; correction patch.
 4. Query filters, `TimeEntryTotalsQueryInterface`, label resolver, masking on bundle surfaces, CSV, GDPR.
-5. Client API v0.5 (endpoints, errors, rate limit, idempotency hash), `docs/CLIENT-API.md`, `docs/UPGRADING.md`
+5. Client API v0.4 (endpoints, errors, rate limit, idempotency hash), `docs/CLIENT-API.md`, `docs/UPGRADING.md`
    "To 2.1.0", `docs/CONCURRENCY.md` rows of §13.
 
 Tests (in addition to the house gates):
