@@ -4,6 +4,10 @@
 
 - [Preparing for 2.0](#preparing-for-20)
 - [Unreleased](#unreleased)
+- [To 1.41.0](#to-1410)
+  - [Window titles are never collected (D4)](#window-titles-are-never-collected-d4)
+  - [Team views: project aggregates unless billing evidence (D9)](#team-views-project-aggregates-unless-billing-evidence-d9)
+  - [Breaks and clock-out stop collection (D11)](#breaks-and-clock-out-stop-collection-d11)
 - [To 1.40.1](#to-1401)
 - [To 1.40.0](#to-1400)
   - [Stop writing TimeTrack rows with your entity manager](#stop-writing-timetrack-rows-with-your-entity-manager)
@@ -132,6 +136,14 @@ The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and 
 minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
+
+## To 1.41.0
+
+From **1.40.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
 
 Target **1.41.0** (minor). From **1.40.x**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
 migration change. Only hosts with activity monitoring (`client_api.monitoring`) have anything to do; the owner decisions

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.41.0] - 2026-11-24](#1410---2026-11-24)
   - [Added (1.41.0)](#added-1410)
   - [Changed (1.41.0)](#changed-1410)
   - [Deprecated (1.41.0)](#deprecated-1410)
@@ -252,9 +253,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-11-24
+
 Activity monitoring privacy decisions D4, D9 and D11 (owner, 2026-11-24, TimeTrack Desktop monitoring study §9).
 Contract §TT-MON v1.1, additive on the unversioned and the `v1` client paths. Upgrade notes:
-[UPGRADING](UPGRADING.md#unreleased).
+[UPGRADING](UPGRADING.md#to-1410).
 
 ### Added (1.41.0)
 
@@ -2524,7 +2527,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.41.0...HEAD
+[1.41.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.1...v1.41.0
 [1.40.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.0...v1.40.1
 [1.40.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.38.0...v1.39.0
