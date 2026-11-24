@@ -9,12 +9,15 @@ declare(strict_types=1);
 use PhpCsFixer\Config;
 use PhpCsFixer\Finder;
 use PhpCsFixer\Runner\Parallel\ParallelConfig;
+use Symfony\Component\Finder\SplFileInfo;
 
 return (new Config())
     ->setParallelConfig(new ParallelConfig(2))
     ->setRiskyAllowed(true)
     ->setRules([
-        '@PSR12' => true,
+        // REQ-CS-009: PER Coding Style (the maintained successor of PSR-12), Symfony on top, house overrides last.
+        '@PER-CS' => true,
+        '@PER-CS:risky' => true,
         '@Symfony' => true,
         '@Symfony:risky' => true,
         'declare_strict_types' => true,
@@ -97,4 +100,6 @@ return (new Config())
         (new Finder())
             ->in(__DIR__)
             ->exclude(['vendor', 'var', 'coverage', '.phpunit.cache'])
+            // REQ-CS-009: Flex and Symfony regenerate these demo files.
+            ->filter(static fn (SplFileInfo $file): bool => 1 !== preg_match('#/demo/[^/]+/config/(bundles|reference)\.php$#', str_replace('\\', '/', $file->getPathname())))
     );
