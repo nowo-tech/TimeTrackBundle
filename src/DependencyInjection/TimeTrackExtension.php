@@ -623,6 +623,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$clock'           => $clockRef,
                 '$logger'          => $loggerRef,
+                // Audit ZBB-M2: the worker's acknowledgement bounds what a third party may see.
+                '$acknowledgements' => $enabled ? new Reference(MonitoringAcknowledgementStoreInterface::class) : null,
             ])
             ->setPublic(true)
             ->addTag('monolog.logger', ['channel' => 'time_track']));

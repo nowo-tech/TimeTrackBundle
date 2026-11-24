@@ -1476,17 +1476,25 @@ Four ports, all framework-free (`TimeTrackUserRef` and bundle value objects only
   Third parties see **project aggregates** (`teamView: project_aggregates`, the default). Per-person detail needs the
   organisation's explicit opt-in: `purpose: billing_evidence`, `teamView: per_person` and `perPersonDetailRecordedAt`
   (the `Y-m-d` date it was recorded; keep who and why in your policy audit); anything else is refused by the
-  constructor. In your team views, after your own `view_team` / project checks, call the public
+  constructor. Switching to `per_person` needs the DPIA update and the information to the workers' representatives
+  (ET art. 64.5, LOPDGDD art. 87.3). In your team views, after your own `view_team` / project checks, call the public
   `Monitoring\MonitoringTeamViewGuard::authorizePersonDetail($viewer, $worker)`: it throws
   `MonitoringTeamDetailDeniedException` (show aggregates) or dispatches `TimeTrackEvents::MONITORING_PERSON_DETAIL_VIEWED`
-  (`Event\MonitoringPersonDetailViewedEvent`: viewer and worker refs, policy version, purpose, time) before returning.
-  Store that event synchronously as the view record and show it on the worker's timeline; if your listener throws, the
-  view does not happen. `MonitoringTeamViewGuard::granularity($policy)` tells a list page which level to render.
+  (`Event\MonitoringPersonDetailViewedEvent`: viewer and worker refs, policy version, purpose, time, `visibleSince`)
+  and returns a `Monitoring\MonitoringPersonDetailGrant`. Store the event **synchronously** as the view record and show
+  it on the worker's timeline: with no listener the guard refuses (`no_audit`), and a listener that throws stops the
+  view. Show only evidence collected at or after `$grant->visibleSince` (the later of the opt-in day and the worker's
+  acknowledgement; `covers($at)`), so evidence collected under an earlier purpose never becomes per-person. The worker is
+  the viewer only when the user class and the id both match. `granularity($policy)` is the **maximum** granularity, for
+  list pages.
 - **Breaks (D11).** With `client_api.workday_provider`, the gate refuses evidence at instants outside every clocked
   `work` segment of the register (a break, before clock-in, after clock-out) with `on_break`. Implement
   `Workday\WorkdayHistorySourceInterface::dayFor(TimeTrackUserRef $user, string $date): ?WorkdayState` on the same
-  service so buffered evidence of earlier days is checked too (otherwise only today's). Segments: `type` `work` /
-  `break`, RFC 3339 `start` / `end`, `end: null` while open.
+  service: without it buffered evidence of another day is refused (`workday_unknown`, fail closed). Segments: `type`
+  `work` / `break`, RFC 3339 `start` / `end`, `end: null` while open; the day before is consulted for night shifts.
+  Activity slots are checked over the whole span the timer covers.
+- **Host logs (D4).** The bundle never logs request bodies; if your application logs HTTP bodies (e.g. HttpLog),
+  exclude the `monitoring/*` client routes.
 
 ### Standard Symfony host
 

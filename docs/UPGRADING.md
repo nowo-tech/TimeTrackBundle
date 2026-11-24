@@ -155,16 +155,27 @@ D4, D9 and D11 of the 2026-11-24 monitoring study apply.
   and `perPersonDetailRecordedAt: 'Y-m-d'` (the date the organisation recorded it; keep who and why in your policy
   audit). Any other combination throws `InvalidArgumentException` (a host bug). Switching a policy to `per_person`
   widens what third parties see: set `acknowledgementRequired: true` for that version so workers acknowledge it.
+- Switching a policy to `per_person` changes the monitoring criteria: update the DPIA and inform the workers'
+  representatives (ET art. 64.5, LOPDGDD art. 87.3) before the opt-in date, besides the workers' acknowledgement.
 - Before showing one worker's detail to anyone but that worker, call
   `MonitoringTeamViewGuard::authorizePersonDetail($viewerRef, $workerRef)` (after your own `view_team` and project
   checks). It throws `MonitoringTeamDetailDeniedException` (show aggregates instead) or dispatches
-  `nowo_time_track.monitoring.person_detail_viewed`: store that event as the view record and show it on the worker's
-  timeline. A listener that throws stops the view.
+  `nowo_time_track.monitoring.person_detail_viewed` and returns a `MonitoringPersonDetailGrant`.
+  - Register a **synchronous** listener that stores the event as the view record (flush it) and shows it on the
+    worker's timeline. Without a listener the guard refuses (`no_audit`); a listener that throws stops the view.
+  - Show only evidence collected at or after `$grant->visibleSince` (the later of the opt-in day, 00:00 UTC, and the
+    worker's last acknowledgement): filter your query with `collected_at >= :visibleSince` or `$grant->covers($at)`.
+    Older evidence stays in the project aggregates.
+  - The guard refuses `opt_in_pending` while `perPersonDetailRecordedAt` is in the future and `not_acknowledged`
+    until the worker acknowledged the policy after the opt-in.
+  - The viewer is the worker only when the user class **and** the id match.
+  - `MonitoringTeamViewGuard::granularity($policy)` is the maximum granularity a policy allows (for list pages); the
+    guard decides each detail view.
 
 ```php
 try {
-    $guard->authorizePersonDetail(TimeTrackUserRefs::fromUser($manager), $workerRef);
-    return $this->renderPersonDetail($workerRef);
+    $grant = $guard->authorizePersonDetail(TimeTrackUserRefs::fromUser($manager), $workerRef);
+    return $this->renderPersonDetail($workerRef, $this->evidence->forWorkerSince($workerRef, $grant->visibleSince));
 } catch (MonitoringTeamDetailDeniedException) {
     return $this->renderProjectAggregates($project);
 }
@@ -175,9 +186,14 @@ try {
 - With `client_api.workday_provider` configured, evidence taken during a register break, before clock-in or after
   clock-out is refused with `422 monitoring_refused {reason: "on_break"}` (activity items are dropped). Clients should
   stop collecting while `GET workday` says `on_break`, `idle` or `closed`; the server refusal is the backstop.
-- Implement `Workday\WorkdayHistorySourceInterface::dayFor($user, $date)` on your workday provider so buffered items of
-  earlier days are checked too; without it only today's instants are. Return the same `WorkdayState` shape as
-  `todayFor()`: `segments` of `type` `work` / `break` with RFC 3339 `start` / `end` (`end: null` for an open segment).
+- Implement `Workday\WorkdayHistorySourceInterface::dayFor($user, $date)` on your workday provider: without it,
+  buffered items of another day than today are refused with `workday_unknown` (fail closed). Return the same
+  `WorkdayState` shape as `todayFor()`: `segments` of `type` `work` / `break` with RFC 3339 `start` / `end` (`end: null`
+  for an open segment). The day before is consulted too, so a night shift's segment covers the next morning.
+- Activity slots must lie inside the schedule and inside one clocked `work` stretch over the whole span the timer
+  covers; a slot that runs into a break or past the clock-out is dropped.
+- Only monitoring evidence is refused; timers and time entries are not affected. Workers who never clock in get all
+  their evidence refused while the register is on for them.
 - A host whose register keeps no `work` segments (e.g. a status only) will see every item refused with `on_break`:
   return the segments, or return `null` for users whose register is off.
 

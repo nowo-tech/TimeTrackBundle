@@ -196,7 +196,10 @@ final class MonitoringGateTest extends TestCase
         $ack = $this->ack(7);
         $at  = new DateTimeImmutable('2026-11-18 22:00:00 UTC');
 
-        self::assertNull($this->gate(new WorkdaySourceGate($register))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'today only: an earlier day is not known');
+        self::assertSame('workday_unknown', $this->gate(new WorkdaySourceGate($register))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'today only: an earlier day is refused (audit ZBB-L2, fail closed)');
+        $register->off = ['1'];
+        self::assertNull($this->gate(new WorkdaySourceGate($register))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'register off for the worker: nothing to check');
+        $register->off = [];
         self::assertSame('on_break', $this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'with history: after clock-out');
         self::assertNull($this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, new DateTimeImmutable('2026-11-18 20:30:00 UTC'), $now));
 
@@ -207,6 +210,56 @@ final class MonitoringGateTest extends TestCase
         $late = $this->entry('2026-11-18 22:00:00', '2026-11-19 00:30:00');
         self::assertNull($this->gate(new WorkdaySourceGate($madrid->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $late, new DateTimeImmutable('2026-11-18 23:30:00 UTC'), $now));
         self::assertSame('on_break', $this->gate(new WorkdaySourceGate($madrid->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $late, new DateTimeImmutable('2026-11-18 22:30:00 UTC'), $now));
+    }
+
+    /**
+     * Audit ZBB-L3: an activity slot is checked over the whole span the timer covers, for the register and the schedule.
+     */
+    public function testASlotIsCheckedOverItsWholeSpan(): void
+    {
+        $now      = new DateTimeImmutable('2026-11-18 18:00:00 UTC');
+        $entry    = $this->entry('2026-11-18 08:00:00', '2026-11-18 16:00:00');
+        $register = (new FixedWorkdayRegister('2026-11-18'))->day('2026-11-18', 'closed', [
+            ['work', '2026-11-18T08:00:00Z', '2026-11-18T12:02:00Z'],
+            ['break', '2026-11-18T12:02:00Z', '2026-11-18T13:00:00Z'],
+            ['work', '2026-11-18T13:00:00Z', '2026-11-18T14:00:00Z'],
+            ['work', '2026-11-18T14:00:00Z', '2026-11-18T16:00:00Z'],
+        ]);
+        $gate = $this->gate(new WorkdaySourceGate($register));
+        $ack  = $this->ack(7);
+        $slot = static fn (string $time): DateTimeImmutable => new DateTimeImmutable('2026-11-18 ' . $time . ' UTC');
+
+        self::assertNull($gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('11:50:00'), $now, 600));
+        self::assertSame('on_break', $gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('12:00:00'), $now, 600), 'the slot runs into the break');
+        self::assertSame('on_break', $gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('12:50:00'), $now, 600), 'the slot starts in the break');
+        self::assertNull($gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('13:55:00'), $now, 600), 'contiguous work segments are one stretch');
+        self::assertNull($gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('15:55:00'), $now, 600), 'only what the timer covers: it ends at 16:00 with the work');
+        self::assertNull($gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $slot('12:01:59'), $now), 'a screenshot is one instant');
+
+        $this->profile->hours = ['timezone' => 'UTC', 'slots' => [['day' => 3, 'from' => '08:00', 'to' => '11:55']]];
+        self::assertSame('outside_hours', $gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('11:50:00'), $now, 600), 'the slot runs past the schedule');
+        self::assertNull($gate->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, $slot('11:40:00'), $now, 600));
+    }
+
+    /**
+     * Audit ZBB-L4: a shift that started yesterday and runs past midnight covers the instants after midnight.
+     */
+    public function testANightShiftAcrossMidnight(): void
+    {
+        $now      = new DateTimeImmutable('2026-11-19 07:00:00 UTC');
+        $entry    = $this->entry('2026-11-18 22:00:00', '2026-11-19 06:00:00');
+        $register = (new FixedWorkdayRegister('2026-11-18'))
+            ->day('2026-11-18', 'closed', [['work', '2026-11-18T22:00:00Z', '2026-11-19T06:00:00Z']])
+            ->day('2026-11-19', 'idle', []);
+        $ack = $this->ack(7);
+        $at  = new DateTimeImmutable('2026-11-19 02:00:00 UTC');
+
+        self::assertNull($this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'with history: the day before is consulted');
+        self::assertNull($this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'apps', $entry, new DateTimeImmutable('2026-11-18 23:55:00 UTC'), $now, 600), 'a slot across midnight');
+        self::assertNull($this->gate(new WorkdaySourceGate($register))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'today only: today() still answers the shift\'s day, which is the day before');
+        $register->today = '2026-11-19';
+        self::assertSame('on_break', $this->gate(new WorkdaySourceGate($register))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'today only, after the switch to the new day: its day has no work');
+        self::assertSame('workday_unknown', $this->gate(new WorkdaySourceGate($register))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, new DateTimeImmutable('2026-11-18 22:30:00 UTC'), $now), 'two days back without history');
     }
 
     public function testALegacyWorkdayProviderIsAskedForToday(): void

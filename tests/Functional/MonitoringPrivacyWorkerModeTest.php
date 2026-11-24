@@ -76,7 +76,7 @@ final class MonitoringPrivacyWorkerModeTest extends MonitoringTestCase
         $source->register->today = $day;
         $source->register->day($day, 'on_break', [['work', $iso($now - 3600), $iso($now - 600)], ['break', $iso($now - 600), null]], 'UTC', $people[0]['id']);
         $source->register->day($day, 'working', [['work', $iso($now - 3600), null]], 'UTC', $people[1]['id']);
-        $this->policySource()->byUser[$people[0]['id']] = MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '2026-11-24']);
+        $this->policySource()->byUser[$people[0]['id']] = MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => $day]);
 
         $timers = [];
         foreach ($people as $i => $who) {
