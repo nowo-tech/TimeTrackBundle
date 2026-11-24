@@ -63,7 +63,9 @@ use function is_string;
 use function md5;
 use function serialize;
 use function sort;
+use function str_contains;
 use function str_ends_with;
+use function str_replace;
 use function str_starts_with;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 use function sys_get_temp_dir;
@@ -218,12 +220,14 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
             $container->services()->alias(ClockInterface::class, PsrOnlyClock::class)->public();
         }
         if ($this->serviceFixture !== null) {
-            $namespace = 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\RemovedPorts\\' . $this->serviceFixture . '\\';
+            // "Dir/Case" is a directory of tests/Fixtures; a bare "Case" one of tests/Fixtures/RemovedPorts.
+            $path      = str_contains($this->serviceFixture, '/') ? $this->serviceFixture : 'RemovedPorts/' . $this->serviceFixture;
+            $namespace = 'Nowo\\TimeTrackBundle\\Tests\\Fixtures\\' . str_replace('/', '\\', $path) . '\\';
             if ($this->serviceFixture === 'ConfiguredTaskProvider') {
                 $container->services()->set($namespace . 'OldTasks');
             } else {
                 $container->services()->defaults()->autowire()->autoconfigure()
-                    ->load($namespace, __DIR__ . '/../Fixtures/RemovedPorts/' . $this->serviceFixture . '/*');
+                    ->load($namespace, __DIR__ . '/../Fixtures/' . $path . '/*');
             }
         }
         $container->extension('twig', [

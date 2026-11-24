@@ -10,6 +10,7 @@ use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface;
+use Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface;
 use Nowo\TimeTrackBundle\Port\BatchTaskDirectoryGate;
 use Nowo\TimeTrackBundle\Port\Internal\MeetingProviderInterface;
 use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
@@ -61,7 +62,10 @@ final class TimeTrackPortsPassTest extends TestCase
         self::assertSame('nowo_time_track.port_gate.meeting_provider', (string) $container->getAlias('nowo_time_track.port.meeting_provider'));
         $gate = $container->getDefinition('nowo_time_track.port_gate.meeting_provider');
         self::assertSame(MeetingSourceGate::class, $gate->getClass());
-        self::assertEquals([new Reference('app.meetings')], $gate->getArguments());
+        // 2.0 (audit ZAR-V1): the gate asks the twin id, which ends at the configured service.
+        self::assertEquals([new Reference(MeetingSourceInterface::class)], $gate->getArguments());
+        self::assertSame('app.meetings', (string) $container->getAlias(MeetingSourceInterface::class));
+        self::assertTrue($container->getAlias(MeetingSourceInterface::class)->isPublic());
         self::assertSame(BatchTaskDirectoryGate::class, $container->getDefinition('nowo_time_track.port_gate.task_provider')->getClass(), 'a batch directory gets the batch gate');
     }
 
@@ -143,7 +147,8 @@ final class TimeTrackPortsPassTest extends TestCase
 
         self::assertSame('nowo_time_track.port_gate.user_reference', (string) $container->getAlias(UserReferenceResolverInterface::class));
         self::assertSame(UserReferenceProviderGate::class, $container->getDefinition('nowo_time_track.port_gate.user_reference')->getClass());
-        self::assertEquals([new Reference('app.refs')], $container->getDefinition('nowo_time_track.port_gate.user_reference')->getArguments());
+        self::assertEquals([new Reference(UserReferenceProviderInterface::class)], $container->getDefinition('nowo_time_track.port_gate.user_reference')->getArguments());
+        self::assertSame('app.refs', (string) $container->getAlias(UserReferenceProviderInterface::class));
     }
 
     public function testTheUserReferenceTwinWithoutTheBuiltInSlot(): void
@@ -154,6 +159,32 @@ final class TimeTrackPortsPassTest extends TestCase
         (new TimeTrackPortsPass())->process($container);
 
         self::assertSame('nowo_time_track.port_gate.user_reference', (string) $container->getAlias(UserReferenceResolverInterface::class));
+    }
+
+    public function testAnApplicationTwinIdOnAnotherServiceFailsTheBuild(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('app.meetings', RecordingTwinPorts::class);
+        $container->register('app.other_meetings', RecordingTwinPorts::class);
+        $container->setAlias('nowo_time_track.port.meeting_provider', 'app.meetings');
+        $container->setAlias(MeetingSourceInterface::class, 'app.other_meetings');
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('"Nowo\\TimeTrackBundle\\Meeting\\MeetingSourceInterface" is served by "app.other_meetings" but nowo_time_track.meetings.provider is "app.meetings"');
+
+        (new TimeTrackPortsPass())->process($container);
+    }
+
+    public function testAnApplicationTwinIdOnTheSameServiceIsKept(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('app.meetings', RecordingTwinPorts::class);
+        $container->setAlias('nowo_time_track.port.meeting_provider', 'app.meetings');
+        $container->setAlias(MeetingSourceInterface::class, 'app.meetings')->setPublic(false);
+
+        (new TimeTrackPortsPass())->process($container);
+
+        self::assertFalse($container->getAlias(MeetingSourceInterface::class)->isPublic(), 'the application\'s own definition is kept');
     }
 
     public function testAMissingSlotIsSkipped(): void

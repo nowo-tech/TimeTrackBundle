@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Integration\RemovedPorts;
 
+use LogicException;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Tests\Fixtures\TwinIds\TwinIdDecorated\ScopeDecorator;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinScopePolicy;
 use Nowo\TimeTrackBundle\Timesheet\SingleScopeProvider;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopePolicyInterface;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * 2.0: the 1.x port ids are gone (`…\Timesheet\TimesheetScopeProviderInterface` and the others), and the configured
@@ -42,6 +47,43 @@ final class TwinServiceIdsKernelTest extends TestCase
         try {
             $container = $kernel->getContainer();
             self::assertInstanceOf(TwinScopePolicy::class, $container->get(TimesheetScopePolicyInterface::class));
+        } finally {
+            $kernel->shutdown();
+        }
+    }
+
+    /**
+     * Audit ZAR-V1: the application points the twin id at another service than the configured port: the build fails
+     * instead of TimeTrack and TaskBoard asking different scopes.
+     */
+    public function testAnApplicationTwinIdOnAnotherServiceFailsTheBuild(): void
+    {
+        $kernel = new FunctionalKernel(['timesheets' => ['enabled' => true, 'scope_mode' => 'single', 'approver_provider' => StubTimesheetApproverProvider::class]], debug: false, serviceFixture: 'TwinIds/TwinIdElsewhere');
+        try {
+            $kernel->boot();
+            self::fail('the build must fail');
+        } catch (LogicException $failure) {
+            self::assertStringContainsString('"' . TimesheetScopePolicyInterface::class . '" is served by "Nowo\\TimeTrackBundle\\Tests\\Fixtures\\TwinIds\\TwinIdElsewhere\\OtherScopes" but nowo_time_track.timesheets.scope_provider is', $failure->getMessage());
+        } finally {
+            $kernel->shutdown();
+        }
+    }
+
+    /**
+     * Audit ZAR-V1: a decorator of the twin id applies to TimeTrack's own slot and to every bundle that injects the id.
+     */
+    public function testADecoratorOfTheTwinIdAppliesToBothSides(): void
+    {
+        $kernel = new FunctionalKernel(['timesheets' => ['enabled' => true, 'scope_mode' => 'single', 'approver_provider' => StubTimesheetApproverProvider::class]], debug: false, serviceFixture: 'TwinIds/TwinIdDecorated');
+        $kernel->boot();
+        try {
+            $container = $kernel->getContainer()->get('test.service_container');
+            self::assertInstanceOf(ContainerInterface::class, $container);
+            $policy = $container->get(TimesheetScopePolicyInterface::class);
+            self::assertInstanceOf(ScopeDecorator::class, $policy, 'what TaskBoard injects');
+            $slot = $container->get(TimesheetScopeProviderInterface::class);
+            self::assertInstanceOf(TimesheetScopeProviderInterface::class, $slot);
+            self::assertSame('decorated:' . SingleScopeProvider::KEY, $slot->scopeKeyForTask(new TestUser('1', 'u@example.com'), 'task-1', null), 'what TimeTrack asks');
         } finally {
             $kernel->shutdown();
         }

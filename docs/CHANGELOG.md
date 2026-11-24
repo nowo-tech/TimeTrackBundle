@@ -127,7 +127,10 @@ See [UPGRADING](UPGRADING.md#unreleased).
 - The configured service of each host port is also registered, public, under its framework-free interface id (the
   1.23 twin, e.g. `Timesheet\TimesheetScopePolicyInterface`) when it implements it and the application did not define
   that id itself, so another bundle (TaskBoard's timesheet scope bridge) injects it there instead of the removed 1.x id.
-  The default `SingleScopeProvider` implements `TimesheetScopePolicyInterface` too.
+  The default `SingleScopeProvider` implements `TimesheetScopePolicyInterface` too. TimeTrack asks the port through
+  that id (a decorator of it applies to TimeTrack and to the other bundles alike), and an application definition of the
+  id that ends at another service than the configured port fails the container build (audit ZAR-V1). Not registered
+  for a factory or synthetic port service.
 - The bundle's own default port services (stub task provider, single scope, Doctrine user reference resolver, ...)
   implement internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`, `@internal`); a host service is asked only
   through the 1.23 twin of its port.

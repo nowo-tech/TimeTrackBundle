@@ -214,7 +214,15 @@ for a decorator of a removed id: decorate the service you configured, or impleme
 internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`): they are not ports, and a class of yours on one of them
 is refused like any other class that does not implement the twin. Code that injected a port by its 1.x id (for example
 `Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface`) injects the twin id instead
-(`Timesheet\TimesheetScopePolicyInterface`): the configured service is registered, public, under it.
+(`Timesheet\TimesheetScopePolicyInterface`): the configured service is registered, public, under it, and TimeTrack
+itself asks the port through that id, so a decorator of it (`#[AsDecorator(TimesheetScopePolicyInterface::class)]`)
+applies to TimeTrack and to every bundle that injects the id alike. If your application defines the twin id itself, it
+must end at the service configured for the port (the same one): pointing it at another service fails the container
+build (TimeTrack and the other bundles would ask different services). The twin id is **not** registered by TimeTrack
+when your application defined it (then your definition is used, as said), and when the configured service's class
+cannot be known before compilation (a factory or a synthetic service): define the twin id yourself in that case. The
+batch task directory (`BatchTaskDirectoryInterface`) gets the twin id too, but TimeTrack asks it directly (a decorator
+of `TaskDirectoryInterface` is not applied to TimeTrack's batch calls).
 
 **Constructor arguments kept, ignored** (deprecated, removed in 3.0): `$hostFlushProbe` of `TimeTrackTransactionRunner`
 and of the Doctrine stores, the third argument of `RecoveringFlusher::flush()`, `$logger` of

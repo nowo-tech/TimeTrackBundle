@@ -96,13 +96,11 @@ final class TimeTrackPortsPass implements CompilerPassInterface
         [$internal, $twin, $gate] = Ports::PORTS[$name];
         $target                   = $this->resolve($container, $slot);
         $class                    = $this->classOf($container, $target);
-        if ($class !== null && is_a($class, $internal, true) && Ports::isBundleClass($class)) {
-            // One of the bundle's own defaults: asked as it is; its twin id too when it implements the twin.
-            $this->exposeTwin($container, $twin, $class, $target);
-
-            return;
+        $default                  = $class !== null && is_a($class, $internal, true) && Ports::isBundleClass($class);
+        if ($default && !is_a($class, $twin, true)) {
+            return; // One of the bundle's own defaults without the twin: asked as it is.
         }
-        if ($class !== null && !is_a($class, $twin, true)) {
+        if ($class !== null && !$default && !is_a($class, $twin, true)) {
             throw new LogicException(sprintf('nowo_time_track: the service "%s" (%s) of %s must implement "%s" (since 2.0 the only host interface of this port; see UPGRADING "To 2.0.0").', $target, $class, $option, $twin));
         }
 
@@ -115,31 +113,42 @@ final class TimeTrackPortsPass implements CompilerPassInterface
 
         $gateId = self::GATE_PREFIX . $name;
         if ($class === null) {
+            // Factory, synthetic or unknown class: decided at runtime; no twin id (its class is not known here).
             $definition = (new Definition($internal))->setFactory([Ports::class, 'port'])->setArguments([$name, new Reference($target)]);
+        } elseif ($name === 'task_provider' && is_a($class, BatchTaskDirectoryInterface::class, true)) {
+            $this->exposeTwin($container, $twin, $target, $option);
+            $definition = new Definition(BatchTaskDirectoryGate::class, [new Reference($target)]);
         } else {
-            $definition = new Definition($name === 'task_provider' && is_a($class, BatchTaskDirectoryInterface::class, true) ? BatchTaskDirectoryGate::class : $gate, [new Reference($target)]);
+            // Since 2.0 (audit ZAR-V1): the gate asks the twin id, so a decorator of that id applies to TimeTrack and
+            // to every other bundle that injects it.
+            $this->exposeTwin($container, $twin, $target, $option);
+            $definition = new Definition($gate, [new Reference($twin)]);
         }
         $container->setDefinition($gateId, $definition);
         $container->setAlias($slot, $gateId)->setPublic(false);
-        if ($class !== null) {
-            $this->exposeTwin($container, $twin, $class, $target);
-        }
     }
 
     /**
      * Since 2.0: the configured service of a port is also available under its framework-free interface id (the 1.23
      * twin), public, so another bundle (TaskBoard's timesheet scope bridge) injects the same service by that id instead
-     * of the removed 1.x id. Never overrides an id the application defined itself.
+     * of the removed 1.x id. An id the application defined itself must end at the same service (audit ZAR-V1); to wrap
+     * the port, decorate that id.
      *
      * @param class-string $twin
-     * @param class-string $class the class of the configured service, known to implement the twin
+     *
+     * @throws LogicException when the application's twin id ends at another service than the configured one
      */
-    private function exposeTwin(ContainerBuilder $container, string $twin, string $class, string $target): void
+    private function exposeTwin(ContainerBuilder $container, string $twin, string $target, string $option): void
     {
-        if (!is_a($class, $twin, true) || $container->hasAlias($twin) || $container->hasDefinition($twin)) {
+        if (!$container->hasAlias($twin) && !$container->hasDefinition($twin)) {
+            $container->setAlias($twin, $target)->setPublic(true);
+
             return;
         }
-        $container->setAlias($twin, $target)->setPublic(true);
+        $served = $this->resolve($container, $twin);
+        if ($served !== $target) {
+            throw new LogicException(sprintf('nowo_time_track: "%s" is served by "%s" but %s is "%s": TimeTrack and the bundles that inject "%s" would ask different services. Point both at the same service, or remove your definition of "%s" (decorate it to wrap the port); see UPGRADING "To 2.0.0".', $twin, $served, $option, $target, $twin, $twin));
+        }
     }
 
     /**
