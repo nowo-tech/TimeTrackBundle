@@ -107,7 +107,7 @@ final readonly class ClientApiAuditor
 
     /**
      * Since 1.26: records a refused monitoring request (`kind_off`, `not_acknowledged`, `outside_timer`,
-     * `outside_hours`, `too_old`, `duplicate`, `policy_changed`, `notice_mismatch`, `invalid_signature`, a cap code),
+     * `outside_hours`, `on_break` (1.41), `too_old`, `duplicate`, `policy_changed`, `notice_mismatch`, `invalid_signature`, a cap code),
      * throttled per credential (or user) and reason like {@see self::denied()}. Never an image, an app or a window name.
      */
     public function monitoringRefused(string $reason, ClientToken $token, ?string $clientIp): void

@@ -32,6 +32,7 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringPolicySource;
 use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTaskKeyResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayHistorySource;
 use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinClientPorts;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\TwinPortConfig;
@@ -168,6 +169,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(FixedScopeProvider::class)->public();
         $container->services()->set(FixedWorkingCalendar::class)->args(['UTC'])->public();
         $container->services()->set(StubWorkdayProvider::class)->public();
+        $container->services()->set(StubWorkdayHistorySource::class)->public();
         // Since 1.22 (spec 204): the host's leave adapter (used only where a test sets `client_api.leave_provider`).
         $container->services()->set(StubLeaveProvider::class)->public();
         $container->services()->set(LeaveDaysOffProfileProvider::class)->public();

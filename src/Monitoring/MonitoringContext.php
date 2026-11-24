@@ -111,7 +111,7 @@ final readonly class MonitoringContext
     }
 
     /**
-     * The `monitoring` block of `GET me` (contract §24.1).
+     * The `monitoring` block of `GET me` (contract §24.1; 1.41.0 adds `purpose` and `teamView` and freezes `windowTitles`).
      *
      * @return array<string, mixed>
      */
@@ -140,10 +140,14 @@ final readonly class MonitoringContext
                 'fullResolution' => $policy->fullResolution,
                 'maxLongSidePx'  => $policy->maxLongSidePx,
             ],
-            'windowTitles'  => $policy->windowTitles,
+            // Since 1.41.0 (D4): frozen to false — window titles are never sent, stored or returned; 2.0 removes the key.
+            'windowTitles'  => false,
             'excludedApps'  => $policy->excludedApps,
             'retentionDays' => $policy->retentionDays,
             'upload'        => ['maxBufferedScreenshots' => $policy->maxBufferedScreenshots, 'maxBufferAgeHours' => $policy->maxBufferAgeHours],
+            // Since 1.41.0 (D9): the written purpose and what third parties see, so the worker knows who sees what.
+            'purpose'  => $policy->purpose,
+            'teamView' => $policy->teamView,
         ];
     }
 

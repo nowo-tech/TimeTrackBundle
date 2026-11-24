@@ -123,6 +123,7 @@ deprecation log is free of `nowo-tech/time-track-bundle` notices on the last 1.x
 | `"*"` in `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true` (the 1.x default) | removed: exact origins only | 1.33 (container build, client API on) |
 | `clients.cors_allow_any_extension_origin`, the `templates.*` keys, `security.manager_can_edit_entries` | removed | when set (1.5 / 1.8 / 1.9) |
 | `@NowoTimeTrackBundle/layout.html.twig`, `_legacy_layout.html.twig` | removed: the UiKit layout | 1.33 / 1.8 (when rendered) |
+| `MonitoringPolicy` `windowTitles` (argument and property), `GET me.monitoring.windowTitles` | removed (always false since 1.41) | 1.41 (argument `true`) |
 | Inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` (`action_urls` without `dialog_urls`) | removed: pass `dialog_urls` (pages served by `TimesheetDialogResponder`) | 1.39 (when rendered) |
 
 The installed-client API aliases stay in 2.0: they are not deprecated.
@@ -131,6 +132,54 @@ The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and 
 minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## Unreleased
+
+Target **1.41.0** (minor). From **1.40.x**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+migration change. Only hosts with activity monitoring (`client_api.monitoring`) have anything to do; the owner decisions
+D4, D9 and D11 of the 2026-11-24 monitoring study apply.
+
+### Window titles are never collected (D4)
+
+- `GET me.monitoring.windowTitles` is always `false` and the bundle never accepts, stores or returns a window title or a
+  project name. Stop passing `windowTitles` to `MonitoringPolicy` (a `true` value is ignored and triggers a deprecation
+  notice; 2.0 removes the argument, the property and the `GET me` key).
+- Remove any "window titles" switch from your policy screen and your notice text, and drop title columns from your
+  evidence store if you had prepared one. If your policy versions bumped `acknowledgementRequired` for titles, nothing
+  changes: narrowing never needs a new acknowledgement.
+
+### Team views: project aggregates unless billing evidence (D9)
+
+- Pass the written purpose of the policy (`purpose: 'billing_evidence' | 'project_costing' | 'self_analytics'`) to
+  `MonitoringPolicy`. Without `teamView` the policy is `project_aggregates`: your team views show totals per project
+  only, never one person's slots, app shares, levels or thumbnails.
+- Per-person detail is an explicit opt-in of the organisation: `purpose: 'billing_evidence'`, `teamView: 'per_person'`
+  and `perPersonDetailRecordedAt: 'Y-m-d'` (the date the organisation recorded it; keep who and why in your policy
+  audit). Any other combination throws `InvalidArgumentException` (a host bug). Switching a policy to `per_person`
+  widens what third parties see: set `acknowledgementRequired: true` for that version so workers acknowledge it.
+- Before showing one worker's detail to anyone but that worker, call
+  `MonitoringTeamViewGuard::authorizePersonDetail($viewerRef, $workerRef)` (after your own `view_team` and project
+  checks). It throws `MonitoringTeamDetailDeniedException` (show aggregates instead) or dispatches
+  `nowo_time_track.monitoring.person_detail_viewed`: store that event as the view record and show it on the worker's
+  timeline. A listener that throws stops the view.
+
+```php
+try {
+    $guard->authorizePersonDetail(TimeTrackUserRefs::fromUser($manager), $workerRef);
+    return $this->renderPersonDetail($workerRef);
+} catch (MonitoringTeamDetailDeniedException) {
+    return $this->renderProjectAggregates($project);
+}
+```
+
+### Breaks and clock-out stop collection (D11)
+
+- With `client_api.workday_provider` configured, evidence taken during a register break, before clock-in or after
+  clock-out is refused with `422 monitoring_refused {reason: "on_break"}` (activity items are dropped). Clients should
+  stop collecting while `GET workday` says `on_break`, `idle` or `closed`; the server refusal is the backstop.
+- Implement `Workday\WorkdayHistorySourceInterface::dayFor($user, $date)` on your workday provider so buffered items of
+  earlier days are checked too; without it only today's instants are. Return the same `WorkdayState` shape as
+  `todayFor()`: `segments` of `type` `work` / `break` with RFC 3339 `start` / `end` (`end: null` for an open segment).
+- A host whose register keeps no `work` segments (e.g. a status only) will see every item refused with `on_break`:
+  return the segments, or return `null` for users whose register is off.
 
 ## To 1.40.1
 

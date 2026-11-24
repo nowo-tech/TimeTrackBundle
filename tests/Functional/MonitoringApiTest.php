@@ -68,6 +68,8 @@ class MonitoringApiTest extends MonitoringTestCase
             'excludedApps'         => ['vaultapp', 'diaryapp'],
             'retentionDays'        => 30,
             'upload'               => ['maxBufferedScreenshots' => 36, 'maxBufferAgeHours' => 24],
+            'purpose'              => null,
+            'teamView'             => 'project_aggregates',
         ], $me['monitoring'] ?? null);
         self::assertStringNotContainsString(MonitoringFixtures::noticeSha256(), (string) json_encode($me), 'the notice hash is never published');
 

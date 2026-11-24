@@ -12,11 +12,17 @@ use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
+use Nowo\TimeTrackBundle\Port\WorkdaySourceGate;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Support\Rfc3339;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
+use Nowo\TimeTrackBundle\Workday\WorkdayHistorySourceInterface;
+use Nowo\TimeTrackBundle\Workday\WorkdayProviderInterface;
+use Nowo\TimeTrackBundle\Workday\WorkdayState;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDay;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDayKind;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDayNormalizer;
@@ -31,7 +37,9 @@ use function substr;
  * Since 1.26.0 (contract §24.3): the refusal checks the bundle runs **before any byte is accepted**, in the contract
  * order — policy on and kind enabled (`kind_off`), version acknowledged (`not_acknowledged`), SC-002: the worker's own
  * timer ran on `entryId` at that instant (`outside_timer`), the spec 198 schedule through the working-calendar port
- * (`outside_hours`, only when the host gives a schedule), and the age (`too_old`, older than `maxBufferAgeHours`).
+ * (`outside_hours`, only when the host gives a schedule), since 1.41.0 the spec 198 register (`on_break`: inside a break
+ * or outside every clocked `work` segment of that day, only when the host has a workday provider and it knows the day),
+ * and the age (`too_old`, older than `maxBufferAgeHours`).
  *
  * `entryId` is the id of the worker's running timer (`GET timer`) or of one of their own recorded timer entries
  * (`web`, `extension` or `desktop` source; the id `timer/stop` and `timer/switch` answer). Manual, calendar and
@@ -53,6 +61,12 @@ final readonly class MonitoringGate
     /** Outside the worker's working calendar (spec 198 schedule, day off, leave). */
     public const OUTSIDE_HOURS = 'outside_hours';
 
+    /**
+     * Since 1.41.0 (owner decision D11): the worker's register (spec 198) shows a break, or no clocked `work` segment
+     * (before clock-in, after clock-out), at that instant.
+     */
+    public const ON_BREAK = 'on_break';
+
     /** Older than `maxBufferAgeHours`. */
     public const TOO_OLD = 'too_old';
 
@@ -60,8 +74,8 @@ final readonly class MonitoringGate
     private const TIMER_SOURCES = [TimeEntrySource::Web, TimeEntrySource::Extension, TimeEntrySource::Desktop];
 
     /**
-     * Receives the timer and entry stores, the working calendar, the scope provider, the zone resolver and the
-     * working-hours source.
+     * Receives the timer and entry stores, the working calendar, the scope provider, the zone resolver, the
+     * working-hours source and (since 1.41.0) the host's workday register (null = no `on_break` check).
      */
     public function __construct(
         private ActiveTimerRepositoryInterface $timers,
@@ -70,6 +84,7 @@ final readonly class MonitoringGate
         private TimesheetTimezoneResolver $timezoneResolver,
         private ClientUserProfileProviderInterface $profileProvider,
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
+        private ?WorkdayProviderInterface $workday = null,
     ) {
     }
 
@@ -120,6 +135,9 @@ final readonly class MonitoringGate
         }
         if ($checkSchedule && !$this->insideSchedule($user, $span['scopeKey'], $instant)) {
             return self::OUTSIDE_HOURS;
+        }
+        if ($checkSchedule && !$this->insideWorkday($user, $span['scopeKey'], $instant, $now)) {
+            return self::ON_BREAK;
         }
         if ($at->getTimestamp() < $now->getTimestamp() - $policy->maxBufferAgeHours * 3600) {
             return self::TOO_OLD;
@@ -188,6 +206,59 @@ final readonly class MonitoringGate
         }
 
         return $slots === 0;
+    }
+
+    /**
+     * Since 1.41.0 (D11): inside a clocked `work` segment of the register. No workday provider, a register that is off
+     * for the worker, or a day the provider cannot give (only today without {@see WorkdayHistorySourceInterface}) = no
+     * restriction. An open `work` segment counts only while the status is `working` (until now plus the clock skew);
+     * a segment whose times cannot be read never covers anything (fail closed).
+     */
+    private function insideWorkday(UserInterface $user, string $scopeKey, DateTimeImmutable $instant, DateTimeImmutable $now): bool
+    {
+        if (!$this->workday instanceof WorkdayProviderInterface) {
+            return true;
+        }
+        $state = $this->workdayOn($user, $instant->setTimezone(new DateTimeZone($this->timezoneResolver->resolve($user, $scopeKey)))->format('Y-m-d'));
+        if ($state instanceof WorkdayState && $instant->setTimezone(new DateTimeZone($state->timezone))->format('Y-m-d') !== $state->date) {
+            // The register's zone puts the instant on another date: ask for that date instead.
+            $state = $this->workdayOn($user, $instant->setTimezone(new DateTimeZone($state->timezone))->format('Y-m-d'));
+        }
+        if (!$state instanceof WorkdayState) {
+            return true;
+        }
+        $at = $instant->getTimestamp();
+        foreach ($state->segments as $segment) {
+            if (($segment['type'] ?? null) !== 'work') {
+                continue;
+            }
+            $start = Rfc3339::parse($segment['start'] ?? null, true);
+            $end   = ($segment['end'] ?? null) === null
+                ? ($state->status === 'working' ? $now->modify('+' . MonitoringSettings::CLOCK_SKEW_SECONDS . ' seconds') : null)
+                : Rfc3339::parse($segment['end'], true);
+            if ($start instanceof DateTimeImmutable && $end instanceof DateTimeImmutable && $at >= $start->getTimestamp() && $at < $end->getTimestamp()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The register's day for a local date: from {@see WorkdayHistorySourceInterface} when the host implements it, else
+     * today's day when it is that date, else null (unknown).
+     */
+    private function workdayOn(UserInterface $user, string $date): ?WorkdayState
+    {
+        $history = $this->workday instanceof WorkdaySourceGate ? $this->workday->history() : ($this->workday instanceof WorkdayHistorySourceInterface ? $this->workday : null);
+        if ($history instanceof WorkdayHistorySourceInterface) {
+            $state = $history->dayFor(TimeTrackUserRefs::fromUser($user), $date);
+
+            return $state instanceof WorkdayState && $state->date === $date ? $state : null;
+        }
+        $state = $this->workday?->today($user);
+
+        return $state instanceof WorkdayState && $state->date === $date ? $state : null;
     }
 
     private function minutes(string $time): int

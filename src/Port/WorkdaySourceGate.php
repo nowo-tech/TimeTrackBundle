@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Port;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Workday\WorkdayAction;
+use Nowo\TimeTrackBundle\Workday\WorkdayHistorySourceInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdaySourceInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdayState;
@@ -33,6 +34,14 @@ final readonly class WorkdaySourceGate implements WorkdayProviderInterface
     public function today(UserInterface $user): ?WorkdayState
     {
         return $this->source->todayFor(TimeTrackUserRefs::fromUser($user));
+    }
+
+    /**
+     * Since 1.41.0: the source when it also implements {@see WorkdayHistorySourceInterface}, else null.
+     */
+    public function history(): ?WorkdayHistorySourceInterface
+    {
+        return $this->source instanceof WorkdayHistorySourceInterface ? $this->source : null;
     }
 
     /**

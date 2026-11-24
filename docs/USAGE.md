@@ -1468,6 +1468,26 @@ Four ports, all framework-free (`TimeTrackUserRef` and bundle value objects only
 | `Monitoring\MonitoringAcknowledgementStoreInterface` (`acknowledge`, `lastAcknowledged`) | DDD hosts | `Repository\DoctrineOrmMonitoringAcknowledgementStore` (bundle table, bundle entity manager) | `MonitoringAcknowledgement` |
 | `Monitoring\MonitoringUploadSignerInterface` (`sign`, `verify`) | optional | `Monitoring\HmacMonitoringUploadSigner` | `MonitoringUploadClaim` |
 
+**Since 1.41.0** (owner decisions D4, D9, D11 of the 2026-11-24 monitoring study):
+
+- **No window titles (D4).** `MonitoringPolicy::$windowTitles` is always false (the argument is deprecated and
+  ignored); no route accepts a title or a project name, and `GET me` publishes `windowTitles: false`.
+- **Team views (D9).** Give the policy its written `purpose` (`billing_evidence`, `project_costing`, `self_analytics`).
+  Third parties see **project aggregates** (`teamView: project_aggregates`, the default). Per-person detail needs the
+  organisation's explicit opt-in: `purpose: billing_evidence`, `teamView: per_person` and `perPersonDetailRecordedAt`
+  (the `Y-m-d` date it was recorded; keep who and why in your policy audit); anything else is refused by the
+  constructor. In your team views, after your own `view_team` / project checks, call the public
+  `Monitoring\MonitoringTeamViewGuard::authorizePersonDetail($viewer, $worker)`: it throws
+  `MonitoringTeamDetailDeniedException` (show aggregates) or dispatches `TimeTrackEvents::MONITORING_PERSON_DETAIL_VIEWED`
+  (`Event\MonitoringPersonDetailViewedEvent`: viewer and worker refs, policy version, purpose, time) before returning.
+  Store that event synchronously as the view record and show it on the worker's timeline; if your listener throws, the
+  view does not happen. `MonitoringTeamViewGuard::granularity($policy)` tells a list page which level to render.
+- **Breaks (D11).** With `client_api.workday_provider`, the gate refuses evidence at instants outside every clocked
+  `work` segment of the register (a break, before clock-in, after clock-out) with `on_break`. Implement
+  `Workday\WorkdayHistorySourceInterface::dayFor(TimeTrackUserRef $user, string $date): ?WorkdayState` on the same
+  service so buffered evidence of earlier days is checked too (otherwise only today's). Segments: `type` `work` /
+  `break`, RFC 3339 `start` / `end`, `end: null` while open.
+
 ### Standard Symfony host
 
 Implement the policy source and the evidence store as services and point the configuration at them; acknowledgements
@@ -1510,8 +1530,8 @@ final readonly class MonitoringPolicySource implements MonitoringPolicySourceInt
 ```
 
 `acknowledgementRequired` is yours: whether this version widens collection (a new kind, more samples, full resolution,
-window titles on, a shorter review window) compared with the last version the worker acknowledged. Read that version from
-`MonitoringAcknowledgementStoreInterface::lastAcknowledged()` (inject the interface; it is the bundle's store unless you
+a shorter review window, since 1.41 `teamView: per_person`) compared with the last version the worker acknowledged.
+Read that version from `MonitoringAcknowledgementStoreInterface::lastAcknowledged()` (inject the interface; it is the bundle's store unless you
 replaced it). The bundle publishes `acknowledgement.required` as `true` whenever the worker never acknowledged a version.
 
 ```php
