@@ -186,8 +186,8 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-MON-002**: `TimeTrackMonitoringApiController`.
 - **FR-MON-003**: `MonitoringSpanDiscardedEvent` and `MonitoringSpanDiscardListener`.
 - **FR-MON-004** (1.41, owner decision D4 of 2026-11-24): window titles and project names are never collected — `MonitoringPolicy::$windowTitles` and `GET me.monitoring.windowTitles` are frozen to false (deprecated, removed in 2.0); title fields sent by a client are ignored.
-- **FR-MON-005** (1.41, D9): `MonitoringPolicy` `purpose` / `teamView` / `perPersonDetailRecordedAt`; `MonitoringTeamViewGuard` gives third parties project aggregates unless the policy is an organisation's billing-evidence opt-in, and dispatches `MonitoringPersonDetailViewedEvent` before each per-person view (`MonitoringTeamDetailDeniedException` otherwise).
-- **FR-MON-006** (1.41, D11): `MonitoringGate` refuses evidence with `on_break` when the workday register (spec 198) shows a break or no clocked `work` segment at the instant; `WorkdayHistorySourceInterface` gives earlier days.
+- **FR-MON-005** (1.41, D9; audit ZBB): `MonitoringPolicy` `purpose` / `teamView` / `perPersonDetailRecordedAt`; `MonitoringTeamViewGuard` gives third parties project aggregates unless the policy is an organisation's billing-evidence opt-in whose date has come, the worker acknowledged it after that date and a listener records the view; it dispatches `MonitoringPersonDetailViewedEvent` before each per-person view and returns a `MonitoringPersonDetailGrant` whose `visibleSince` bounds the evidence shown (`MonitoringTeamDetailDeniedException` otherwise). Own view = same user class and id.
+- **FR-MON-006** (1.41, D11): `MonitoringGate` refuses evidence with `on_break` when the workday register (spec 198) shows a break or no clocked `work` stretch over the instant or the whole slot (night shifts through the day before), and with `workday_unknown` when the register is on but the day cannot be read; `WorkdayHistorySourceInterface` gives earlier days.
 
 ### Imported time entries (1.11)
 

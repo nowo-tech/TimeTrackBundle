@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use Nowo\TimeTrackBundle\Event\MonitoringPersonDetailViewedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Monitoring\ActivityItem;
-use Nowo\TimeTrackBundle\Monitoring\MonitoringPolicy;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringPersonDetailGrant;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringTeamDetailDeniedException;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringTeamViewGuard;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
@@ -103,22 +103,27 @@ final class MonitoringPrivacyDecisionsTest extends MonitoringTestCase
 
             return 'allowed';
         };
-        self::assertSame('aggregates_only', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($manager, $worker)), 'default: project aggregates');
+        self::assertSame('aggregates_only', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($manager, $worker)), 'default: project aggregates');
         $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['purpose' => 'project_costing']);
-        self::assertSame('aggregates_only', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($manager, $worker)));
+        self::assertSame('aggregates_only', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($manager, $worker)));
         $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['scope' => 'personal']);
-        self::assertSame('personal', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($manager, $worker)));
+        self::assertSame('personal', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($manager, $worker)));
         $this->policySource()->policy = null;
-        self::assertSame('no_policy', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($manager, $worker)));
+        self::assertSame('no_policy', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($manager, $worker)));
         self::assertSame([], $viewed, 'a refused view leaves no view record');
 
-        $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '2026-11-24', 'lockedUntilChecklist' => true]);
-        self::assertSame('aggregates_only', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($manager, $worker)), 'a policy that collects nothing shows nothing');
-        $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '2026-11-24']);
-        self::assertSame('allowed', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($manager, $worker)));
+        $today                        = gmdate('Y-m-d', $this->now());
+        $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => $today, 'lockedUntilChecklist' => true]);
+        self::assertSame('aggregates_only', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($manager, $worker)), 'a policy that collects nothing shows nothing');
+        $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => $today]);
+        self::assertSame('not_acknowledged', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($manager, $worker)), 'the worker has not accepted the per-person policy');
+        $this->acknowledge($this->token());
+        $grant = $guard->authorizePersonDetail($manager, $worker);
+        self::assertSame($this->now(), $grant->visibleSince?->getTimestamp(), 'visible from the acknowledgement (after the opt-in day started)');
+        self::assertFalse($grant->covers($this->at('-1 second')));
         self::assertCount(1, $viewed, 'the view is recorded before anything is shown');
         self::assertSame([$manager->id, $worker->id, 7, 'billing_evidence'], [$viewed[0]->viewer->id, $viewed[0]->worker->id, $viewed[0]->policyVersion, $viewed[0]->purpose]);
-        self::assertSame('allowed', $denied(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($worker, $worker)), 'the worker\'s own view');
+        self::assertSame('allowed', $denied(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($worker, $worker)), 'the worker\'s own view');
         self::assertCount(1, $viewed, 'the own view is not a third-party view');
 
         $dispatcher->addListener(TimeTrackEvents::MONITORING_PERSON_DETAIL_VIEWED, static function (): never {

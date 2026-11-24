@@ -338,6 +338,7 @@
 | `Monitoring/MonitoringEvidenceStoreInterface.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringGate.php` | Monitoring (opt-in) | FR-MON-001, FR-MON-006 |
 | `Monitoring/MonitoringImageInspector.php` | Monitoring (opt-in) | FR-MON-001 |
+| `Monitoring/MonitoringPersonDetailGrant.php` | Monitoring (opt-in) | FR-MON-005 |
 | `Monitoring/MonitoringPolicy.php` | Monitoring (opt-in) | FR-MON-001, FR-MON-004, FR-MON-005 |
 | `Monitoring/MonitoringPolicySourceInterface.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringSettings.php` | Monitoring (opt-in) | FR-MON-001 |
@@ -689,9 +690,9 @@ Every file tracked under `src/` (PHP classes, Twig views, XML mapping, YAML conf
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes (`src/**/*.php`) | 480 | 480 |
+| PHP classes (`src/**/*.php`) | 481 | 481 |
 | Other production files (Twig, XML mapping, YAML, translations) | 34 | 34 |
-| **Total production sources** | **514** | **514** |
+| **Total production sources** | **515** | **515** |
 
-Audit command: `git ls-files src | wc -l` → 514 at 1.41.0 (refreshed with the monitoring privacy decisions D4, D9,
+Audit command: `git ls-files src | wc -l` → 515 at 1.41.0 (refreshed with the monitoring privacy decisions D4, D9,
 D11; the 1.38–1.39 files are mapped too).

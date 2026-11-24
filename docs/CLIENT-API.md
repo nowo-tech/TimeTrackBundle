@@ -198,7 +198,7 @@ the 2026-11-24 TimeTrack Desktop monitoring study:
 
 - **D4 — window titles and project names are never sent.** `GET me.monitoring.windowTitles` is always `false`
   (deprecated; 2.0 removes the key). No route accepts a title: `windowTitle`, `title` or `project` fields of an activity
-  item and a top-level `windowTitles` are ignored (never stored, returned or logged). Clients may read titles **locally**
+  item and a top-level `windowTitles` are ignored (the bundle never stores, returns or logs them). Clients may read titles **locally**
   (in memory) for task suggestions only, and send `titles=0` in `X-TimeTrack-Capabilities`. The `app` `name` is the
   application's name (`Code`, `Excel`), never the window title or the file or project open in it.
 - **D9 — team view.** `GET me.monitoring` gains `purpose` (`billing_evidence`, `project_costing`, `self_analytics`, or
@@ -209,8 +209,9 @@ the 2026-11-24 TimeTrack Desktop monitoring study:
 - **D11 — breaks and clock-out.** With the host's workday register (`GET me features.workday: true`), stop collecting
   while `GET workday` says `on_break`, `idle` (not clocked in) or `closed` (clocked out), even if the task timer keeps
   running. The server refuses what slips through with `422 monitoring_refused {reason: "on_break"}` at intent time and
-  at the `PUT`, and drops activity items of such slots (`dropped`). Delete buffered items refused with `on_break`; do
-  not retry them.
+  at the `PUT`, and drops activity items of such slots (`dropped`); a slot must lie inside the clocked work over its
+  whole span. `workday_unknown`: the host cannot read the register for that day (buffered item of an earlier day on a
+  host without register history). Delete buffered items refused with either reason; do not retry them.
 
 ```json
 "monitoring": {
@@ -335,7 +336,7 @@ Every refusal check runs **here, before any byte is sent**, in this order:
 | `413 too_large` | `bytes` above 1 572 864 (1.5 MiB) |
 | `415 unsupported_media_type` | `mime` other than `image/webp` / `image/jpeg` |
 | `409 policy_changed {policyVersion}` | `policyVersion` newer than the server's, or an unblurred capture of an older version the current one no longer allows unblurred: refetch and drop what the policy no longer allows |
-| `422 monitoring_refused {reason}` | `kind_off` (no policy, `enabled: false`, locked, or screenshots not enabled), `not_acknowledged` (the current version needs an acknowledgement), `outside_timer` (the worker's own timer did not run on `entryId` at `takenAt`), `outside_hours` (outside the working calendar: the spec 198 schedule, a day off or leave; only when the host gives a schedule), `on_break` (since 1.41: the workday register shows a break, or no clocked `work` segment — before clock-in, after clock-out — at `takenAt`; only with a register), `too_old` (`takenAt` older than `maxBufferAgeHours`) |
+| `422 monitoring_refused {reason}` | `kind_off` (no policy, `enabled: false`, locked, or screenshots not enabled), `not_acknowledged` (the current version needs an acknowledgement), `outside_timer` (the worker's own timer did not run on `entryId` at `takenAt`), `outside_hours` (outside the working calendar: the spec 198 schedule, a day off or leave; only when the host gives a schedule), `on_break` (since 1.41: the workday register shows a break, or no clocked `work` segment — before clock-in, after clock-out — at `takenAt`; only with a register), `workday_unknown` (since 1.41: the register is on but its day cannot be read), `too_old` (`takenAt` older than `maxBufferAgeHours`) |
 | `409 duplicate` | the slot already has a screenshot (or a discard marker), or another live upload of yours holds it, whatever its entry id |
 | `422 evidence_rejected` | replay of an intent whose upload the host refused for good: do not retry, delete the local copy |
 | `429 rate_limited` | 6 intents per 10 minutes per token (`Retry-After`, `retryAfter`) |
@@ -359,7 +360,7 @@ The URL is valid for **120 s and one request**. **Only PUT to a URL whose origin
 API base you called** — compare scheme and host case-insensitively (lowercase both; a default `:443` equals no port); refuse any other URL (defence in depth: the host should set `client_api.monitoring.upload_base_url`
 so the URL never follows a request's `Host` header). Before reading the body the bundle re-checks everything it checked
 at intent time against the current policy and timer: `409 policy_changed`, `422 monitoring_refused` (`kind_off`,
-`not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `on_break`, `too_old`) and `422
+`not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `on_break`, `workday_unknown`, `too_old`) and `422
 upload_mismatch {field: "dimensions"}` (the policy's `maxLongSidePx`). Then it enforces every cap while streaming the
 body to a temporary file:
 

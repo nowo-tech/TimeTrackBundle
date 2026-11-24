@@ -27,7 +27,7 @@
 | Hours balance, overtime, ledger, `GET balance` | `working_time.enabled` | off |
 | Timesheets (submit / approve / lock), `GET timesheets` | `timesheets.enabled` | off |
 | Workday client API (R-GDPR §8) | `client_api.workday_provider` | none |
-| Monitoring `on_break` refusal (1.41, D11; earlier days with `Workday\WorkdayHistorySourceInterface`) | `client_api.workday_provider` + `client_api.monitoring` | none |
+| Monitoring `on_break` refusal (1.41, D11; earlier days need `Workday\WorkdayHistorySourceInterface`, else `workday_unknown`) | `client_api.workday_provider` + `client_api.monitoring` | none |
 | `GET me` `links.workingTime` (your working-time page, spec 198) | `client_api.links_working_time_route` (1.19) | none |
 | `GET workday` `leave`, `GET me` `features.leave` / `links.leave` (spec 204) | `client_api.leave_provider`, `client_api.links_leave_route` (1.22) | none |
 | Calendar suggestions, `POST entries` | 1.14 | — |

@@ -8,13 +8,16 @@ use DateTimeImmutable;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Event\MonitoringPersonDetailViewedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgement;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringPersonDetailGrant;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringPolicy;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringPolicySourceInterface;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringTeamDetailDeniedException;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringTeamViewGuard;
 use Nowo\TimeTrackBundle\Port\WorkdaySourceGate;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkdayRegister;
+use Nowo\TimeTrackBundle\Tests\Support\InMemoryMonitoringAcknowledgementStore;
 use Nowo\TimeTrackBundle\Tests\Support\MonitoringFixtures;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
@@ -113,6 +116,7 @@ final class MonitoringPrivacyDecisionsTest extends TestCase
                 return $this->policy;
             }
         };
+        $acks       = new InMemoryMonitoringAcknowledgementStore();
         $dispatcher = new EventDispatcher();
         $seen       = [];
         $dispatcher->addListener(TimeTrackEvents::MONITORING_PERSON_DETAIL_VIEWED, static function (MonitoringPersonDetailViewedEvent $event) use (&$seen): void {
@@ -120,7 +124,7 @@ final class MonitoringPrivacyDecisionsTest extends TestCase
         });
         $logger = new RecordingLogger();
         $clock  = new MockClock('2026-11-24 10:00:00 UTC');
-        $guard  = new MonitoringTeamViewGuard($source, $dispatcher, $clock, $logger);
+        $guard  = new MonitoringTeamViewGuard($source, $dispatcher, $clock, $logger, $acks);
         $viewer = new TimeTrackUserRef('App\\User', 'manager-1');
         $worker = new TimeTrackUserRef('App\\User', 'worker-1');
         $reason = static function (callable $call): string {
@@ -133,21 +137,55 @@ final class MonitoringPrivacyDecisionsTest extends TestCase
             return 'allowed';
         };
 
-        self::assertSame('unknown_user', $reason(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail(new TimeTrackUserRef('App\\User', null), $worker)));
-        self::assertSame('unknown_user', $reason(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($viewer, new TimeTrackUserRef('App\\User', null))));
-        self::assertSame('no_policy', $reason(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($viewer, $worker)));
-        self::assertNull($guard->authorizePersonDetail($worker, $worker), 'own view without a policy');
+        self::assertSame('unknown_user', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail(new TimeTrackUserRef('App\\User', null), $worker)));
+        self::assertSame('unknown_user', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, new TimeTrackUserRef('App\\User', null))));
+        self::assertSame('no_policy', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)));
+        $own = $guard->authorizePersonDetail($worker, $worker);
+        self::assertTrue($own->ownView);
+        self::assertNull($own->policy, 'own view without a policy');
+        self::assertTrue($own->covers(new DateTimeImmutable('2000-01-01')), 'the worker sees all of their own evidence');
+
+        // Audit ZBB-M1: another user class with the same id is a third party.
+        $source->policy = MonitoringFixtures::policy();
+        $admin          = new TimeTrackUserRef('App\\Admin', 'worker-1');
+        self::assertSame('aggregates_only', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($admin, $worker)));
+
+        // Audit ZBB-M2: the opt-in date has come and the worker acknowledged after it.
+        $source->policy = $this->billing(['perPersonDetailRecordedAt' => '2026-11-25']);
+        self::assertSame('opt_in_pending', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)), 'a future opt-in date');
         $source->policy = $this->billing();
-        self::assertSame('allowed', $reason(static fn (): ?MonitoringPolicy => $guard->authorizePersonDetail($viewer, $worker)));
+        self::assertSame('not_acknowledged', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)), 'never acknowledged');
+        $acks->last = new MonitoringAcknowledgement(7, new DateTimeImmutable('2026-11-23 18:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
+        self::assertSame('not_acknowledged', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)), 'acknowledged before the opt-in');
+        $acks->last = new MonitoringAcknowledgement(6, new DateTimeImmutable('2026-11-24 09:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
+        self::assertSame('not_acknowledged', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)), 'an older version than the widening one');
+        $acks->last = new MonitoringAcknowledgement(7, new DateTimeImmutable('2026-11-24 09:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
+        self::assertSame([], $seen, 'a refused view leaves no record');
+
+        $grant = $guard->authorizePersonDetail($viewer, $worker);
+        self::assertFalse($grant->ownView);
+        self::assertEquals(new DateTimeImmutable('2026-11-24 09:00:00 UTC'), $grant->visibleSince, 'the later of the opt-in and the acknowledgement');
+        self::assertFalse($grant->covers(new DateTimeImmutable('2026-11-24 08:59:59 UTC')), 'evidence of before the acknowledgement stays aggregated');
+        self::assertTrue($grant->covers(new DateTimeImmutable('2026-11-24 09:00:00 UTC')));
         self::assertCount(1, $seen);
         self::assertEquals(new DateTimeImmutable('2026-11-24 10:00:00 UTC'), $seen[0]->viewedAt);
+        self::assertEquals($grant->visibleSince, $seen[0]->visibleSince);
         self::assertSame(['manager-1', 'worker-1'], [$seen[0]->viewer->id, $seen[0]->worker->id]);
         self::assertNotContains('manager-1', $logger->contextValues(), 'logs carry no ids');
         self::assertNotContains('worker-1', $logger->contextValues());
+        self::assertSame('allowed', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($admin, $worker)), 'the other class goes through the policy and the record');
+        self::assertCount(2, $seen);
 
-        $noAudit = new MonitoringTeamViewGuard($source);
-        self::assertSame('aggregates_only', $reason(static fn (): ?MonitoringPolicy => $noAudit->authorizePersonDetail($viewer, $worker)), 'no dispatcher: no record, so no detail');
-        self::assertSame('no_policy', $reason(static fn (): ?MonitoringPolicy => (new MonitoringTeamViewGuard())->authorizePersonDetail($viewer, $worker)), 'monitoring not configured');
+        // Acknowledged on the opt-in day before midnight UTC: visible from the acknowledgement; earlier day: from the opt-in.
+        $source->policy = $this->billing(['perPersonDetailRecordedAt' => '2026-11-24', 'acknowledgementRequired' => false]);
+        $acks->last     = new MonitoringAcknowledgement(5, new DateTimeImmutable('2026-11-24 00:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
+        self::assertEquals(new DateTimeImmutable('2026-11-24 00:00:00 UTC'), $guard->authorizePersonDetail($viewer, $worker)->visibleSince);
+
+        // Audit ZBB-L1: no dispatcher, a dispatcher without a listener, or no acknowledgement store: no detail.
+        self::assertSame('no_audit', $reason(static fn (): MonitoringPersonDetailGrant => (new MonitoringTeamViewGuard($source, null, $clock, null, $acks))->authorizePersonDetail($viewer, $worker)));
+        self::assertSame('no_audit', $reason(static fn (): MonitoringPersonDetailGrant => (new MonitoringTeamViewGuard($source, new EventDispatcher(), $clock, null, $acks))->authorizePersonDetail($viewer, $worker)), 'nothing listens: nothing would record the view');
+        self::assertSame('not_acknowledged', $reason(static fn (): MonitoringPersonDetailGrant => (new MonitoringTeamViewGuard($source, $dispatcher, $clock))->authorizePersonDetail($viewer, $worker)));
+        self::assertSame('no_policy', $reason(static fn (): MonitoringPersonDetailGrant => (new MonitoringTeamViewGuard())->authorizePersonDetail($viewer, $worker)), 'monitoring not configured');
     }
 
     public function testTheWorkdayGateExposesTheHistoryPortOnlyWhenImplemented(): void
