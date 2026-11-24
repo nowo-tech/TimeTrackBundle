@@ -1475,7 +1475,8 @@ Four ports, all framework-free (`TimeTrackUserRef` and bundle value objects only
 - **Team views (D9).** Give the policy its written `purpose` (`billing_evidence`, `project_costing`, `self_analytics`).
   Third parties see **project aggregates** (`teamView: project_aggregates`, the default). Per-person detail needs the
   organisation's explicit opt-in: `purpose: billing_evidence`, `teamView: per_person` and `perPersonDetailRecordedAt`
-  (the `Y-m-d` date it was recorded; keep who and why in your policy audit); anything else is refused by the
+  (the `Y-m-d` date it was recorded; keep who and why in your policy audit) and, on later versions,
+  `perPersonSinceVersion` (the first `per_person` version, which the worker must have acknowledged, or a later one); anything else is refused by the
   constructor. Switching to `per_person` needs the DPIA update and the information to the workers' representatives
   (ET art. 64.5, LOPDGDD art. 87.3). In your team views, after your own `view_team` / project checks, call the public
   `Monitoring\MonitoringTeamViewGuard::authorizePersonDetail($viewer, $worker)`: it throws
@@ -1490,7 +1491,9 @@ Four ports, all framework-free (`TimeTrackUserRef` and bundle value objects only
 - **Breaks (D11).** With `client_api.workday_provider`, the gate refuses evidence at instants outside every clocked
   `work` segment of the register (a break, before clock-in, after clock-out) with `on_break`. Implement
   `Workday\WorkdayHistorySourceInterface::dayFor(TimeTrackUserRef $user, string $date): ?WorkdayState` on the same
-  service: without it buffered evidence of another day is refused (`workday_unknown`, fail closed). Segments: `type`
+  service: without it buffered evidence of another day is refused (`workday_unknown`, fail closed). `todayFor()` null
+  = register off; `dayFor()` returns an `idle` state for a day without clock-ins, and null for the evidence's date is
+  `workday_unknown`. Segments: `type`
   `work` / `break`, RFC 3339 `start` / `end`, `end: null` while open; the day before is consulted for night shifts.
   Activity slots are checked over the whole span the timer covers.
 - **Host logs (D4).** The bundle never logs request bodies; if your application logs HTTP bodies (e.g. HttpLog),

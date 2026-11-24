@@ -21,7 +21,11 @@ interface WorkdayHistorySourceInterface
 {
     /**
      * The user's working day on the local date (`Y-m-d`, in the register's time zone), with its `work` and `break`
-     * segments; null when the register is off for this user (nothing is checked then).
+     * segments. A day without clock-ins is an `idle` state with no segments, never null.
+     *
+     * Null means only that the register cannot give that day. Whether the register is on for the user comes from
+     * `todayFor()` (null there = off, nothing is checked). While it is on, null for the date of the evidence refuses it
+     * with `workday_unknown` (fail closed); null for the day before is read as "no night shift".
      */
     public function dayFor(TimeTrackUserRef $user, string $date): ?WorkdayState;
 }

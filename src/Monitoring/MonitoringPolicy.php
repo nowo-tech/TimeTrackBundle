@@ -78,6 +78,9 @@ final readonly class MonitoringPolicy
     /** @var list<string> */
     public array $excludedApps;
 
+    /** Since 1.41.0: the first policy version with `per_person` (null without `per_person`). */
+    public ?int $perPersonSinceVersion;
+
     /**
      * Always false since 1.41.0 (D4: window titles and project names are never sent, never stored, never returned).
      *
@@ -110,6 +113,7 @@ final readonly class MonitoringPolicy
      * @param string|null $purpose Since 1.41.0: one of {@see self::PURPOSES} (null = not declared, as before 1.41)
      * @param string $teamView Since 1.41.0: one of {@see self::TEAM_VIEWS}; `per_person` only with the `billing_evidence` purpose, the `organization` scope and `perPersonDetailRecordedAt`
      * @param string|null $perPersonDetailRecordedAt Since 1.41.0: date (`Y-m-d`) the organisation opted in to per-person detail (required with `per_person`, null otherwise)
+     * @param int|null $perPersonSinceVersion Since 1.41.0 (audit ZBB-D-M1): the first policy version with `per_person` (1..`policyVersion`; null = this version). Per-person detail needs the worker's acknowledgement of this version or a later one, whatever `acknowledgementRequired` says
      *
      * @throws InvalidArgumentException when a value is outside the contract
      */
@@ -138,6 +142,7 @@ final readonly class MonitoringPolicy
         public ?string $purpose = null,
         public string $teamView = self::TEAM_VIEW_PROJECT_AGGREGATES,
         public ?string $perPersonDetailRecordedAt = null,
+        ?int $perPersonSinceVersion = null,
     ) {
         if ($windowTitles) {
             trigger_deprecation('nowo-tech/time-track-bundle', '1.41.0', 'The "windowTitles" argument of %s is ignored: window titles are never collected (owner decision D4); stop passing it, 2.0 removes it.', self::class);
@@ -183,6 +188,8 @@ final readonly class MonitoringPolicy
         $perPerson = $teamView === self::TEAM_VIEW_PER_PERSON;
         $this->check(!$perPerson || ($purpose === self::PURPOSE_BILLING_EVIDENCE && $scope === 'organization'), 'teamView per_person needs the billing_evidence purpose of an organization policy.');
         $this->check($perPerson ? ($perPersonDetailRecordedAt !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $perPersonDetailRecordedAt) === 1) : $perPersonDetailRecordedAt === null, 'perPersonDetailRecordedAt must be the Y-m-d opt-in date with teamView per_person, and null otherwise.');
+        $this->check(!$perPerson ? $perPersonSinceVersion === null : ($perPersonSinceVersion === null || ($perPersonSinceVersion >= 1 && $perPersonSinceVersion <= $policyVersion)), 'perPersonSinceVersion must be 1..policyVersion with teamView per_person, and null otherwise.');
+        $this->perPersonSinceVersion = $perPerson ? ($perPersonSinceVersion ?? $policyVersion) : null;
     }
 
     /**

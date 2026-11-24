@@ -72,6 +72,9 @@ final class MonitoringPrivacyDecisionsTest extends TestCase
         self::assertSame(['billing_evidence', 'per_person'], [$block['purpose'], $block['teamView']]);
         self::assertStringNotContainsString('2026-11-24', (string) json_encode($block));
         self::assertTrue($billing->allowsPerPersonDetail());
+        self::assertSame(7, $billing->perPersonSinceVersion, 'null = this version');
+        self::assertSame(4, $this->billing(['perPersonSinceVersion' => 4])->perPersonSinceVersion);
+        self::assertNull(MonitoringFixtures::policy()->perPersonSinceVersion);
         self::assertSame('per_person', MonitoringTeamViewGuard::granularity($billing));
         self::assertSame('project_aggregates', MonitoringTeamViewGuard::granularity(null));
         self::assertSame('project_aggregates', MonitoringTeamViewGuard::granularity(MonitoringFixtures::policy(overrides: ['purpose' => 'billing_evidence'])), 'the purpose alone does not open per-person detail');
@@ -94,6 +97,9 @@ final class MonitoringPrivacyDecisionsTest extends TestCase
         yield 'per person with a bad date' => [['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '24/11/2026']];
         yield 'per person of a personal policy' => [['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '2026-11-24', 'scope' => 'personal']];
         yield 'an opt-in date without per person' => [['purpose' => 'billing_evidence', 'perPersonDetailRecordedAt' => '2026-11-24']];
+        yield 'a per-person version without per person' => [['perPersonSinceVersion' => 3]];
+        yield 'a per-person version after the policy version' => [['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '2026-11-24', 'perPersonSinceVersion' => 8]];
+        yield 'a per-person version 0' => [['purpose' => 'billing_evidence', 'teamView' => 'per_person', 'perPersonDetailRecordedAt' => '2026-11-24', 'perPersonSinceVersion' => 0]];
     }
 
     /**
@@ -176,10 +182,19 @@ final class MonitoringPrivacyDecisionsTest extends TestCase
         self::assertSame('allowed', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($admin, $worker)), 'the other class goes through the policy and the record');
         self::assertCount(2, $seen);
 
-        // Acknowledged on the opt-in day before midnight UTC: visible from the acknowledgement; earlier day: from the opt-in.
-        $source->policy = $this->billing(['perPersonDetailRecordedAt' => '2026-11-24', 'acknowledgementRequired' => false]);
+        // Audit ZBB-D-M1 (probe P10): an acknowledgement of an earlier, non-per_person version never opens per-person
+        // detail, even when the host marks the per_person version as not needing a new acknowledgement.
+        $source->policy = $this->billing(['acknowledgementRequired' => false]);
+        $acks->last     = new MonitoringAcknowledgement(6, new DateTimeImmutable('2026-11-24 09:30:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
+        self::assertSame('not_acknowledged', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)), 'v6 (project_costing) acknowledged, v7 per_person not');
+
+        // per_person since v5, v7 narrows (no new acknowledgement): the v5 acceptance on the opt-in day counts.
+        $source->policy = $this->billing(['acknowledgementRequired' => false, 'perPersonSinceVersion' => 5]);
         $acks->last     = new MonitoringAcknowledgement(5, new DateTimeImmutable('2026-11-24 00:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
         self::assertEquals(new DateTimeImmutable('2026-11-24 00:00:00 UTC'), $guard->authorizePersonDetail($viewer, $worker)->visibleSince);
+        $acks->last = new MonitoringAcknowledgement(4, new DateTimeImmutable('2026-11-24 00:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
+        self::assertSame('not_acknowledged', $reason(static fn (): MonitoringPersonDetailGrant => $guard->authorizePersonDetail($viewer, $worker)), 'v4 is before per_person');
+        $acks->last = new MonitoringAcknowledgement(7, new DateTimeImmutable('2026-11-24 09:00:00 UTC'), 'desktop', MonitoringFixtures::noticeSha256());
 
         // Audit ZBB-L1: no dispatcher, a dispatcher without a listener, or no acknowledgement store: no detail.
         self::assertSame('no_audit', $reason(static fn (): MonitoringPersonDetailGrant => (new MonitoringTeamViewGuard($source, null, $clock, null, $acks))->authorizePersonDetail($viewer, $worker)));
