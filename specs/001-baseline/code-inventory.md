@@ -16,6 +16,7 @@
 | `Routing/TimeTrackRouteLoader.php` | Route loader (1.29: v1 twins, `nowo_time_track_api` type) | FR-ROUTE-001, FR-ROUTE-002, FR-ROUTE-003 |
 | `Routing/ControllerAttributeRouteLoader.php` | Controller `#[Route]` reader (internal) | FR-ROUTE-002 |
 | `Doctrine/TimeTrackMetadataListener.php` | Table prefix | FR-DOCTRINE-001 |
+| `Doctrine/TimeTrackExactKeyColumns.php` | Table prefix | FR-DOCTRINE-001 (REQ-SEC-006 exact-key columns) |
 | `Entity/ActiveTimer.php` | Active timer entity | FR-ENTITY-001 |
 | `Entity/TimeEntry.php` | Time entry entity | FR-ENTITY-002 |
 | `Entity/ClientToken.php` | Client token entity | FR-ENTITY-003 |
@@ -78,6 +79,8 @@
 | `Resources/views/_legacy_layout.html.twig` | Deprecated bridge for 1.x host layouts | FR-TPL-001 |
 | `Resources/views/time_track/index.html.twig` | Timer index | FR-TPL-001 |
 | `Resources/views/time_track/reports.html.twig` | Reports page | FR-TPL-001 |
+| `Resources/views/components/dialog_form.html.twig` | Timesheet dialog content (1.39, `TimesheetDialogResponder`) | FR-TS-003 |
+| `Resources/views/components/dialog_page.html.twig` | Timesheet dialog page (1.39, `TimesheetDialogResponder`) | FR-TS-003 |
 
 ## Translations
 
@@ -262,6 +265,8 @@
 | `Timesheet/TimesheetApproverProviderInterface.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetAuditTrail.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetFormHandler.php` | Timesheets (period lock, approval) | FR-TS-001 |
+| `Timesheet/TimesheetFormResult.php` | Timesheets (period lock, approval) | FR-TS-003 |
+| `Ui/TimesheetDialogResponder.php` | Timesheets (period lock, approval) | FR-TS-003 |
 | `Timesheet/TimesheetPersonalDataExporter.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetScope.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetScopePolicyInterface.php` | Timesheets (period lock, approval) | FR-TS-001 |
@@ -680,12 +685,13 @@
 
 ## Coverage summary
 
+Every file tracked under `src/` (PHP classes, Twig views, XML mapping, YAML config, translations) has one row above.
+
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes (`src/**/*.php`) | 429 | 429 |
-| Id-based access, read ports, personal data and client sessions (1.33-1.37) | 32 | 32 |
-| Writes by id (1.40) | 12 | 12 |
-| Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
-| **Total production sources** | **505** | **505** |
+| PHP classes (`src/**/*.php`) | 480 | 480 |
+| Other production files (Twig, XML mapping, YAML, translations) | 34 | 34 |
+| **Total production sources** | **514** | **514** |
 
-Audit command: `git ls-files src | wc -l` → 510 at 1.40.1 (5 files added in 1.38–1.39 are not mapped here yet).
+Audit command: `git ls-files src | wc -l` → 514 at 1.41.0 (refreshed with the monitoring privacy decisions D4, D9,
+D11; the 1.38–1.39 files are mapped too).
