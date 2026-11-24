@@ -26,8 +26,8 @@ Current release **v1.31.0** (2026-11-18) — see [CHANGELOG.md](CHANGELOG.md).
 
 - Timer, time entries and timesheets for the host's tasks (task provider; [TaskBoard integration](TASK-BOARD-INTEGRATION.md)).
 - Client API for the browser extension and the desktop app ([CLIENT-API.md](CLIENT-API.md)); the clients live in their
-  own repositories (TimeTrack Extension, TimeTrack Desktop). The prototypes under `extension/` and `desktop/` are kept
-  for reference ([BROWSER-EXTENSION.md](BROWSER-EXTENSION.md), [DESKTOP-AGENT.md](DESKTOP-AGENT.md)).
+  own repositories (TimeTrack Extension, TimeTrack Desktop). The 1.x prototypes under `extension/` and `desktop/` were
+  removed in 2.0 ([BROWSER-EXTENSION.md](BROWSER-EXTENSION.md), [DESKTOP-AGENT.md](DESKTOP-AGENT.md)).
 - **1.13**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with approval and a
   hard period lock, audit chains, workday client API (R-GDPR §8).
 - **1.14**: calendar suggestions (Google / Microsoft 365, read-only, primary calendar, opt-in, server mode), `POST

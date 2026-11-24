@@ -120,8 +120,8 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Client API reference](docs/CLIENT-API.md)
 - [Working time, balance and timesheets](docs/WORKING-TIME.md)
 - [Meetings API (host guide)](docs/MEETINGS.md)
-- [Browser extension](docs/BROWSER-EXTENSION.md)
-- [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
+- [Browser extension](docs/BROWSER-EXTENSION.md) — [nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension)
+- [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — [nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)
 - [Roadmap](docs/ROADMAP.md)
 
@@ -134,7 +134,7 @@ make release-check
 ```
 
 - **PHP:** 100% lines — controllers, Doctrine repositories and listeners included (functional tests on in-memory SQLite, `tests/Functional/`); only pure interfaces are excluded (`phpunit.xml.dist`)
-- **TS/JS:** N/A (desktop agent lives in `desktop/`, outside bundle PHP coverage)
+- **TS/JS:** N/A (the clients live in their own repositories)
 - **Python:** N/A
 
 ## License

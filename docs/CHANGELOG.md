@@ -187,6 +187,10 @@ changes. See [UPGRADING](UPGRADING.md#to-200).
   `GET me.monitoring` (deprecated and frozen to `false` since 1.41.0, owner decision D4): window titles are never
   collected. Drop the argument (a named `windowTitles:` argument is an unknown parameter; a positional call moves
   `excludedApps` and the later arguments one place left); clients read a missing key as `false`.
+- The client prototypes `desktop/` (Tauri) and `extension/` (Chrome) of this repository (audit ZBH-L1): they called the
+  removed `POST heartbeat` and the Tauri webview origin and no longer worked against 2.0, and `desktop/` was shipped in
+  the dist archive. The clients are [nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop) and
+  [nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension). No PHP code depended on them.
 - Unused since the removals and kept in the signature, ignored (deprecated, removed in 3.0): the `$teamAccessGuard`
   and `$idleThresholdSeconds` arguments of `TimeTrackClientApiController`, the `$layoutTemplate` / `$cssFramework`
   arguments of `TimeTrackTwigExtension`.
