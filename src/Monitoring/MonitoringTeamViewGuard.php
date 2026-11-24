@@ -100,8 +100,9 @@ final readonly class MonitoringTeamViewGuard
             throw $this->denied(MonitoringTeamDetailDeniedException::REASON_OPT_IN_PENDING);
         }
         $last = $this->acknowledgements?->lastAcknowledged($worker);
-        // The worker accepted this policy (or a version it did not widen) after the organisation opted in.
-        if (!$last instanceof MonitoringAcknowledgement || MonitoringContext::acknowledgementRequired($policy, $last) || $last->acknowledgedAt->getTimestamp() < $optIn->getTimestamp()) {
+        // The worker accepted a per_person version (audit ZBB-D-M1: whatever acknowledgementRequired says), the current
+        // one needs no newer acknowledgement, and the acceptance came after the organisation opted in.
+        if (!$last instanceof MonitoringAcknowledgement || $last->policyVersion < (int) $policy->perPersonSinceVersion || MonitoringContext::acknowledgementRequired($policy, $last) || $last->acknowledgedAt->getTimestamp() < $optIn->getTimestamp()) {
             throw $this->denied(MonitoringTeamDetailDeniedException::REASON_NOT_ACKNOWLEDGED);
         }
         if (!$this->eventDispatcher instanceof ListenerAwareDispatcherInterface || !$this->eventDispatcher->hasListeners(TimeTrackEvents::MONITORING_PERSON_DETAIL_VIEWED)) {

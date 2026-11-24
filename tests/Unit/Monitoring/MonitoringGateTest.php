@@ -203,6 +203,16 @@ final class MonitoringGateTest extends TestCase
         self::assertSame('on_break', $this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now), 'with history: after clock-out');
         self::assertNull($this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, new DateTimeImmutable('2026-11-18 20:30:00 UTC'), $now));
 
+        // Audit ZBB-D-L1: once today's answer says the register is on, a null day of the evidence is unknown (fail
+        // closed); today's null means the register is off.
+        $saved = $register->days['2026-11-18'];
+        unset($register->days['2026-11-18']);
+        self::assertSame('workday_unknown', $this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now));
+        $register->off = ['1'];
+        self::assertNull($this->gate(new WorkdaySourceGate($register->withHistory()))->refusal($this->user, MonitoringFixtures::policy(), $ack, 'screenshots', $entry, $at, $now));
+        $register->off                = [];
+        $register->days['2026-11-18'] = $saved;
+
         // The register's zone decides the date: 23:30 UTC is already the 19th in Madrid.
         $madrid = (new FixedWorkdayRegister('2026-11-19'))
             ->day('2026-11-18', 'closed', [['work', '2026-11-18T08:00:00+01:00', '2026-11-18T18:00:00+01:00']], 'Europe/Madrid')

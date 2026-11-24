@@ -154,7 +154,9 @@ D4, D9 and D11 of the 2026-11-24 monitoring study apply.
 - Per-person detail is an explicit opt-in of the organisation: `purpose: 'billing_evidence'`, `teamView: 'per_person'`
   and `perPersonDetailRecordedAt: 'Y-m-d'` (the date the organisation recorded it; keep who and why in your policy
   audit). Any other combination throws `InvalidArgumentException` (a host bug). Switching a policy to `per_person`
-  widens what third parties see: set `acknowledgementRequired: true` for that version so workers acknowledge it.
+  widens what third parties see: set `acknowledgementRequired: true` for that version so workers acknowledge it, and
+  pass `perPersonSinceVersion` (the first `per_person` version; default the current one) on later versions. The guard
+  always requires an acknowledgement of a version ≥ `perPersonSinceVersion`, whatever `acknowledgementRequired` says.
 - Switching a policy to `per_person` changes the monitoring criteria: update the DPIA and inform the workers'
   representatives (ET art. 64.5, LOPDGDD art. 87.3) before the opt-in date, besides the workers' acknowledgement.
 - Before showing one worker's detail to anyone but that worker, call
@@ -188,7 +190,9 @@ try {
   stop collecting while `GET workday` says `on_break`, `idle` or `closed`; the server refusal is the backstop.
 - Implement `Workday\WorkdayHistorySourceInterface::dayFor($user, $date)` on your workday provider: without it,
   buffered items of another day than today are refused with `workday_unknown` (fail closed). Return the same
-  `WorkdayState` shape as `todayFor()`: `segments` of `type` `work` / `break` with RFC 3339 `start` / `end` (`end: null`
+  `WorkdayState` shape as `todayFor()` (a day without clock-ins is an `idle` state with no segments, never null: while
+  `todayFor()` says the register is on, `dayFor()` null for the evidence's date is refused with `workday_unknown`):
+  `segments` of `type` `work` / `break` with RFC 3339 `start` / `end` (`end: null`
   for an open segment). The day before is consulted too, so a night shift's segment covers the next morning.
 - Activity slots must lie inside the schedule and inside one clocked `work` stretch over the whole span the timer
   covers; a slot that runs into a break or past the clock-out is dropped.

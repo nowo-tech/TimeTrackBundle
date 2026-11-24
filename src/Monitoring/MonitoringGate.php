@@ -260,8 +260,9 @@ final readonly class MonitoringGate
     }
 
     /**
-     * The register's days around `[$from, $to]`: null when the register is off for the worker, false when it is on
-     * but the days are unknown (today-only provider and another date).
+     * The register's days around `[$from, $to]`: null when the register is off for the worker (today's answer is
+     * null), false when it is on but a day of the span is unknown (today-only provider and another date, or a history
+     * source that answers null for that day).
      *
      * @return false|list<WorkdayState>|null
      */
@@ -270,15 +271,22 @@ final readonly class MonitoringGate
         $dates   = $this->datesAround($zone, $from, $to);
         $history = $this->workday instanceof WorkdaySourceGate ? $this->workday->history() : ($this->workday instanceof WorkdayHistorySourceInterface ? $this->workday : null);
         if ($history instanceof WorkdayHistorySourceInterface) {
-            $ref    = TimeTrackUserRefs::fromUser($user);
-            $states = [];
-            $on     = false;
+            // Audit ZBB-D-L1: whether the register is on for the worker comes from today's answer only. Once it is on,
+            // a null day for the span's own dates is unknown (fail closed); the day before is optional (night shifts).
+            if (!$this->workday?->today($user) instanceof WorkdayState) {
+                return null;
+            }
+            $ref      = TimeTrackUserRefs::fromUser($user);
+            $required = $this->datesAround($zone, $from, $to, false);
+            $states   = [];
             for ($i = 0; $i < count($dates); ++$i) {
                 $state = $history->dayFor($ref, $dates[$i]);
                 if (!$state instanceof WorkdayState) {
+                    if (in_array($dates[$i], $required, true)) {
+                        return false;
+                    }
                     continue;
                 }
-                $on       = true;
                 $states[] = $state;
                 // The register's zone may put the span on other dates: ask for those too.
                 foreach ($this->datesAround(new DateTimeZone($state->timezone), $from, $to) as $date) {
@@ -288,7 +296,7 @@ final readonly class MonitoringGate
                 }
             }
 
-            return $on ? $states : null;
+            return $states;
         }
         $state = $this->workday?->today($user);
         if (!$state instanceof WorkdayState) {
@@ -299,15 +307,19 @@ final readonly class MonitoringGate
     }
 
     /**
-     * The local dates of both ends and the day before the first.
+     * The local dates of both ends and (unless `$withDayBefore` is false) the day before the first.
      *
      * @return list<string>
      */
-    private function datesAround(DateTimeZone $zone, DateTimeImmutable $from, DateTimeImmutable $to): array
+    private function datesAround(DateTimeZone $zone, DateTimeImmutable $from, DateTimeImmutable $to, bool $withDayBefore = true): array
     {
         $first = $from->setTimezone($zone);
+        $dates = [$first->format('Y-m-d'), $to->setTimezone($zone)->format('Y-m-d')];
+        if ($withDayBefore) {
+            $dates[] = $first->modify('-1 day')->format('Y-m-d');
+        }
 
-        return array_values(array_unique([$first->format('Y-m-d'), $to->setTimezone($zone)->format('Y-m-d'), $first->modify('-1 day')->format('Y-m-d')]));
+        return array_values(array_unique($dates));
     }
 
     /**

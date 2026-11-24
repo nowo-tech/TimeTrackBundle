@@ -270,18 +270,21 @@ Contract §TT-MON v1.1, additive on the unversioned and the `v1` client paths. U
 - **`workday_unknown` refusal** (audit ZBB-L2, fail closed): when the register is on for the worker but the host's
   provider answers today only, buffered evidence of another day is refused. Implement
   `Workday\WorkdayHistorySourceInterface::dayFor(TimeTrackUserRef, 'Y-m-d'): ?WorkdayState` (optional, framework-free)
-  on your workday provider to keep it.
+  on your workday provider to keep it. Whether the register is on comes from `todayFor()`; a day without clock-ins is an
+  `idle` state, and `dayFor()` null for the evidence's date is `workday_unknown` too (fail closed).
 - **Activity slots are checked over their whole span** (audit ZBB-L3): the first and the last second the timer covers
   must be inside the schedule (`outside_hours`) and inside one clocked `work` stretch (`on_break`); a slot that runs
   into a break, past the schedule or past the clock-out is refused, not kept whole.
 - **Team view granularity (D9).** `MonitoringPolicy` gains `purpose` (`billing_evidence`, `project_costing`,
   `self_analytics`, or null = not declared), `teamView` (`project_aggregates`, the default, or `per_person`) and
-  `perPersonDetailRecordedAt` (the `Y-m-d` opt-in date, required with `per_person`). `per_person` is accepted only for
-  an `organization` policy whose purpose is `billing_evidence`. New `MonitoringPolicy::allowsPerPersonDetail()`.
+  `perPersonDetailRecordedAt` (the `Y-m-d` opt-in date, required with `per_person`) and `perPersonSinceVersion` (the
+  first `per_person` version, default the current one). `per_person` is accepted only for an `organization` policy whose
+  purpose is `billing_evidence`. New `MonitoringPolicy::allowsPerPersonDetail()`.
 - `Monitoring\MonitoringTeamViewGuard` (public service): `granularity($policy)` (the maximum granularity) and
   `authorizePersonDetail($viewer, $worker): MonitoringPersonDetailGrant`. It refuses
   (`MonitoringTeamDetailDeniedException`: `no_policy`, `personal`, `aggregates_only`, `opt_in_pending` — a future
-  opt-in date —, `not_acknowledged` — the worker did not acknowledge the policy after the opt-in —, `no_audit` — no
+  opt-in date —, `not_acknowledged` — the worker did not acknowledge a `per_person` version (≥ `perPersonSinceVersion`, whatever
+  `acknowledgementRequired` says) after the opt-in —, `no_audit` — no
   listener would record the view —, `unknown_user`), and otherwise dispatches
   `nowo_time_track.monitoring.person_detail_viewed` (`MonitoringPersonDetailViewedEvent`: viewer and worker refs,
   policy version, purpose, time, `visibleSince`) **before** returning; a listener that throws stops the view. The
