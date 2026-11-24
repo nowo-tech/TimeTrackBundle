@@ -2122,7 +2122,7 @@ REQ-100 release: timer and reports pages on the UiKit page contract (layout_temp
   `web_ui.layout_template`, `nowo_ui_kit.css_framework`, `web_ui.templates.index|reports`. They keep working (mapped
   onto `web_ui.*`); a 1.x layout without the UiKit canonical blocks is wrapped in the deprecated
   `_legacy_layout.html.twig` bridge, and `layout.html.twig` is now a shim that renders 1.x templates extending
-  `nowo_time_track_layout` inside the UiKit admin layout. See [UPGRADING](UPGRADING.md#unreleased).
+  `nowo_time_track_layout` inside the UiKit admin layout. See [UPGRADING](UPGRADING.md#to-200).
 
 - Time comes from an injected `Psr\Clock\ClockInterface` (REQ-DI-001) in `TimerService`, `ClientAuthService`, the
   client API and manage controllers and `DoctrineOrmClientTokenRepository` (optional trailing constructor arguments,
