@@ -17,8 +17,8 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
 - Web UI at `/tools/time-track` (timer + paginated reports)
 - Stateless client API for the browser extension and the desktop app (`Bearer` session tokens linked to host credentials, scopes, per-request credential and task checks, device flow, rate limits, audit events) — [reference](docs/CLIENT-API.md)
 - Single active timer per user (409 on conflict)
-- Teams and managers v1 via `TeamContextProviderInterface`
-- Task integration via `TaskProviderInterface` (designed for `nowo-tech/task-board-bundle`)
+- Teams and managers v1 via `TeamDirectoryInterface`
+- Task integration via `TaskDirectoryInterface` (designed for `nowo-tech/task-board-bundle`)
 - Symfony events for timer start/stop and entry ACL
 - **Ops:** `nowo:time-track:client-tokens:purge` for expired browser/desktop tokens
 - **Working time and timesheets (1.13, opt-in)**: hours balance and overtime from a host working calendar and worked

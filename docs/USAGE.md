@@ -214,11 +214,11 @@ public function revoke(string $id, Request $request, ClientTokenRevoker $revoker
 - **Custom stores:** `revokeById()` needs a store implementing `ClientSessionRepositoryInterface` (the Doctrine store
   does); otherwise it throws `LogicException`.
 
-**`TaskAccessCheckerInterface::canTrack(UserInterface $user, string $taskId): bool`** — per `timer/start` and
+**`TaskAccessPolicyInterface::mayTrack(TimeTrackUserRef $user, string $taskId): bool`** — per `timer/start` and
 `timer/switch`. Deny by default; return true only when the user may track the task now (Beacon:
 `project.tasks.track_time` on the task's project). Missing and foreign tasks both answer `403 task_forbidden`.
 
-**`ClientCredentialIssuerInterface::issueForDevice(UserInterface $user, ClientType $clientType, string $clientName, array $scopes): string`** —
+**`ClientCredentialMinterInterface::mintForDevice(TimeTrackUserRef $user, ClientType $clientType, string $clientName, array $scopes): string`** —
 called when the user approves a device: create a credential (e.g. an app password named `$clientName`, typed by `$clientType`) so the device
 shows in the same list, and return its id.
 
@@ -240,10 +240,10 @@ your page (the default page does): `X-Frame-Options: DENY`, `Content-Security-Po
 
 **`ClientApiSettingsProviderInterface::getSettings(): ClientApiSettings`** — origins and rate limits from your
 instance settings (read per request). **`ClientDistributionProviderInterface::getDistribution(): ClientDistribution`**
-— download links. **`ClientUserProfileProviderInterface`** — `getDisplayName()` / `getWorkingHours()` of `GET me`; since 1.11 the same
-service may also implement **`ClientUserLocaleProviderInterface`** (`getLocale()`, the `locale` of `GET me`) and, since
-1.12, **`ClientUserDaysOffProviderInterface`** (`getDaysOff($user, $from, $to)`, the `daysOff` of `GET me`: holidays and
-vacations from today to today + 60 days). `getWorkingHours()` may return the `slots` or the 1.9 `days` shape; `GET me`
+— download links. **`ClientUserProfileSourceInterface`** — `displayNameOf()` / `workingHoursOf()` of `GET me`; since 1.11 the same
+service may also implement **`ClientUserLocaleSourceInterface`** (`localeOf()`, the `locale` of `GET me`) and, since
+1.12, **`ClientUserDaysOffSourceInterface`** (`daysOffOf($user, $from, $to)`, the `daysOff` of `GET me`: holidays and
+vacations from today to today + 60 days). `workingHoursOf()` may return the `slots` or the 1.9 `days` shape; `GET me`
 always sends `slots` ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)).
 **`ClientMinSupportedVersionProviderInterface::getMinSupportedVersion(ClientType): ?string`** (1.9.1) — `GET me`'s
 `minSupportedVersion` for the token's client type (`null` = key absent). Default: `client_distribution.min_supported_version.*`;
@@ -324,11 +324,11 @@ $result = $writer->upsert($user, new ImportedTimeEntryData(
   entry's `description` is hidden as well (`null` in `toArray(false, …)`, empty in the CSV): it is copied from the
   source and may repeat task content. Do not print it in host lists for those ids either.
 - **Whose access masks a title.** `hiddenTaskEntryIds()` asks the task provider whether the entry's **owner** may track
-  the task (`canUserTrack(owner, taskId)`), not the viewer: a manager sees the titles the member can see, as for live
+  the task (`canTrackTask(owner, taskId)`), not the viewer: a manager sees the titles the member can see, as for live
   entries. A task the owner can see but no longer track (closed, archived) is masked too (the safe direction). Large
-  lists make one provider call per (owner, task); a provider that implements `BatchTaskProviderInterface`
-  (`filterTrackable(user, taskIds)`, since 1.12) is asked once per owner.
-- If you replace or decorate `TimeEntryRepositoryInterface`, `ImportedTimeEntryRepositoryInterface` resolves to your
+  lists make one provider call per (owner, task); a provider that implements `BatchTaskDirectoryInterface`
+  (`filterTrackableFor(user, taskIds)`, since 1.12) is asked once per owner.
+- If you replace or decorate `TimeEntryRepositoryInterface`, the imported-entry store (`ImportedTimeEntryStoreInterface`) resolves to your
   service (since 1.12): implement it there (or alias it yourself), otherwise getting it throws `LogicException`.
 - The client API's own `GET entries` (without `userId`) and `GET export` **always include** the token user's imported
   entries (flagged `readOnly`, `source: import`) and ignore `TimeEntryListQueryEvent::setIncludeImported(false)`:
@@ -1013,13 +1013,13 @@ $calendarConnections->connect($user, 'org-a', CalendarProvider::Microsoft, Calen
 // A rule for keyless events (literal, case-insensitive; matches grouped per ISO week).
 $calendarRules->create($user, 'org-a', 'stand-up', $taskId);
 
-// Disconnect: your CalendarCredentialProviderInterface::revoke() runs first, then everything derived is deleted.
+// Disconnect: your CalendarCredentialSourceInterface::revokeFor() runs first, then everything derived is deleted.
 $calendarConnections->revoke($user, $connection->getId());
 ```
 
 `nowo:time-track:calendar:sync` (schedule it, e.g. every 15 minutes) reads each due server-mode connection inside its
 owner's working hours: events of the primary calendar of the last `calendar.lookback_days` that have ended, whose title
-carries a key your `TaskKeyResolverInterface` resolves (or that a user rule matches) and whose task the user can track.
+carries a key your `TaskKeyLookupInterface` resolves (or that a user rule matches) and whose task the user can track.
 Recurring events of one series (or one grouping rule) in one ISO week share a `group_key`.
 
 The owner's side (also behind the client API, [CLIENT-API.md](CLIENT-API.md#changes-in-114-calendar-suggestions-manual-entries)):
@@ -1311,7 +1311,7 @@ nowo_time_track:
   false and `links.leave` is null: the clients then rely on `daysOff`.
 
 **2. Leave days in `daysOff`** (`GET me`, the next 60 days; only with `client_api.leave_provider` set, otherwise a
-`leave` entry is dropped as in 1.21). Your days-off provider (`ClientUserDaysOffProviderInterface`, unchanged) may
+`leave` entry is dropped as in 1.21). Your days-off provider (`ClientUserDaysOffSourceInterface`, unchanged) may
 return `['date' => 'YYYY-MM-DD', 'kind' => 'leave']` for every
 approved leave day. The bundle always sends its label as null, so a leave day never carries a type or a reason; keep
 labels for public holiday names.
@@ -1828,7 +1828,7 @@ public function onTimerStop(TimerStopEvent $event): void
   request: the resolver's `find()` answers from the identity map first (audit LZ-I4).
 - Since 1.18 the `UserInterface` you pass to the services does **not** have to be that entity: it only needs a
   `getId()` returning the entity id. Before storing it, every service asks the
-  `Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface` port; the default
+  `Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface` port (2.0; the 1.x `UserReferenceResolverInterface` id was removed); the default
   `Doctrine\DoctrineUserReferenceResolver` keeps a `user_class` instance as it is and turns a security user of a class
   listed in **`accepted_user_classes`** (since 1.19; concrete wrapper or DTO classes, never an interface) into the
   `user_class` entity with that id. Any other class, and an id with no `user_class` row, is refused with
@@ -1845,7 +1845,7 @@ nowo_time_track:
 ```yaml
 # config/services.yaml
 services:
-    Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface: '@App\Infrastructure\TimeTrack\UserReferences'
+    Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface: '@App\Infrastructure\TimeTrack\UserReferences'
 ```
 
 - Requirements for that wrapper (the resolver cannot check them):

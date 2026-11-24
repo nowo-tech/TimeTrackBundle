@@ -786,7 +786,7 @@ Revokes the presented token. Always `204`.
 ### GET me
 
 Scope: any. `200 {"userId": "42", "identifier": "person@example.com", "displayName": null, "scopes": [...], "workingHours": null, "locale": null, "daysOff": null, ...}`
-(`displayName` / `workingHours` from `ClientUserProfileProviderInterface`; clients suppress reminders outside the
+(`displayName` / `workingHours` from `ClientUserProfileSourceInterface`; clients suppress reminders outside the
 working hours and on days off — the API never pushes). Since 1.12 `workingHours` is always in the `slots` shape and
 `daysOff` lists holidays and vacations: see [Working hours](#working-hours-normalised-since-112) and
 [Days off](#days-off-since-112).
@@ -807,21 +807,21 @@ Since 1.10 the body also carries:
 
 `idle_keep_note` and `limits.idle_check.user_can_disable` are 1.10.1 additions. `user_can_disable` tells the client
 whether it may offer the user a switch to turn the idle check off (organisation policy: `false`; personal accounts may
-get `true` from the host's `IdleCheckSettingsProviderInterface`).
+get `true` from the host's `IdleCheckSettingsPolicyInterface`).
 
 `workday` and `monitoring` are **reserved** and always `false` in 1.10 (`workday` real since 1.13, `monitoring` since 1.26). Clients treat a missing or unknown key as
 `false` and ignore keys they do not know. `limits.idle_check` is the token user's setting (host provider, else the
 instance settings) and is present even when `features.idle_check` is false.
 
 Since 1.11 the body also carries `"locale": "es"` (always present, string or `null`): the user's preferred locale, from
-the profile provider when it also implements `ClientUserLocaleProviderInterface`, else the user's own `getLocale()`
+the profile provider when it also implements `ClientUserLocaleSourceInterface`, else the user's own `getLocale()`
 when the user class has one. Values that are not a locale (`^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8}){0,3}$`) are sent as
 `null`. The masked title of imported entries is translated into this locale's language when the bundle ships it
 (`de`, `en`, `es`, `fr`, `it`, `nl`, `pt`; since 1.12), else into the host's default locale. Since 1.12 a user
 `getLocale()` that needs arguments is ignored. A masked entry (`taskVisible: false`) has `description: null` (and an
 empty CSV `description` cell) since 1.12.
 
-Since 1.15 the body has `privacy` when the host's profile provider also implements `ClientUserPrivacyProviderInterface`, and
+Since 1.15 the body has `privacy` when the host's profile provider also implements `ClientUserPrivacySourceInterface`, and
 no such key otherwise: an object (usually `url`, `version`, `controllerName`, `dpoContact`, `noticeSummary`) or `null`. It is
 in the language of `Accept-Language` (best match among the host's enabled locales), else the user's own. A `url` that is not
 absolute `http(s)` is sent as `null`, so clients can open any `url` they get.
@@ -840,7 +840,7 @@ otherwise always this shape:
 `timezone` (an IANA identifier, or `null` = the client's local time). A weekday without slots is not a working day.
 Slots are sorted by day, then start.
 
-`ClientUserProfileProviderInterface::getWorkingHours()` may return either shape; the bundle normalises it:
+`ClientUserProfileSourceInterface::workingHoursOf()` may return either shape; the bundle normalises it:
 
 | Provider returns | `GET me` sends |
 |------------------|----------------|
@@ -874,7 +874,7 @@ sends no schedule reminders on those days; the browser extension ignores it.
 - Range: today → today + 60 days in that time zone; entries outside it are dropped, one entry per date (the first the
   provider lists), sorted by date.
 
-Source: the profile provider when it also implements `ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user,
+Source: the profile provider when it also implements `ClientUserDaysOffSourceInterface::daysOffOf(TimeTrackUserRef $user,
 DateTimeImmutable $from, DateTimeImmutable $to): ?array` (`$from` = start of today, `$to` = end of today + 60, both in
 that time zone). Validation, entry by entry:
 
@@ -913,7 +913,7 @@ of every endpoint.
 ### POST timer/start
 
 Scope `timer:write`. `{"taskId": "task-1", "note": "optional, ≤500 chars", "source": "extension|desktop|web"}` →
-`201 {"timer": {...}}`. Per request `TaskAccessCheckerInterface::canTrack()` → `403 task_forbidden`; `409
+`201 {"timer": {...}}`. Per request `TaskAccessPolicyInterface::mayTrack()` → `403 task_forbidden`; `409
 timer_running`; `source` defaults to the 1.x `clientType` field, else the token's client. The note is stored as
 `metadata.note`.
 
@@ -965,7 +965,7 @@ carry its length only (`note_length`).
 `switch` (a new timer on `taskId` from `to`) | `stop` (no timer), optional `note` (≤ 500 chars, stored on the
 reassigned entry) and `source` (as on `timer/start`). Checks, in order, nothing written before the last:
 `400` when reassign is disabled (`client_api.idle.allow_reassign`), `taskId` is blank, or `then` / `source` is
-invalid → `403 task_forbidden` when `TaskAccessCheckerInterface::canTrack()` refuses (identical answer for a missing
+invalid → `403 task_forbidden` when `TaskAccessPolicyInterface::mayTrack()` refuses (identical answer for a missing
 and a foreign task) → `404` without a timer → `400` when `taskId` is the running task → `400` for a span outside the
 timer → `404` when a concurrent stop won → `409` when a concurrent start took the follow-up slot (entries kept). Both
 entries are written in one unit of work and each dispatches `nowo_time_track.timer.stop`.
@@ -1034,7 +1034,7 @@ Since 1.10 the task provider may fill `projectId`, `projectTitle` and `url` on `
   other value is published as `null` (logged at debug level as `task_url_dropped`, never with the URL). Clients check
   the origin again before opening it.
 
-On `timer` objects the details are resolved **live** with `TaskProviderInterface::findForUser()` for the token user:
+On `timer` objects the details are resolved **live** with `TaskDirectoryInterface::findTaskFor()` for the token user:
 a task that was deleted or is no longer visible gives `null` details (the stored `taskTitle` snapshot stays), and a
 provider error gives `null` details with a `200`.
 

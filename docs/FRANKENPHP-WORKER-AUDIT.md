@@ -361,7 +361,7 @@ No cross-request data leak was found in the bundle code under scenario A: no ser
 
 - Under scenario B the bundle reloads users before role checks and reopens a closed EntityManager itself, but the host must still clear the identity map between requests (e.g. `EntityManager::clear()` on `kernel.terminate`) to bound memory; keeping `services_resetter` (scenario A) does this.
 - Use a shared cache pool for `clients.login_rate_limit.cache_pool`.
-- Custom `TaskProviderInterface`, `TeamContextProviderInterface`, `ClientAuthenticatorInterface` or `TimeTrackAccessCheckerInterface` implementations must stay stateless (or implement `ResetInterface`); never cache the current user, the managed user ids or task lists per user in a property without keying and bounding them.
+- Custom `TaskDirectoryInterface`, `TeamDirectoryInterface`, `ClientAuthenticatorInterface` or `TimeTrackAccessCheckerInterface` implementations must stay stateless (or implement `ResetInterface`); never cache the current user, the managed user ids or task lists per user in a property without keying and bounding them.
 - Listeners on `TimeTrackEvents::TIME_ENTRY_LIST_QUERY` / `TIME_ENTRY_ACCESS_CHECK` receive the viewer in the event; they must not keep it after the event.
 - The demo (`demo/symfony8`) runs in worker mode by default (`FRANKENPHP_MODE=worker`, `Caddyfile` has a `worker` block).
 

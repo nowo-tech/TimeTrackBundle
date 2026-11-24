@@ -28,7 +28,7 @@ upcoming meetings, from **your** meeting read model. Contract: `timetrack-next` 
 nowo_time_track:
   meetings:
     enabled: true
-    provider: App\TimeTrack\MeetingProvider   # implements Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface
+    provider: App\TimeTrack\MeetingProvider   # implements Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface
     max_range_days: 14                        # 1..14
     max_past_days: 1                          # 0..7 (your retention)
     default_limit: 100                        # 1..200
@@ -45,16 +45,16 @@ re-consent once.
 ## Implement the provider
 
 ```php
-final class MeetingProvider implements MeetingProviderInterface
+final class MeetingProvider implements MeetingSourceInterface
 {
-    public function meetingsFor(UserInterface $user, MeetingQuery $query): MeetingPage
+    public function meetingsOf(TimeTrackUserRef $user, MeetingQuery $query): MeetingPage
     {
         // Own meetings of $user overlapping [$query->from, $query->to) (UTC), at most $query->limit, from your store.
         // Declined and cancelled events are left out. Never another person's meetings.
-        return new MeetingPage($views, $this->stateFor($user), $truncated);
+        return new MeetingPage($views, $this->syncStateOf($user), $truncated);
     }
 
-    public function stateFor(UserInterface $user): MeetingSyncState
+    public function syncStateOf(TimeTrackUserRef $user): MeetingSyncState
     {
         // Disabled (organization switch) → the route answers 404 and GET me says features.meetings: false.
         return new MeetingSyncState(MeetingSyncStatus::Connected, $lastSyncAt, $refreshAfterSeconds);
@@ -78,7 +78,7 @@ their message never leaves the bundle and only the exception class is logged.
 - `joinUrl` / `joinProvider` only for `https` links without user information on the allow-list: Teams
   (`teams.microsoft.com`, `teams.live.com`), Meet (`meet.google.com`), Zoom (`zoom.us`, `*.zoom.us`, `zoomgov.com`,
   `*.zoomgov.com`), Jitsi (`meet.jit.si` + `jitsi_hosts`), Webex (`*.webex.com`); ≤ 2048 characters.
-- At most 50 attendees, never the caller; task links only for tasks the caller can track (`TaskAccessCheckerInterface`).
+- At most 50 attendees, never the caller; task links only for tasks the caller can track (`TaskAccessPolicyInterface`).
 - Rows with a malformed id, `end ≤ start`, longer than 24 h or outside the window are dropped (counted in the log).
 - Sorted by `start`, then `id`; cut at `limit` (`truncated: true`).
 - Headers on every answer, errors included: `Cache-Control: no-store` (Symfony adds `private`), `Pragma: no-cache`,
@@ -181,7 +181,7 @@ $oauth->revoke($token);                                         // best effort, 
   `[redacted]`, and serialization
   throws. Store the strings, not the objects.
 
-With the readers and the helpers, a host keeps only its token store (`CalendarCredentialProviderInterface`), its
+With the readers and the helpers, a host keeps only its token store (`CalendarCredentialSourceInterface`), its
 meeting normalizer (attendee matching, minimal fields) and a test stub; its copied parsing can go.
 
 ## Your privacy duties

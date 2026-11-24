@@ -1267,8 +1267,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     user_mapping?: "relation"|"id"|Param, // Since 1.23.0 (REQ-ARCH-001 rule 2): how the bundle rows store their user. relation (default, the 1.22 behaviour): Doctrine relations to user_class (foreign keys to your users table). id: the user class and id in a bundle-owned row (table <table_prefix>host_users, string id, binary collation on MySQL / MariaDB); user_class need not be a Doctrine entity of the bundle entity manager. // Default: "relation"
  *     service_account_policy?: scalar|Param|null, // Since 1.25.0 (Beacon spec 234): service id implementing Integration\ServiceAccountPolicyInterface (isServiceAccount(TimeTrackUserRef): bool). Null (default): NoServiceAccountPolicy, everyone is a person. A service account (agent) may have overlapping entries; its entries are marked service_account. // Default: null
  *     table_prefix?: scalar|Param|null, // Prefix for time track tables (entries, active_timers, client_tokens). // Default: "time_track_"
- *     task_provider?: scalar|Param|null, // Service id implementing TaskProviderInterface. Defaults to StubTaskProvider for demos. // Default: "Nowo\\TimeTrackBundle\\Bridge\\StubTaskProvider"
- *     team_context_provider?: scalar|Param|null, // Service id implementing TeamContextProviderInterface. // Default: "Nowo\\TimeTrackBundle\\Bridge\\NullTeamContextProvider"
+ *     task_provider?: scalar|Param|null, // Service id implementing Integration\TaskDirectoryInterface (optionally BatchTaskDirectoryInterface). Defaults to StubTaskProvider for demos. // Default: "Nowo\\TimeTrackBundle\\Bridge\\StubTaskProvider"
+ *     team_context_provider?: scalar|Param|null, // Service id implementing Integration\TeamDirectoryInterface. // Default: "Nowo\\TimeTrackBundle\\Bridge\\NullTeamContextProvider"
  *     route_prefix?: scalar|Param|null, // Default: ""
  *     database?: array{
  *         entity_manager?: scalar|Param|null, // Default: "default"
@@ -1305,8 +1305,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     },
  *     working_time?: array{
  *         enabled?: bool|Param, // Hours balance, overtime and the balance client API (default off). // Default: false
- *         calendar_provider?: scalar|Param|null, // Service id implementing WorkingCalendarProviderInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off). // Default: null
- *         worked_time_source?: scalar|Param|null, // Service id implementing WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false). // Default: null
+ *         calendar_provider?: scalar|Param|null, // Service id implementing WorkingTime\WorkingCalendarSourceInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off). // Default: null
+ *         worked_time_source?: scalar|Param|null, // Service id implementing WorkingTime\WorkedTimeRecordInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false). // Default: null
  *         overtime_policy?: scalar|Param|null, // Service id implementing OvertimePolicyInterface (null = ConfigOvertimePolicy with the values below). // Default: null
  *         balance?: array{
  *             start_date?: scalar|Param|null, // First day of the running balance (Y-m-d); null = the 366 days before the end of the asked range, or after the last locked period. // Default: null
@@ -1323,8 +1323,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     timesheets?: array{
  *         enabled?: bool|Param, // Timesheets, period lock and the timesheet client API (default off). // Default: false
  *         scope_mode?: "provider"|"single"|Param, // provider: tenant scopes from scope_provider; single: one scope "" for everybody. // Default: "provider"
- *         scope_provider?: scalar|Param|null, // Service id implementing TimesheetScopeProviderInterface (required with scope_mode: provider). // Default: null
- *         approver_provider?: scalar|Param|null, // Service id implementing TimesheetApproverProviderInterface (required when enabled). // Default: null
+ *         scope_provider?: scalar|Param|null, // Service id implementing Timesheet\TimesheetScopePolicyInterface (required with scope_mode: provider). // Default: null
+ *         approver_provider?: scalar|Param|null, // Service id implementing Timesheet\TimesheetApproverPolicyInterface (required when enabled). // Default: null
  *         period?: "week"|"month"|Param, // week (ISO, Monday to Sunday) or month. // Default: "week"
  *         default_timezone?: scalar|Param|null, // Zone a period is cut in when neither the scope nor the working hours give one. // Default: "UTC"
  *         submit_requires_period_end?: bool|Param, // Refuse a submit before the period has ended (default false: a Friday afternoon submit is allowed). // Default: false
@@ -1338,8 +1338,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     },
  *     calendar?: array{
  *         enabled?: bool|Param, // Calendar suggestions, their client API and the sync command (default off). // Default: false
- *         credential_provider?: scalar|Param|null, // Service id implementing CalendarCredentialProviderInterface (host OAuth tokens; required for server mode). // Default: null
- *         task_key_resolver?: scalar|Param|null, // Service id implementing TaskKeyResolverInterface (host task keys; required when enabled). // Default: null
+ *         credential_provider?: scalar|Param|null, // Service id implementing Calendar\CalendarCredentialSourceInterface (host OAuth tokens; required for server mode). // Default: null
+ *         task_key_resolver?: scalar|Param|null, // Service id implementing Calendar\TaskKeyLookupInterface (host task keys; required when enabled). // Default: null
  *         providers?: list<"google"|"microsoft"|Param>,
  *         modes?: list<"server"|"local"|Param>,
  *         lookback_days?: int|Param, // Past days read per sync (events end before now; future events are never suggested). // Default: 14
@@ -1372,7 +1372,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     },
  *     meetings?: array{
  *         enabled?: bool|Param, // GET me/meetings and the GET me meeting keys (default off). // Default: false
- *         provider?: scalar|Param|null, // Service id implementing MeetingProviderInterface (required when enabled). // Default: null
+ *         provider?: scalar|Param|null, // Service id implementing Meeting\MeetingSourceInterface (required when enabled). // Default: null
  *         max_range_days?: int|Param, // Longest from-to range. // Default: 14
  *         max_past_days?: int|Param, // How far back from may go (host retention: 7 days). // Default: 1
  *         default_limit?: int|Param, // Default: 100
@@ -1570,10 +1570,10 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         allow_metadata?: bool|Param, // Accept free client "metadata" on timer/start (default false: rejected with 400 metadata_not_allowed; clients send source + note). // Default: false
  *         settings_provider?: scalar|Param|null, // Service id implementing ClientApiSettingsProviderInterface (null = these config values). // Default: null
  *         credential_state?: scalar|Param|null, // Service id implementing ClientCredentialStateInterface, checked on every request (null = tokens stay valid until expiry / logout). // Default: null
- *         credential_issuer?: scalar|Param|null, // Service id implementing ClientCredentialIssuerInterface, called when a device is approved (null = opaque device:<uuid> ids). // Default: null
- *         task_access_checker?: scalar|Param|null, // Service id implementing TaskAccessCheckerInterface, checked on timer/start and timer/switch (null = the task provider decides). // Default: null
- *         profile_provider?: scalar|Param|null, // Service id implementing ClientUserProfileProviderInterface (displayName / workingHours of GET me; null = none). // Default: null
- *         workday_provider?: scalar|Param|null, // Since 1.13: service id implementing Workday\WorkdayProviderInterface (R-GDPR §8; null = no workday API). // Default: null
+ *         credential_issuer?: scalar|Param|null, // Service id implementing Client\ClientCredentialMinterInterface, called when a device is approved (null = opaque device:<uuid> ids). // Default: null
+ *         task_access_checker?: scalar|Param|null, // Service id implementing Security\TaskAccessPolicyInterface, checked on timer/start and timer/switch (null = the task provider decides). // Default: null
+ *         profile_provider?: scalar|Param|null, // Service id implementing Client\ClientUserProfileSourceInterface (displayName / workingHours of GET me; null = none). // Default: null
+ *         workday_provider?: scalar|Param|null, // Since 1.13: service id implementing Workday\WorkdaySourceInterface (optionally WorkdayHistorySourceInterface; R-GDPR §8; null = no workday API). // Default: null
  *         links_working_time_route?: scalar|Param|null, // Since 1.19 (spec 198): host route name of the working-time page (GET me links.workingTime, only while features.workday is true; https only). // Default: null
  *         leave_provider?: scalar|Param|null, // Since 1.22 (spec 204): service id implementing Client\ClientUserLeaveProviderInterface (GET workday leave, GET me features.leave / links.leave; null = no leave keys, as in 1.21). // Default: null
  *         links_leave_route?: scalar|Param|null, // Since 1.22 (spec 204): host route name of the Leave page (GET me links.leave, sent only with a leave_provider; https only). // Default: null
@@ -1589,7 +1589,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             threshold_minutes?: int|Param, // Idle minutes before the client asks. // Default: 10
  *             answer_timeout_minutes?: int|Param, // Minutes the idle prompt waits for an answer. // Default: 5
  *             user_can_disable?: bool|Param, // Whether users may turn the idle check off in the client (1.10.1; limits.idle_check.user_can_disable). // Default: false
- *             provider?: scalar|Param|null, // Service id implementing IdleCheckSettingsProviderInterface (per-user settings; null = these values). Its values are clamped to the same ranges. // Default: null
+ *             provider?: scalar|Param|null, // Service id implementing Client\IdleCheckSettingsPolicyInterface (per-user settings; null = these values). Its values are clamped to the same ranges. // Default: null
  *         },
  *         task_url?: array{
  *             origin?: scalar|Param|null, // Expected origin of task URLs on tasks / timer (exact https://host[:port]; null = the request origin). Behind a proxy set it from the public URL, e.g. "%beacon.app_url%". // Default: null

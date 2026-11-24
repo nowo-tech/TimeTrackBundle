@@ -28,7 +28,7 @@ There is no separate executable spec language (for example Gherkin); Spec Kit sp
 | US-02 | **As a** user, **I want** personal time reports **so that** I review my logged hours. |
 | US-03 | **As a** manager, **I want** team member entries **so that** I oversee squad capacity. |
 | US-04 | **As a** client (browser extension / Tauri desktop), **I want** Bearer JSON APIs **so that** I sync timers outside the browser UI. |
-| US-05 | **As an** integrator, **I want** `TaskProviderInterface` / `TeamContextProviderInterface` **so that** TaskBoardBundle supplies tasks and teams. |
+| US-05 | **As an** integrator, **I want** `TaskDirectoryInterface` / `TeamDirectoryInterface` **so that** TaskBoardBundle supplies tasks and teams. |
 
 **Out of scope for these stories:** billing/invoicing, offline conflict resolution beyond the single-active-timer rule, and built-in task CRUD (delegated to task providers).
 

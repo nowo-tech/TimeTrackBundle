@@ -33,8 +33,8 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `task_provider` | `StubTaskProvider` | `TaskProviderInterface` service id |
-| `team_context_provider` | `NullTeamContextProvider` | `TeamContextProviderInterface` service id |
+| `task_provider` | `StubTaskProvider` | `TaskDirectoryInterface` service id |
+| `team_context_provider` | `NullTeamContextProvider` | `TeamDirectoryInterface` service id |
 | `table_prefix` | `time_track_` | DB table prefix |
 | `service_account_policy` | `null` | Since 1.25.0 (Beacon spec 234): service id implementing `Integration\ServiceAccountPolicyInterface` (`isServiceAccount(TimeTrackUserRef $account): bool`). Null: `NoServiceAccountPolicy`, everyone is a person (the 1.24 behaviour). Aliasing the interface to your service works too. A service account's entries may overlap and are marked `service_account`; see [USAGE](USAGE.md#timer-for-token-principals-and-service-accounts-125) |
 | `user_mapping` | `relation` | Since 1.23.0 (REQ-ARCH-001 rule 2). `relation`: the bundle rows reference `user_class` through Doctrine relations (foreign keys to your users table), the 1.22 behaviour. `id`: they reference a bundle-owned row per user (`<table_prefix>host_users`: your user's id, at most 128 characters, and class), so `user_class` need not be a Doctrine entity of the bundle's entity manager. Ids compare byte for byte: NO PAD binary collation (`utf8mb4_0900_bin` on MySQL 8, `utf8mb4_nopad_bin` on MariaDB) on the id and person reference columns, PHP re-checks, and ids with leading or trailing blanks or invisible characters are refused. See [UPGRADING](UPGRADING.md#user-reference-by-id-user_mapping-id) |
@@ -222,9 +222,9 @@ Contract v0.2 ([CLIENT-API](CLIENT-API.md)). Every service id below is optional;
 | `client_api.allow_metadata` | `false` | Accept free `metadata` on `timer/start` (otherwise `400 metadata_not_allowed`; clients send `source` + `note`) |
 | `client_api.settings_provider` | `null` | `ClientApiSettingsProviderInterface` (origins + rate limits read per request, e.g. from DB settings) |
 | `client_api.credential_state` | `null` | `ClientCredentialStateInterface`, checked on every request (default: always active) |
-| `client_api.credential_issuer` | `null` | `ClientCredentialIssuerInterface`, called on device approval (default: opaque `device:<uuid>`) |
-| `client_api.task_access_checker` | `null` | `TaskAccessCheckerInterface` for `timer/start` / `timer/switch` (default: the task provider decides) |
-| `client_api.profile_provider` | `null` | `ClientUserProfileProviderInterface` (`displayName`, `workingHours` of `GET me`; since 1.11 also `locale` when it implements `ClientUserLocaleProviderInterface`; since 1.12 also `daysOff` when it implements `ClientUserDaysOffProviderInterface`). `workingHours` may use the `slots` or the 1.9 `days` shape: `GET me` always sends `slots`; a malformed value fails closed as `{timezone, slots: []}` (no notifications limited to working hours) with a warning log, `null` only when the provider returns `null` ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)). Days-off labels reach the user's devices and are stored there: public holiday names only, `null` for vacations, never a leave reason. Cache `getDaysOff()` if it calls a calendar service (it runs on every `GET me`) |
+| `client_api.credential_issuer` | `null` | `ClientCredentialMinterInterface`, called on device approval (default: opaque `device:<uuid>`) |
+| `client_api.task_access_checker` | `null` | `TaskAccessPolicyInterface` for `timer/start` / `timer/switch` (default: the task provider decides) |
+| `client_api.profile_provider` | `null` | `ClientUserProfileSourceInterface` (`displayName`, `workingHours` of `GET me`; since 1.11 also `locale` when it implements `ClientUserLocaleSourceInterface`; since 1.12 also `daysOff` when it implements `ClientUserDaysOffSourceInterface`). `workingHours` may use the `slots` or the 1.9 `days` shape: `GET me` always sends `slots`; a malformed value fails closed as `{timezone, slots: []}` (no notifications limited to working hours) with a warning log, `null` only when the provider returns `null` ([CLIENT-API](CLIENT-API.md#working-hours-normalised-since-112)). Days-off labels reach the user's devices and are stored there: public holiday names only, `null` for vacations, never a leave reason. Cache `getDaysOff()` if it calls a calendar service (it runs on every `GET me`) |
 | `client_api.leave_provider` | `null` | Since 1.22 (spec 204): `ClientUserLeaveProviderInterface` (`getCurrentLeave(string $userId, DateTimeImmutable $day): ?ClientUserLeave`). Adds `leave` to `GET workday`, `features.leave` and `links.leave` to `GET me`, and lets `daysOff` carry `leave` days; without it none of these is sent. Return `ClientUserLeave::absent()` for medical leave ([CLIENT-API](CLIENT-API.md#changes-in-122-leave-spec-204)) |
 | `client_api.links_leave_route` | `null` | Since 1.22: host route name of the Leave page (`GET me` `links.leave`, sent only with a `leave_provider` and only while `features.workday` is true; https URLs only, else `null`) |
 | `client_api.rate_limit.cache_pool` | `cache.app` | PSR-6 pool of the API counters, shared by all workers (Redis in production) |
@@ -273,7 +273,7 @@ Contract v0.3 ([CLIENT-API](CLIENT-API.md)). All values except `task_url.origin`
 | `client_api.idle_check.threshold_minutes` | `10` | Idle minutes before the client asks (5–60) |
 | `client_api.idle_check.answer_timeout_minutes` | `5` | Minutes the idle prompt waits for an answer (1–30) |
 | `client_api.idle_check.user_can_disable` | `false` | Whether users may turn the idle check off in the client (`limits.idle_check.user_can_disable`, 1.10.1); a provider can decide per user |
-| `client_api.idle_check.provider` | `null` | Service implementing `IdleCheckSettingsProviderInterface` (per-user settings; `null` from it = the values above; its values are clamped; an exception falls back to the values above) |
+| `client_api.idle_check.provider` | `null` | Service implementing `IdleCheckSettingsPolicyInterface` (per-user settings; `null` from it = the values above; its values are clamped; an exception falls back to the values above) |
 | `client_api.task_url.origin` | `null` | Expected origin of task URLs (exact `https://host[:port]`); `null` = the request origin |
 
 The server only ever receives the user's idle **decision** (`timer/discard-idle`); no activity signal, idle counter or
@@ -351,7 +351,7 @@ nowo_time_track:
 - Imported entries are written by `Import\ImportedTimeEntryWriter` (host code). Their description is kept **in full**
   (unbounded text column, no length cap).
 - Since 1.15 `client_api.profile_provider` also gives the name kept on a deleted user's entries (`getDisplayName()`),
-  and, when it implements `ClientUserPrivacyProviderInterface`, the `privacy` block of `GET me`.
+  and, when it implements `ClientUserPrivacySourceInterface`, the `privacy` block of `GET me`.
 - `retention.include_imported` feeds `Retention\TimeEntryRetentionPolicy`; the bundle ships no purge yet, so a host
   purge must apply `excludedSources()`.
 
@@ -363,8 +363,8 @@ Everything is off by default; see [WORKING-TIME.md](WORKING-TIME.md) for the mod
 nowo_time_track:
   working_time:
     enabled: false
-    calendar_provider: ~            # WorkingCalendarProviderInterface service id (null = DerivedWorkingCalendar)
-    worked_time_source: ~           # WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource, legalRecord false)
+    calendar_provider: ~            # WorkingCalendarSourceInterface service id (null = DerivedWorkingCalendar)
+    worked_time_source: ~           # WorkedTimeRecordInterface (null = TaskTimeWorkedTimeSource, legalRecord false)
     overtime_policy: ~              # OvertimePolicyInterface (null = ConfigOvertimePolicy)
     balance:
       start_date: ~                 # Y-m-d; null = after the last locked period, else the last 366 days
@@ -378,8 +378,8 @@ nowo_time_track:
   timesheets:
     enabled: false
     scope_mode: provider            # provider | single
-    scope_provider: ~               # TimesheetScopeProviderInterface (required with scope_mode: provider)
-    approver_provider: ~            # TimesheetApproverProviderInterface (required when enabled)
+    scope_provider: ~               # TimesheetScopePolicyInterface (required with scope_mode: provider)
+    approver_provider: ~            # TimesheetApproverPolicyInterface (required when enabled)
     period: week                    # week | month
     default_timezone: 'UTC'
     submit_requires_period_end: false
@@ -391,7 +391,7 @@ nowo_time_track:
     audit_blocked_edits: false
     retention_years: 4              # 4-10
   client_api:
-    workday_provider: ~             # Workday\WorkdayProviderInterface (R-GDPR §8); null = no workday API
+    workday_provider: ~             # Workday\WorkdaySourceInterface (R-GDPR §8); null = no workday API
     links_working_time_route: ~     # since 1.19 (spec 198): host route of the working-time page, GET me links.workingTime
     leave_provider: ~               # since 1.22 (spec 204): Client\ClientUserLeaveProviderInterface; GET workday leave
     links_leave_route: ~            # since 1.22 (spec 204): host route of the Leave page, GET me links.leave (with leave_provider)
@@ -416,8 +416,8 @@ Off by default; see [USAGE.md](USAGE.md#calendar-suggestions-114) for the flow a
 nowo_time_track:
   calendar:
     enabled: false
-    credential_provider: ~          # CalendarCredentialProviderInterface (host tokens; required for server mode)
-    task_key_resolver: ~            # TaskKeyResolverInterface (host task keys; required when enabled)
+    credential_provider: ~          # CalendarCredentialSourceInterface (host tokens; required for server mode)
+    task_key_resolver: ~            # TaskKeyLookupInterface (host task keys; required when enabled)
     providers: [google, microsoft]
     modes: [server]                 # server | local
     lookback_days: 14               # 1-14; events must have ended
@@ -485,7 +485,7 @@ Off by default; host guide in [MEETINGS.md](MEETINGS.md).
 nowo_time_track:
   meetings:
     enabled: false
-    provider: ~                      # MeetingProviderInterface service id (required when enabled)
+    provider: ~                      # MeetingSourceInterface service id (required when enabled)
     max_range_days: 14               # 1..14
     max_past_days: 1                 # 0..7
     default_limit: 100               # 1..200
