@@ -36,6 +36,8 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
   sees the notice first; blurred screenshots, app time and an activity level only while the worker's own timer runs,
   every refusal checked before any byte is accepted, signed one-shot uploads, framework-free ports for the policy and
   the storage ([USAGE](docs/USAGE.md#activity-monitoring-ports-126), [CLIENT-API](docs/CLIENT-API.md#changes-in-126-activity-monitoring-spec-199)).
+  Since 1.41: never window titles, project aggregates for managers unless billing evidence (every per-person view
+  recorded), nothing during breaks or after clock-out ([CLIENT-API](docs/CLIENT-API.md#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)).
 
 ## Installation
 

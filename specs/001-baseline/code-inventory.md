@@ -321,21 +321,24 @@
 | `Controller/TimeTrackMonitoringApiController.php` | Monitoring (opt-in) | FR-MON-002 |
 | `Entity/MonitoringAcknowledgementRecord.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Entity/MonitoringUploadIntent.php` | Monitoring (opt-in) | FR-MON-001 |
+| `Event/MonitoringPersonDetailViewedEvent.php` | Monitoring (opt-in) | FR-MON-005 |
 | `Event/MonitoringSpanDiscardedEvent.php` | Monitoring (opt-in) | FR-MON-003 |
 | `Monitoring/ActivityItem.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/HmacMonitoringUploadSigner.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringAcknowledgement.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringAcknowledgementStoreInterface.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringActivityBudget.php` | Monitoring (opt-in) | FR-MON-001 |
-| `Monitoring/MonitoringContext.php` | Monitoring (opt-in) | FR-MON-001 |
+| `Monitoring/MonitoringContext.php` | Monitoring (opt-in) | FR-MON-001, FR-MON-004 |
 | `Monitoring/MonitoringEvidenceRejectedException.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringEvidenceStoreInterface.php` | Monitoring (opt-in) | FR-MON-001 |
-| `Monitoring/MonitoringGate.php` | Monitoring (opt-in) | FR-MON-001 |
+| `Monitoring/MonitoringGate.php` | Monitoring (opt-in) | FR-MON-001, FR-MON-006 |
 | `Monitoring/MonitoringImageInspector.php` | Monitoring (opt-in) | FR-MON-001 |
-| `Monitoring/MonitoringPolicy.php` | Monitoring (opt-in) | FR-MON-001 |
+| `Monitoring/MonitoringPolicy.php` | Monitoring (opt-in) | FR-MON-001, FR-MON-004, FR-MON-005 |
 | `Monitoring/MonitoringPolicySourceInterface.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringSettings.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringSpanDiscardListener.php` | Monitoring (opt-in) | FR-MON-001 |
+| `Monitoring/MonitoringTeamDetailDeniedException.php` | Monitoring (opt-in) | FR-MON-005 |
+| `Monitoring/MonitoringTeamViewGuard.php` | Monitoring (opt-in) | FR-MON-005 |
 | `Monitoring/MonitoringUploadClaim.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/MonitoringUploadSignerInterface.php` | Monitoring (opt-in) | FR-MON-001 |
 | `Monitoring/ScreenshotUpload.php` | Monitoring (opt-in) | FR-MON-001 |
@@ -616,6 +619,7 @@
 | `Workday/WorkdayAction.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayConflictException.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayForbiddenException.php` | Workday | FR-WDAY-001 |
+| `Workday/WorkdayHistorySourceInterface.php` | Workday | FR-WDAY-001, FR-MON-006 |
 | `Workday/WorkdayProviderInterface.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdaySourceInterface.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayState.php` | Workday | FR-WDAY-001 |

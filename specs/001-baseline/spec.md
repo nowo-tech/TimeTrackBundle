@@ -165,7 +165,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 ### Workday
 
-- **FR-WDAY-001**: The clients' access to the host's working-time store: `WorkdayProviderInterface` / `WorkdaySourceInterface`, `WorkdayAction`, `WorkdayState`, `WorkdayConflictException`, `WorkdayForbiddenException`.
+- **FR-WDAY-001**: The clients' access to the host's working-time store: `WorkdayProviderInterface` / `WorkdaySourceInterface`, `WorkdayAction`, `WorkdayState`, `WorkdayConflictException`, `WorkdayForbiddenException`; since 1.41 the optional `WorkdayHistorySourceInterface` (earlier days, FR-MON-006).
 
 ### Calendar integration (1.14+, spec 004)
 
@@ -185,6 +185,9 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-MON-001**: `MonitoringGate` runs the refusal checks before any byte is accepted; `MonitoringPolicy` + policy source port, `MonitoringSettings`, `MonitoringContext`, acknowledgement (`MonitoringAcknowledgement`, store port), upload intent and claim, signer (`HmacMonitoringUploadSigner`), image inspector, evidence store port, activity budget and items.
 - **FR-MON-002**: `TimeTrackMonitoringApiController`.
 - **FR-MON-003**: `MonitoringSpanDiscardedEvent` and `MonitoringSpanDiscardListener`.
+- **FR-MON-004** (1.41, owner decision D4 of 2026-11-24): window titles and project names are never collected — `MonitoringPolicy::$windowTitles` and `GET me.monitoring.windowTitles` are frozen to false (deprecated, removed in 2.0); title fields sent by a client are ignored.
+- **FR-MON-005** (1.41, D9): `MonitoringPolicy` `purpose` / `teamView` / `perPersonDetailRecordedAt`; `MonitoringTeamViewGuard` gives third parties project aggregates unless the policy is an organisation's billing-evidence opt-in, and dispatches `MonitoringPersonDetailViewedEvent` before each per-person view (`MonitoringTeamDetailDeniedException` otherwise).
+- **FR-MON-006** (1.41, D11): `MonitoringGate` refuses evidence with `on_break` when the workday register (spec 198) shows a break or no clocked `work` segment at the instant; `WorkdayHistorySourceInterface` gives earlier days.
 
 ### Imported time entries (1.11)
 

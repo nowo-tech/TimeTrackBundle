@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (1.41.0)](#added-1410)
+  - [Changed (1.41.0)](#changed-1410)
+  - [Deprecated (1.41.0)](#deprecated-1410)
+  - [Tests (1.41.0)](#tests-1410)
 - [[1.40.1] - 2026-11-23](#1401---2026-11-23)
   - [Security](#security)
   - [Fixed](#fixed)
@@ -247,6 +251,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+Activity monitoring privacy decisions D4, D9 and D11 (owner, 2026-11-24, TimeTrack Desktop monitoring study §9).
+Contract §TT-MON v1.1, additive on the unversioned and the `v1` client paths. Upgrade notes:
+[UPGRADING](UPGRADING.md#unreleased).
+
+### Added (1.41.0)
+
+- **`on_break` refusal (D11).** With a workday register (`client_api.workday_provider`, spec 198), screenshots and
+  activity are refused when the register shows the worker **on a break or outside every clocked `work` segment** of that
+  day (before clock-in, after clock-out) at the instant checked, even while a task timer keeps running: `POST
+  monitoring/screenshots/intent` and the `PUT` answer `422 monitoring_refused {reason: "on_break"}` (after
+  `outside_hours`, before `too_old`); activity items of such slots are dropped (counted in `dropped`, never stored).
+  Discard markers are not checked. An open `work` segment counts only while the status is `working`; a segment whose
+  times cannot be read covers nothing (fail closed); a register that is off for the worker (`null`) restricts nothing.
+- `Workday\WorkdayHistorySourceInterface::dayFor(TimeTrackUserRef, 'Y-m-d'): ?WorkdayState` (optional, framework-free):
+  implement it on your workday provider so buffered evidence of earlier days (up to `maxBufferAgeHours`) is checked too.
+  Without it only instants of the date `todayFor()` answers are checked.
+- **Team view granularity (D9).** `MonitoringPolicy` gains `purpose` (`billing_evidence`, `project_costing`,
+  `self_analytics`, or null = not declared), `teamView` (`project_aggregates`, the default, or `per_person`) and
+  `perPersonDetailRecordedAt` (the `Y-m-d` opt-in date, required with `per_person`). `per_person` is accepted only for
+  an `organization` policy whose purpose is `billing_evidence`. New `MonitoringPolicy::allowsPerPersonDetail()`.
+- `Monitoring\MonitoringTeamViewGuard` (public service): `granularity($policy)` and `authorizePersonDetail($viewer,
+  $worker)`, which reads the worker's policy, refuses (`MonitoringTeamDetailDeniedException`, reasons `no_policy`,
+  `personal`, `aggregates_only`, `unknown_user`) unless per-person detail is allowed, and otherwise dispatches
+  `nowo_time_track.monitoring.person_detail_viewed` (`MonitoringPersonDetailViewedEvent`: viewer and worker refs,
+  policy version, purpose, time) **before** returning — the audit trail of every third-party view; a listener that
+  throws stops the view. The worker's own view is always allowed and not audited.
+- `GET me.monitoring` gains `purpose` and `teamView`, so the worker sees who sees what (the opt-in date is not
+  published).
+
+### Changed (1.41.0)
+
+- **Window titles are never collected (D4).** `GET me.monitoring.windowTitles` is always `false`, whatever the host
+  policy says. Title fields a client sends with activity items (`windowTitle`, `title`, `project`, a top-level
+  `windowTitles`) are ignored: never stored, returned or logged. `X-TimeTrack-Capabilities: titles=1` changes nothing.
+
+### Deprecated (1.41.0)
+
+- `MonitoringPolicy`'s `windowTitles` argument and property: the argument is ignored (a `true` value triggers a
+  deprecation notice) and the property is always `false`; the `windowTitles` key of `GET me.monitoring` is frozen to
+  `false`. 2.0 removes all three.
+
+### Tests (1.41.0)
+
+- Unit: the `on_break` order, breaks, before clock-in, after clock-out, open segments, unreadable segments, the history
+  port and the register's time zone; the policy's purpose and team-view rules; the guard and its audit event.
+- Functional (unversioned and `v1` paths): `windowTitles` frozen, title fields never stored or logged, `purpose` /
+  `teamView` on `GET me`, the guard through the container (a failing audit listener stops the view), and `on_break` at
+  intent time and on activity with a register that has history.
 
 ## [1.40.1] - 2026-11-23
 

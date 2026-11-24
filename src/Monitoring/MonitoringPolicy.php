@@ -15,6 +15,7 @@ use function mb_strlen;
 use function preg_match;
 use function sprintf;
 use function str_starts_with;
+use function trigger_deprecation;
 use function trim;
 
 /**
@@ -27,6 +28,12 @@ use function trim;
  * with the hash the client sends when it acknowledges, `422 notice_mismatch`) and `acknowledgementRequired` (whether
  * this version widens collection compared with the last version the worker acknowledged; the bundle publishes
  * `acknowledgement.required` from it and from its acknowledgement store).
+ *
+ * Since 1.41.0 (owner decisions D4 and D9 of the 2026-11-24 monitoring study): window titles are never collected —
+ * `windowTitles` is frozen to false (a true value is ignored with a deprecation notice) — and the policy declares its
+ * `purpose` and the `teamView` third parties get: `project_aggregates` (default) or `per_person`, which is valid only for
+ * the `billing_evidence` purpose of an organisation policy and only with the date the organisation opted in
+ * (`perPersonDetailRecordedAt`, the audit trail of the decision). Hosts enforce it with {@see MonitoringTeamViewGuard}.
  *
  * The constructor refuses a value outside the contract (a host bug), with an `InvalidArgumentException`.
  */
@@ -50,11 +57,33 @@ final readonly class MonitoringPolicy
     /** Hard cap of the long side of an uploaded screenshot, in pixels. */
     public const MAX_LONG_SIDE_PX = 3840;
 
+    /** Since 1.41.0: the written purpose of an organisation policy (study §2.3 condition 1). */
+    public const PURPOSES = [self::PURPOSE_BILLING_EVIDENCE, 'project_costing', 'self_analytics'];
+
+    /** Since 1.41.0: evidence of hours billed to a client — the only purpose that may show per-person detail (D9). */
+    public const PURPOSE_BILLING_EVIDENCE = 'billing_evidence';
+
+    /** Since 1.41.0: third parties (`view_team` holders) see totals per project only, never one person's slots. */
+    public const TEAM_VIEW_PROJECT_AGGREGATES = 'project_aggregates';
+
+    /** Since 1.41.0: third parties may open one person's slots (billing evidence only; every view is audited). */
+    public const TEAM_VIEW_PER_PERSON = 'per_person';
+
+    /** Since 1.41.0. */
+    public const TEAM_VIEWS = [self::TEAM_VIEW_PROJECT_AGGREGATES, self::TEAM_VIEW_PER_PERSON];
+
     /** @var list<string> enabled kinds, in the order of {@see self::KINDS} */
     public array $kinds;
 
     /** @var list<string> */
     public array $excludedApps;
+
+    /**
+     * Always false since 1.41.0 (D4: window titles and project names are never sent, never stored, never returned).
+     *
+     * @deprecated since 1.41.0, always false; 2.0 removes it
+     */
+    public bool $windowTitles;
 
     /**
      * @param bool $enabled Whether collection is on (published as false while `lockedUntilChecklist` is true)
@@ -73,11 +102,14 @@ final readonly class MonitoringPolicy
      * @param string $blur One of {@see self::BLUR_LEVELS}; `none` only with `fullResolution`
      * @param bool $fullResolution Full-resolution uploads allowed (the checklist recorded why)
      * @param int $maxLongSidePx 1-3840
-     * @param bool $windowTitles Window titles allowed (redacted)
+     * @param bool $windowTitles Deprecated since 1.41.0 and ignored: window titles are never collected (true triggers a deprecation notice)
      * @param list<string> $excludedApps Apps never captured (≤ 100 names of ≤ 120 characters)
      * @param int $retentionDays 1-3650
      * @param int $maxBufferedScreenshots 0-36
      * @param int $maxBufferAgeHours 1-24
+     * @param string|null $purpose Since 1.41.0: one of {@see self::PURPOSES} (null = not declared, as before 1.41)
+     * @param string $teamView Since 1.41.0: one of {@see self::TEAM_VIEWS}; `per_person` only with the `billing_evidence` purpose, the `organization` scope and `perPersonDetailRecordedAt`
+     * @param string|null $perPersonDetailRecordedAt Since 1.41.0: date (`Y-m-d`) the organisation opted in to per-person detail (required with `per_person`, null otherwise)
      *
      * @throws InvalidArgumentException when a value is outside the contract
      */
@@ -98,12 +130,19 @@ final readonly class MonitoringPolicy
         public string $blur = 'medium',
         public bool $fullResolution = false,
         public int $maxLongSidePx = 1920,
-        public bool $windowTitles = false,
+        bool $windowTitles = false,
         array $excludedApps = [],
         public int $retentionDays = 30,
         public int $maxBufferedScreenshots = self::MAX_BUFFERED_SCREENSHOTS,
         public int $maxBufferAgeHours = self::MAX_BUFFER_AGE_HOURS,
+        public ?string $purpose = null,
+        public string $teamView = self::TEAM_VIEW_PROJECT_AGGREGATES,
+        public ?string $perPersonDetailRecordedAt = null,
     ) {
+        if ($windowTitles) {
+            trigger_deprecation('nowo-tech/time-track-bundle', '1.41.0', 'The "windowTitles" argument of %s is ignored: window titles are never collected (owner decision D4); stop passing it, 2.0 removes it.', self::class);
+        }
+        $this->windowTitles = false;
         foreach ($kinds as $kind) {
             if (!in_array($kind, self::KINDS, true)) {
                 throw new InvalidArgumentException(sprintf('Unknown monitoring kind; expected one of %s.', implode(', ', self::KINDS)));
@@ -139,6 +178,11 @@ final readonly class MonitoringPolicy
         $this->check($retentionDays >= 1 && $retentionDays <= 3650, 'retentionDays must be 1-3650.');
         $this->check($maxBufferedScreenshots >= 0 && $maxBufferedScreenshots <= self::MAX_BUFFERED_SCREENSHOTS, 'maxBufferedScreenshots must be 0-36.');
         $this->check($maxBufferAgeHours >= 1 && $maxBufferAgeHours <= self::MAX_BUFFER_AGE_HOURS, 'maxBufferAgeHours must be 1-24.');
+        $this->check($purpose === null || in_array($purpose, self::PURPOSES, true), 'purpose must be billing_evidence, project_costing or self_analytics.');
+        $this->check(in_array($teamView, self::TEAM_VIEWS, true), 'teamView must be project_aggregates or per_person.');
+        $perPerson = $teamView === self::TEAM_VIEW_PER_PERSON;
+        $this->check(!$perPerson || ($purpose === self::PURPOSE_BILLING_EVIDENCE && $scope === 'organization'), 'teamView per_person needs the billing_evidence purpose of an organization policy.');
+        $this->check($perPerson ? ($perPersonDetailRecordedAt !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $perPersonDetailRecordedAt) === 1) : $perPersonDetailRecordedAt === null, 'perPersonDetailRecordedAt must be the Y-m-d opt-in date with teamView per_person, and null otherwise.');
     }
 
     /**
@@ -155,6 +199,15 @@ final readonly class MonitoringPolicy
     public function allows(string $kind): bool
     {
         return $this->isCollecting() && in_array($kind, $this->kinds, true);
+    }
+
+    /**
+     * Since 1.41.0: whether third parties may see one person's slots under this policy (D9): only a collecting
+     * organisation policy whose purpose is billing evidence and that recorded the opt-in.
+     */
+    public function allowsPerPersonDetail(): bool
+    {
+        return $this->isCollecting() && $this->teamView === self::TEAM_VIEW_PER_PERSON;
     }
 
     private function check(bool $condition, string $message): void
