@@ -85,7 +85,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 ### Persistence
 
-- **FR-DOCTRINE-001**: `TimeTrackMetadataListener` MUST apply `table_prefix` to `ActiveTimer`, `TimeEntry`, `ClientToken` mappings.
+- **FR-DOCTRINE-001**: `TimeTrackMetadataListener` MUST apply `table_prefix` to `ActiveTimer`, `TimeEntry`, `ClientToken` mappings. `TimeTrackExactKeyColumns` declares the identity / access-key columns kept on a binary NO PAD collation (REQ-SEC-006).
 - **FR-ENTITY-001**: `ActiveTimer` — one row per user with task reference and client metadata.
 - **FR-ENTITY-002**: `TimeEntry` — completed intervals with source enum and optional edit metadata.
 - **FR-ENTITY-003**: `ClientToken` — hashed bearer tokens with expiry for client apps.
@@ -153,7 +153,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 - **FR-TS-001**: `Timesheet` and `TimesheetEvent` entities, `TimesheetStatus` / `TimesheetPeriodKind` / `TimesheetAction` / `TimesheetActorRole` / `TimesheetLockReason`, `Period`, `TimesheetSnapshot` and builder, `TimesheetService` (state machine).
 - **FR-TS-002**: `PeriodLockGuard` and `WriteKind` refuse writes into a locked or submitted period (`PeriodLockedException`, `PeriodSubmittedException`, `PeriodWriteRefusedException`, `TimesheetException`); `ScopeKeys` / `TimesheetScope` + provider and policy ports with `SingleScopeProvider` default.
-- **FR-TS-003**: UI: `TimesheetViewBuilder`, `TimeTrackComponentExtension` / `Runtime`, `TimesheetFormHandler`, `TimesheetDecisionType`, `LedgerLineType` and the `components/*` templates (week grid, balance card, ledger table).
+- **FR-TS-003**: UI: `TimesheetViewBuilder`, `TimeTrackComponentExtension` / `Runtime`, `TimesheetFormHandler`, `TimesheetDecisionType`, `LedgerLineType` and the `components/*` templates (week grid, balance card, ledger table); since 1.39 `TimesheetFormResult` and `Ui\TimesheetDialogResponder` serve each dialog of the components as a host page (`components/dialog_form` / `dialog_page`, content loaded on demand).
 - **FR-TS-004**: Events `TimesheetTransitionEvent`, `TimesheetAccessCheckEvent`, `TimesheetLateEntryEvent`, `PeriodLockRefusedEvent`.
 - **FR-TS-005**: Commands `timesheets-auto-lock`, `timesheets-purge`, `timesheets-verify`; `AuditChainVerifier` names the first broken link of the audit chains and `CanonicalJson` canonicalises them; `TimesheetAuditTrail`, `TimesheetTimezoneResolver`, `TimesheetAccessGuard`, approver ports.
 
