@@ -93,6 +93,9 @@ final class TimeTrackEvents
     /** Since 1.26: {@see MonitoringSpanDiscardedEvent} — the worker discarded a span of tracked time; delete its evidence (only while monitoring is configured). */
     public const MONITORING_SPAN_DISCARDED = 'nowo_time_track.monitoring.span_discarded';
 
+    /** Since 1.41.0: {@see MonitoringPersonDetailViewedEvent} — a third party is about to see one worker's monitoring detail (billing evidence; audit trail, ids only). */
+    public const MONITORING_PERSON_DETAIL_VIEWED = 'nowo_time_track.monitoring.person_detail_viewed';
+
     /** {@see ClientSessionAccessCheckEvent}: whether the actor may revoke one client session by its id (1.34.0). */
     public const CLIENT_SESSION_ACCESS_CHECK = 'nowo_time_track.client_session.access_check';
 

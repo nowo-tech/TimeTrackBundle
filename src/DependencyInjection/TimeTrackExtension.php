@@ -98,6 +98,7 @@ use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringGate;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringSettings;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringSpanDiscardListener;
+use Nowo\TimeTrackBundle\Monitoring\MonitoringTeamViewGuard;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringUploadSignerInterface;
 use Nowo\TimeTrackBundle\PersonalData\DoctrineTimeTrackPersonalData;
 use Nowo\TimeTrackBundle\PersonalData\TimeTrackPersonalDataInterface;
@@ -497,6 +498,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         /** @var array{monitoring: array{policy_source: string|null, evidence_store: string|null, acknowledgement_store: string|null, signer: string|null, signing_key: string|null, upload_base_url: string|null, rate_limit: array{intents_per_10_min: int, uploads_per_10_min: int, activity_per_10_min: int}}, rate_limit: array{cache_pool: string}} $api */
         $api        = $config['client_api'];
         $monitoring = $api['monitoring'];
+        /** @var string|null $workdayProvider */
+        $workdayProvider = $config['client_api']['workday_provider'] ?? null;
         /** @var array{routes: array<string, array{path: string, name: string}>} $clients */
         $clients   = $config['clients'];
         $loggerRef = new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE);
@@ -550,6 +553,18 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$logger'           => $loggerRef,
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
+        // Since 1.41.0 (D9): public guard of the host's team views (project aggregates unless billing evidence).
+        $container->setDefinition(MonitoringTeamViewGuard::class, (new Definition(MonitoringTeamViewGuard::class))
+            ->setArguments([
+                '$policySource'    => $enabled ? new Reference((string) $policy) : null,
+                '$eventDispatcher' => new Reference('event_dispatcher', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$clock'           => $clockRef,
+                '$logger'          => $loggerRef,
+                // Audit ZBB-M2: the worker's acknowledgement bounds what a third party may see.
+                '$acknowledgements' => $enabled ? new Reference(MonitoringAcknowledgementStoreInterface::class) : null,
+            ])
+            ->setPublic(true)
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setDefinition(MonitoringGate::class, (new Definition(MonitoringGate::class))
             ->setArguments([
                 '$timers'           => new Reference(ActiveTimerRepositoryInterface::class),
@@ -558,6 +573,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$timezoneResolver' => new Reference(TimesheetTimezoneResolver::class),
                 '$profileProvider'  => new Reference(ClientUserProfileProviderInterface::class),
                 '$scopeProvider'    => new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                // Since 1.41.0 (D11): the spec 198 register, for the `on_break` refusal.
+                '$workday' => is_string($workdayProvider) && $workdayProvider !== '' ? $this->portSlot($container, 'workday_provider', $workdayProvider) : null,
             ]));
         $container->getDefinition(TimeTrackMonitoringApiController::class)
             ->setArguments([

@@ -10,6 +10,8 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
+- [Changes in 2.0](#changes-in-20)
+- [Changes in 1.41 (monitoring privacy decisions D4, D9, D11)](#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)
 - [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
 - [Changes in 1.22 (leave, spec 204)](#changes-in-122-leave-spec-204)
 - [Changes in 1.21 (billable)](#changes-in-121-billable)
@@ -161,6 +163,49 @@ after the token lookup and before the last-used update, `ClientCredentialStateIn
 check. Options:
 [CONFIGURATION](CONFIGURATION.md#client-api-129).
 
+## Changes in 2.0
+
+Only what 1.x announced; no route of the 1.9+ clients changes, and the installed-client aliases (unversioned paths) stay.
+
+- `POST heartbeat` (and `/v1/heartbeat`) is gone (`404`); the 1.9+ clients never call it
+  ([details](#post-heartbeat-removed-in-20)).
+- `GET entries` ignores `userId`: the caller's own entries only.
+- `GET me.monitoring` has no `windowTitles` key (always `false` since 1.41; read a missing key as `false`).
+- CORS: exact origins only. `"*"` and "any extension origin" are refused when the container is built, and the Tauri
+  webview origins (`tauri://localhost`, `http(s)://tauri.localhost`) are no longer allowed (the desktop app sends no
+  `Origin` through the Tauri HTTP plugin).
+
+## Changes in 1.41 (monitoring privacy decisions D4, D9, D11)
+
+Contract §TT-MON v1.1, additive, on the unversioned and the `/v1` paths (no new route, no new scope). Owner decisions of
+the 2026-11-24 TimeTrack Desktop monitoring study:
+
+- **D4 — window titles and project names are never sent.** `GET me.monitoring.windowTitles` is always `false`
+  (deprecated; **removed in 2.0**: the key is absent, read a missing key as `false`). No route accepts a title: `windowTitle`, `title` or `project` fields of an activity
+  item and a top-level `windowTitles` are ignored (the bundle never stores, returns or logs them). Clients may read titles **locally**
+  (in memory) for task suggestions only, and send `titles=0` in `X-TimeTrack-Capabilities`. The `app` `name` is the
+  application's name (`Code`, `Excel`), never the window title or the file or project open in it.
+- **D9 — team view.** `GET me.monitoring` gains `purpose` (`billing_evidence`, `project_costing`, `self_analytics`, or
+  `null` when the organisation did not declare one) and `teamView`: `project_aggregates` (the default: managers see
+  totals per project, never your slots) or `per_person` (only for billing evidence; every view of your detail is
+  recorded and shown to you). Show both in the *What is collected now* panel. A change to `per_person` comes as a new
+  `policyVersion` that requires an acknowledgement.
+- **D11 — breaks and clock-out.** With the host's workday register (`GET me features.workday: true`), stop collecting
+  while `GET workday` says `on_break`, `idle` (not clocked in) or `closed` (clocked out), even if the task timer keeps
+  running. The server refuses what slips through with `422 monitoring_refused {reason: "on_break"}` at intent time and
+  at the `PUT`, and drops activity items of such slots (`dropped`); a slot must lie inside the clocked work over its
+  whole span. `workday_unknown`: the host cannot read the register for that day (buffered item of an earlier day on a
+  host without register history). Delete buffered items refused with either reason; do not retry them.
+
+```json
+"monitoring": {
+  …,
+  "windowTitles": false,
+  "purpose": "billing_evidence",
+  "teamView": "per_person"
+}
+```
+
 ## Changes in 1.26 (activity monitoring, spec 199)
 
 Additive, opt-in (contract §TT-MON, timetrack-next §24). **Off unless the host configures it** (`client_api.monitoring`)
@@ -177,7 +222,8 @@ scores. Collection follows the timer: pausing or stopping the timer stops it; th
 All write routes need the scope **`monitoring:write`** (never a default; ask for it in the device flow when `GET me`
 has a `monitoring` block; a password login — app password — never grants it, whatever the host authenticator returns). Every answer carries `Cache-Control: no-store, private`, `Pragma: no-cache`, `Vary:
 Authorization` and `X-Content-Type-Options: nosniff`. Clients send `X-TimeTrack-Capabilities:
-screenshots=1;apps=1;titles=0` on every request (the bundle does not read it; the host may).
+screenshots=1;apps=1;titles=0` on every request (the bundle does not read it; the host may; since 1.41 `titles` is
+always `0`: titles are never sent).
 
 ### GET me: `monitoring`
 
@@ -195,12 +241,16 @@ Present, and `features.monitoring: true`, only when the host has a policy for th
   "kinds": ["screenshots", "apps", "activity"],
   "capture": {"screenshotsPer10Min": 1, "slotMinutes": 10, "reviewWindowMinutes": 10},
   "screenshots": {"enabled": true, "blur": "medium", "fullResolution": false, "maxLongSidePx": 1920},
-  "windowTitles": false,
   "excludedApps": ["vaultapp", "diaryapp"],
   "retentionDays": 30,
-  "upload": {"maxBufferedScreenshots": 36, "maxBufferAgeHours": 24}
+  "upload": {"maxBufferedScreenshots": 36, "maxBufferAgeHours": 24},
+  "purpose": "project_costing",
+  "teamView": "project_aggregates"
 }
 ```
+
+- `windowTitles`: always `false` in 1.41 (D4), removed in 2.0 (no key; window titles are never collected). `purpose` and `teamView`: since 1.41 (D9, see
+  [above](#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)).
 
 - `capture.screenshotsPer10Min` is always `1` in 1.26 (`0` only without the `screenshots` kind): the server keeps one
   screenshot per worker and slot, and the rate limits are sized for it.
@@ -269,7 +319,7 @@ Every refusal check runs **here, before any byte is sent**, in this order:
 | `413 too_large` | `bytes` above 1 572 864 (1.5 MiB) |
 | `415 unsupported_media_type` | `mime` other than `image/webp` / `image/jpeg` |
 | `409 policy_changed {policyVersion}` | `policyVersion` newer than the server's, or an unblurred capture of an older version the current one no longer allows unblurred: refetch and drop what the policy no longer allows |
-| `422 monitoring_refused {reason}` | `kind_off` (no policy, `enabled: false`, locked, or screenshots not enabled), `not_acknowledged` (the current version needs an acknowledgement), `outside_timer` (the worker's own timer did not run on `entryId` at `takenAt`), `outside_hours` (outside the working calendar: the spec 198 schedule, a day off or leave; only when the host gives a schedule), `too_old` (`takenAt` older than `maxBufferAgeHours`) |
+| `422 monitoring_refused {reason}` | `kind_off` (no policy, `enabled: false`, locked, or screenshots not enabled), `not_acknowledged` (the current version needs an acknowledgement), `outside_timer` (the worker's own timer did not run on `entryId` at `takenAt`), `outside_hours` (outside the working calendar: the spec 198 schedule, a day off or leave; only when the host gives a schedule), `on_break` (since 1.41: the workday register shows a break, or no clocked `work` segment — before clock-in, after clock-out — at `takenAt`; only with a register), `workday_unknown` (since 1.41: the register is on but its day cannot be read), `too_old` (`takenAt` older than `maxBufferAgeHours`) |
 | `409 duplicate` | the slot already has a screenshot (or a discard marker), or another live upload of yours holds it, whatever its entry id |
 | `422 evidence_rejected` | replay of an intent whose upload the host refused for good: do not retry, delete the local copy |
 | `429 rate_limited` | 6 intents per 10 minutes per token (`Retry-After`, `retryAfter`) |
@@ -293,7 +343,7 @@ The URL is valid for **120 s and one request**. **Only PUT to a URL whose origin
 API base you called** — compare scheme and host case-insensitively (lowercase both; a default `:443` equals no port); refuse any other URL (defence in depth: the host should set `client_api.monitoring.upload_base_url`
 so the URL never follows a request's `Host` header). Before reading the body the bundle re-checks everything it checked
 at intent time against the current policy and timer: `409 policy_changed`, `422 monitoring_refused` (`kind_off`,
-`not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `too_old`) and `422
+`not_acknowledged`, `outside_timer` — e.g. the timer was discarded meanwhile —, `outside_hours`, `on_break`, `workday_unknown`, `too_old`) and `422
 upload_mismatch {field: "dimensions"}` (the policy's `maxLongSidePx`). Then it enforces every cap while streaming the
 body to a temporary file:
 
@@ -351,7 +401,8 @@ Idempotency-Key: 5d2e…
   redacts again: `[email]`, runs of 4+ digits → `[digits]`), `seconds` 0–600, no `level`. `level`: `level` 0–100,
   `seconds` 0–600, no `name`.
 - `202 {"accepted": 2, "dropped": 0, "droppedSeconds": 0}`. Items whose slot does not overlap the worker's own timer on
-  `entryId`, lies outside the working calendar, is older than `maxBufferAgeHours`, or names an excluded app (matched on
+  `entryId`, lies outside the working calendar or (since 1.41) inside a register break or outside the clocked workday,
+  is older than `maxBufferAgeHours`, or names an excluded app (matched on
   the name as sent, before the redaction) are **dropped** (counted, never stored); the rest goes to the host.
 - The `app` seconds of one worker and slot never exceed `slotMinutes × 60`, counting earlier batches: an item that does
   not fit is cut to what is left, one that finds nothing left is dropped; `droppedSeconds` is the app time removed.
@@ -361,8 +412,9 @@ Idempotency-Key: 5d2e…
 
 ### Client checklist
 
-- Collect only while the worker's own timer runs (server view), not idle, screen not locked, inside the schedule, policy
-  `enabled`, kind enabled, version acknowledged. Skip a slot (not "unverified") when an excluded app or a private window
+- Collect only while the worker's own timer runs (server view), not idle, screen not locked, inside the schedule, not
+  on a register break and not clocked out (1.41), policy `enabled`, kind enabled, version acknowledged. Never send
+  window titles or project names (1.41). Skip a slot (not "unverified") when an excluded app or a private window
   is in front.
 - Indicator whenever monitoring applies (tray state, *What is collected now* panel with the notice link, who sees it and
   retention). No alarm states.

@@ -70,6 +70,11 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
 - **1.26** (spec 199; planned for 1.23, before that 1.22 and 1.21): the activity-monitoring API (screenshots, apps,
   activity level), with a full audit. Opt-in: off unless your organisation enables it with a recorded DPIA; you see it
   first. Websites / domains come later, with an extension release.
+- **1.41** (owner decisions D4, D9, D11 of the 2026-11-24 TimeTrack Desktop monitoring study): window titles and
+  project names are never sent (`windowTitles` frozen to false in 1.41, removed in 2.0); team views show project
+  aggregates by default and per-person detail only for a declared billing-evidence purpose, with the organisation's
+  recorded opt-in and an audit record of every view; evidence is refused with `on_break` during register breaks and
+  after clock-out (spec 198). Privacy-sensitive: a full audit before the tag.
 
 ## Planned: browser extension and desktop app (RGPD / LOPDGDD compliant)
 
@@ -101,9 +106,11 @@ The clients record **working time** (art. 34.9 Estatuto de los Trabajadores). Mo
 199) is **off unless your organisation enables it with a recorded DPIA; you see it first**:
 
 - No screenshots, no application or activity logging unless the organisation enables monitoring with a recorded DPIA
-  (opt-in, 1.26), and then only what its policy lists, only while the worker's own timer runs; the worker sees the
-  notice and what is captured first. Never keystrokes, clipboard, webcam, microphone, location or files; no URL logging
-  in 1.26.
+  (opt-in, 1.26), and then only what its policy lists, only while the worker's own timer runs and the worker is not on
+  a break or clocked out (1.41); the worker sees the notice and what is captured first. Never keystrokes, clipboard,
+  webcam, microphone, location, files or window titles (1.41); no URL logging in 1.26. Managers see project
+  aggregates; per-person detail only for a declared billing-evidence purpose, and every such view is recorded (1.41).
+  The activity level is a level per slot, never a score or a ranking.
 - Every optional feature is opt-in, with dated consent.
 - Worker information text and a DPIA template shipped with the documentation.
 - Right to disconnect (LOPDGDD art. 88): no auto-start, no notifications outside the configured working hours.

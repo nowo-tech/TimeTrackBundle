@@ -13,25 +13,39 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
+use Nowo\TimeTrackBundle\Port\WorkdaySourceGate;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Support\Rfc3339;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
+use Nowo\TimeTrackBundle\Workday\WorkdayHistorySourceInterface;
+use Nowo\TimeTrackBundle\Workday\WorkdayState;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDay;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDayKind;
 use Nowo\TimeTrackBundle\WorkingTime\CalendarDayNormalizer;
 use Symfony\Component\Security\Core\User\UserInterface;
 
+use function array_unique;
+use function array_values;
+use function count;
 use function in_array;
 use function max;
+use function min;
 use function substr;
+use function usort;
 
 /**
  * Since 1.26.0 (contract §24.3): the refusal checks the bundle runs **before any byte is accepted**, in the contract
  * order — policy on and kind enabled (`kind_off`), version acknowledged (`not_acknowledged`), SC-002: the worker's own
  * timer ran on `entryId` at that instant (`outside_timer`), the spec 198 schedule through the working-calendar port
- * (`outside_hours`, only when the host gives a schedule), and the age (`too_old`, older than `maxBufferAgeHours`).
+ * (`outside_hours`, only when the host gives a schedule), since 1.41.0 the spec 198 register (`on_break`: inside a break
+ * or outside the clocked `work` of the worker, only when the host has a workday provider; `workday_unknown` when the
+ * register is on but the day cannot be read), and the age (`too_old`, older than `maxBufferAgeHours`). Since 1.41.0 an
+ * activity slot is checked at the first and the last second the timer covers (schedule) and as a whole (register).
  *
  * `entryId` is the id of the worker's running timer (`GET timer`) or of one of their own recorded timer entries
  * (`web`, `extension` or `desktop` source; the id `timer/stop` and `timer/switch` answer). Manual, calendar and
@@ -53,6 +67,19 @@ final readonly class MonitoringGate
     /** Outside the worker's working calendar (spec 198 schedule, day off, leave). */
     public const OUTSIDE_HOURS = 'outside_hours';
 
+    /**
+     * Since 1.41.0 (owner decision D11): the worker's register (spec 198) shows a break, or no clocked `work` segment
+     * (before clock-in, after clock-out), at that instant.
+     */
+    public const ON_BREAK = 'on_break';
+
+    /**
+     * Since 1.41.0 (audit ZBB-L2, owner: fail closed): the register is on for the worker but the day of the instant
+     * cannot be read — the host's workday provider answers today only (implement
+     * {@see WorkdayHistorySourceInterface}) — so buffered evidence of an earlier day is refused.
+     */
+    public const WORKDAY_UNKNOWN = 'workday_unknown';
+
     /** Older than `maxBufferAgeHours`. */
     public const TOO_OLD = 'too_old';
 
@@ -60,8 +87,8 @@ final readonly class MonitoringGate
     private const TIMER_SOURCES = [TimeEntrySource::Web, TimeEntrySource::Extension, TimeEntrySource::Desktop];
 
     /**
-     * Receives the timer and entry stores, the working calendar, the scope provider, the zone resolver and the
-     * working-hours source.
+     * Receives the timer and entry stores, the working calendar, the scope provider, the zone resolver, the
+     * working-hours source and (since 1.41.0) the host's workday register (null = no `on_break` check).
      */
     public function __construct(
         private ActiveTimerRepositoryInterface $timers,
@@ -70,6 +97,7 @@ final readonly class MonitoringGate
         private TimesheetTimezoneResolver $timezoneResolver,
         private ClientUserProfileProviderInterface $profileProvider,
         private ?TimesheetScopeProviderInterface $scopeProvider = null,
+        private ?WorkdayProviderInterface $workday = null,
     ) {
     }
 
@@ -118,8 +146,18 @@ final readonly class MonitoringGate
         if ($span === null || $instant->getTimestamp() < $span['start']->getTimestamp() || $instant->getTimestamp() > $span['end']->getTimestamp() || $instant->getTimestamp() >= $end) {
             return self::OUTSIDE_TIMER;
         }
-        if ($checkSchedule && !$this->insideSchedule($user, $span['scopeKey'], $instant)) {
+        // Since 1.41.0 (audit ZBB-L3): a slot is checked over the whole span the timer covers — its first and its last
+        // second — so a slot that runs into a break, the end of the schedule or a clock-out is refused, not kept whole.
+        $last        = $windowSeconds > 0 ? max($instant->getTimestamp(), min($end, $span['end']->getTimestamp()) - 1) : $instant->getTimestamp();
+        $lastInstant = $last === $instant->getTimestamp() ? $instant : new DateTimeImmutable('@' . $last);
+        if ($checkSchedule && (!$this->insideSchedule($user, $span['scopeKey'], $instant) || !$this->insideSchedule($user, $span['scopeKey'], $lastInstant))) {
             return self::OUTSIDE_HOURS;
+        }
+        if ($checkSchedule) {
+            $workday = $this->workdayRefusal($user, $span['scopeKey'], $instant, $lastInstant, $now);
+            if ($workday !== null) {
+                return $workday;
+            }
         }
         if ($at->getTimestamp() < $now->getTimestamp() - $policy->maxBufferAgeHours * 3600) {
             return self::TOO_OLD;
@@ -188,6 +226,138 @@ final readonly class MonitoringGate
         }
 
         return $slots === 0;
+    }
+
+    /**
+     * Since 1.41.0 (D11; audit ZBB-L2, L3, L4): null when `[$from, $to]` (both inclusive) lies inside one stretch of
+     * clocked `work` of the register, else `on_break`, or `workday_unknown` when the register is on for the worker but
+     * the bundle cannot read the day (no {@see WorkdayHistorySourceInterface} and not today's day: fail closed).
+     *
+     * The days consulted are the local dates of both ends and the day before (a shift that started yesterday and runs
+     * past midnight). Contiguous `work` segments are merged; an open `work` segment counts only while the status is
+     * `working` (until now plus the clock skew); a segment whose times cannot be read covers nothing. No workday
+     * provider, or a register that is off for the worker (null), restricts nothing.
+     */
+    private function workdayRefusal(UserInterface $user, string $scopeKey, DateTimeImmutable $from, DateTimeImmutable $to, DateTimeImmutable $now): ?string
+    {
+        if (!$this->workday instanceof WorkdayProviderInterface) {
+            return null;
+        }
+        $states = $this->workdayStates($user, new DateTimeZone($this->timezoneResolver->resolve($user, $scopeKey)), $from, $to);
+        if ($states === null) {
+            return null;
+        }
+        if ($states === false) {
+            return self::WORKDAY_UNKNOWN;
+        }
+        foreach ($this->workStretches($states, $now) as [$start, $end]) {
+            if ($from->getTimestamp() >= $start && $to->getTimestamp() < $end) {
+                return null;
+            }
+        }
+
+        return self::ON_BREAK;
+    }
+
+    /**
+     * The register's days around `[$from, $to]`: null when the register is off for the worker (today's answer is
+     * null), false when it is on but a day of the span is unknown (today-only provider and another date, or a history
+     * source that answers null for that day).
+     *
+     * @return false|list<WorkdayState>|null
+     */
+    private function workdayStates(UserInterface $user, DateTimeZone $zone, DateTimeImmutable $from, DateTimeImmutable $to): array|false|null
+    {
+        $dates   = $this->datesAround($zone, $from, $to);
+        $history = $this->workday instanceof WorkdaySourceGate ? $this->workday->history() : ($this->workday instanceof WorkdayHistorySourceInterface ? $this->workday : null);
+        if ($history instanceof WorkdayHistorySourceInterface) {
+            // Audit ZBB-D-L1: whether the register is on for the worker comes from today's answer only. Once it is on,
+            // a null day for the span's own dates is unknown (fail closed); the day before is optional (night shifts).
+            if (!$this->workday?->today($user) instanceof WorkdayState) {
+                return null;
+            }
+            $ref      = TimeTrackUserRefs::fromUser($user);
+            $required = $this->datesAround($zone, $from, $to, false);
+            $states   = [];
+            for ($i = 0; $i < count($dates); ++$i) {
+                $state = $history->dayFor($ref, $dates[$i]);
+                if (!$state instanceof WorkdayState) {
+                    if (in_array($dates[$i], $required, true)) {
+                        return false;
+                    }
+                    continue;
+                }
+                $states[] = $state;
+                // The register's zone may put the span on other dates: ask for those too.
+                foreach ($this->datesAround(new DateTimeZone($state->timezone), $from, $to) as $date) {
+                    if (!in_array($date, $dates, true)) {
+                        $dates[] = $date;
+                    }
+                }
+            }
+
+            return $states;
+        }
+        $state = $this->workday?->today($user);
+        if (!$state instanceof WorkdayState) {
+            return null;
+        }
+
+        return in_array($state->date, $this->datesAround(new DateTimeZone($state->timezone), $from, $to), true) ? [$state] : false;
+    }
+
+    /**
+     * The local dates of both ends and (unless `$withDayBefore` is false) the day before the first.
+     *
+     * @return list<string>
+     */
+    private function datesAround(DateTimeZone $zone, DateTimeImmutable $from, DateTimeImmutable $to, bool $withDayBefore = true): array
+    {
+        $first = $from->setTimezone($zone);
+        $dates = [$first->format('Y-m-d'), $to->setTimezone($zone)->format('Y-m-d')];
+        if ($withDayBefore) {
+            $dates[] = $first->modify('-1 day')->format('Y-m-d');
+        }
+
+        return array_values(array_unique($dates));
+    }
+
+    /**
+     * The clocked `work` stretches of the days, as merged `[start, end)` Unix-time pairs.
+     *
+     * @param list<WorkdayState> $states
+     *
+     * @return list<array{int, int}>
+     */
+    private function workStretches(array $states, DateTimeImmutable $now): array
+    {
+        $open = $now->getTimestamp() + MonitoringSettings::CLOCK_SKEW_SECONDS;
+        $work = [];
+        foreach ($states as $state) {
+            foreach ($state->segments as $segment) {
+                if (($segment['type'] ?? null) !== 'work') {
+                    continue;
+                }
+                $start = Rfc3339::parse($segment['start'] ?? null, true);
+                $end   = ($segment['end'] ?? null) === null ? ($state->status === 'working' ? $open : null) : Rfc3339::parse($segment['end'], true)?->getTimestamp();
+                if ($start instanceof DateTimeImmutable && $end !== null && $end > $start->getTimestamp()) {
+                    $work[] = [$start->getTimestamp(), $end];
+                }
+            }
+        }
+        usort($work, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        /** @var list<array{int, int}> $merged */
+        $merged = [];
+        foreach ($work as [$start, $end]) {
+            $count = count($merged);
+            if ($count > 0 && $start <= $merged[$count - 1][1]) {
+                $merged[$count - 1] = [$merged[$count - 1][0], max($merged[$count - 1][1], $end)];
+                continue;
+            }
+            $merged[] = [$start, $end];
+        }
+
+        return $merged;
     }
 
     private function minutes(string $time): int

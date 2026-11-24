@@ -113,11 +113,15 @@ Scope: `Controller\TimeTrackMonitoringApiController`, `Monitoring\*`, the two mo
 | Replays | intent rows (bundle EM); acknowledgement and activity answers in `client_api.rate_limit.cache_pool` | Shared by every worker; never in process memory |
 | `Monitoring\MonitoringActivityBudget` | the shared cache pool | App seconds per (user, slot) live in `client_api.rate_limit.cache_pool` (25 h), never in process memory |
 | `Monitoring\MonitoringSpanDiscardListener` | the event dispatcher | Stateless: re-dispatches each discarded idle span as `MonitoringSpanDiscardedEvent` |
+| `Monitoring\MonitoringTeamViewGuard` (1.41) | the host policy source, the event dispatcher, clock, logger | Stateless: the worker's policy is read on every call; the view record is an event, nothing is kept |
+| `MonitoringGate` workday check (1.41) | the host workday provider (slot) | The register's day is read on every call (`todayFor` / `dayFor`); no memo |
 
 Worker test: `MonitoringWorkerModeTest` serves two people with different policies in turn through `http_kernel` handle /
 terminate with the services resetter never run: each sees only their own policy and acknowledgement, the same
 `Idempotency-Key` of the other person is not a replay, one cannot use the other's upload URL, and 500 `GET me` steps with
-the monitoring block keep a flat memory.
+the monitoring block keep a flat memory. Since 1.41 `MonitoringPrivacyWorkerModeTest` alternates a worker on a register
+break and a working one (activity and the team-view guard) for 375 rounds: no break or policy leaks between them and the
+memory stays flat.
 
 ## Re-audit 1.25 (host timer API and service accounts)
 

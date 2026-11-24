@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[1.41.0] - 2026-11-24](#1410---2026-11-24)
+  - [Added (1.41.0)](#added-1410)
+  - [Changed (1.41.0)](#changed-1410)
+  - [Deprecated (1.41.0)](#deprecated-1410)
+  - [Tests (1.41.0)](#tests-1410)
 - [[1.40.1] - 2026-11-23](#1401---2026-11-23)
 - [[1.40.0] - 2026-11-23](#1400---2026-11-23)
 - [[1.39.0] - 2026-11-23](#1390---2026-11-23)
@@ -82,9 +87,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-2.0.0 (major, REQ-ARCH-001 closure): only the changes 1.x announced (deprecated since 1.5–1.39, runtime notices since
-1.33.0 / 1.39.0). An application that runs 1.39 without TimeTrack deprecation notices upgrades without code changes.
-See [UPGRADING](UPGRADING.md#unreleased).
+2.0.0 (major, REQ-ARCH-001 closure): only the changes 1.x announced (deprecated since 1.5–1.41, runtime notices since
+1.33.0 / 1.39.0 / 1.41.0). An application that runs 1.41 without TimeTrack deprecation notices upgrades without code
+changes. See [UPGRADING](UPGRADING.md#to-200).
 
 ### Changed
 
@@ -178,6 +183,10 @@ See [UPGRADING](UPGRADING.md#unreleased).
   `TimeTrackPortsPass::EXTRAS`). The `$hostFlushProbe` constructor argument of `TimeTrackTransactionRunner` and of the
   Doctrine stores, and the third argument of `RecoveringFlusher::flush()`, are accepted and ignored (deprecated,
   removed in 3.0).
+- **BREAKING:** `MonitoringPolicy`'s `windowTitles` constructor argument and property, and the `windowTitles` key of
+  `GET me.monitoring` (deprecated and frozen to `false` since 1.41.0, owner decision D4): window titles are never
+  collected. Drop the argument (a named `windowTitles:` argument is an unknown parameter; a positional call moves
+  `excludedApps` and the later arguments one place left); clients read a missing key as `false`.
 - Unused since the removals and kept in the signature, ignored (deprecated, removed in 3.0): the `$teamAccessGuard`
   and `$idleThresholdSeconds` arguments of `TimeTrackClientApiController`, the `$layoutTemplate` / `$cssFramework`
   arguments of `TimeTrackTwigExtension`.
@@ -186,6 +195,73 @@ See [UPGRADING](UPGRADING.md#unreleased).
 
 - After 2.0.0 the 1.x line receives security fixes for 6 months: Moderate and higher are backported to the last 1.x
   minor; Low ones are fixed in 2.x only.
+
+## [1.41.0] - 2026-11-24
+
+Activity monitoring privacy decisions D4, D9 and D11 (owner, 2026-11-24, TimeTrack Desktop monitoring study §9).
+Contract §TT-MON v1.1, additive on the unversioned and the `v1` client paths. Upgrade notes:
+[UPGRADING](UPGRADING.md#to-1410).
+
+### Added (1.41.0)
+
+- **`on_break` refusal (D11).** With a workday register (`client_api.workday_provider`, spec 198), screenshots and
+  activity are refused when the register shows the worker **on a break or outside the clocked `work`** (before clock-in,
+  after clock-out, or no clock-in at all), even while a task timer keeps running: `POST monitoring/screenshots/intent`
+  and the `PUT` answer `422 monitoring_refused {reason: "on_break"}` (after `outside_hours`, before `too_old`);
+  activity items are dropped (counted in `dropped`, never stored). Only monitoring evidence is refused, never the timer
+  or time entries. Discard markers are not checked. Contiguous `work` segments are one stretch; an open `work` segment
+  counts only while the status is `working`; a segment whose times cannot be read covers nothing (fail closed); a
+  register that is off for the worker (`null`) restricts nothing. A shift that runs past midnight covers the next
+  morning (the day before is consulted, audit ZBB-L4).
+- **`workday_unknown` refusal** (audit ZBB-L2, fail closed): when the register is on for the worker but the host's
+  provider answers today only, buffered evidence of another day is refused. Implement
+  `Workday\WorkdayHistorySourceInterface::dayFor(TimeTrackUserRef, 'Y-m-d'): ?WorkdayState` (optional, framework-free)
+  on your workday provider to keep it. Whether the register is on comes from `todayFor()`; a day without clock-ins is an
+  `idle` state, and `dayFor()` null for the evidence's date is `workday_unknown` too (fail closed).
+- **Activity slots are checked over their whole span** (audit ZBB-L3): the first and the last second the timer covers
+  must be inside the schedule (`outside_hours`) and inside one clocked `work` stretch (`on_break`); a slot that runs
+  into a break, past the schedule or past the clock-out is refused, not kept whole.
+- **Team view granularity (D9).** `MonitoringPolicy` gains `purpose` (`billing_evidence`, `project_costing`,
+  `self_analytics`, or null = not declared), `teamView` (`project_aggregates`, the default, or `per_person`) and
+  `perPersonDetailRecordedAt` (the `Y-m-d` opt-in date, required with `per_person`) and `perPersonSinceVersion` (the
+  first `per_person` version, default the current one). `per_person` is accepted only for an `organization` policy whose
+  purpose is `billing_evidence`. New `MonitoringPolicy::allowsPerPersonDetail()`.
+- `Monitoring\MonitoringTeamViewGuard` (public service): `granularity($policy)` (the maximum granularity) and
+  `authorizePersonDetail($viewer, $worker): MonitoringPersonDetailGrant`. It refuses
+  (`MonitoringTeamDetailDeniedException`: `no_policy`, `personal`, `aggregates_only`, `opt_in_pending` — a future
+  opt-in date —, `not_acknowledged` — the worker did not acknowledge a `per_person` version (≥ `perPersonSinceVersion`, whatever
+  `acknowledgementRequired` says) after the opt-in —, `no_audit` — no
+  listener would record the view —, `unknown_user`), and otherwise dispatches
+  `nowo_time_track.monitoring.person_detail_viewed` (`MonitoringPersonDetailViewedEvent`: viewer and worker refs,
+  policy version, purpose, time, `visibleSince`) **before** returning; a listener that throws stops the view. The
+  grant's `visibleSince` (the later of the opt-in day and the worker's acknowledgement) bounds the evidence that may be
+  shown: `covers($collectedAt)` (audit ZBB-M2, purpose limitation). The worker's own view (same user class **and** id,
+  audit ZBB-M1) is always allowed and not audited.
+- `GET me.monitoring` gains `purpose` and `teamView`, so the worker sees who sees what (the opt-in date is not
+  published).
+
+### Changed (1.41.0)
+
+- **Window titles are never collected (D4).** `GET me.monitoring.windowTitles` is always `false`, whatever the host
+  policy says. Title fields a client sends with activity items (`windowTitle`, `title`, `project`, a top-level
+  `windowTitles`) are ignored: the bundle never stores, returns or logs them (a host HTTP body logger must exclude the
+  monitoring routes). `X-TimeTrack-Capabilities: titles=1` changes nothing.
+
+### Deprecated (1.41.0)
+
+- `MonitoringPolicy`'s `windowTitles` argument and property: the argument is ignored (a `true` value triggers a
+  deprecation notice) and the property is always `false`; the `windowTitles` key of `GET me.monitoring` is frozen to
+  `false`. 2.0 removes all three.
+
+### Tests (1.41.0)
+
+- Unit: the `on_break` order, breaks, before clock-in, after clock-out, open segments, unreadable segments, the history
+  port and the register's time zone, `workday_unknown`, whole-slot checks, night shifts; the policy's purpose and
+  team-view rules; the guard (another user class with the same id, future opt-in, acknowledgement before the opt-in, no
+  listener, `visibleSince`) and its audit event.
+- Functional (unversioned and `v1` paths): `windowTitles` frozen, title fields never stored or logged, `purpose` /
+  `teamView` on `GET me`, the guard through the container (a failing audit listener stops the view), and `on_break` at
+  intent time and on activity with a register that has history.
 
 ## [1.40.1] - 2026-11-23
 
@@ -2394,7 +2470,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.41.0...HEAD
+[1.41.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.1...v1.41.0
 [1.40.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.0...v1.40.1
 [1.40.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.38.0...v1.39.0

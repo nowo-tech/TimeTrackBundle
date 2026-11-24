@@ -2,13 +2,18 @@
 
 ## Table of contents
 
-- [Unreleased](#unreleased)
+- [To 2.0.0](#to-200)
   - [Before you upgrade](#before-you-upgrade)
   - [What changes](#what-changes)
   - [Removed](#removed)
   - [Composer](#composer)
   - [Private manager only](#private-manager-only)
   - [1.x support](#1x-support)
+  - [Host checklist](#host-checklist)
+- [To 1.41.0](#to-1410)
+  - [Window titles are never collected (D4)](#window-titles-are-never-collected-d4)
+  - [Team views: project aggregates unless billing evidence (D9)](#team-views-project-aggregates-unless-billing-evidence-d9)
+  - [Breaks and clock-out stop collection (D11)](#breaks-and-clock-out-stop-collection-d11)
 - [To 1.40.1](#to-1401)
 - [To 1.40.0](#to-1400)
   - [Stop writing TimeTrack rows with your entity manager](#stop-writing-timetrack-rows-with-your-entity-manager)
@@ -112,9 +117,9 @@
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
-## Unreleased
+## To 2.0.0
 
-From **1.40.1** (a major version: widen your constraint):
+From **1.41.0** (a major version: widen your constraint):
 
 ```bash
 composer require nowo-tech/time-track-bundle:^2.0 -W
@@ -125,11 +130,11 @@ minor without deprecation notices from this bundle upgrades without code changes
 line receives security fixes for 6 months: fixes rated Moderate and above are backported to the last 1.x minor;
 Low ones are fixed in 2.x only.
 
-No schema change, no new requirement: the same PHP, Symfony, Doctrine and database ranges as 1.40.1.
+No schema change, no new requirement: the same PHP, Symfony, Doctrine and database ranges as 1.41.0.
 
 ### Before you upgrade
 
-On 1.40.1 (or 1.39), run your test suite and a deploy cycle of production traffic with the deprecation log on, and clear every
+On 1.41.0 (the last 1.x minor), run your test suite and a deploy cycle of production traffic with the deprecation log on, and clear every
 notice of `nowo-tech/time-track-bundle`:
 
 1. **The private entity manager notice** (container build, 1.33.0):
@@ -137,7 +142,7 @@ notice of `nowo-tech/time-track-bundle`:
    > nowo_time_track.database.private_entity_manager is false (the 1.x default): every TimeTrack write flushes your
    > entity manager "default", including what your application left pending in it. 2.0 removes the option: ...
 
-   Set `nowo_time_track: { database: { private_entity_manager: true } }` on 1.39 once the host-flush probe below
+   Set `nowo_time_track: { database: { private_entity_manager: true } }` on 1.41 once the host-flush probe below
    reports nothing; the notice and the probe are then gone.
 2. **The host-flush probe** (per request, 1.33.0; see [Reading the host-flush probe as a migration list](#reading-the-host-flush-probe-as-a-migration-list)):
    every "Your pending changes to App\X were flushed by NowoTimeTrackBundle; 2.0 no longer does.", every "Your
@@ -158,6 +163,9 @@ notice of `nowo-tech/time-track-bundle`:
    dialog form of the TimeTrack ... inline (options.action_urls without options.dialog_urls...)" (1.39.0).
 8. **Configuration** (container build): the `templates.*` keys (1.8), `clients.cors_allow_any_extension_origin` (1.9)
    and `security.manager_can_edit_entries` (1.5).
+9. **Monitoring policy** (when built, 1.41.0): "The "windowTitles" argument of ...MonitoringPolicy is ignored ...":
+   stop passing `windowTitles` to `MonitoringPolicy` (also `windowTitles: false`, which 1.41 accepts silently and 2.0
+   refuses as an unknown named parameter), and stop reading `$policy->windowTitles`.
 
 ### What changes
 
@@ -202,6 +210,7 @@ notice of `nowo-tech/time-track-bundle`:
 | `@NowoTimeTrackBundle/layout.html.twig`, `@NowoTimeTrackBundle/_legacy_layout.html.twig` | 1.8 | extend `nowo_ui_layout.admin` (or your layout) and fill the UiKit blocks |
 | The inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` | 1.39.0 | `options.dialog_urls` |
 | The 1.33 host-flush probe (`Doctrine\TimeTrackHostFlushProbe`, internal) and its notices | (2.0) | nothing: the private manager never flushes your manager |
+| `MonitoringPolicy` `windowTitles` (constructor argument and property), the `windowTitles` key of `GET me.monitoring` | 1.41.0 | nothing: window titles are never collected (D4); clients read a missing key as `false` |
 
 **Host port interfaces.** A service of yours that still uses a removed interface fails the container build with a
 message that names the service, the interface and its twin, whatever the way it is wired: configured (`task_provider:
@@ -234,7 +243,7 @@ and of the Doctrine stores, the third argument of `RecoveringFlusher::flush()`, 
 
 ### Composer
 
-Nothing moves: the same `require` as 1.39 (`nowo-tech/transaction-doctrine` `^1.9.1` stays, the probe is simply no
+Nothing moves: the same `require` as 1.41 (`nowo-tech/transaction-doctrine` `^1.9.1` stays, the probe is simply no
 longer used).
 
 ### Private manager only
@@ -282,10 +291,108 @@ included). What breaks:
 - With doctrine/dbal 3 the rollback middleware is not registered: after a rollback the private manager is only
   replaced at the next boundary. Your SQL filters are mirrored on the private manager with their parameters only.
 
+### Host checklist
+
+Search your application for each item; every hit is a change to make on 1.41 (where it works and notices tell you) or
+in the 2.0 bump.
+
+| Search your code / config for | Change |
+|---|---|
+| `persist(new TimeEntry(` / `ActiveTimer` / `ClientToken` / `Timesheet` ... with your manager, `remove($token)` of a TimeTrack row | the TimeTrack operation: `TimeEntryOperationsInterface::createManual()` / `correct()`, `ManualEntryService::create()`, `ClientTokenRevoker::revokeSession()` / `revokeAllForUser()` / `revokeByCredential()`, `TimeTrackPersonalDataInterface::erase()` |
+| A TimeTrack row loaded with your manager (`$em->getRepository(TimeEntry::class)->find…`, a route value resolver) handed to a TimeTrack service (`TimeEntryBillableService::change()`, a store `save()`) | pass the id (`TimeEntryBillableService::changeById()`, the `…ById` / id-based operations) or load it through TimeTrack (`TimeEntryBillableService::find()`) |
+| An entity of yours with a Doctrine relation to a TimeTrack row, filled with an instance a TimeTrack service returned | `$em->getReference(TimeEntry::class, $id)`, or store the id in a plain column |
+| A Doctrine `onFlush` / `postFlush` listener of yours that reacts to TimeTrack rows | it now runs on TimeTrack's private manager flush (same connection, mapping and listeners): it must not rely on your manager's unit of work there |
+| `database.private_entity_manager` | drop the line (`false` fails the build; `true` is a no-op) and the deprecation-log allowance for its 1.33 notice |
+| `heartbeat` in `client_api.routes.include`, `clients.routes.heartbeat` | remove it |
+| `client_api.allow_tauri_webview_origins`, `clients.cors_allow_any_extension_origin`, `"*"` in `clients.cors_allowed_origins` | remove (`false` is a deprecated no-op until 3.0; `true` / `"*"` fail the build) |
+| `templates:` under `nowo_time_track`, `security.manager_can_edit_entries` | remove (see [What changes](#what-changes)) |
+| The 22 removed interfaces ([Removed](#removed)) in `implements`, `#[AsAlias]`, `#[AsDecorator]`, constructor types | the 1.23 twin |
+| `->getUser()` / `->getViewer()` on TimeTrack events and `ClientAuthResult` | `userRef()` / `viewerRef()` (or `getUserId()` / `getViewerId()`) |
+| `windowTitles` (`new MonitoringPolicy(…, windowTitles: …)`, `$policy->windowTitles`, a client reading `GET me.monitoring.windowTitles`) | drop it; a missing key means `false` |
+| `ClientApiSettings` built by hand with `$allowTauriWebviewOrigins` | still accepted and ignored (deprecated, removed in 3.0): pass `false` or use named arguments without it |
+| `RecoveringFlusher::resetIfClosed()`, `@NowoTimeTrackBundle/layout.html.twig`, `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` without `dialog_urls` | see [Removed](#removed) |
+
 ### 1.x support
 
 The 1.x line (from 1.40) receives security fixes for 6 months after 2.0.0: Moderate and higher are backported to the
 last 1.x minor; Low ones are fixed in 2.x only (upgrade to get them).
+
+## To 1.41.0
+
+From **1.40.1**:
+
+```bash
+composer update nowo-tech/time-track-bundle
+```
+
+Target **1.41.0** (minor). From **1.40.x**: `composer update nowo-tech/time-track-bundle`. No configuration, schema or
+migration change. Only hosts with activity monitoring (`client_api.monitoring`) have anything to do; the owner decisions
+D4, D9 and D11 of the 2026-11-24 monitoring study apply.
+
+### Window titles are never collected (D4)
+
+- `GET me.monitoring.windowTitles` is always `false` and the bundle never accepts, stores or returns a window title or a
+  project name. Stop passing `windowTitles` to `MonitoringPolicy` (a `true` value is ignored and triggers a deprecation
+  notice; 2.0 removes the argument, the property and the `GET me` key).
+- Remove any "window titles" switch from your policy screen and your notice text, and drop title columns from your
+  evidence store if you had prepared one. If your policy versions bumped `acknowledgementRequired` for titles, nothing
+  changes: narrowing never needs a new acknowledgement.
+
+### Team views: project aggregates unless billing evidence (D9)
+
+- Pass the written purpose of the policy (`purpose: 'billing_evidence' | 'project_costing' | 'self_analytics'`) to
+  `MonitoringPolicy`. Without `teamView` the policy is `project_aggregates`: your team views show totals per project
+  only, never one person's slots, app shares, levels or thumbnails.
+- Per-person detail is an explicit opt-in of the organisation: `purpose: 'billing_evidence'`, `teamView: 'per_person'`
+  and `perPersonDetailRecordedAt: 'Y-m-d'` (the date the organisation recorded it; keep who and why in your policy
+  audit). Any other combination throws `InvalidArgumentException` (a host bug). Switching a policy to `per_person`
+  widens what third parties see: set `acknowledgementRequired: true` for that version so workers acknowledge it, and
+  pass `perPersonSinceVersion` (the first `per_person` version; default the current one) on later versions. The guard
+  always requires an acknowledgement of a version ≥ `perPersonSinceVersion`, whatever `acknowledgementRequired` says.
+- Switching a policy to `per_person` changes the monitoring criteria: update the DPIA and inform the workers'
+  representatives (ET art. 64.5, LOPDGDD art. 87.3) before the opt-in date, besides the workers' acknowledgement.
+- Before showing one worker's detail to anyone but that worker, call
+  `MonitoringTeamViewGuard::authorizePersonDetail($viewerRef, $workerRef)` (after your own `view_team` and project
+  checks). It throws `MonitoringTeamDetailDeniedException` (show aggregates instead) or dispatches
+  `nowo_time_track.monitoring.person_detail_viewed` and returns a `MonitoringPersonDetailGrant`.
+  - Register a **synchronous** listener that stores the event as the view record (flush it) and shows it on the
+    worker's timeline. Without a listener the guard refuses (`no_audit`); a listener that throws stops the view.
+  - Show only evidence collected at or after `$grant->visibleSince` (the later of the opt-in day, 00:00 UTC, and the
+    worker's last acknowledgement): filter your query with `collected_at >= :visibleSince` or `$grant->covers($at)`.
+    Older evidence stays in the project aggregates.
+  - The guard refuses `opt_in_pending` while `perPersonDetailRecordedAt` is in the future and `not_acknowledged`
+    until the worker acknowledged the policy after the opt-in.
+  - The viewer is the worker only when the user class **and** the id match.
+  - `MonitoringTeamViewGuard::granularity($policy)` is the maximum granularity a policy allows (for list pages); the
+    guard decides each detail view.
+
+```php
+try {
+    $grant = $guard->authorizePersonDetail(TimeTrackUserRefs::fromUser($manager), $workerRef);
+    return $this->renderPersonDetail($workerRef, $this->evidence->forWorkerSince($workerRef, $grant->visibleSince));
+} catch (MonitoringTeamDetailDeniedException) {
+    return $this->renderProjectAggregates($project);
+}
+```
+
+### Breaks and clock-out stop collection (D11)
+
+- With `client_api.workday_provider` configured, evidence taken during a register break, before clock-in or after
+  clock-out is refused with `422 monitoring_refused {reason: "on_break"}` (activity items are dropped). Clients should
+  stop collecting while `GET workday` says `on_break`, `idle` or `closed`; the server refusal is the backstop.
+- Implement `Workday\WorkdayHistorySourceInterface::dayFor($user, $date)` on your workday provider: without it,
+  buffered items of another day than today are refused with `workday_unknown` (fail closed). Return the same
+  `WorkdayState` shape as `todayFor()` (a day without clock-ins is an `idle` state with no segments, never null: while
+  `todayFor()` says the register is on, `dayFor()` null for the evidence's date is refused with `workday_unknown`):
+  `segments` of `type` `work` / `break` with RFC 3339 `start` / `end` (`end: null`
+  for an open segment). The day before is consulted too, so a night shift's segment covers the next morning.
+- Activity slots must lie inside the schedule and inside one clocked `work` stretch over the whole span the timer
+  covers; a slot that runs into a break or past the clock-out is dropped.
+- Only monitoring evidence is refused; timers and time entries are not affected. Workers who never clock in get all
+  their evidence refused while the register is on for them.
+- A host whose register keeps no `work` segments (e.g. a status only) will see every item refused with `on_break`:
+  return the segments, or return `null` for users whose register is off.
+
 ## To 1.40.1
 
 From **1.40.0**:
