@@ -77,7 +77,7 @@ final class ManualEntryAllocationTest extends TestCase
         self::assertSame([], $this->billable->calls, 'the activity type default first');
         self::assertSame(['c-1', 'support'], [$this->created[0]->getSubject()?->id, $this->created[0]->getActivityTypeKey()]);
         self::assertContains('customer', $this->logger->contextValues());
-        self::assertStringNotContainsString('c-1', (string) json_encode($this->logger->records));
+        self::assertStringNotContainsString('"c-1"', (string) json_encode($this->logger->records));
 
         // Explicit wins over the activity type; an activity type without a default falls back to the host's.
         self::assertTrue($service->create($this->user, TimeAllocation::task('task-1', null, 'support'), $this->at(9), $this->at(10), TimeEntrySource::Manual, billable: true)->getBillable());

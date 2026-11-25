@@ -112,7 +112,7 @@ final class TimerServiceAllocationTest extends TestCase
         $start = $this->event(TimerStartEvent::class);
         self::assertSame(['c-1', 'dev'], [$start->getSubject()?->id, $start->getActivityTypeKey()]);
         self::assertSame(['subject_type' => 'customer', 'activity_type' => true], array_intersect_key($this->contextOf('TimeTrack timer started.'), ['subject_type' => 1, 'activity_type' => 1]));
-        self::assertStringNotContainsString('c-1', (string) json_encode($this->logger->records), 'never the subject id in a log');
+        self::assertStringNotContainsString('"c-1"', (string) json_encode($this->logger->records), 'never the subject id in a log');
 
         $this->clock->modify('+1 hour');
         $entry = $service->stop($this->user);

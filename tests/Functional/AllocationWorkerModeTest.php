@@ -92,7 +92,8 @@ final class AllocationWorkerModeTest extends FunctionalTestCase
             self::assertArrayNotHasKey('id', $masked[0], 'no id when masked');
             self::assertArrayNotHasKey('url', $masked[0]);
             $raw = json_encode($theirs, JSON_THROW_ON_ERROR);
-            foreach (['customer c-1', 'customer c-2', 'c-2', 'crm.example.test'] as $leak) {
+            // Quoted: an entry UUID may contain the bytes "c-2" (e.g. "…b22c-2a0f…").
+            foreach (['customer c-1', 'customer c-2', '"c-1"', '"c-2"', 'crm.example.test'] as $leak) {
                 self::assertStringNotContainsString($leak, $raw, sprintf('round %d: nothing of the first viewer\'s page', $round));
             }
 
