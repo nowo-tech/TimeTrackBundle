@@ -64,7 +64,6 @@ class MonitoringApiTest extends MonitoringTestCase
             'kinds'                => ['screenshots', 'apps', 'activity'],
             'capture'              => ['screenshotsPer10Min' => 1, 'slotMinutes' => 10, 'reviewWindowMinutes' => 10],
             'screenshots'          => ['enabled' => true, 'blur' => 'medium', 'fullResolution' => false, 'maxLongSidePx' => 1920],
-            'windowTitles'         => false,
             'excludedApps'         => ['vaultapp', 'diaryapp'],
             'retentionDays'        => 30,
             'upload'               => ['maxBufferedScreenshots' => 36, 'maxBufferAgeHours' => 24],

@@ -6,8 +6,8 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Calendar;
 
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSuggestionService;
-use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
+use Nowo\TimeTrackBundle\Port\Internal\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarSuggestionRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Tests\Stub\RecordingTaskAccessChecker;

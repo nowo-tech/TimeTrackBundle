@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Integration;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see UserReferenceResolverInterface} (REQ-ARCH-001 rule 3). Alias this
+ * Since 1.23.0: framework-free twin of the 1.x `UserReferenceResolverInterface` (REQ-ARCH-001 rule 3). Alias this
  * interface to your service (instead of the deprecated one): the bundle asks it for the object stored in its `user`
  * associations.
  */

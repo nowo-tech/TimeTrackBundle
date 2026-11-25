@@ -27,7 +27,6 @@ use Nowo\TimeTrackBundle\Calendar\GoogleCalendarEventSource;
 use Nowo\TimeTrackBundle\Calendar\GoogleCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarEventSource;
 use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarOAuthClient;
-use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Client\AlwaysActiveClientCredentialState;
 use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
@@ -35,7 +34,6 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
-use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
@@ -44,7 +42,6 @@ use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
@@ -74,7 +71,6 @@ use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerMiddleware;
 use Nowo\TimeTrackBundle\Doctrine\PrivateEntityManagerSubscriber;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackExactKeyColumns;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackMetadataListener;
 use Nowo\TimeTrackBundle\Doctrine\UnitOfWorkBoundaries;
@@ -89,10 +85,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\NoServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Integration\NullTimeEntryBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Meeting\MeetingLinkDetector;
 use Nowo\TimeTrackBundle\Meeting\MeetingQueryParser;
@@ -109,6 +102,16 @@ use Nowo\TimeTrackBundle\Monitoring\MonitoringTeamViewGuard;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringUploadSignerInterface;
 use Nowo\TimeTrackBundle\PersonalData\DoctrineTimeTrackPersonalData;
 use Nowo\TimeTrackBundle\PersonalData\TimeTrackPersonalDataInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskKeyResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkedTimeSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
 use Nowo\TimeTrackBundle\Query\DoctrineTimeTrackQuery;
 use Nowo\TimeTrackBundle\Query\RunningTimerQueryInterface;
@@ -132,7 +135,6 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringUploadIntentRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetEventRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
-use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryResolver;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
@@ -146,7 +148,6 @@ use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Security\AllowAllTimeTrackAccessChecker;
 use Nowo\TimeTrackBundle\Security\ConfigurableTimeTrackAccessChecker;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -164,7 +165,6 @@ use Nowo\TimeTrackBundle\Timesheet\TimesheetAccessGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetAuditTrail;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetFormHandler;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetPersonalDataExporter;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetTimezoneResolver;
@@ -180,13 +180,11 @@ use Nowo\TimeTrackBundle\WorkingTime\ConfigOvertimePolicy;
 use Nowo\TimeTrackBundle\WorkingTime\DerivedWorkingCalendar;
 use Nowo\TimeTrackBundle\WorkingTime\OvertimePolicyInterface;
 use Nowo\TimeTrackBundle\WorkingTime\TaskTimeWorkedTimeSource;
-use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
-use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
-use Nowo\TransactionDoctrine\HostFlushProbe;
 use Nowo\TransactionDoctrine\Symfony\Conflict\ConflictResponseFormatterInterface;
 use Nowo\UiKitBundle\Dialog\RemoteDialogResponder;
 use Psr\Clock\ClockInterface;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -201,7 +199,6 @@ use Symfony\Component\Security\Core\User\UserCheckerInterface;
 use function array_diff;
 use function array_diff_key;
 use function array_key_exists;
-use function array_merge;
 use function array_unique;
 use function array_values;
 use function implode;
@@ -211,31 +208,26 @@ use function is_array;
 use function is_string;
 use function rtrim;
 use function sprintf;
-use function trigger_deprecation;
 
 /**
  * Loads the bundle services and parameters and prepends the Doctrine mapping, UiKit and FormKit defaults.
  */
 final class TimeTrackExtension extends Extension implements PrependExtensionInterface
 {
-    /** Since 1.23.0: the source manager of the private entity manager (set only with the option on). */
+    /** Since 1.23.0: the source manager of the private entity manager. */
     public const PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER = 'nowo_time_track.private_entity_manager.source';
 
-    /** 1.33.0: the package and version of the runtime notices of what 2.0 removes or flips. */
-    public const DEPRECATION_PACKAGE = 'nowo-tech/time-track-bundle';
+    /** 2.0 (REQ-ARCH-001 rule 6): `database.private_entity_manager: false` fails the container build. */
+    public const PRIVATE_ENTITY_MANAGER_REMOVED = 'nowo_time_track.database.private_entity_manager: false is no longer supported: since 2.0 TimeTrack reads and writes its rows only through its private entity manager and never flushes, clears or closes yours. Remove the option (true has no effect either), flush your own pending changes yourself and change TimeTrack rows through its services; see UPGRADING "To 2.0.0".';
 
-    public const DEPRECATION_SINCE = '1.33';
+    /** 2.0: `"*"` in `clients.cors_allowed_origins` (deprecated since 1.9) fails the container build. */
+    public const CORS_WILDCARD_REMOVED = 'nowo_time_track.clients.cors_allowed_origins contains "*": since 2.0 the client API allows exact origins only. List each extension origin instead, e.g. "nowo_time_track: { client_api: { allowed_origins: [\'chrome-extension://<extension-id>\'] } }"; see UPGRADING "To 2.0.0".';
 
-    /**
-     * 1.33.0 (REQ-ARCH-001 rule 6): the notice of `database.private_entity_manager` unset or false (`%s` = the manager).
-     */
-    public const PRIVATE_ENTITY_MANAGER_NOTICE = 'nowo_time_track.database.private_entity_manager is false (the 1.x default): every TimeTrack write flushes your entity manager "%s", including what your application left pending in it. 2.0 removes the option: the private entity manager becomes the only mode, and TimeTrack writes never flush, clear or close your manager. Opt in now with "nowo_time_track: { database: { private_entity_manager: true } }" once the host-flush probe notices ("flushed by NowoTimeTrackBundle", "with its own entity manager", "point at a Nowo\\TimeTrackBundle") are gone; see UPGRADING "To 1.33.0".';
+    /** 2.0: `clients.cors_allow_any_extension_origin: true` (deprecated since 1.9) fails the container build. */
+    public const CORS_ANY_EXTENSION_REMOVED = 'nowo_time_track.clients.cors_allow_any_extension_origin: true is no longer supported: since 2.0 the client API allows exact origins only. Remove the option and list each extension origin in "nowo_time_track.client_api.allowed_origins"; see UPGRADING "To 2.0.0".';
 
-    /** 1.33.0: the notice of `"*"` in `clients.cors_allowed_origins` (deprecated since 1.9, removed in 2.0). */
-    public const CORS_WILDCARD_NOTICE = 'nowo_time_track.clients.cors_allowed_origins contains "*" (any origin outside prod): 2.0 removes the wildcard and allows exact origins only. List each extension origin instead, e.g. "nowo_time_track: { client_api: { allowed_origins: [\'chrome-extension://<extension-id>\'] } }".';
-
-    /** 1.33.0: the notice of `client_api.allow_tauri_webview_origins` unset or true (false in 2.0, then removed). */
-    public const TAURI_WEBVIEW_ORIGINS_NOTICE = 'nowo_time_track.client_api.allow_tauri_webview_origins is true (the 1.x default): the client API accepts the Tauri webview origins (tauri://localhost, http(s)://tauri.localhost) of the 1.x desktop agent. 2.0 removes the option and these origins (the 1.9+ desktop app sends no Origin). Opt in now with "nowo_time_track: { client_api: { allow_tauri_webview_origins: false } }".';
+    /** 2.0: `client_api.allow_tauri_webview_origins: true` (the 1.x default, deprecated) fails the container build. */
+    public const TAURI_WEBVIEW_ORIGINS_REMOVED = 'nowo_time_track.client_api.allow_tauri_webview_origins: true is no longer supported: since 2.0 the client API no longer accepts the Tauri webview origins of the 1.x desktop agent (the 1.9+ desktop app sends no Origin). Remove the option; see UPGRADING "To 2.0.0".';
 
     /**
      * Registers the parameters, repositories, access checker, client services and Twig globals from the configuration.
@@ -267,13 +259,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.clients.routes', $clients['routes']);
         $container->setParameter('nowo_time_track.clients.cors_allowed_origins', $clients['cors_allowed_origins']);
         $container->setParameter('nowo_time_track.routes', $config['routes']);
-        // 1.x shape (layout, css_framework, index, reports); index / reports are the resolved web_ui.templates values.
-        $container->setParameter('nowo_time_track.templates', array_merge($config['templates'], $config['web_ui']['templates']));
         $container->setParameter('nowo_time_track.web_ui.layout_template', $config['web_ui']['layout_template']);
         $container->setParameter('nowo_time_track.web_ui.templates', $config['web_ui']['templates']);
         $container->setParameter('nowo_time_track.reports.page_size', (int) $config['reports']['page_size']);
-        $container->setParameter('nowo_time_track.templates.layout', $config['templates']['layout']);
-        $container->setParameter('nowo_time_track.templates.css_framework', $config['templates']['css_framework']);
         $container->setParameter('nowo_time_track.route_prefix', $config['route_prefix']);
         $container->setParameter('nowo_time_track.security.admin_roles', $security['admin_roles']);
         $container->setParameter('nowo_time_track.security.access_roles', $security['access_roles']);
@@ -287,6 +275,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             throw new LogicException('TimeTrackBundle manage UI requires symfony/security-bundle when security.allow_unauthenticated is false.');
         }
 
+        if ($security['manager_can_edit_entries'] === false) {
+            throw new InvalidConfigurationException(Configuration::MANAGER_CAN_EDIT_ENTRIES_REMOVED);
+        }
         $this->registerAccessChecker($container, $security);
 
         $taskProviderId = $config['task_provider'] ?? StubTaskProvider::class;
@@ -307,22 +298,15 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         }
         $container->setAlias(TeamContextProviderInterface::class, $teamProviderId);
 
-        // Since 1.23.0 (REQ-ARCH-001 rule 6): opt-in private entity manager for the bundle rows.
-        $private = (bool) $config['database']['private_entity_manager'];
-        if ($private) {
-            $this->registerPrivateEntityManager($container, $emName);
+        // REQ-ARCH-001 rule 6: since 2.0 the private entity manager is the only mode (opt-in since 1.23.0).
+        if ($config['database']['private_entity_manager'] === false) {
+            throw new InvalidConfigurationException(self::PRIVATE_ENTITY_MANAGER_REMOVED);
         }
-        $emRef       = new Reference($private ? TimeTrackEntityManager::class : sprintf('doctrine.orm.%s_entity_manager', $emName));
-        $registryRef = $private ? new Reference(TimeTrackManagerRegistry::class) : new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE);
-        $this->registerTransactions($container, $emRef, $registryRef, $emName, $private);
-        if (!$private) {
-            // 1.33.0 (REQ-ARCH-001 rule 6 deprecation layer): 2.0 keeps only the private manager. The notice once per
-            // container build, and the host-flush probe on every TimeTrack flush of the shared manager (its output is the
-            // host's migration list).
-            trigger_deprecation(self::DEPRECATION_PACKAGE, self::DEPRECATION_SINCE, self::PRIVATE_ENTITY_MANAGER_NOTICE, $emName);
-            $this->registerHostFlushProbe($container, $emName, (string) $config['user_class']);
-        }
-        $this->deprecateClientOrigins($config);
+        $this->registerPrivateEntityManager($container, $emName);
+        $emRef       = new Reference(TimeTrackEntityManager::class);
+        $registryRef = new Reference(TimeTrackManagerRegistry::class);
+        $this->registerTransactions($container, $emRef, $registryRef, $emName);
+        $this->refuseRemovedClientOrigins($config);
 
         foreach ([
             DoctrineOrmTimeEntryRepository::class           => TimeEntryRepositoryInterface::class,
@@ -333,7 +317,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             $repoDefinition = (new Definition($repoClass))
                 ->setAutowired(false)
                 ->setArgument('$entityManager', $emRef)
-                ->setArgument('$managerRegistry', $private ? new Reference(TimeTrackManagerRegistry::class) : new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+                ->setArgument('$managerRegistry', $registryRef);
             // Since 1.27.0 (Beacon spec 239): the bundle's own transaction runner, by its concrete class (the client token
             // store since 1.34.0: its revocation by id).
             // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
@@ -443,8 +427,6 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setDefinition(ClientResponseFactory::class, (new Definition(ClientResponseFactory::class))
             ->setAutowired(false)
             ->setArgument('$allowedOrigins', $clients['cors_allowed_origins'])
-            ->setArgument('$kernelEnvironment', '%kernel.environment%')
-            ->setArgument('$allowAnyExtensionOrigin', (bool) $clients['cors_allow_any_extension_origin'])
             ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class)));
 
         $container->setDefinition(TeamAccessGuard::class, (new Definition(TeamAccessGuard::class))
@@ -453,7 +435,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$eventDispatcher', new Reference('event_dispatcher'))
             ->setArgument('$adminRoles', $security['admin_roles'])
             ->setArgument('$managerCanViewEntries', (bool) $security['manager_can_view_entries'])
-            ->setArgument('$managerCanEditEntries', (bool) $security['manager_can_edit_entries'])
+            ->setArgument('$managerCanEditEntries', true)
             ->setArgument('$managerRegistry', new Reference('doctrine', ContainerInterface::NULL_ON_INVALID_REFERENCE)));
 
         $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
@@ -471,80 +453,35 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $this->registerEntriesWithoutTask($container, $config);
         $this->registerEntryOperations($container, $emRef, $acceptedUserClasses);
 
-        if (!$private) {
-            $this->wireHostFlushProbe($container);
-        }
-
         if ($container->hasDefinition(TimeTrackTwigExtension::class)) {
             $container->getDefinition(TimeTrackTwigExtension::class)
-                ->setArgument('$layoutTemplate', $config['templates']['layout'])
-                ->setArgument('$cssFramework', $config['templates']['css_framework'])
                 ->setArgument('$distributionProvider', new Reference(ClientDistributionProviderInterface::class));
         }
     }
 
     /**
-     * 1.33.0 (REQ-ARCH-001 rule 6 deprecation layer): the host-flush probe of the shared manager (registered only with
-     * `database.private_entity_manager: false`): it runs before every TimeTrack flush of that manager, and listens to the
-     * manager's own flushes (`onFlush`). Emptied at `kernel.reset` and at every request, message and command boundary
-     * (worker mode with kernel reset off).
-     */
-    private function registerHostFlushProbe(ContainerBuilder $container, string $emName, string $userClass): void
-    {
-        $container->setDefinition(TimeTrackHostFlushProbe::class, (new Definition(TimeTrackHostFlushProbe::class))
-            ->setArgument('$probe', new Reference(HostFlushProbe::SERVICE_ID, ContainerInterface::NULL_ON_INVALID_REFERENCE))
-            ->setArgument('$userClass', $userClass)
-            ->addTag('doctrine.event_listener', ['event' => 'onFlush', 'method' => 'onFlush', 'lazy' => true, 'entity_manager' => $emName])
-            ->addTag('kernel.reset', ['method' => 'reset'])
-            ->addTag('kernel.event_listener', ['event' => 'kernel.request', 'method' => 'onKernelRequest', 'priority' => 2048])
-            ->addTag('kernel.event_listener', ['event' => 'kernel.terminate', 'method' => 'onBoundary', 'priority' => -1024])
-            ->addTag('kernel.event_listener', ['event' => 'console.terminate', 'method' => 'onBoundary', 'priority' => -1024])
-            ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageHandledEvent', 'method' => 'onBoundary', 'priority' => -1024])
-            ->addTag('kernel.event_listener', ['event' => 'Symfony\\Component\\Messenger\\Event\\WorkerMessageFailedEvent', 'method' => 'onBoundary', 'priority' => -1024]));
-    }
-
-    /**
-     * 1.33.0: every store and the runner that flush the shared manager get the host-flush probe.
-     */
-    private function wireHostFlushProbe(ContainerBuilder $container): void
-    {
-        foreach ([
-            TimeTrackTransactionRunner::class,
-            DoctrineOrmTimeEntryRepository::class,
-            DoctrineOrmActiveTimerRepository::class,
-            DoctrineOrmClientTokenRepository::class,
-            DoctrineOrmDeviceAuthorizationRepository::class,
-            DoctrineOrmTimesheetRepository::class,
-            DoctrineOrmBalanceLedgerRepository::class,
-            DoctrineOrmCalendarRepository::class,
-        ] as $id) {
-            if ($container->hasDefinition($id)) {
-                // @igor-ignore - Container build time: a service Definition of this extension, not a runtime service.
-                $container->getDefinition($id)->setArgument('$hostFlushProbe', new Reference(TimeTrackHostFlushProbe::class));
-            }
-        }
-    }
-
-    /**
-     * 1.33.0: the client API origins 2.0 removes (deprecated since 1.9), when the client API is on: `"*"` in
-     * `clients.cors_allowed_origins`, and `client_api.allow_tauri_webview_origins` unset or true.
+     * 2.0 (announced in 1.9, notices since 1.33.0): the client API allows exact origins only. `"*"` in
+     * `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true` and
+     * `clients.cors_allow_any_extension_origin: true` fail the container build.
      *
      * @param array<string, mixed> $config the processed configuration
+     *
+     * @throws InvalidConfigurationException when one of them is set
      */
-    private function deprecateClientOrigins(array $config): void
+    private function refuseRemovedClientOrigins(array $config): void
     {
-        /** @var array{enabled: bool, cors_allowed_origins: list<string>} $clients */
+        /** @var array{cors_allowed_origins: list<string>, cors_allow_any_extension_origin: bool|null} $clients */
         $clients = $config['clients'];
-        if (!$clients['enabled']) {
-            return;
-        }
         if (in_array('*', $clients['cors_allowed_origins'], true)) {
-            trigger_deprecation(self::DEPRECATION_PACKAGE, self::DEPRECATION_SINCE, self::CORS_WILDCARD_NOTICE);
+            throw new InvalidConfigurationException(self::CORS_WILDCARD_REMOVED);
         }
-        /** @var array{allow_tauri_webview_origins: bool} $api */
+        if ($clients['cors_allow_any_extension_origin'] === true) {
+            throw new InvalidConfigurationException(self::CORS_ANY_EXTENSION_REMOVED);
+        }
+        /** @var array{allow_tauri_webview_origins: bool|null} $api */
         $api = $config['client_api'];
-        if ($api['allow_tauri_webview_origins']) {
-            trigger_deprecation(self::DEPRECATION_PACKAGE, self::DEPRECATION_SINCE, self::TAURI_WEBVIEW_ORIGINS_NOTICE);
+        if ($api['allow_tauri_webview_origins'] === true) {
+            throw new InvalidConfigurationException(self::TAURI_WEBVIEW_ORIGINS_REMOVED);
         }
     }
 
@@ -823,11 +760,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
         $container->setParameter('nowo_time_track.imports.max_entry_seconds', $imports['max_entry_seconds']);
         $container->setParameter('nowo_time_track.retention.include_imported', $retention['include_imported']);
-        // Since 1.12 (FJ-L3): follows TimeEntryRepositoryInterface (host replacement or decorator), never the raw store.
-        $container->setDefinition(ImportedTimeEntryRepositoryInterface::class, (new Definition(ImportedTimeEntryRepositoryInterface::class))
-            ->setFactory([ImportedTimeEntryRepositoryResolver::class, 'resolve'])
-            ->setArguments([new Reference(TimeEntryRepositoryInterface::class)]));
-        // Since 1.23.0: the framework-free store (REQ-ARCH-001 rule 3), resolved the same way.
+        // Since 1.12 (FJ-L3) / 1.23.0: the framework-free store (REQ-ARCH-001 rule 3) follows TimeEntryRepositoryInterface
+        // (host replacement or decorator), never the raw store.
         $container->setDefinition(ImportedTimeEntryStoreInterface::class, (new Definition(ImportedTimeEntryStoreInterface::class))
             ->setFactory([ImportedTimeEntryRepositoryResolver::class, 'resolveStore'])
             ->setArguments([new Reference(TimeEntryRepositoryInterface::class)]));
@@ -878,7 +812,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$entries', new Reference(FormerPersonTimeEntries::class))
             ->setArgument('$userClass', $config['user_class'])
             ->setArgument('$timers', new Reference(TimerService::class))
-            ->setArgument('$privateEntityManager', $container->hasDefinition(TimeTrackEntityManager::class) ? new Reference(TimeTrackEntityManager::class) : null)
+            ->setArgument('$privateEntityManager', new Reference(TimeTrackEntityManager::class))
             ->addTag('doctrine.event_listener', ['event' => 'preRemove'])
             ->addTag('doctrine.event_listener', ['event' => 'onFlush'])
             // Since 1.16 (HA-L18): first, so a host's postFlush listener that flushes cannot cancel the settling.
@@ -1467,7 +1401,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}} $api */
+        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool|null, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
@@ -1489,6 +1423,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         // Since 1.30: the client routes the import publishes (empty = all); unknown keys fail the build.
         /** @var list<string> $includeRoutes */
         $includeRoutes = array_values(array_unique($api['routes']['include']));
+        if (in_array('heartbeat', $includeRoutes, true)) {
+            throw new InvalidConfigurationException(Configuration::HEARTBEAT_REMOVED);
+        }
         $unknownRoutes = array_diff($includeRoutes, array_keys(TimeTrackRouteLoader::clientRouteMap()));
         if ($unknownRoutes !== []) {
             throw new LogicException(sprintf('Unknown client route key(s) in nowo_time_track.client_api.routes.include: %s. Valid keys: %s.', implode(', ', $unknownRoutes), implode(', ', array_keys(TimeTrackRouteLoader::clientRouteMap()))));
@@ -1512,7 +1449,6 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$perIpLimit'                    => $rateLimit['per_ip'],
                 '$deviceIpLimit'                 => $rateLimit['device_per_ip'],
                 '$windowSeconds'                 => $rateLimit['window_seconds'],
-                '$allowTauriWebviewOrigins'      => $api['allow_tauri_webview_origins'],
                 '$backdateMaxSeconds'            => $api['backdate']['max_seconds'],
                 '$clockSkewSeconds'              => $api['backdate']['clock_skew_seconds'],
                 '$allowIdleReassign'             => $api['idle']['allow_reassign'],
@@ -1680,7 +1616,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     }
 
     /**
-     * Since 1.23.0 (`database.private_entity_manager: true`, REQ-ARCH-001 rule 6): the bundle's private entity manager
+     * Since 1.23.0 (the only mode since 2.0, REQ-ARCH-001 rule 6): the bundle's private entity manager
      * on the source manager `database.entity_manager`, its registry, the unit-of-work boundary subscriber and (doctrine/dbal
      * 4) the rollback middleware on the source's connection ({@see PrivateEntityManagerPass}). The repositories and the
      * user reference resolver then get {@see TimeTrackEntityManager} instead of the source manager.
@@ -1707,10 +1643,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      * Since 1.27.0 (Beacon spec 239): the bundle's transaction runner ({@see TimeTrackTransactionRunner}, also
      * `nowo_time_track.transaction_runner`), injected into the bundle's stores and services by its concrete class (a
      * runner the application binds to `TransactionRunnerInterface` is never used), the 503 / 409 subscriber of the
-     * bundle routes, and in every mode the unit-of-work boundary subscriber: it drops the private manager, and replaces
-     * a shared manager that a failed TimeTrack write closed (never in the middle of a request).
+     * bundle routes, and the unit-of-work boundary subscriber: it drops the private manager at every request, message
+     * and command boundary.
      */
-    private function registerTransactions(ContainerBuilder $container, Reference $emRef, Reference $registryRef, string $emName, bool $private): void
+    private function registerTransactions(ContainerBuilder $container, Reference $emRef, Reference $registryRef, string $emName): void
     {
         $container->register(TimeTrackTransactionRunner::class, TimeTrackTransactionRunner::class)
             ->setArguments([
@@ -1735,10 +1671,10 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 ->addTag(ConflictResponseFormatterInterface::TAG);
         }
 
-        $resettables = [new Reference(TimeTrackTransactionRunner::class, ContainerInterface::IGNORE_ON_UNINITIALIZED_REFERENCE)];
-        if ($private) {
-            $resettables[] = new Reference(TimeTrackEntityManager::class, ContainerInterface::IGNORE_ON_UNINITIALIZED_REFERENCE);
-        }
+        $resettables = [
+            new Reference(TimeTrackTransactionRunner::class, ContainerInterface::IGNORE_ON_UNINITIALIZED_REFERENCE),
+            new Reference(TimeTrackEntityManager::class, ContainerInterface::IGNORE_ON_UNINITIALIZED_REFERENCE),
+        ];
         $container->register(UnitOfWorkBoundaries::class, UnitOfWorkBoundaries::class)
             ->addTag('kernel.event_subscriber');
         $container->register(PrivateEntityManagerSubscriber::class, PrivateEntityManagerSubscriber::class)
@@ -1853,8 +1789,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
     }
 
     /**
-     * When UiKit is installed, seed nowo_ui_kit.css_framework / icon_set from templates
-     * so kit macros resolve the same stack. Does not override keys the host already set.
+     * When UiKit is installed, seed nowo_ui_kit.css_framework / icon_set with the bundle's defaults (tabler,
+     * tabler-icons) so kit macros resolve the same stack. Does not override keys the host already set. (The 1.x
+     * `templates.css_framework` that chose the seed is removed in 2.0.).
      */
     private function prependUiKitDefaults(ContainerBuilder $container): void
     {
@@ -1877,21 +1814,14 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             return;
         }
 
-        $config    = $this->processConfiguration(new Configuration(), $container->getExtensionConfig(Configuration::ALIAS));
-        $templates = is_array($config['templates'] ?? null) ? $config['templates'] : [];
-        $defaults  = [];
-
+        $defaults = [];
         if (!$hostHasCssFramework) {
-            $fw                        = (string) ($templates['css_framework'] ?? 'tabler');
-            $defaults['css_framework'] = $fw === 'bootstrap' ? 'bootstrap5' : $fw;
+            $defaults['css_framework'] = 'tabler';
         }
         if (!$hostHasIconSet) {
-            $fwForIcons           = (string) ($defaults['css_framework'] ?? $templates['css_framework'] ?? 'tabler');
-            $defaults['icon_set'] = $fwForIcons === 'tabler' ? 'tabler-icons' : 'bootstrap-icons';
+            $defaults['icon_set'] = 'tabler-icons';
         }
 
-        if ($defaults !== []) {
-            $container->prependExtensionConfig('nowo_ui_kit', $defaults);
-        }
+        $container->prependExtensionConfig('nowo_ui_kit', $defaults);
     }
 }

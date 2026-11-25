@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection\Compiler;
 
+use App\TimeTrack\HostOnInternalShape;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
-use Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface;
+use Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface;
 use Nowo\TimeTrackBundle\Port\BatchTaskDirectoryGate;
+use Nowo\TimeTrackBundle\Port\Internal\MeetingProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\MeetingSourceGate;
 use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Port\TimesheetScopePolicyGate;
 use Nowo\TimeTrackBundle\Port\UserReferenceProviderGate;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Support\Ports\RecordingTwinPorts;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use PHPUnit\Framework\TestCase;
 use stdClass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -27,11 +29,12 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
- * 1.23.0 (REQ-ARCH-001 rule 3): the slots of the host ports follow the class behind them.
+ * 1.23.0 (REQ-ARCH-001 rule 3): the slots of the host ports follow the class behind them. Since 2.0 the 1.23 twins are
+ * the only host interfaces; only the bundle's own classes may sit on the internal shape of a port.
  */
 final class TimeTrackPortsPassTest extends TestCase
 {
-    public function testADeprecatedImplementationKeepsItsWiring(): void
+    public function testABundleClassOnTheInternalShapeKeepsItsWiring(): void
     {
         $container = new ContainerBuilder();
         $container->register('app.meetings', StubMeetingProvider::class);
@@ -59,7 +62,10 @@ final class TimeTrackPortsPassTest extends TestCase
         self::assertSame('nowo_time_track.port_gate.meeting_provider', (string) $container->getAlias('nowo_time_track.port.meeting_provider'));
         $gate = $container->getDefinition('nowo_time_track.port_gate.meeting_provider');
         self::assertSame(MeetingSourceGate::class, $gate->getClass());
-        self::assertEquals([new Reference('app.meetings')], $gate->getArguments());
+        // 2.0 (audit ZAR-V1): the gate asks the twin id, which ends at the configured service.
+        self::assertEquals([new Reference(MeetingSourceInterface::class)], $gate->getArguments());
+        self::assertSame('app.meetings', (string) $container->getAlias(MeetingSourceInterface::class));
+        self::assertTrue($container->getAlias(MeetingSourceInterface::class)->isPublic());
         self::assertSame(BatchTaskDirectoryGate::class, $container->getDefinition('nowo_time_track.port_gate.task_provider')->getClass(), 'a batch directory gets the batch gate');
     }
 
@@ -106,6 +112,19 @@ final class TimeTrackPortsPassTest extends TestCase
         self::assertEquals(['meeting_provider', new Reference('app.later')], $factory->getArguments());
     }
 
+    public function testAnApplicationClassOnTheInternalShapeFailsTheBuild(): void
+    {
+        require_once __DIR__ . '/../../../Fixtures/OutsideNamespace/HostOnInternalShape.php';
+        $container = new ContainerBuilder();
+        $container->register('app.meetings', HostOnInternalShape::class);
+        $container->setAlias('nowo_time_track.port.meeting_provider', 'app.meetings');
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('nowo_time_track: the service "app.meetings" (App\TimeTrack\HostOnInternalShape) of nowo_time_track.meetings.provider must implement "Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface" (since 2.0 the only host interface of this port; see UPGRADING "To 2.0.0").');
+
+        (new TimeTrackPortsPass())->process($container);
+    }
+
     public function testAServiceImplementingNeitherFailsTheBuild(): void
     {
         $container = new ContainerBuilder();
@@ -113,7 +132,7 @@ final class TimeTrackPortsPassTest extends TestCase
         $container->setAlias('nowo_time_track.port.meeting_provider', 'app.meetings');
 
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('nowo_time_track: the service "app.meetings" (stdClass) of nowo_time_track.meetings.provider must implement "Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface" (or the deprecated "Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface").');
+        $this->expectExceptionMessage('nowo_time_track: the service "app.meetings" (stdClass) of nowo_time_track.meetings.provider must implement "Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface" (since 2.0 the only host interface of this port; see UPGRADING "To 2.0.0").');
 
         (new TimeTrackPortsPass())->process($container);
     }
@@ -128,10 +147,11 @@ final class TimeTrackPortsPassTest extends TestCase
 
         self::assertSame('nowo_time_track.port_gate.user_reference', (string) $container->getAlias(UserReferenceResolverInterface::class));
         self::assertSame(UserReferenceProviderGate::class, $container->getDefinition('nowo_time_track.port_gate.user_reference')->getClass());
-        self::assertEquals([new Reference('app.refs')], $container->getDefinition('nowo_time_track.port_gate.user_reference')->getArguments());
+        self::assertEquals([new Reference(UserReferenceProviderInterface::class)], $container->getDefinition('nowo_time_track.port_gate.user_reference')->getArguments());
+        self::assertSame('app.refs', (string) $container->getAlias(UserReferenceProviderInterface::class));
     }
 
-    public function testTheUserReferenceTwinWithoutTheDeprecatedAlias(): void
+    public function testTheUserReferenceTwinWithoutTheBuiltInSlot(): void
     {
         $container = new ContainerBuilder();
         $container->register(UserReferenceProviderInterface::class, RecordingTwinPorts::class);
@@ -141,30 +161,30 @@ final class TimeTrackPortsPassTest extends TestCase
         self::assertSame('nowo_time_track.port_gate.user_reference', (string) $container->getAlias(UserReferenceResolverInterface::class));
     }
 
-    public function testOneServiceBehindBothUserReferenceInterfacesIsAskedThroughTheDeprecatedOne(): void
+    public function testAnApplicationTwinIdOnAnotherServiceFailsTheBuild(): void
     {
         $container = new ContainerBuilder();
-        $container->register('app.refs', DoctrineUserReferenceResolver::class);
-        $container->setAlias(UserReferenceProviderInterface::class, 'app.refs');
-        $container->setAlias(UserReferenceResolverInterface::class, 'app.refs');
-
-        (new TimeTrackPortsPass())->process($container);
-
-        self::assertSame('app.refs', (string) $container->getAlias(UserReferenceResolverInterface::class));
-    }
-
-    public function testBothUserReferenceInterfacesOnDifferentServicesFailTheBuild(): void
-    {
-        $container = $this->withBuiltInResolver();
-        $container->register('app.legacy_refs', DoctrineUserReferenceResolver::class);
-        $container->setAlias(UserReferenceResolverInterface::class, 'app.legacy_refs');
-        $container->register('app.refs', RecordingTwinPorts::class);
-        $container->setAlias(UserReferenceProviderInterface::class, 'app.refs');
+        $container->register('app.meetings', RecordingTwinPorts::class);
+        $container->register('app.other_meetings', RecordingTwinPorts::class);
+        $container->setAlias('nowo_time_track.port.meeting_provider', 'app.meetings');
+        $container->setAlias(MeetingSourceInterface::class, 'app.other_meetings');
 
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('keep only one of them (the 1.23 interface)');
+        $this->expectExceptionMessage('"Nowo\\TimeTrackBundle\\Meeting\\MeetingSourceInterface" is served by "app.other_meetings" but nowo_time_track.meetings.provider is "app.meetings"');
 
         (new TimeTrackPortsPass())->process($container);
+    }
+
+    public function testAnApplicationTwinIdOnTheSameServiceIsKept(): void
+    {
+        $container = new ContainerBuilder();
+        $container->register('app.meetings', RecordingTwinPorts::class);
+        $container->setAlias('nowo_time_track.port.meeting_provider', 'app.meetings');
+        $container->setAlias(MeetingSourceInterface::class, 'app.meetings')->setPublic(false);
+
+        (new TimeTrackPortsPass())->process($container);
+
+        self::assertFalse($container->getAlias(MeetingSourceInterface::class)->isPublic(), 'the application\'s own definition is kept');
     }
 
     public function testAMissingSlotIsSkipped(): void

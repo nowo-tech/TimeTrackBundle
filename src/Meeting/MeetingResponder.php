@@ -6,7 +6,7 @@ namespace Nowo\TimeTrackBundle\Meeting;
 
 use DateTimeImmutable;
 use DateTimeZone;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 

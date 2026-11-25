@@ -48,10 +48,11 @@ final class MonitoringPrivacyDecisionsTest extends MonitoringTestCase
 
     public function testWindowTitlesAreNeverPublishedStoredOrLogged(): void
     {
-        $this->policySource()->policy = MonitoringFixtures::policy(overrides: ['windowTitles' => true]);
+        $this->policySource()->policy = MonitoringFixtures::policy();
         foreach (['/api/time-track/me', '/api/time-track/v1/me'] as $path) {
             $me = $this->api('GET', $path, null, $this->login());
-            self::assertFalse($me['monitoring']['windowTitles'] ?? null, $path . ': frozen to false whatever the host policy says');
+            self::assertIsArray($me['monitoring'] ?? null, $path);
+            self::assertArrayNotHasKey('windowTitles', $me['monitoring'], $path . ': 2.0 removed the key (always false since 1.41)');
         }
 
         $token = $this->token();

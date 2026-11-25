@@ -40,7 +40,6 @@ use Nowo\TimeTrackBundle\Tests\Support\FakeCalendarEventSource;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
-use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -184,7 +183,7 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         $result = $sync->sync($connection);
 
         self::assertSame(['new' => 0, 'updated' => 1], ['new' => $result->counts['new'], 'updated' => $result->counts['updated']]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $a = $repo->findSuggestionsByIds((string) $this->user->getId(), [$a->getId(), $b->getId()]);
         self::assertSame(['task-3', 'task-2'], array_map(static fn (CalendarSuggestion $s): string => $s->getTaskId(), $a));
         self::assertSame([CalendarSuggestionStatus::Pending, CalendarSuggestionStatus::Dismissed], array_map(static fn (CalendarSuggestion $s): CalendarSuggestionStatus => $s->getStatus(), $a));
@@ -245,7 +244,7 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         $source->truncated = false;
         $result            = $sync->sync($this->reload($connection->getId()));
         self::assertSame([0, 2], [$result->counts['new'], $result->counts['stale']]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $left = $repo->findSuggestionsByUser((string) $this->user->getId(), 'org-a', new DateTimeImmutable('2026-11-01'), new DateTimeImmutable('2026-11-07'), CalendarSuggestionStatus::cases());
         self::assertSame([[CalendarSuggestionStatus::Dismissed, '2026-11-04 09:00'], [CalendarSuggestionStatus::Pending, '2026-11-05 10:00']], array_map(static fn (CalendarSuggestion $s): array => [$s->getStatus(), $s->getStartsAt()->format('Y-m-d H:i')], $left), 'decided rows are kept');
     }
@@ -472,7 +471,6 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
         self::assertCount(2, $rules->rulesOf($this->user, 'org-a'));
     }
 
-    #[Group('shared-entity-manager')]
     public function testTheSyncCommandPrintsCountsOnly(): void
     {
         $this->connections()->connect($this->user, 'org-a', CalendarProvider::Google, CalendarConnectionMode::Server, 'host-cred-1', 'v1');
@@ -621,7 +619,7 @@ final class CalendarSyncDatabaseTest extends FunctionalTestCase
 
     private function repository(): DoctrineOrmCalendarRepository
     {
-        return new DoctrineOrmCalendarRepository($this->entityManager());
+        return new DoctrineOrmCalendarRepository($this->bundleEntityManager());
     }
 
     private function credentials(): StubCalendarCredentialProvider

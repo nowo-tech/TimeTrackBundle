@@ -15,7 +15,7 @@ use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;

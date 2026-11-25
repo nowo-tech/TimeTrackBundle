@@ -15,7 +15,6 @@ use function mb_strlen;
 use function preg_match;
 use function sprintf;
 use function str_starts_with;
-use function trigger_deprecation;
 use function trim;
 
 /**
@@ -29,8 +28,8 @@ use function trim;
  * this version widens collection compared with the last version the worker acknowledged; the bundle publishes
  * `acknowledgement.required` from it and from its acknowledgement store).
  *
- * Since 1.41.0 (owner decisions D4 and D9 of the 2026-11-24 monitoring study): window titles are never collected —
- * `windowTitles` is frozen to false (a true value is ignored with a deprecation notice) — and the policy declares its
+ * Since 1.41.0 (owner decisions D4 and D9 of the 2026-11-24 monitoring study): window titles are never collected (2.0
+ * removed the `windowTitles` argument and property, deprecated and frozen to false in 1.41) — and the policy declares its
  * `purpose` and the `teamView` third parties get: `project_aggregates` (default) or `per_person`, which is valid only for
  * the `billing_evidence` purpose of an organisation policy and only with the date the organisation opted in
  * (`perPersonDetailRecordedAt`, the audit trail of the decision). Hosts enforce it with {@see MonitoringTeamViewGuard}.
@@ -82,13 +81,6 @@ final readonly class MonitoringPolicy
     public ?int $perPersonSinceVersion;
 
     /**
-     * Always false since 1.41.0 (D4: window titles and project names are never sent, never stored, never returned).
-     *
-     * @deprecated since 1.41.0, always false; 2.0 removes it
-     */
-    public bool $windowTitles;
-
-    /**
      * @param bool $enabled Whether collection is on (published as false while `lockedUntilChecklist` is true)
      * @param int $policyVersion Strictly increasing version, bumped by every policy change (≥ 1)
      * @param string $noticeUrl https page of the notice for this version
@@ -105,7 +97,6 @@ final readonly class MonitoringPolicy
      * @param string $blur One of {@see self::BLUR_LEVELS}; `none` only with `fullResolution`
      * @param bool $fullResolution Full-resolution uploads allowed (the checklist recorded why)
      * @param int $maxLongSidePx 1-3840
-     * @param bool $windowTitles Deprecated since 1.41.0 and ignored: window titles are never collected (true triggers a deprecation notice)
      * @param list<string> $excludedApps Apps never captured (≤ 100 names of ≤ 120 characters)
      * @param int $retentionDays 1-3650
      * @param int $maxBufferedScreenshots 0-36
@@ -134,7 +125,6 @@ final readonly class MonitoringPolicy
         public string $blur = 'medium',
         public bool $fullResolution = false,
         public int $maxLongSidePx = 1920,
-        bool $windowTitles = false,
         array $excludedApps = [],
         public int $retentionDays = 30,
         public int $maxBufferedScreenshots = self::MAX_BUFFERED_SCREENSHOTS,
@@ -144,10 +134,6 @@ final readonly class MonitoringPolicy
         public ?string $perPersonDetailRecordedAt = null,
         ?int $perPersonSinceVersion = null,
     ) {
-        if ($windowTitles) {
-            trigger_deprecation('nowo-tech/time-track-bundle', '1.41.0', 'The "windowTitles" argument of %s is ignored: window titles are never collected (owner decision D4); stop passing it, 2.0 removes it.', self::class);
-        }
-        $this->windowTitles = false;
         foreach ($kinds as $kind) {
             if (!in_array($kind, self::KINDS, true)) {
                 throw new InvalidArgumentException(sprintf('Unknown monitoring kind; expected one of %s.', implode(', ', self::KINDS)));

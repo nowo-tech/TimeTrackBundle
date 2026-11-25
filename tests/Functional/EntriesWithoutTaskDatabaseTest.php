@@ -73,7 +73,7 @@ final class EntriesWithoutTaskDatabaseTest extends FunctionalTestCase
         $export = $this->service(TimeTrackPersonalDataInterface::class)->export($userId);
         self::assertSame(['withoutTask' => true, 'description' => 'Call with ACME', 'scopeKey' => 'org-b'], ['withoutTask' => $export['runningTimer']['withoutTask'] ?? null, 'description' => $export['runningTimer']['description'] ?? null, 'scopeKey' => $export['runningTimer']['scopeKey'] ?? null]);
 
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $user = $this->entityManager()->find(AppUser::class, $this->user->getId());
         self::assertInstanceOf(AppUser::class, $user);
         $entry = $timers->stop($user);

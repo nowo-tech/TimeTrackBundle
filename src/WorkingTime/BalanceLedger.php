@@ -15,7 +15,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\LedgerRefusedException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;

@@ -8,7 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see WorkingCalendarProviderInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `WorkingCalendarProviderInterface` (REQ-ARCH-001 rule 3), same
  * `working_time.calendar_provider` option. Must be scope-safe, side-effect free and fast.
  */
 interface WorkingCalendarSourceInterface

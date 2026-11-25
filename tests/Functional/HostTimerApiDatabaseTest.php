@@ -19,7 +19,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
-use PHPUnit\Framework\Attributes\Group;
 
 use function array_map;
 
@@ -52,7 +51,7 @@ final class HostTimerApiDatabaseTest extends FunctionalTestCase
         self::assertSame(['task-2', 'api', true], [$stopped?->taskId, $stopped?->channel, $stopped?->serviceAccount]);
         self::assertSame('task-1', $api->current($this->ref($this->user))?->taskId, 'the person\'s timer still runs');
 
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $rows = $this->entityManager()->getRepository(TimeEntry::class)->findBy([], ['taskId' => 'ASC']);
         self::assertSame([['task-1', 'mcp', true, ['note' => 'C-12', 'closed_by' => 'replaced']], ['task-2', 'api', true, null]], array_map(static fn (TimeEntry $entry): array => [$entry->getTaskId(), $entry->channel(), $entry->isServiceAccount(), $entry->getMetadata()], $rows));
     }
@@ -91,7 +90,6 @@ final class HostTimerApiDatabaseTest extends FunctionalTestCase
         self::assertSame(0, $store->countByUsersPeriodAndOrigin([], $from, $to, new TimeEntryOriginFilter()));
     }
 
-    #[Group('shared-entity-manager')]
     public function testAStartThatLosesTheUniqueIndexIsRetriedOnARecoveredManager(): void
     {
         $api = $this->timerApi();

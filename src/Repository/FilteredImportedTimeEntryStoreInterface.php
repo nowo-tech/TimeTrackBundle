@@ -9,7 +9,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
 
 /**
- * Since 1.23.0: framework-free twin of {@see FilteredImportedTimeEntryRepositoryInterface} (REQ-ARCH-001 rule 3): bulk
+ * Since 1.23.0: framework-free twin of the 1.x `FilteredImportedTimeEntryRepositoryInterface` (REQ-ARCH-001 rule 3): bulk
  * removal of imported entries that keeps the rows a filter protects (the period lock). Required for bulk removals while
  * timesheets are on.
  */

@@ -10,43 +10,28 @@ use Nowo\TimeTrackBundle\TimeTrackBundle;
 use Nowo\UiKitBundle\View\DetailItem;
 use Nowo\UiKitBundle\View\Label;
 use Twig\Extension\AbstractExtension;
-use Twig\Extension\GlobalsInterface;
 use Twig\TwigFunction;
 
 /**
- * Exposes TimeTrack Web UI globals to Twig templates (REQ-UI-001) and the client download helpers of
- * `@NowoTimeTrackBundle/client_distribution/_downloads.html.twig`.
- *
- * Global {@see self::GLOBAL_LAYOUT} mirrors {@code nowo_time_track.templates.layout}.
- * Global {@see self::GLOBAL_CSS_FRAMEWORK} mirrors {@code nowo_time_track.templates.css_framework}.
- * Functions: `nowo_time_track_client_distribution()`, `nowo_time_track_client_download_items(distribution)`,
+ * The client download helpers of `@NowoTimeTrackBundle/client_distribution/_downloads.html.twig`. Since 2.0 the 1.x
+ * Twig globals `nowo_time_track_layout` and `nowo_time_track_css_framework` (fed by the removed `templates.*` keys) are
+ * gone. Functions: `nowo_time_track_client_distribution()`, `nowo_time_track_client_download_items(distribution)`,
  * `nowo_time_track_label(key)`.
  */
-final class TimeTrackTwigExtension extends AbstractExtension implements GlobalsInterface
+final class TimeTrackTwigExtension extends AbstractExtension
 {
-    public const GLOBAL_LAYOUT = 'nowo_time_track_layout';
-
-    public const GLOBAL_CSS_FRAMEWORK = 'nowo_time_track_css_framework';
-
     /**
-     * Receives the configured layout and CSS framework and the download link source.
+     * Receives the download link source.
+     *
+     * @param string $layoutTemplate @deprecated since 2.0, ignored (the `nowo_time_track_layout` global is removed); removed in 3.0
+     * @param string $cssFramework @deprecated since 2.0, ignored (the `nowo_time_track_css_framework` global is removed); removed in 3.0
      */
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
-        private readonly string $layoutTemplate = '@NowoTimeTrackBundle/layout.html.twig',
-        private readonly string $cssFramework = 'tabler',
+        string $layoutTemplate = '',
+        string $cssFramework = '',
         private readonly ?ClientDistributionProviderInterface $distributionProvider = null,
     ) {
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function getGlobals(): array
-    {
-        return [
-            self::GLOBAL_LAYOUT        => $this->layoutTemplate,
-            self::GLOBAL_CSS_FRAMEWORK => $this->cssFramework,
-        ];
     }
 
     /**

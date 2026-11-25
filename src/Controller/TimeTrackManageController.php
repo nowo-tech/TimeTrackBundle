@@ -39,7 +39,7 @@ final class TimeTrackManageController extends AbstractController
     /**
      * @param TimerService $timerService Timer use cases
      * @param TimeTrackAccessCheckerInterface $accessChecker Access contract of the manage UI (REQ-UI-002)
-     * @param array<string, string> $templates Page templates (`templates.index`, `templates.reports`)
+     * @param array<string, string> $templates Page templates (`web_ui.templates.index`, `web_ui.templates.reports`)
      * @param bool $allowUnauthenticated Demo-only bypass of the access checker
      * @param TranslatorInterface|null $translator Translates the flash messages
      * @param int $reportsPageSize Entries per reports page
@@ -119,7 +119,7 @@ final class TimeTrackManageController extends AbstractController
             'tasks'        => $tasks,
             'stop_form'    => $stopForm,
             'start_forms'  => $startForms,
-        ] + $pages->layoutContext());
+        ]);
     }
 
     /**
@@ -153,7 +153,7 @@ final class TimeTrackManageController extends AbstractController
             'hidden_task_entry_ids' => $this->timerService->hiddenTaskEntryIds($entryPage->entries, $user),
             'from'                  => $from,
             'to'                    => $to,
-        ] + $pages->layoutContext());
+        ]);
     }
 
     /**

@@ -12,7 +12,7 @@ use SensitiveParameter;
  * Since 1.19 (Beacon request 2026-11-09, spec 210 FR-002): optional OAuth helpers for a host that connects calendars:
  * the authorization URL (authorization code with PKCE, read-only scopes), and the code, refresh and revoke calls. The
  * host keeps the state and the verifier (session), stores the tokens encrypted and builds the
- * {@see CalendarCredentialProviderInterface} on top; the bundle stores nothing.
+ * the 1.x `CalendarCredentialProviderInterface` on top; the bundle stores nothing.
  *
  * Token calls are `POST`s to constant URLs (10 s, no redirects, 64 KB at most). Errors are
  * {@see CalendarSyncException} codes (`token_expired` for `invalid_grant`), never provider messages or tokens.

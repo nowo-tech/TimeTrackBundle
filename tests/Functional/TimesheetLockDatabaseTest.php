@@ -14,6 +14,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use LogicException;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\Dto\BackdateLimits;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -128,9 +129,9 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
 
     public function testTheStoresQueryTimesheetsEventsAndTheLedger(): void
     {
-        $timesheets = new DoctrineOrmTimesheetRepository($this->entityManager());
-        $events     = new DoctrineOrmTimesheetEventRepository($this->entityManager());
-        $ledger     = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $timesheets = new DoctrineOrmTimesheetRepository($this->bundleEntityManager());
+        $events     = new DoctrineOrmTimesheetEventRepository($this->bundleEntityManager());
+        $ledger     = new DoctrineOrmBalanceLedgerRepository($this->bundleEntityManager());
         $owner      = (string) $this->user->getId();
         $other      = $this->createUser('other@example.com');
         $week44     = new Timesheet($this->user, $owner, 'org-a', Period::fromKey(TimesheetPeriodKind::Week, '2026-W44'), 'Europe/Madrid', new DateTimeImmutable('2026-11-01 08:00:00'));
@@ -158,7 +159,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
             return $ratified->getId();
         });
         $ledger->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $found = $timesheets->findForPeriod($owner, 'org-a', TimesheetPeriodKind::Week, '2026-11-02');
         self::assertSame($week45->getId(), $found?->getId());
@@ -225,7 +226,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
 
     public function testThePurgeNeverCutsAChainInTheMiddle(): void
     {
-        $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $ledger = new DoctrineOrmBalanceLedgerRepository($this->bundleEntityManager());
         $owner  = (string) $this->user->getId();
         // A backdated line written after a recent one: effective before the cut-off, but not part of a chain prefix.
         $recent    = new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable('2026-10-01 08:00:00'), null, 'Opening');
@@ -234,14 +235,14 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         $ledger->append($backdated);
         $ledger->flush();
 
-        self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 0], (new DoctrineOrmTimesheetRepository($this->entityManager()))->purgeBefore('2021-01-01'));
+        self::assertSame(['timesheets' => 0, 'events' => 0, 'ledger' => 0], (new DoctrineOrmTimesheetRepository($this->bundleEntityManager()))->purgeBefore('2021-01-01'));
         self::assertCount(2, $ledger->findByOwner($owner, 'org-a'));
         self::assertNull($ledger->findByOwner($owner, 'org-a')[0]->getPurgedBefore());
     }
 
     public function testTheLedgerChainRefusesAFork(): void
     {
-        $ledger = new DoctrineOrmBalanceLedgerRepository($this->entityManager());
+        $ledger = new DoctrineOrmBalanceLedgerRepository($this->bundleEntityManager());
         $owner  = (string) $this->user->getId();
         $first  = new BalanceLedgerLine($this->user, $owner, 'org-a', '2026-10-01', LedgerKind::Opening, 60, new DateTimeImmutable('2026-11-01 08:00:00'), null, 'Opening');
         $ledger->append($first);
@@ -259,16 +260,16 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('rolled back');
 
-        $registry = self::getContainer()->get('doctrine');
+        $registry = self::getContainer()->get(TimeTrackManagerRegistry::class);
         self::assertInstanceOf(ManagerRegistry::class, $registry);
-        (new DoctrineOrmTimesheetRepository($this->entityManager(), $registry))->transactional(static function (): never {
+        (new DoctrineOrmTimesheetRepository($this->bundleEntityManager(), $registry))->transactional(static function (): never {
             throw new RuntimeException('rolled back');
         });
     }
 
     public function testThePeriodLockStopsEveryEntryWritePath(): void
     {
-        $em    = $this->entityManager();
+        $em    = $this->bundleEntityManager();
         $guard = self::getContainer()->get(PeriodLockGuard::class);
         self::assertInstanceOf(PeriodLockGuard::class, $guard);
         $repository = new DoctrineOrmTimeEntryRepository($em);
@@ -336,7 +337,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
     {
         $guard = self::getContainer()->get(PeriodLockGuard::class);
         self::assertInstanceOf(PeriodLockGuard::class, $guard);
-        $writer = new ImportedTimeEntryWriter(new RacingImportedTimeEntryRepository(new DoctrineOrmTimeEntryRepository($this->entityManager())), periodLockGuard: $guard);
+        $writer = new ImportedTimeEntryWriter(new RacingImportedTimeEntryRepository(new DoctrineOrmTimeEntryRepository($this->bundleEntityManager())), periodLockGuard: $guard);
 
         $this->expectException(LogicException::class);
         $writer->removeForSource('clickup:dir-1');
@@ -344,7 +345,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
 
     public function testTheBackfillCommandPlacesScopelessEntries(): void
     {
-        $repository = new DoctrineOrmTimeEntryRepository($this->entityManager());
+        $repository = new DoctrineOrmTimeEntryRepository($this->bundleEntityManager());
         for ($i = 0; $i < 3; ++$i) {
             $repository->save(new TimeEntry($this->user, 'task-1', 'T', null, new DateTimeImmutable('2026-11-03 09:00:00'), new DateTimeImmutable('2026-11-03 10:00:00'), 3600, TimeEntrySource::Web));
         }
@@ -367,12 +368,12 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
     {
         // Since 1.24.2: a scope key like "42" is a numeric array key in PHP, so it must not reach the parameter as an
         // int (PostgreSQL refuses an integer for a varchar column).
-        $repository = new DoctrineOrmTimeEntryRepository($this->entityManager());
+        $repository = new DoctrineOrmTimeEntryRepository($this->bundleEntityManager());
         $entry      = new TimeEntry($this->user, 'task-1', 'T', null, new DateTimeImmutable('2026-11-03 09:00:00'), new DateTimeImmutable('2026-11-03 10:00:00'), 3600, TimeEntrySource::Web);
         $repository->save($entry);
 
         self::assertSame(1, $repository->assignScopeKeys([$entry->getId() => '42']));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame('42', (string) $this->entityManager()->getConnection()->fetchOne('SELECT scope_key FROM time_track_entries WHERE id = ?', [$entry->getId()]));
     }
 

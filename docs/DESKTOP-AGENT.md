@@ -1,25 +1,14 @@
-# Desktop agent (Tauri)
+# Desktop agent
 
-Native system-tray client under `desktop/` (Tauri 2 + Vite).
+The desktop app (Tauri, system tray, idle detection, offline queue) lives in its own repository,
+[nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop) (private), with its builds, releases and
+roadmap. It talks to the bundle through the [client API](CLIENT-API.md) (`clientType: desktop`, device flow or app
+password; the Tauri HTTP plugin sends no `Origin`).
 
-## Features
+Until 1.x this repository carried a prototype under `desktop/`. 2.0 removed it: it called the removed `POST heartbeat`
+and fetched from the Tauri webview origin, which 2.0 no longer allows, so it no longer worked against the bundle (audit
+ZBH-L1).
 
-- Login against `/api/time-track/login` with `clientType: desktop`
-- System tray with Show / Hide / Quit
-- Task selector + start/stop timer
-- Heartbeat every 30s with OS idle detection (Linux: `xprintidle`)
-
-## Build
-
-```bash
-cd desktop
-pnpm install
-pnpm tauri dev      # native tray + window
-pnpm tauri build    # release binary
-```
-
-Web-only fallback (no Rust): `pnpm dev` → http://localhost:1420
-
-Configure idle threshold via `VITE_IDLE_THRESHOLD_SECONDS` (default 300).
-
-See [desktop/README.md](../desktop/README.md).
+Host setup: enable `clients.enabled` (and `client_api.device_flow.enabled` for the device flow), route the API-only
+import and allow the routes publicly in `security.yaml` (Bearer auth is enforced by the bundle); see
+[USAGE](USAGE.md#host-integration-client-api-19) and [CONFIGURATION](CONFIGURATION.md#client-api-19).

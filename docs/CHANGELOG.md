@@ -14,244 +14,191 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Deprecated (1.41.0)](#deprecated-1410)
   - [Tests (1.41.0)](#tests-1410)
 - [[1.40.1] - 2026-11-23](#1401---2026-11-23)
-  - [Security](#security)
-  - [Fixed](#fixed)
-  - [Tests](#tests)
 - [[1.40.0] - 2026-11-23](#1400---2026-11-23)
-  - [Added](#added)
-  - [Tests](#tests-1)
 - [[1.39.0] - 2026-11-23](#1390---2026-11-23)
-  - [Fixed (Unreleased)](#fixed-unreleased)
-  - [Added (Unreleased)](#added-unreleased)
-  - [Deprecated (Unreleased)](#deprecated-unreleased)
 - [[1.38.0] - 2026-11-23](#1380---2026-11-23)
-  - [Fixed](#fixed-1)
-  - [Documentation](#documentation)
-  - [Changed](#changed)
-  - [Added](#added-1)
-  - [Fixed](#fixed-2)
-  - [Tests](#tests-2)
 - [[1.37.0] - 2026-11-22](#1370---2026-11-22)
-  - [Added (1.37.0)](#added-1370)
-  - [Changed (1.37.0)](#changed-1370)
 - [[1.36.0] - 2026-11-22](#1360---2026-11-22)
-  - [Added](#added-2)
 - [[1.35.0] - 2026-11-21](#1350---2026-11-21)
-  - [Added](#added-3)
-  - [Fixed](#fixed-3)
-  - [Changed](#changed-1)
 - [[1.34.0] - 2026-11-20](#1340---2026-11-20)
-  - [Added (Unreleased)](#added-unreleased-1)
-  - [Fixed (Unreleased)](#fixed-unreleased-1)
 - [[1.33.0] - 2026-11-20](#1330---2026-11-20)
-  - [Added (1.33.0)](#added-1330)
-  - [Changed (1.33.0)](#changed-1330)
-  - [Deprecated (1.33.0)](#deprecated-1330)
 - [[1.32.1] - 2026-11-20](#1321---2026-11-20)
-  - [Changed](#changed-2)
-  - [Fixed](#fixed-4)
 - [[1.32.0] - 2026-11-20](#1320---2026-11-20)
-  - [Changed](#changed-3)
-  - [Fixed](#fixed-5)
 - [[1.31.0] - 2026-11-18](#1310---2026-11-18)
-  - [Added](#added-4)
-  - [Changed](#changed-4)
-  - [Fixed](#fixed-6)
 - [[1.30.0] - 2026-11-17](#1300---2026-11-17)
-  - [Changed](#changed-5)
-  - [Added](#added-5)
 - [[1.29.0] - 2026-11-17](#1290---2026-11-17)
-  - [Added](#added-6)
 - [[1.28.0] - 2026-11-17](#1280---2026-11-17)
-  - [Changed](#changed-6)
-  - [Documentation](#documentation-1)
-  - [Demo](#demo)
 - [[1.27.0] - 2026-11-15](#1270---2026-11-15)
-  - [Added](#added-7)
-  - [Changed](#changed-7)
-  - [Fixed](#fixed-7)
-  - [Known issues](#known-issues)
 - [[1.26.0] - 2026-11-14](#1260---2026-11-14)
-  - [Added](#added-8)
-  - [Changed](#changed-8)
-  - [Tests](#tests-3)
 - [[1.25.0] - 2026-11-13](#1250---2026-11-13)
-  - [Added](#added-9)
-  - [Changed](#changed-9)
-  - [Tests](#tests-4)
 - [[1.24.2] - 2026-11-13](#1242---2026-11-13)
-  - [Fixed](#fixed-8)
-  - [Tests](#tests-5)
-  - [Changed](#changed-10)
 - [[1.24.1] - 2026-11-13](#1241---2026-11-13)
-  - [Security](#security-1)
-  - [Fixed](#fixed-9)
-  - [Documentation](#documentation-2)
 - [[1.24.0] - 2026-11-13](#1240---2026-11-13)
-  - [Added](#added-10)
 - [[1.23.1] - 2026-11-12](#1231---2026-11-12)
-  - [Fixed](#fixed-10)
 - [[1.23.0] - 2026-11-12](#1230---2026-11-12)
-  - [Added](#added-11)
-  - [Deprecated](#deprecated)
 - [[1.22.1] - 2026-11-12](#1221---2026-11-12)
-  - [Fixed](#fixed-11)
-  - [Documentation](#documentation-3)
 - [[1.22.0] - 2026-11-12](#1220---2026-11-12)
-  - [Added](#added-12)
-  - [Changed](#changed-11)
 - [[1.21.0] - 2026-11-12](#1210---2026-11-12)
-  - [Added](#added-13)
-  - [Changed](#changed-12)
 - [[1.20.0] - 2026-11-11](#1200---2026-11-11)
-  - [Added](#added-14)
-  - [Security](#security-2)
-  - [Unchanged](#unchanged)
-  - [Tests](#tests-6)
-  - [Docs](#docs)
 - [[1.19.1] - 2026-11-11](#1191---2026-11-11)
-  - [Fixed](#fixed-12)
-  - [Tests](#tests-7)
 - [[1.19.0] - 2026-11-11](#1190---2026-11-11)
-  - [Added](#added-15)
-  - [Security (audit LZ)](#security-audit-lz)
-  - [Changed](#changed-13)
-  - [Documentation](#documentation-4)
-  - [Tests](#tests-8)
 - [[1.18.0] - 2026-11-09](#1180---2026-11-09)
-  - [Added](#added-16)
-  - [Changed](#changed-14)
-  - [Documentation](#documentation-5)
 - [[1.17.1] - 2026-11-08](#1171---2026-11-08)
-  - [Fixed](#fixed-13)
 - [[1.17.0] - 2026-11-08](#1170---2026-11-08)
-  - [Added](#added-17)
 - [[1.16.2] - 2026-11-07](#1162---2026-11-07)
-  - [Fixed](#fixed-14)
-  - [Changed](#changed-15)
 - [[1.16.1] - 2026-11-07](#1161---2026-11-07)
-  - [Fixed](#fixed-15)
-  - [Changed](#changed-16)
 - [[1.16.0] - 2026-11-07](#1160---2026-11-07)
-  - [Added](#added-18)
-  - [Fixed](#fixed-16)
 - [[1.15.0] - 2026-11-06](#1150---2026-11-06)
-  - [Added](#added-19)
-  - [Changed](#changed-17)
 - [[1.14.0] - 2026-11-06](#1140---2026-11-06)
-  - [Added](#added-20)
-  - [Changed](#changed-18)
 - [[1.13.0] - 2026-11-05](#1130---2026-11-05)
-  - [Added](#added-21)
-  - [Changed](#changed-19)
-  - [Security](#security-3)
 - [[1.12.0] - 2026-11-05](#1120---2026-11-05)
-  - [Added](#added-22)
-  - [Changed](#changed-20)
-  - [Documentation](#documentation-6)
 - [[1.11.0] - 2026-11-05](#1110---2026-11-05)
-  - [Added](#added-23)
-  - [Changed](#changed-21)
-  - [Documentation](#documentation-7)
 - [[1.10.3] - 2026-11-04](#1103---2026-11-04)
-  - [Changed](#changed-22)
-  - [Documentation](#documentation-8)
 - [[1.10.2] - 2026-11-04](#1102---2026-11-04)
-  - [Changed](#changed-23)
-  - [Documentation](#documentation-9)
 - [[1.10.1] - 2026-11-04](#1101---2026-11-04)
-  - [Added](#added-24)
 - [[1.10.0] - 2026-11-04](#1100---2026-11-04)
-  - [Added](#added-25)
-  - [Changed](#changed-24)
 - [[1.9.2] - 2026-11-04](#192---2026-11-04)
-  - [Security](#security-4)
 - [[1.9.1] - 2026-11-02](#191---2026-11-02)
-  - [Added](#added-26)
-  - [Fixed](#fixed-17)
 - [[1.9.0] - 2026-11-02](#190---2026-11-02)
-  - [Added](#added-27)
-  - [Changed](#changed-25)
-  - [Deprecated](#deprecated-1)
-  - [Security](#security-5)
 - [[1.8.0] - 2026-11-02](#180---2026-11-02)
-  - [Added](#added-28)
-  - [Changed](#changed-26)
-  - [Deprecated](#deprecated-2)
-  - [Tests](#tests-9)
-  - [Documentation](#documentation-10)
 - [[1.7.0] - 2026-10-30](#170---2026-10-30)
-  - [Changed](#changed-27)
 - [[1.6.0] - 2026-10-26](#160---2026-10-26)
-  - [Added](#added-29)
-  - [Changed](#changed-28)
 - [[1.5.2] - 2026-10-18](#152---2026-10-18)
-  - [Changed](#changed-29)
 - [[1.5.1] - 2026-10-13](#151---2026-10-13)
-  - [Changed](#changed-30)
 - [[1.5.0] - 2026-10-13](#150---2026-10-13)
-  - [Security](#security-6)
-  - [Deprecated](#deprecated-3)
-  - [Fixed](#fixed-18)
 - [[1.4.0] - 2026-10-13](#140---2026-10-13)
-  - [Security](#security-7)
-  - [Fixed](#fixed-19)
 - [[1.3.7] - 2026-10-13](#137---2026-10-13)
-  - [Changed](#changed-31)
-  - [Dependencies](#dependencies)
 - [[1.3.6] - 2026-10-09](#136---2026-10-09)
-  - [Dependencies](#dependencies-1)
 - [[1.3.5] - 2026-09-28](#135---2026-09-28)
-  - [Security](#security-8)
-  - [Changed](#changed-32)
 - [[1.3.4] - 2026-09-27](#134---2026-09-27)
-  - [Added](#added-30)
-  - [Changed](#changed-33)
-  - [Fixed](#fixed-20)
-  - [Notes](#notes)
 - [[1.3.3] - 2026-08-24](#133---2026-08-24)
-  - [Changed](#changed-34)
-  - [Notes](#notes-1)
 - [[1.3.2] - 2026-08-19](#132---2026-08-19)
-  - [Changed](#changed-35)
 - [[1.3.1] - 2026-08-18](#131---2026-08-18)
-  - [Changed](#changed-36)
 - [[1.3.0] - 2026-08-04](#130---2026-08-04)
-  - [Added](#added-31)
-  - [Changed](#changed-37)
 - [[1.2.0] - 2026-08-03](#120---2026-08-03)
-  - [Added](#added-32)
-  - [Changed](#changed-38)
-  - [Compatibility](#compatibility)
 - [[1.1.0] - 2026-07-30](#110---2026-07-30)
-  - [Added](#added-33)
-  - [Changed](#changed-39)
 - [[1.0.6] - 2026-07-29](#106---2026-07-29)
-  - [Security](#security-9)
-  - [Added](#added-34)
-  - [Changed](#changed-40)
 - [[1.0.5] - 2026-07-16](#105---2026-07-16)
-  - [Added](#added-35)
-  - [Changed](#changed-41)
 - [[1.0.4] - 2026-07-13](#104---2026-07-13)
-  - [Added](#added-36)
-  - [Changed](#changed-42)
-  - [Fixed](#fixed-21)
 - [[1.0.3] - 2026-07-08](#103---2026-07-08)
-  - [Added](#added-37)
-  - [Changed](#changed-43)
-  - [Documentation](#documentation-11)
 - [[1.0.2] - 2026-07-07](#102---2026-07-07)
-  - [Changed](#changed-44)
 - [[1.0.1] - 2026-07-06](#101---2026-07-06)
-  - [Fixed](#fixed-22)
 - [[1.0.0] - 2026-07-06](#100---2026-07-06)
-  - [Added](#added-38)
-  - [Configuration](#configuration)
-  - [Testing](#testing)
-  - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+2.0.0 (major, REQ-ARCH-001 closure): only the changes 1.x announced (deprecated since 1.5–1.41, runtime notices since
+1.33.0 / 1.39.0 / 1.41.0). An application that runs 1.41 without TimeTrack deprecation notices upgrades without code
+changes. See [UPGRADING](UPGRADING.md#to-200).
+
+### Changed
+
+- **BREAKING:** the private entity manager is the only mode (REQ-ARCH-001 rule 6, opt-in since 1.23.0). TimeTrack
+  reads and writes its rows only through `TimeTrackEntityManager` (on the connection and mapping of
+  `database.entity_manager`) and never flushes, clears, closes or resets the application's entity manager. A change of
+  the application that was only stored because a TimeTrack write flushed its manager is no longer stored, and a
+  TimeTrack row changed and flushed with the application's manager is no longer written (see UPGRADING).
+- **BREAKING:** `database.private_entity_manager: false` fails the container build; `true` (and unset) is the 2.0
+  behaviour (`true` is a deprecated no-op, removed in 3.0).
+- **BREAKING:** the client API allows exact origins only: `"*"` in `clients.cors_allowed_origins`,
+  `clients.cors_allow_any_extension_origin: true` and `client_api.allow_tauri_webview_origins: true` (the 1.x
+  default) fail the container build; the Tauri webview origins (`tauri://localhost`, `http(s)://tauri.localhost`) are
+  no longer allowed. `false` for the two options is a deprecated no-op (removed in 3.0).
+  `ClientApiSettings::$allowTauriWebviewOrigins` (default now `false`) and the `$kernelEnvironment` /
+  `$allowAnyExtensionOrigin` arguments of `ClientResponseFactory` are accepted and ignored.
+- **BREAKING:** `GET /api/time-track/entries` (and its v1 twin) returns the caller's own entries only; the 1.x
+  `userId` parameter (deprecated since 1.9) is ignored.
+- **BREAKING:** `web_ui.layout_template` pointing at a layout without the UiKit page header block, or at the removed
+  `@NowoTimeTrackBundle/layout.html.twig`, fails the page with a `LogicException` (the 1.x bridge is removed).
+  `TimeTrackPages::layoutContext()` returns `[]` (deprecated, removed in 3.0).
+- **BREAKING:** `TimeTrack:LedgerTable` and `TimeTrack:TimesheetWeekGrid` render their dialogs on demand only: a
+  dialog action (`reversal`, `add_adjustment`; `reject`, `reopen`) with `options.action_urls` but without
+  `options.dialog_urls` fails the render with a `LogicException`. `addForm` / `reversalForm` of the ledger view are
+  always `null`; `_action.html.twig` renders the plain button only.
+- **BREAKING:** host entities and TimeTrack rows never cross the two managers by accident (audit lessons XS / W1-2): a
+  TimeTrack row another manager loaded (yours, or TimeTrack's in an earlier request) handed to a TimeTrack store fails
+  with a `LogicException` instead of being inserted again; a user of yours persisted but not flushed (no id yet, or
+  only scheduled for insert) fails the TimeTrack write with a `LogicException` ("flush your user first") before
+  anything is written. TimeTrack writes your users as its own reference to the same row and never detaches what your
+  manager holds.
+- **BREAKING:** `TimeTrackTransactionRunner` only runs units of work on TimeTrack's private entity manager
+  (`TimeTrackEntityManager`): a runner, or a TimeTrack store, built by hand with another manager (yours) refuses each
+  unit with a `LogicException` before touching that manager, instead of flushing it and closing, resetting or clearing
+  it after a failure (audit ZAR-1). Use the `nowo_time_track.transaction_runner` service, or build them with
+  `TimeTrackEntityManager` and `TimeTrackManagerRegistry`. The bundle's DBAL insert path refuses a TimeTrack row that
+  another manager loaded too (ZAR-4).
+- UiKit seeding: without `nowo_ui_kit.css_framework` / `icon_set` the bundle still seeds `tabler` / `tabler-icons`
+  (the 1.x default); the removed `templates.css_framework` no longer chooses the seed.
+- The configured service of each host port is also registered, public, under its framework-free interface id (the
+  1.23 twin, e.g. `Timesheet\TimesheetScopePolicyInterface`) when it implements it and the application did not define
+  that id itself, so another bundle (TaskBoard's timesheet scope bridge) injects it there instead of the removed 1.x id.
+  The default `SingleScopeProvider` implements `TimesheetScopePolicyInterface` too. TimeTrack asks the port through
+  that id (a decorator of it applies to TimeTrack and to the other bundles alike), and an application definition of the
+  id that ends at another service than the configured port fails the container build (audit ZAR-V1). Not registered
+  for a factory or synthetic port service.
+- The bundle's own default port services (stub task provider, single scope, Doctrine user reference resolver, ...)
+  implement internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`, `@internal`); a host service is asked only
+  through the 1.23 twin of its port.
+
+### Removed
+
+- **BREAKING:** the 22 host port interfaces deprecated in 1.23.0 (notices since 1.33.0): `Integration\TaskProviderInterface`,
+  `Integration\BatchTaskProviderInterface`, `Integration\TeamContextProviderInterface`,
+  `Integration\UserReferenceResolverInterface`, `Timesheet\TimesheetScopeProviderInterface`,
+  `Timesheet\TimesheetApproverProviderInterface`, `Calendar\TaskKeyResolverInterface`,
+  `Calendar\CalendarCredentialProviderInterface`, `Meeting\MeetingProviderInterface`, `Workday\WorkdayProviderInterface`,
+  `Client\IdleCheckSettingsProviderInterface`, `Client\ClientCredentialIssuerInterface`,
+  `Security\TaskAccessCheckerInterface`, `Client\ClientUserProfileProviderInterface`,
+  `Client\ClientUserLocaleProviderInterface`, `Client\ClientUserDaysOffProviderInterface`,
+  `Client\ClientUserPrivacyProviderInterface`, `WorkingTime\WorkingCalendarProviderInterface`,
+  `WorkingTime\WorkedTimeSourceInterface`, `Repository\ImportedTimeEntryRepositoryInterface`,
+  `Repository\FilteredImportedTimeEntryRepositoryInterface`, `Repository\EntryOwnersRepositoryInterface`. Implement
+  the 1.23 twin with the same option. A service still on one of them (configured, aliased or decorated under its id,
+  or an autodiscovered class that implements it) fails the container build with a message naming the service, the
+  removed interface and the twin (W1-1, `DependencyInjection\Compiler\RemovedPortsPass`), instead of being dropped
+  silently. The service `Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface` and
+  `ImportedTimeEntryRepositoryResolver::resolve()` go with them (`resolveStore()` stays).
+- **BREAKING:** `getUser()` of `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`,
+  `TaskEffortAccessCheckEvent`, `getViewer()` of `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`, and
+  `ClientAuthResult::getUser()` (deprecated since 1.23.0): read `userRef()` / `viewerRef()` (or `getUserId()` /
+  `getViewerId()`).
+- **BREAKING:** `RecoveringFlusher::resetIfClosed()` (a no-op since 1.27.0).
+- **BREAKING:** `POST /api/time-track/heartbeat` (and its v1 twin), the `clients.routes.heartbeat` key and the
+  `heartbeat` route key of `client_api.routes.include` (deprecated since 1.9): a configuration that still names it
+  fails the container build.
+- **BREAKING:** the `templates.*` keys (`layout`, `css_framework`, `index`, `reports`; deprecated since 1.8), the
+  container parameters `nowo_time_track.templates`, `nowo_time_track.templates.layout`,
+  `nowo_time_track.templates.css_framework`, the Twig globals `nowo_time_track_layout` /
+  `nowo_time_track_css_framework` with the constants `TimeTrackTwigExtension::GLOBAL_LAYOUT` /
+  `GLOBAL_CSS_FRAMEWORK` (and `TimeTrackTwigExtension` no longer implements `GlobalsInterface`),
+  `Configuration::LEGACY_LAYOUT` and `TimeTrackPages::LEGACY_LAYOUT_BRIDGE`. Any
+  `templates` key fails the container build. `Configuration::CSS_FRAMEWORKS` is deprecated (removed in 3.0).
+- **BREAKING:** the templates `@NowoTimeTrackBundle/layout.html.twig` and `@NowoTimeTrackBundle/_legacy_layout.html.twig`
+  (deprecated since 1.8).
+- **BREAKING:** `security.manager_can_edit_entries` (deprecated since 1.5): `false` fails the container build (refuse
+  managers in a `nowo_time_track.time_entry.access_check` listener); `true` is a deprecated no-op (removed in 3.0).
+- The 1.33.0 deprecation layer: the host-flush probe (`Doctrine\TimeTrackHostFlushProbe`, `@internal`), its wiring
+  and calls, and the 1.33 notices (`TimeTrackExtension::DEPRECATION_PACKAGE`, `DEPRECATION_SINCE`,
+  `PRIVATE_ENTITY_MANAGER_NOTICE`, `CORS_WILDCARD_NOTICE`, `TAURI_WEBVIEW_ORIGINS_NOTICE`, `Ports::deprecateLegacy()`,
+  `TimeTrackPortsPass::EXTRAS`). The `$hostFlushProbe` constructor argument of `TimeTrackTransactionRunner` and of the
+  Doctrine stores, and the third argument of `RecoveringFlusher::flush()`, are accepted and ignored (deprecated,
+  removed in 3.0).
+- **BREAKING:** `MonitoringPolicy`'s `windowTitles` constructor argument and property, and the `windowTitles` key of
+  `GET me.monitoring` (deprecated and frozen to `false` since 1.41.0, owner decision D4): window titles are never
+  collected. Drop the argument (a named `windowTitles:` argument is an unknown parameter; a positional call moves
+  `excludedApps` and the later arguments one place left); clients read a missing key as `false`.
+- The client prototypes `desktop/` (Tauri) and `extension/` (Chrome) of this repository (audit ZBH-L1): they called the
+  removed `POST heartbeat` and the Tauri webview origin and no longer worked against 2.0, and `desktop/` was shipped in
+  the dist archive. The clients are [nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop) and
+  [nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension). No PHP code depended on them.
+- Unused since the removals and kept in the signature, ignored (deprecated, removed in 3.0): the `$teamAccessGuard`
+  and `$idleThresholdSeconds` arguments of `TimeTrackClientApiController`, the `$layoutTemplate` / `$cssFramework`
+  arguments of `TimeTrackTwigExtension`.
+
+### Security
+
+- After 2.0.0 the 1.x line receives security fixes for 6 months: Moderate and higher are backported to the last 1.x
+  minor; Low ones are fixed in 2.x only.
 
 ## [1.41.0] - 2026-11-24
 
@@ -2179,7 +2126,7 @@ REQ-100 release: timer and reports pages on the UiKit page contract (layout_temp
   `web_ui.layout_template`, `nowo_ui_kit.css_framework`, `web_ui.templates.index|reports`. They keep working (mapped
   onto `web_ui.*`); a 1.x layout without the UiKit canonical blocks is wrapped in the deprecated
   `_legacy_layout.html.twig` bridge, and `layout.html.twig` is now a shim that renders 1.x templates extending
-  `nowo_time_track_layout` inside the UiKit admin layout. See [UPGRADING](UPGRADING.md#unreleased).
+  `nowo_time_track_layout` inside the UiKit admin layout. See [UPGRADING](UPGRADING.md#to-200).
 
 - Time comes from an injected `Psr\Clock\ClockInterface` (REQ-DI-001) in `TimerService`, `ClientAuthService`, the
   client API and manage controllers and `DoctrineOrmClientTokenRepository` (optional trailing constructor arguments,

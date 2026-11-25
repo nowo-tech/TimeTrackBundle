@@ -10,6 +10,9 @@ services:
         exclude:
             - '../../DependencyInjection/'
             - '../../TimeTrackBundle.php'
+            # Since 2.0: the bundle's internal shapes of the host ports; their slots are wired by the extension and
+            # TimeTrackPortsPass (an interface implemented by one scanned gate would otherwise be aliased to it).
+            - '../../Port/Internal/'
             # Bridge defaults are registered by TimeTrackExtension only when selected (task_provider /
             # team_context_provider); the scan must not overwrite those explicit definitions.
             - '../../Bridge/'
@@ -134,7 +137,7 @@ services:
         autoconfigure: false
         tags: ['controller.service_arguments', 'container.service_subscriber']
         arguments:
-            $templates: '%nowo_time_track.templates%'
+            $templates: '%nowo_time_track.web_ui.templates%'
             $allowUnauthenticated: '%nowo_time_track.security.allow_unauthenticated%'
             $reportsPageSize: '%nowo_time_track.reports.page_size%'
 

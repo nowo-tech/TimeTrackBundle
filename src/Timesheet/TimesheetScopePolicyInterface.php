@@ -8,7 +8,7 @@ use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see TimesheetScopeProviderInterface} (REQ-ARCH-001 rules 1 and 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `TimesheetScopeProviderInterface` (REQ-ARCH-001 rules 1 and 3), same
  * `timesheets.scope_provider` option: the user is a {@see TimeTrackUserRef}, the entries are {@see TimeEntryView}
  * snapshots instead of the Doctrine entity.
  */

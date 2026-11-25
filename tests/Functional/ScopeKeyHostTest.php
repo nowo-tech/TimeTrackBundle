@@ -71,7 +71,7 @@ final class ScopeKeyHostTest extends FunctionalTestCase
             // Ids in this order, so the conflict (Org-a) comes before org-z: the run must go on with a reset entity manager.
             $this->entityManager()->getConnection()->update('time_track_entries', ['id' => sprintf('00000000-0000-4000-8000-%012d', $i + 1)], ['id' => $entry->getId()]);
         }
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $timesheets = self::getContainer()->get(TimesheetService::class);
         self::assertInstanceOf(TimesheetService::class, $timesheets);
 

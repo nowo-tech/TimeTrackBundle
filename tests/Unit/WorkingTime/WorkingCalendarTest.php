@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\WorkingTime;
 
 use DateTimeImmutable;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Tests\Stub\DaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;

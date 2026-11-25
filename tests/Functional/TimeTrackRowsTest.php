@@ -11,7 +11,6 @@ use Nowo\TimeTrackBundle\Entity\MonitoringUploadIntent;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringUploadIntentRepository;
-use PHPUnit\Framework\Attributes\Group;
 
 /**
  * 1.27.0 (Beacon spec 239): a new row refused by its unique key (another request wrote it first) is thrown with the
@@ -19,13 +18,12 @@ use PHPUnit\Framework\Attributes\Group;
  */
 final class TimeTrackRowsTest extends FunctionalTestCase
 {
-    #[Group('shared-entity-manager')]
     public function testALostInsertOutsideATransactionLeavesTheManagerOpen(): void
     {
         $timers = $this->timers();
         $first  = new ActiveTimer($this->user, 'task-1', 'T', null, ClientType::Web);
         $timers->save($first);
-        self::assertTrue($this->entityManager()->contains($first), 'managed and clean, as after a flush');
+        self::assertTrue($this->bundleEntityManager()->contains($first), 'managed and clean, as after a flush');
 
         try {
             $timers->save(new ActiveTimer($this->user, 'task-2', 'T', null, ClientType::Web));
@@ -33,6 +31,7 @@ final class TimeTrackRowsTest extends FunctionalTestCase
         } catch (UniqueConstraintViolationException) {
         }
         self::assertTrue($this->entityManager()->isOpen());
+        self::assertTrue($this->bundleEntityManager()->isOpen());
 
         $first->heartbeat(true, new DateTimeImmutable());
         $timers->save($first);

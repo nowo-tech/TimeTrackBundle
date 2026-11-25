@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see UserReferenceProviderInterface} (1.23.0) where the bundle asks the deprecated
- * {@see UserReferenceResolverInterface}. Exceptions propagate. Stateless.
+ * Asks a host {@see UserReferenceProviderInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see UserReferenceResolverInterface} (the 1.x interface of that name was removed in 2.0). Exceptions propagate. Stateless.
  *
  * @internal
  */

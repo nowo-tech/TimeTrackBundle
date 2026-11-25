@@ -9,6 +9,8 @@ use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Enum\TimesheetActorRole;
 use Nowo\TimeTrackBundle\Event\TimesheetAccessCheckEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetApproverProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;

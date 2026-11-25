@@ -20,7 +20,6 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceLedger;
-use PHPUnit\Framework\Attributes\Group;
 use ReflectionObject;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
@@ -157,7 +156,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
     {
         $line = $this->add();
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_balance_ledger SET prev_hash = NULL WHERE id = ?', [$line->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $this->assertIntact();
         $this->user     = $this->managed($this->user);
@@ -171,7 +170,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         $conn  = $this->entityManager()->getConnection();
         $first = $this->add();
         $conn->executeStatement('UPDATE time_track_balance_ledger SET prev_hash = NULL WHERE id = ?', [$first->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $em     = $this->entityManager();
         $user   = $this->managed($this->user);
         $second = new BalanceLedgerLine($user, (string) $user->getId(), 'org-a', '2026-10-01', LedgerKind::Adjustment, 60, new DateTimeImmutable('2026-11-07 10:00:10'), null, 'second start');
@@ -202,7 +201,6 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         self::assertCount(3, $this->store()->findByOwner((string) $this->user->getId(), 'org-a'));
     }
 
-    #[Group('shared-entity-manager')]
     public function testAPurgeTakesAChainPrefixInChainOrderAndMarksTheLineKept(): void
     {
         $first  = $this->line('2020-02-01', new DateTimeImmutable('2026-11-07 10:00:10'), null);
@@ -215,7 +213,6 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         self::assertSame('2021-01-01', $this->store()->find($third->getId())?->getPurgedBefore());
     }
 
-    #[Group('shared-entity-manager')]
     public function testAPurgeTakesLinesNoStartReachesInSortOrderAsBefore(): void
     {
         $first  = $this->line('2020-01-01', new DateTimeImmutable('2026-11-07 10:00:01'), null);
@@ -223,7 +220,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         $third  = $this->line('2020-01-03', new DateTimeImmutable('2026-11-07 10:00:03'), $second);
         $fourth = $this->line('2026-10-02', new DateTimeImmutable('2026-11-07 10:00:04'), $third);
         $this->entityManager()->getConnection()->executeStatement('DELETE FROM time_track_balance_ledger WHERE id = ?', [$second->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(2, $this->purge('2021-01-01'));
 
@@ -242,7 +239,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
         $conn->executeStatement('UPDATE time_track_balance_ledger SET prev_hash = NULL WHERE id = ?', [$start->getId()]);
         $middle = $this->line('2026-10-02', new DateTimeImmutable('2026-11-07 10:00:03'), $start);
         $this->line('2026-10-03', new DateTimeImmutable('2026-11-07 10:00:04'), $middle);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame('ledger ' . $owner . ' / org-a: the chain has 2 starts', $this->verifier()->verifyLedger($owner, 'org-a'));
 
         $conn->executeStatement('DELETE FROM time_track_balance_ledger WHERE id = ?', [$middle->getId()]);
@@ -261,7 +258,7 @@ final class BalanceLedgerChainTest extends FunctionalTestCase
 
     private function purge(string $before): int
     {
-        return (new DoctrineOrmTimesheetRepository($this->entityManager()))->purgeBefore($before)['ledger'];
+        return (new DoctrineOrmTimesheetRepository($this->bundleEntityManager()))->purgeBefore($before)['ledger'];
     }
 
     private function assertChainGoesOn(): void

@@ -9,7 +9,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see WorkdayProviderInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `WorkdayProviderInterface` (REQ-ARCH-001 rule 3), same
  * `client_api.workday_provider` option: the clients' access to the host's working-time register.
  */
 interface WorkdaySourceInterface

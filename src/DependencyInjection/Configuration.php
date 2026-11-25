@@ -11,6 +11,7 @@ use Nowo\TimeTrackBundle\UserRef\UserMapping;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 use function array_key_exists;
 use function class_exists;
@@ -31,7 +32,11 @@ final class Configuration implements ConfigurationInterface
 {
     public const ALIAS = 'nowo_time_track';
 
-    /** @var list<string> Host CSS stacks accepted by templates.css_framework (REQ-UI-001). */
+    /**
+     * @var list<string> Host CSS stacks of the 1.x `templates.css_framework` (REQ-UI-001)
+     *
+     * @deprecated since 2.0 (the key is removed; set nowo_ui_kit.css_framework); removed in 3.0
+     */
     public const CSS_FRAMEWORKS = [
         'bootstrap',
         'bootstrap4',
@@ -43,7 +48,6 @@ final class Configuration implements ConfigurationInterface
         'none',
     ];
 
-    /** 1.x default of templates.layout (deprecated shim, maps to the UiKit admin layout). */
     /**
      * Semantic version 2.0.0 (core, optional pre-release and build metadata; no leading zeros, no `v` prefix).
      */
@@ -52,7 +56,14 @@ final class Configuration implements ConfigurationInterface
     /** Exact https origin (`https://host[:port]`) of `client_api.task_url.origin`: DNS labels, no empty label or trailing dot, port 1–65535 (EF-I3). */
     public const HTTPS_ORIGIN_PATTERN = '~\Ahttps://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?\z~i';
 
-    public const LEGACY_LAYOUT = '@NowoTimeTrackBundle/layout.html.twig';
+    /** 2.0: the build error of the 1.x `templates.*` keys (deprecated since 1.8). */
+    public const TEMPLATES_REMOVED = 'The nowo_time_track.templates keys (deprecated since 1.8) were removed in 2.0: use nowo_time_track.web_ui.layout_template (templates.layout; null = nowo_ui_kit.layouts.admin), nowo_time_track.web_ui.templates.index / .reports (templates.index / .reports) and nowo_ui_kit.css_framework (templates.css_framework); see UPGRADING "To 2.0.0".';
+
+    /** 2.0: the build error of `security.manager_can_edit_entries: false` (deprecated since 1.5). */
+    public const MANAGER_CAN_EDIT_ENTRIES_REMOVED = 'nowo_time_track.security.manager_can_edit_entries: false is no longer supported (the option, deprecated since 1.5, was removed in 2.0): remove it and refuse team managers the edit in a "nowo_time_track.time_entry.access_check" listener (TimeEntryAccessCheckEvent); see UPGRADING "To 2.0.0".';
+
+    /** 2.0: the build error of a `heartbeat` route (`POST heartbeat`, deprecated since 1.9, is removed). */
+    public const HEARTBEAT_REMOVED = 'The client API route "heartbeat" (POST /api/time-track/heartbeat, deprecated since 1.9) was removed in 2.0: remove "heartbeat" from nowo_time_track.clients.routes and nowo_time_track.client_api.routes.include. Clients answer idle time with "timer/discard-idle"; see UPGRADING "To 2.0.0".';
 
     public const DEFAULT_INDEX_TEMPLATE = '@NowoTimeTrackBundle/time_track/index.html.twig';
 
@@ -68,12 +79,13 @@ final class Configuration implements ConfigurationInterface
 
         $root
             ->beforeNormalization()
-                ->ifTrue(static fn (mixed $v): bool => is_array($v) && is_array($v['templates'] ?? null))
-                ->then($this->mapDeprecatedTemplates(...))
+                // 2.0: the 1.x `templates.*` keys (deprecated since 1.8) are removed.
+                ->ifTrue(static fn (mixed $v): bool => is_array($v) && array_key_exists('templates', $v))
+                ->then(static fn (): never => throw new InvalidConfigurationException(self::TEMPLATES_REMOVED))
             ->end();
         $this->addUserClassToSecuritySections($root);
         $this->addRoutesToRetentionSections($root);
-        $this->addWebUiToTemplatesSections($root);
+        $this->addWebUiSection($root);
         $this->addClientsSection($root);
         $this->addClientApiSection($root);
         $this->addClientDistributionSection($root);
@@ -119,11 +131,11 @@ final class Configuration implements ConfigurationInterface
                     ->cannotBeEmpty()
                 ->end()
                 ->scalarNode('task_provider')
-                    ->info('Service id implementing TaskProviderInterface. Defaults to StubTaskProvider for demos.')
+                    ->info('Service id implementing Integration\\TaskDirectoryInterface (optionally BatchTaskDirectoryInterface). Defaults to StubTaskProvider for demos.')
                     ->defaultValue(StubTaskProvider::class)
                 ->end()
                 ->scalarNode('team_context_provider')
-                    ->info('Service id implementing TeamContextProviderInterface.')
+                    ->info('Service id implementing Integration\\TeamDirectoryInterface.')
                     ->defaultValue(NullTeamContextProvider::class)
                 ->end()
                 ->scalarNode('route_prefix')
@@ -141,8 +153,9 @@ final class Configuration implements ConfigurationInterface
                             ->defaultValue('attribute')
                         ->end()
                         ->booleanNode('private_entity_manager')
-                            ->info('Since 1.23.0 (REQ-ARCH-001 rule 6): write and read the bundle rows through a private entity manager created on the connection and mapping of `entity_manager`, so the bundle never flushes, clears or closes that (your) manager. Default false (1.22 behaviour); deprecated as false, the only mode in 2.0.')
-                            ->defaultFalse()
+                            ->info('Since 2.0 the bundle rows are always written and read through a private entity manager created on the connection and mapping of `entity_manager` (REQ-ARCH-001 rule 6). `true` has no effect (deprecated, removed in 3.0); `false` fails the container build (see UPGRADING "To 2.0.0").')
+                            ->defaultNull()
+                            ->setDeprecated('nowo-tech/time-track-bundle', '2.0', 'The "%path%.%node%" option has no effect since 2.0 (the private entity manager is the only mode); remove it.')
                         ->end()
                     ->end()
                 ->end()
@@ -167,9 +180,9 @@ final class Configuration implements ConfigurationInterface
                             ->defaultTrue()
                         ->end()
                         ->booleanNode('manager_can_edit_entries')
-                            ->info('Deprecated: only read by TeamAccessGuard::canEditEntry() for host code; the bundle ships no entry edit route.')
-                            ->defaultTrue()
-                            ->setDeprecated('nowo-tech/time-track-bundle', '1.5', 'The "%path%.%node%" option is deprecated: the bundle ships no time-entry edit route. Decide edit access in a "nowo_time_track.time_entry.access_check" listener (TimeEntryAccessCheckEvent) instead.')
+                            ->info('Removed in 2.0 (deprecated since 1.5): team managers may edit entries in TeamAccessGuard::canEditEntry(); decide edit access in a "nowo_time_track.time_entry.access_check" listener (TimeEntryAccessCheckEvent). false fails the container build, true has no effect (removed in 3.0).')
+                            ->defaultNull()
+                            ->setDeprecated('nowo-tech/time-track-bundle', '2.0', 'The "%path%.%node%" option has no effect since 2.0; remove it and decide edit access in a "nowo_time_track.time_entry.access_check" listener (TimeEntryAccessCheckEvent).')
                         ->end()
                     ->end()
                 ->end()
@@ -262,9 +275,9 @@ final class Configuration implements ConfigurationInterface
     }
 
     /**
-     * Adds the `web_ui` to `templates` settings.
+     * Adds the `web_ui` settings (the 1.x `templates` keys are removed in 2.0).
      */
-    private function addWebUiToTemplatesSections(ArrayNodeDefinition $rootNode): void
+    private function addWebUiSection(ArrayNodeDefinition $rootNode): void
     {
         $rootNode
             ->children()
@@ -274,7 +287,7 @@ final class Configuration implements ConfigurationInterface
                     ->children()
                         ->scalarNode('layout_template')
                             ->defaultNull()
-                            ->info('Layout of the pages (passed to the UiKit scaffolds as ListPage::$layout). null = nowo_ui_kit.layouts.admin. A 1.x layout without the UiKit canonical blocks is wrapped in a deprecated bridge.')
+                            ->info('Layout of the pages (passed to the UiKit scaffolds as ListPage::$layout). null = nowo_ui_kit.layouts.admin. Since 2.0 a layout without the UiKit page header block fails the page (the 1.x bridge is removed).')
                         ->end()
                         ->arrayNode('templates')
                             ->info('Per-page template override: a host template that extends @!NowoTimeTrackBundle/<template> and overrides a data block.')
@@ -289,32 +302,6 @@ final class Configuration implements ConfigurationInterface
                                     ->cannotBeEmpty()
                                 ->end()
                             ->end()
-                        ->end()
-                    ->end()
-                ->end()
-                ->arrayNode('templates')
-                    ->info('Deprecated since 1.8 (removed in 2.0): use web_ui.layout_template, web_ui.templates.* and nowo_ui_kit.css_framework.')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->scalarNode('layout')
-                            ->defaultValue(self::LEGACY_LAYOUT)
-                            ->cannotBeEmpty()
-                            ->info('Deprecated: use web_ui.layout_template. Still exposed as Twig global nowo_time_track_layout for 1.x template overrides.')
-                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: use "nowo_time_track.web_ui.layout_template" (null = nowo_ui_kit.layouts.admin).')
-                        ->end()
-                        ->enumNode('css_framework')
-                            ->values(self::CSS_FRAMEWORKS)
-                            ->defaultValue('tabler')
-                            ->info('Deprecated: set nowo_ui_kit.css_framework. Until 2.0 the value still seeds nowo_ui_kit.css_framework / icon_set when the host does not set them, and stays the Twig global nowo_time_track_css_framework.')
-                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: set "nowo_ui_kit.css_framework" (the pages render through the UiKit theme slots).')
-                        ->end()
-                        ->scalarNode('index')
-                            ->defaultValue(self::DEFAULT_INDEX_TEMPLATE)
-                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: use "nowo_time_track.web_ui.templates.index".')
-                        ->end()
-                        ->scalarNode('reports')
-                            ->defaultValue(self::DEFAULT_REPORTS_TEMPLATE)
-                            ->setDeprecated('nowo-tech/time-track-bundle', '1.8', 'The "%path%.%node%" option is deprecated: use "nowo_time_track.web_ui.templates.reports".')
                         ->end()
                     ->end()
                 ->end()
@@ -350,14 +337,14 @@ final class Configuration implements ConfigurationInterface
                     ->defaultNull()
                 ->end()
                 ->arrayNode('cors_allowed_origins')
-                    ->info('Exact allowed CORS origins, merged with client_api.allowed_origins (e.g. chrome-extension://<extension-id>). "*" (any origin outside prod) is deprecated since 1.9.')
+                    ->info('Exact allowed CORS origins, merged with client_api.allowed_origins (e.g. chrome-extension://<extension-id>). "*" fails the container build since 2.0 (deprecated since 1.9).')
                     ->scalarPrototype()->end()
                     ->defaultValue([])
                 ->end()
                 ->booleanNode('cors_allow_any_extension_origin')
-                    ->info('Deprecated since 1.9 (removed in 2.0): allow every chrome-extension:// and moz-extension:// origin. List the exact extension origins in client_api.allowed_origins.')
-                    ->defaultFalse()
-                    ->setDeprecated('nowo-tech/time-track-bundle', '1.9', 'The "%path%.%node%" option is deprecated: list the exact extension origins in "nowo_time_track.client_api.allowed_origins".')
+                    ->info('Removed in 2.0 (deprecated since 1.9): true fails the container build, false has no effect (removed in 3.0). List the exact extension origins in client_api.allowed_origins.')
+                    ->defaultNull()
+                    ->setDeprecated('nowo-tech/time-track-bundle', '2.0', 'The "%path%.%node%" option has no effect since 2.0 (the client API allows exact origins only); remove it.')
                 ->end()
                 ->arrayNode('login_rate_limit')
                     ->addDefaultsIfNotSet()
@@ -445,13 +432,6 @@ final class Configuration implements ConfigurationInterface
                     ->children()
                         ->scalarNode('path')->defaultValue('/api/time-track/timer/stop')->end()
                         ->scalarNode('name')->defaultValue('nowo_time_track_api_timer_stop')->end()
-                    ->end()
-                ->end()
-                ->arrayNode('heartbeat')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->scalarNode('path')->defaultValue('/api/time-track/heartbeat')->end()
-                        ->scalarNode('name')->defaultValue('nowo_time_track_api_heartbeat')->end()
                     ->end()
                 ->end()
                 ->arrayNode('entries')
@@ -688,7 +668,12 @@ final class Configuration implements ConfigurationInterface
     {
         $routes = $clients->children()->arrayNode('routes');
         $routes
-            ->addDefaultsIfNotSet();
+            ->addDefaultsIfNotSet()
+            ->beforeNormalization()
+                // 2.0: POST heartbeat (deprecated since 1.9, notices since 1.33.0) is removed with its route.
+                ->ifTrue(static fn (mixed $v): bool => is_array($v) && array_key_exists('heartbeat', $v))
+                ->then(static fn (): never => throw new InvalidConfigurationException(self::HEARTBEAT_REMOVED))
+            ->end();
         $this->addClientsRoutesLoginToEntriesSections($routes);
         $this->addClientsRoutesTimerSwitchToTimesheetsSections($routes);
         $this->addClientsRoutesTimesheetSubmitToEntriesCreateSections($routes);
@@ -728,7 +713,7 @@ final class Configuration implements ConfigurationInterface
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->arrayNode('include')
-                            ->info('Since 1.30: list of client route keys to publish (for example [login, me, tasks, timer, timer_start, timer_stop, heartbeat, entries]); applies to the unversioned paths and the v1 twins alike. A key that is not listed is not routed at all (the router answers 404). Empty (default) = every client route. Unknown keys fail the container build.')
+                            ->info('Since 1.30: list of client route keys to publish (for example [login, me, tasks, timer, timer_start, timer_stop, entries]); applies to the unversioned paths and the v1 twins alike. A key that is not listed is not routed at all (the router answers 404). Empty (default) = every client route. Unknown keys fail the container build.')
                             ->scalarPrototype()->end()
                             ->defaultValue([])
                         ->end()
@@ -780,8 +765,9 @@ final class Configuration implements ConfigurationInterface
                     ->defaultValue([])
                 ->end()
                 ->booleanNode('allow_tauri_webview_origins')
-                    ->info('Deprecated 1.x behaviour (false in 2.0): also allow tauri://localhost and http(s)://tauri.localhost (desktop agent calling from its webview).')
-                    ->defaultTrue()
+                    ->info('Removed in 2.0: the client API no longer allows the Tauri webview origins of the 1.x desktop agent. true fails the container build, false has no effect (removed in 3.0).')
+                    ->defaultNull()
+                    ->setDeprecated('nowo-tech/time-track-bundle', '2.0', 'The "%path%.%node%" option has no effect since 2.0 (the client API no longer allows the Tauri webview origins); remove it.')
                 ->end()
                 ->booleanNode('allow_metadata')
                     ->info('Accept free client "metadata" on timer/start (default false: rejected with 400 metadata_not_allowed; clients send source + note).')
@@ -796,19 +782,19 @@ final class Configuration implements ConfigurationInterface
                     ->defaultNull()
                 ->end()
                 ->scalarNode('credential_issuer')
-                    ->info('Service id implementing ClientCredentialIssuerInterface, called when a device is approved (null = opaque device:<uuid> ids).')
+                    ->info('Service id implementing Client\\ClientCredentialMinterInterface, called when a device is approved (null = opaque device:<uuid> ids).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('task_access_checker')
-                    ->info('Service id implementing TaskAccessCheckerInterface, checked on timer/start and timer/switch (null = the task provider decides).')
+                    ->info('Service id implementing Security\\TaskAccessPolicyInterface, checked on timer/start and timer/switch (null = the task provider decides).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('profile_provider')
-                    ->info('Service id implementing ClientUserProfileProviderInterface (displayName / workingHours of GET me; null = none).')
+                    ->info('Service id implementing Client\\ClientUserProfileSourceInterface (displayName / workingHours of GET me; null = none).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('workday_provider')
-                    ->info('Since 1.13: service id implementing Workday\\WorkdayProviderInterface (R-GDPR §8; null = no workday API).')
+                    ->info('Since 1.13: service id implementing Workday\\WorkdaySourceInterface (optionally WorkdayHistorySourceInterface; R-GDPR §8; null = no workday API).')
                     ->defaultNull()
                 ->end()
             ->end();
@@ -865,7 +851,7 @@ final class Configuration implements ConfigurationInterface
                         ->integerNode('answer_timeout_minutes')->info('Minutes the idle prompt waits for an answer.')->defaultValue(5)->min(1)->max(30)->end()
                         ->booleanNode('user_can_disable')->info('Whether users may turn the idle check off in the client (1.10.1; limits.idle_check.user_can_disable).')->defaultFalse()->end()
                         ->scalarNode('provider')
-                            ->info('Service id implementing IdleCheckSettingsProviderInterface (per-user settings; null = these values). Its values are clamped to the same ranges.')
+                            ->info('Service id implementing Client\\IdleCheckSettingsPolicyInterface (per-user settings; null = these values). Its values are clamped to the same ranges.')
                             ->defaultNull()
                         ->end()
                     ->end()
@@ -1097,11 +1083,11 @@ final class Configuration implements ConfigurationInterface
                     ->defaultFalse()
                 ->end()
                 ->scalarNode('credential_provider')
-                    ->info('Service id implementing CalendarCredentialProviderInterface (host OAuth tokens; required for server mode).')
+                    ->info('Service id implementing Calendar\\CalendarCredentialSourceInterface (host OAuth tokens; required for server mode).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('task_key_resolver')
-                    ->info('Service id implementing TaskKeyResolverInterface (host task keys; required when enabled).')
+                    ->info('Service id implementing Calendar\\TaskKeyLookupInterface (host task keys; required when enabled).')
                     ->defaultNull()
                 ->end()
                 ->arrayNode('providers')
@@ -1187,11 +1173,11 @@ final class Configuration implements ConfigurationInterface
                     ->defaultFalse()
                 ->end()
                 ->scalarNode('calendar_provider')
-                    ->info('Service id implementing WorkingCalendarProviderInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off).')
+                    ->info('Service id implementing WorkingTime\\WorkingCalendarSourceInterface (null = DerivedWorkingCalendar from the 1.12 working hours and days off).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('worked_time_source')
-                    ->info('Service id implementing WorkedTimeSourceInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false).')
+                    ->info('Service id implementing WorkingTime\\WorkedTimeRecordInterface (null = TaskTimeWorkedTimeSource: live task time, legalRecord false).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('overtime_policy')
@@ -1255,11 +1241,11 @@ final class Configuration implements ConfigurationInterface
                     ->defaultValue('provider')
                 ->end()
                 ->scalarNode('scope_provider')
-                    ->info('Service id implementing TimesheetScopeProviderInterface (required with scope_mode: provider).')
+                    ->info('Service id implementing Timesheet\\TimesheetScopePolicyInterface (required with scope_mode: provider).')
                     ->defaultNull()
                 ->end()
                 ->scalarNode('approver_provider')
-                    ->info('Service id implementing TimesheetApproverProviderInterface (required when enabled).')
+                    ->info('Service id implementing Timesheet\\TimesheetApproverPolicyInterface (required when enabled).')
                     ->defaultNull()
                 ->end()
                 ->enumNode('period')
@@ -1407,7 +1393,7 @@ final class Configuration implements ConfigurationInterface
             ->addDefaultsIfNotSet()
             ->children()
                 ->booleanNode('enabled')->info('GET me/meetings and the GET me meeting keys (default off).')->defaultFalse()->end()
-                ->scalarNode('provider')->info('Service id implementing MeetingProviderInterface (required when enabled).')->defaultNull()->end()
+                ->scalarNode('provider')->info('Service id implementing Meeting\\MeetingSourceInterface (required when enabled).')->defaultNull()->end()
                 ->integerNode('max_range_days')->info('Longest from-to range.')->defaultValue(14)->min(1)->max(14)->end()
                 ->integerNode('max_past_days')->info('How far back from may go (host retention: 7 days).')->defaultValue(1)->min(0)->max(7)->end()
                 ->integerNode('default_limit')->defaultValue(100)->min(1)->max(200)->end()
@@ -1437,37 +1423,5 @@ final class Configuration implements ConfigurationInterface
             ->end();
 
         return $node;
-    }
-
-    /**
-     * 1.8: the deprecated `templates.layout|index|reports` keys feed `web_ui.*` unless `web_ui` sets them (both stay
-     * readable; the 1.x default layout is not mapped, so it resolves to the UiKit admin layout).
-     *
-     * @param array<string, mixed> $config Raw configuration
-     *
-     * @return array<string, mixed>
-     */
-    private function mapDeprecatedTemplates(array $config): array
-    {
-        $templates = is_array($config['templates'] ?? null) ? $config['templates'] : [];
-        $webUi     = is_array($config['web_ui'] ?? null) ? $config['web_ui'] : [];
-        $pages     = is_array($webUi['templates'] ?? null) ? $webUi['templates'] : [];
-
-        $layout = $templates['layout'] ?? null;
-        if (is_string($layout) && $layout !== self::LEGACY_LAYOUT && !array_key_exists('layout_template', $webUi)) {
-            $webUi['layout_template'] = $layout;
-        }
-        foreach (['index', 'reports'] as $page) {
-            $template = $templates[$page] ?? null;
-            if (is_string($template) && !isset($pages[$page])) {
-                $pages[$page] = $template;
-            }
-        }
-        if ($pages !== []) {
-            $webUi['templates'] = $pages;
-        }
-        $config['web_ui'] = $webUi;
-
-        return $config;
     }
 }

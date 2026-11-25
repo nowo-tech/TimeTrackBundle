@@ -75,7 +75,7 @@ final class TimesheetAccessGuardTest extends TestCase
         self::assertSame(TimesheetActorRole::Admin, $this->guard->roleOf($this->admin, '7', 'org-a'));
 
         $view = $this->checks[0];
-        self::assertSame($this->approver, $view->getViewer());
+        self::assertSame($this->approver, $view->viewerRef()->user());
         self::assertSame('7', $view->getOwnerId());
         self::assertSame('org-a', $view->getScopeKey());
         self::assertSame(TimesheetAccessGuard::VIEW, $view->getAction());

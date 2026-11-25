@@ -7,8 +7,8 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\DependencyInjection;
 use App\Entity\User;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
-use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryResolver;
+use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryStoreInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\TimeEntryRetentionPolicy;
 use PHPUnit\Framework\TestCase;
@@ -26,9 +26,10 @@ final class ImportsExtensionTest extends TestCase
 
         self::assertSame(2_678_400, $container->getParameter('nowo_time_track.imports.max_entry_seconds'));
         self::assertFalse($container->getParameter('nowo_time_track.retention.include_imported'));
-        $imported = $container->getDefinition(ImportedTimeEntryRepositoryInterface::class);
-        self::assertFalse($container->hasAlias(ImportedTimeEntryRepositoryInterface::class));
-        self::assertSame([ImportedTimeEntryRepositoryResolver::class, 'resolve'], $imported->getFactory());
+        // 2.0: the service of the removed ImportedTimeEntryRepositoryInterface is gone; the framework-free store stays.
+        self::assertFalse($container->has('Nowo\\TimeTrackBundle\\Repository\\ImportedTimeEntryRepositoryInterface'));
+        $imported = $container->getDefinition(ImportedTimeEntryStoreInterface::class);
+        self::assertSame([ImportedTimeEntryRepositoryResolver::class, 'resolveStore'], $imported->getFactory());
         self::assertSame(TimeEntryRepositoryInterface::class, (string) $imported->getArgument(0));
         self::assertSame(2_678_400, $container->getDefinition(ImportedTimeEntryWriter::class)->getArgument('$maxEntrySeconds'));
         self::assertFalse($container->getDefinition(TimeEntryRetentionPolicy::class)->getArgument('$includeImported'));

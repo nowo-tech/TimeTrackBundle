@@ -9,7 +9,6 @@ use Doctrine\Common\Collections\Order as SortDirection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
@@ -37,11 +36,12 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     /**
      * Receives the entity manager, its registry and (since 1.27.0) the bundle's transaction runner.
      */
+    // @phpstan-ignore constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?TimeTrackTransactionRunner $runner = null,
-        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
+        ?object $hostFlushProbe = null,
     ) {
     }
 
@@ -51,7 +51,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function saveConnection(CalendarConnection $connection): void
     {
         $this->entityManager->persist($connection);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -163,7 +163,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function deleteConnection(CalendarConnection $connection): void
     {
         // @igor-ignore - Service coordinates I/O or request-scoped work; not unsafe worker singleton state.
-        ($this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe))->run(function () use ($connection): void {
+        ($this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry))->run(function () use ($connection): void {
             // ORM removals (not DQL deletes), so the identity map of a worker never keeps a deleted row.
             $suggestions = $this->entityManager->getRepository(CalendarSuggestion::class)->findBy(['connection' => $connection]);
             // Since 1.24.1 (REQ-SEC-006): only the rules of this scope key byte for byte (never a look-alike scope's).
@@ -207,7 +207,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
      */
     public function flushSuggestions(): void
     {
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -380,7 +380,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function saveRule(CalendarRule $rule): void
     {
         $this->entityManager->persist($rule);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -389,7 +389,7 @@ final readonly class DoctrineOrmCalendarRepository implements CalendarConnection
     public function removeRule(CalendarRule $rule): void
     {
         $this->entityManager->remove($rule);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**

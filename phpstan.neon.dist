@@ -7,6 +7,9 @@ parameters:
     paths:
         - src
         - tests
+    excludePaths:
+        # 2.0 W1-1 fixtures: classes that implement the removed host port interfaces on purpose (they cannot be loaded).
+        - tests/Fixtures/RemovedPorts/*
     scanFiles:
         - tests/phpstan-stubs/App/Entity/User.php
     ignoreErrors: []

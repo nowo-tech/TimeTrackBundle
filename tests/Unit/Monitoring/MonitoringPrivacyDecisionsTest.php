@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\Monitoring;
 
 use DateTimeImmutable;
+use Error;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Event\MonitoringPersonDetailViewedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
@@ -27,39 +28,23 @@ use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 use function json_encode;
-use function restore_error_handler;
-use function set_error_handler;
-
-use const E_USER_DEPRECATED;
+use function property_exists;
 
 /**
- * Since 1.41.0 (owner decisions D4 and D9 of the 2026-11-24 monitoring study): `windowTitles` frozen to false with a
- * deprecation notice, the purpose and team-view rules of the policy, the `GET me` block and the team-view guard.
+ * Since 1.41.0 (owner decisions D4 and D9 of the 2026-11-24 monitoring study): `windowTitles` gone (2.0; frozen to false
+ * with a deprecation notice in 1.41), the purpose and team-view rules of the policy, the `GET me` block and the team-view guard.
  */
 final class MonitoringPrivacyDecisionsTest extends TestCase
 {
-    public function testWindowTitlesAreFrozenToFalseWithANotice(): void
+    public function testWindowTitlesAreGoneFromThePolicyAndTheBlock(): void
     {
-        $notices = [];
-        // @phpstan-ignore frankenphp.worker.noSetErrorExceptionHandler (test only: restored in the finally block below)
-        set_error_handler(static function (int $level, string $message) use (&$notices): bool {
-            $notices[] = $message;
+        // 2.0 removed the argument, the property and the `GET me` key (deprecated and frozen to false in 1.41.0, D4).
+        self::assertFalse(property_exists(MonitoringPolicy::class, 'windowTitles'));
+        self::assertArrayNotHasKey('windowTitles', MonitoringContext::block(MonitoringFixtures::policy(), null));
 
-            return true;
-        }, E_USER_DEPRECATED);
-        try {
-            $titles = MonitoringFixtures::policy(overrides: ['windowTitles' => true]);
-            $plain  = MonitoringFixtures::policy(overrides: ['windowTitles' => false]);
-        } finally {
-            restore_error_handler();
-        }
-
-        self::assertFalse($titles->windowTitles);
-        self::assertFalse($plain->windowTitles);
-        self::assertCount(1, $notices, 'only a true value is reported');
-        self::assertStringContainsString('"windowTitles" argument', $notices[0]);
-        self::assertStringContainsString('2.0 removes it', $notices[0]);
-        self::assertFalse(MonitoringContext::block($titles, null)['windowTitles']);
+        $this->expectException(Error::class);
+        $this->expectExceptionMessage('Unknown named parameter $windowTitles');
+        MonitoringFixtures::policy(overrides: ['windowTitles' => false]);
     }
 
     public function testTheBlockPublishesThePurposeAndTheTeamView(): void

@@ -2,8 +2,14 @@
 
 ## Table of contents
 
-- [Preparing for 2.0](#preparing-for-20)
-- [Unreleased](#unreleased)
+- [To 2.0.0](#to-200)
+  - [Before you upgrade](#before-you-upgrade)
+  - [What changes](#what-changes)
+  - [Removed](#removed)
+  - [Composer](#composer)
+  - [Private manager only](#private-manager-only)
+  - [Host checklist](#host-checklist)
+  - [1.x support](#1x-support)
 - [To 1.41.0](#to-1410)
   - [Window titles are never collected (D4)](#window-titles-are-never-collected-d4)
   - [Team views: project aggregates unless billing evidence (D9)](#team-views-project-aggregates-unless-billing-evidence-d9)
@@ -111,31 +117,206 @@
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
 
-## Preparing for 2.0
+## To 2.0.0
 
-2.0 contains only the breaks announced in 1.x as deprecations; nothing else changes without a notice first. From 1.33
-every one of them triggers a runtime deprecation notice when your application uses it, so an application whose
-deprecation log is free of `nowo-tech/time-track-bundle` notices on the last 1.x minor upgrades without code changes:
+From **1.41.0** (a major version: widen your constraint):
 
-| 1.x | 2.0 | Notice since |
+```bash
+composer require nowo-tech/time-track-bundle:^2.0 -W
+```
+
+2.0 contains only changes that 1.x announced through deprecation notices: an application that runs the last 1.x
+minor without deprecation notices from this bundle upgrades without code changes. After 2.0.0 is released, the 1.x
+line receives security fixes for 6 months: fixes rated Moderate and above are backported to the last 1.x minor;
+Low ones are fixed in 2.x only.
+
+No schema change, no new requirement: the same PHP, Symfony, Doctrine and database ranges as 1.41.0.
+
+### Before you upgrade
+
+On 1.41.0 (the last 1.x minor), run your test suite and a deploy cycle of production traffic with the deprecation log on, and clear every
+notice of `nowo-tech/time-track-bundle`:
+
+1. **The private entity manager notice** (container build, 1.33.0):
+
+   > nowo_time_track.database.private_entity_manager is false (the 1.x default): every TimeTrack write flushes your
+   > entity manager "default", including what your application left pending in it. 2.0 removes the option: ...
+
+   Set `nowo_time_track: { database: { private_entity_manager: true } }` on 1.41 once the host-flush probe below
+   reports nothing; the notice and the probe are then gone.
+2. **The host-flush probe** (per request, 1.33.0; see [Reading the host-flush probe as a migration list](#reading-the-host-flush-probe-as-a-migration-list)):
+   every "Your pending changes to App\X were flushed by NowoTimeTrackBundle; 2.0 no longer does.", every "Your
+   application inserted / updated / deleted Nowo\TimeTrackBundle\Entity\... rows with its own entity manager" and
+   every "Your application ... rows that point at a Nowo\TimeTrackBundle\Entity\... instance" line is one item to
+   migrate. Each one is a change that 2.0 silently no longer stores.
+3. **Port interfaces** (container build, 1.33.0): "The service "app.x" (App\X) implements the deprecated ..., which
+   2.0 removes: implement ... instead". See [Removed](#removed) for the twin of each interface.
+4. **Event and result members** (when called, 1.33.0): "...::getUser() is deprecated since 1.23.0 and 2.0 removes it:
+   read userRef() instead (or the 1.18 getUserId())." (and `getViewer()`).
+5. **`RecoveringFlusher::resetIfClosed()`** (when called, 1.33.0): drop the call.
+6. **Client API** (1.33.0): "A client called "POST /api/time-track/heartbeat" ..." and "... "GET
+   /api/time-track/entries" with "userId" ..." (per request: update the client), and, with the client API on,
+   ""*" in clients.cors_allowed_origins" and "client_api.allow_tauri_webview_origins is true (the 1.x default)"
+   (container build: set `client_api.allow_tauri_webview_origins: false` and list exact origins).
+7. **Templates** (when rendered): "the template "@NowoTimeTrackBundle/layout.html.twig" ... is deprecated since 1.8"
+   (1.33.0), "The TimeTrack layout "..." does not render the UiKit canonical blocks" (1.8) and "Rendering the "..."
+   dialog form of the TimeTrack ... inline (options.action_urls without options.dialog_urls...)" (1.39.0).
+8. **Configuration** (container build): the `templates.*` keys (1.8), `clients.cors_allow_any_extension_origin` (1.9)
+   and `security.manager_can_edit_entries` (1.5).
+9. **Monitoring policy** (when built, 1.41.0): "The "windowTitles" argument of ...MonitoringPolicy is ignored ...":
+   stop passing `windowTitles` to `MonitoringPolicy` (also `windowTitles: false`, which 1.41 accepts silently and 2.0
+   refuses as an unknown named parameter), and stop reading `$policy->windowTitles`.
+
+### What changes
+
+| Setting | 1.x | 2.0 |
 |---|---|---|
-| `database.private_entity_manager: false` (the 1.x default) | removed: the private entity manager is the only mode | 1.33 (container build) + the host-flush probe |
-| The 15 host port interfaces with a 1.23 twin, the profile extras and the entry store interfaces ([list](#framework-free-host-ports-optional-until-20)) | removed: implement the twin | 1.33 (container build) |
-| `getUser()` / `getViewer()` of the timer, idle, access-check and list-query events, `ClientAuthResult::getUser()` | removed: `userRef()` / `viewerRef()` | 1.33 (when called) |
-| `RecoveringFlusher::resetIfClosed()` | removed (a no-op since 1.27.0) | 1.33 (when called) |
-| `POST /api/time-track/heartbeat`, `GET /api/time-track/entries?userId=` | removed | 1.33 (per request) |
-| `"*"` in `clients.cors_allowed_origins`, `client_api.allow_tauri_webview_origins: true` (the 1.x default) | removed: exact origins only | 1.33 (container build, client API on) |
-| `clients.cors_allow_any_extension_origin`, the `templates.*` keys, `security.manager_can_edit_entries` | removed | when set (1.5 / 1.8 / 1.9) |
-| `@NowoTimeTrackBundle/layout.html.twig`, `_legacy_layout.html.twig` | removed: the UiKit layout | 1.33 / 1.8 (when rendered) |
-| `MonitoringPolicy` `windowTitles` (argument and property), `GET me.monitoring.windowTitles` | removed (always false since 1.41) | 1.41 (argument `true`) |
-| Inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` (`action_urls` without `dialog_urls`) | removed: pass `dialog_urls` (pages served by `TimesheetDialogResponder`) | 1.39 (when rendered) |
+| `database.private_entity_manager` | `false` (unset): TimeTrack wrote through your manager | removed: the private manager is the only mode. Unset or `true` (a deprecated no-op, removed in 3.0) is fine; `false` fails the container build |
+| `client_api.allow_tauri_webview_origins` | `true` (unset): `tauri://localhost`, `http(s)://tauri.localhost` allowed | removed: those origins are never allowed. Unset or `false` (a deprecated no-op) is fine; `true` fails the build. `ClientApiSettings::$allowTauriWebviewOrigins` is ignored (default `false`) |
+| `clients.cors_allow_any_extension_origin` | `false` | removed: unset or `false` (a deprecated no-op) is fine; `true` fails the build |
+| `"*"` in `clients.cors_allowed_origins` | any origin outside prod | fails the build: list exact origins (`client_api.allowed_origins`) |
+| `security.manager_can_edit_entries` | `true` | removed: managers may edit (`TeamAccessGuard::canEditEntry()`); refuse them in a `nowo_time_track.time_entry.access_check` listener. `true` is a deprecated no-op; `false` fails the build |
+| `GET entries?userId=` | another team member's entries (team guard) | `userId` is ignored: the caller's own entries |
+| `POST heartbeat` | the running timer, `Deprecation: true` | removed (404). `clients.routes.heartbeat` or `heartbeat` in `client_api.routes.include` fail the build |
+| `templates.layout`, `templates.css_framework`, `templates.index`, `templates.reports` | fed `web_ui.*` and seeded UiKit | removed: any `templates` key fails the build. Use `web_ui.layout_template`, `web_ui.templates.index` / `.reports` and `nowo_ui_kit.css_framework`. Without `nowo_ui_kit.css_framework` / `icon_set` the bundle still seeds `tabler` / `tabler-icons` |
+| `web_ui.layout_template` without the UiKit page header block | wrapped in `_legacy_layout.html.twig` | the page fails with a `LogicException` naming the layout: render the canonical blocks (`nowo_ui_page_header`, `nowo_ui_content`, ...) or unset it and set `nowo_ui_kit.layouts.admin` |
+| `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` with `action_urls` of a dialog action and no `dialog_urls` | inline dialog forms | the render fails with a `LogicException`: pass `options.dialog_urls` (pages served by `TimesheetDialogResponder`, see [To 1.39.0](#to-1390)) |
 
-The installed-client API aliases stay in 2.0: they are not deprecated.
+### Removed
 
-The 1.x line gets security fixes for 6 months after the 2.0.0 tag: Moderate and higher are backported to the last 1.x
-minor; Low ones are fixed in 2.x only (upgrade to get them).
+| Removed | Deprecated since | Use instead |
+|---|---|---|
+| `Integration\TaskProviderInterface` / `BatchTaskProviderInterface` | 1.23.0 | `Integration\TaskDirectoryInterface` / `BatchTaskDirectoryInterface` (`task_provider`) |
+| `Integration\TeamContextProviderInterface` | 1.23.0 | `Integration\TeamDirectoryInterface` (`team_context_provider`) |
+| `Integration\UserReferenceResolverInterface` (alias) | 1.23.0 | alias `Integration\UserReferenceProviderInterface` to your service |
+| `Timesheet\TimesheetScopeProviderInterface` | 1.23.0 | `Timesheet\TimesheetScopePolicyInterface` (`timesheets.scope_provider`) |
+| `Timesheet\TimesheetApproverProviderInterface` | 1.23.0 | `Timesheet\TimesheetApproverPolicyInterface` (`timesheets.approver_provider`) |
+| `Calendar\TaskKeyResolverInterface` | 1.23.0 | `Calendar\TaskKeyLookupInterface` (`calendar.task_key_resolver`) |
+| `Calendar\CalendarCredentialProviderInterface` | 1.23.0 | `Calendar\CalendarCredentialSourceInterface` (`calendar.credential_provider`) |
+| `Meeting\MeetingProviderInterface` | 1.23.0 | `Meeting\MeetingSourceInterface` (`meetings.provider`) |
+| `Workday\WorkdayProviderInterface` | 1.23.0 | `Workday\WorkdaySourceInterface` (`client_api.workday_provider`) |
+| `Client\IdleCheckSettingsProviderInterface` | 1.23.0 | `Client\IdleCheckSettingsPolicyInterface` (`client_api.idle_check.provider`) |
+| `Client\ClientCredentialIssuerInterface` | 1.23.0 | `Client\ClientCredentialMinterInterface` (`client_api.credential_issuer`) |
+| `Security\TaskAccessCheckerInterface` | 1.23.0 | `Security\TaskAccessPolicyInterface` (`client_api.task_access_checker`) |
+| `Client\ClientUserProfileProviderInterface` and the extras `ClientUserLocaleProviderInterface`, `ClientUserDaysOffProviderInterface`, `ClientUserPrivacyProviderInterface` | 1.23.0 | `Client\ClientUserProfileSourceInterface` and `ClientUserLocaleSourceInterface`, `ClientUserDaysOffSourceInterface`, `ClientUserPrivacySourceInterface` on the same service (`client_api.profile_provider`) |
+| `WorkingTime\WorkingCalendarProviderInterface` | 1.23.0 | `WorkingTime\WorkingCalendarSourceInterface` (`working_time.calendar_provider`) |
+| `WorkingTime\WorkedTimeSourceInterface` | 1.23.0 | `WorkingTime\WorkedTimeRecordInterface` (`working_time.worked_time_source`) |
+| `Repository\ImportedTimeEntryRepositoryInterface`, `FilteredImportedTimeEntryRepositoryInterface` (and the service of the first id, `ImportedTimeEntryRepositoryResolver::resolve()`) | 1.23.0 | `Repository\ImportedTimeEntryStoreInterface`, `FilteredImportedTimeEntryStoreInterface` (`resolveStore()`) on your `TimeEntryRepositoryInterface` service. A store on the twins is never asked to re-attach the user after a failed save |
+| `Repository\EntryOwnersRepositoryInterface` | 1.23.0 | `Repository\EntryOwnerRefsRepositoryInterface` |
+| `getUser()` of `TimerStartEvent`, `TimerStopEvent`, `IdleResolvedEvent`, `TimeEntryAccessCheckEvent`, `TaskEffortAccessCheckEvent`; `getViewer()` of `TimesheetAccessCheckEvent`, `TimeEntryListQueryEvent`; `ClientAuthResult::getUser()` | 1.23.0 | `userRef()` / `viewerRef()` (the object through `->user()`), or `getUserId()` / `getViewerId()` |
+| `RecoveringFlusher::resetIfClosed()` | 1.27.0 | nothing (drop the call) |
+| `POST /api/time-track/heartbeat` (and `/v1/heartbeat`), `clients.routes.heartbeat` | 1.9 | `timer/discard-idle` (the 1.9+ clients never call it) |
+| `templates.*`, the parameters `nowo_time_track.templates`, `nowo_time_track.templates.layout`, `nowo_time_track.templates.css_framework`, the Twig globals `nowo_time_track_layout`, `nowo_time_track_css_framework` with the constants `TimeTrackTwigExtension::GLOBAL_LAYOUT` / `GLOBAL_CSS_FRAMEWORK` (`TimeTrackTwigExtension` no longer implements `GlobalsInterface`; reading a constant is an "Undefined constant" error), `Configuration::LEGACY_LAYOUT`, `TimeTrackPages::LEGACY_LAYOUT_BRIDGE` | 1.8 | `web_ui.layout_template`, `web_ui.templates.*`, `nowo_ui_kit.css_framework`, `nowo_ui_layout.admin` |
+| `@NowoTimeTrackBundle/layout.html.twig`, `@NowoTimeTrackBundle/_legacy_layout.html.twig` | 1.8 | extend `nowo_ui_layout.admin` (or your layout) and fill the UiKit blocks |
+| The inline dialog forms of `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` | 1.39.0 | `options.dialog_urls` |
+| The client prototypes `desktop/` and `extension/` of this repository (not part of the PHP package API) | (2.0, audit ZBH-L1) | the clients [time-track-desktop](https://github.com/nowo-tech/time-track-desktop) and [time-track-extension](https://github.com/nowo-tech/time-track-extension) |
+| The 1.33 host-flush probe (`Doctrine\TimeTrackHostFlushProbe`, internal) and its notices | (2.0) | nothing: the private manager never flushes your manager |
+| `MonitoringPolicy` `windowTitles` (constructor argument and property), the `windowTitles` key of `GET me.monitoring` | 1.41.0 | nothing: window titles are never collected (D4); clients read a missing key as `false` |
 
-## Unreleased
+**Host port interfaces.** A service of yours that still uses a removed interface fails the container build with a
+message that names the service, the interface and its twin, whatever the way it is wired: configured (`task_provider:
+App\X`), aliased or decorated under the removed id (`#[AsAlias]`, `#[AsDecorator]`, also with `onInvalid: IGNORE`), or
+an autodiscovered class that implements it (which Symfony would otherwise drop silently, leaving TimeTrack on its
+default: the stub task provider, the single scope, the task provider as access check). There is no replacement hook
+for a decorator of a removed id: decorate the service you configured, or implement the twin. Ports are asked with
+`ValueObject\TimeTrackUserRef` (class, id, identifier, roles; your object through `user()`): compare users with
+`isSameUserAs()`, and build references with `Port\TimeTrackUserRefFactory`. The bundle's own defaults implement
+internal interfaces (`Nowo\TimeTrackBundle\Port\Internal\*`): they are not ports, and a class of yours on one of them
+is refused like any other class that does not implement the twin. Code that injected a port by its 1.x id (for example
+`Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface`) injects the twin id instead
+(`Timesheet\TimesheetScopePolicyInterface`): the configured service is registered, public, under it, and TimeTrack
+itself asks the port through that id, so a decorator of it (`#[AsDecorator(TimesheetScopePolicyInterface::class)]`)
+applies to TimeTrack and to every bundle that injects the id alike. If your application defines the twin id itself, it
+must end at the service configured for the port (the same one): pointing it at another service fails the container
+build (TimeTrack and the other bundles would ask different services). The twin id is **not** registered by TimeTrack
+when your application defined it (then your definition is used, as said), and when the configured service's class
+cannot be known before compilation (a factory or a synthetic service): define the twin id yourself in that case. The
+batch task directory (`BatchTaskDirectoryInterface`) gets the twin id too, but TimeTrack asks it directly (a decorator
+of `TaskDirectoryInterface` is not applied to TimeTrack's batch calls).
+
+**Constructor arguments kept, ignored** (deprecated, removed in 3.0): `$hostFlushProbe` of `TimeTrackTransactionRunner`
+and of the Doctrine stores, the third argument of `RecoveringFlusher::flush()`, `$logger` of
+`TimeTrackTransactionRunner`, `$kernelEnvironment` / `$allowAnyExtensionOrigin` of `ClientResponseFactory`,
+`$allowTauriWebviewOrigins` of `ClientApiSettings` / `ConfigClientApiSettingsProvider`, `$teamAccessGuard` /
+`$idleThresholdSeconds` of `TimeTrackClientApiController`, `$layoutTemplate` / `$cssFramework` of
+`TimeTrackTwigExtension`. `TimeTrackPages::layoutContext()` returns `[]`; `Configuration::CSS_FRAMEWORKS` and
+`ClientResponseFactory::TAURI_WEBVIEW_ORIGINS` stay as deprecated constants.
+
+### Composer
+
+Nothing moves: the same `require` as 1.41 (`nowo-tech/transaction-doctrine` `^1.9.1` stays, the probe is simply no
+longer used).
+
+### Private manager only
+
+TimeTrack reads and writes its rows (entries, timers, timesheets and their events, ledger lines, client tokens, device
+codes, calendar and monitoring rows) only through its private entity manager (`TimeTrackEntityManager`), created on
+the connection, mapping and listeners of `database.entity_manager` (your `default` manager unless you changed it). The
+tables, the connection and the mapping do not move; your transaction around a TimeTrack call still includes its rows
+(savepoints). TimeTrack never flushes, clears, closes, resets or detaches your manager, and the private manager is
+dropped at every request, Messenger message and console command boundary (FrankenPHP worker mode with kernel reset off
+included). What breaks:
+
+- **Your pending changes are no longer flushed by TimeTrack.** A change of yours that was only stored because a
+  TimeTrack write flushed your manager is no longer stored: typically in a listener of a TimeTrack event, in a port of
+  yours, or in code that changes an entity and then calls a TimeTrack service. Flush your manager yourself. These are
+  exactly the "flushed by NowoTimeTrackBundle" lines of the 1.33 probe.
+- **The reverse, which the probe cannot see: TimeTrack rows are not saved by your flush.** A TimeTrack row you loaded
+  through a TimeTrack service or repository belongs to the private manager: change it, then flush **your** manager,
+  and nothing is written (the private manager drops it at the boundary, with a warning that lists the entity classes).
+  Change TimeTrack rows through TimeTrack's services (`TimesheetService`, `TimerService`, `BalanceLedger`,
+  `TimeEntryBillableService`, `ClientTokenRevoker`, ...; see the table in [To 1.33.0](#reading-the-host-flush-probe-as-a-migration-list)),
+  or through its repositories with rows loaded through them, or through `Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager`
+  and flush that one. **Erasure and retention:** after `TimeTrackPersonalDataInterface::erase()` (or a retention purge)
+  drop the copies of TimeTrack rows your own manager holds (`detach()` them, or end the unit of work): a later flush of
+  yours that changed a field on such a copy would write it back onto the anonymised row (GDPR art. 17). TimeTrack no
+  longer detaches them for you.
+- **Runners and stores you build by hand** get `Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager` and
+  `TimeTrackManagerRegistry`, never your manager: a `TimeTrackTransactionRunner` (or a TimeTrack Doctrine store) built
+  with another manager refuses each unit of work with a `LogicException`. The `nowo_time_track.transaction_runner`
+  service and the stores of the container are already wired this way.
+- **A port of yours that only changed a managed TimeTrack row** (a custom time entry store, a decorator of a TimeTrack
+  repository) must commit its own change: TimeTrack no longer flushes the manager it shares with you.
+- **TimeTrack rows your manager loaded are refused by TimeTrack's stores.** Handing an entry, timer or timesheet that
+  your manager loaded (`$em->find()`, a route `EntityValueResolver`, a query of yours) to `TimeEntryRepositoryInterface::save()`
+  or another TimeTrack write fails with a `LogicException` ("was loaded by another entity manager") instead of
+  inserting it a second time. Pass ids to TimeTrack's services, or load the row through TimeTrack.
+- **Your rows that point at a TimeTrack row reference it by id.** `new TimerAutoStop($user, $entityManager->getReference(TimeEntry::class, $entry->getId()), ...)`:
+  the instance a TimeTrack service returned is unknown to your manager, which would try to insert it. An instance your
+  manager loaded itself stays valid.
+- **Your users stay yours.** TimeTrack writes its rows with its own reference to the same user row (`getUser()` of a
+  TimeTrack row is that reference: compare users by id, `getUserId()`). A user you persisted but did not flush yet
+  fails the TimeTrack call with a `LogicException` ("flush your ... first") and nothing is written.
+- `$yourManager->getRepository(TimeEntry::class)` still works on your manager (reads). Rows you write with SQL or your
+  manager are seen by TimeTrack from the next request, message or command on.
+- With doctrine/dbal 3 the rollback middleware is not registered: after a rollback the private manager is only
+  replaced at the next boundary. Your SQL filters are mirrored on the private manager with their parameters only.
+
+### Host checklist
+
+Search your application for each item; every hit is a change to make on 1.41 (where it works and notices tell you) or
+in the 2.0 bump.
+
+| Search your code / config for | Change |
+|---|---|
+| `persist(new TimeEntry(` / `ActiveTimer` / `ClientToken` / `Timesheet` ... with your manager, `remove($token)` of a TimeTrack row | the TimeTrack operation: `TimeEntryOperationsInterface::createManual()` / `correct()`, `ManualEntryService::create()`, `ClientTokenRevoker::revokeSession()` / `revokeAllForUser()` / `revokeByCredential()`, `TimeTrackPersonalDataInterface::erase()` |
+| A TimeTrack row loaded with your manager (`$em->getRepository(TimeEntry::class)->find…`, a route value resolver) handed to a TimeTrack service (`TimeEntryBillableService::change()`, a store `save()`) | pass the id (`TimeEntryBillableService::changeById()`, the `…ById` / id-based operations) or load it through TimeTrack (`TimeEntryBillableService::find()`) |
+| An entity of yours with a Doctrine relation to a TimeTrack row, filled with an instance a TimeTrack service returned | `$em->getReference(TimeEntry::class, $id)`, or store the id in a plain column |
+| A Doctrine `onFlush` / `postFlush` listener of yours that reacts to TimeTrack rows | it now runs on TimeTrack's private manager flush (same connection, mapping and listeners): it must not rely on your manager's unit of work there |
+| `database.private_entity_manager` | drop the line (`false` fails the build; `true` is a no-op) and the deprecation-log allowance for its 1.33 notice |
+| `heartbeat` in `client_api.routes.include`, `clients.routes.heartbeat` | remove it |
+| `client_api.allow_tauri_webview_origins`, `clients.cors_allow_any_extension_origin`, `"*"` in `clients.cors_allowed_origins` | remove (`false` is a deprecated no-op until 3.0; `true` / `"*"` fail the build) |
+| `templates:` under `nowo_time_track`, `security.manager_can_edit_entries` | remove (see [What changes](#what-changes)) |
+| The 22 removed interfaces ([Removed](#removed)) in `implements`, `#[AsAlias]`, `#[AsDecorator]`, constructor types | the 1.23 twin |
+| `->getUser()` / `->getViewer()` on TimeTrack events and `ClientAuthResult` | `userRef()` / `viewerRef()` (or `getUserId()` / `getViewerId()`) |
+| `windowTitles` (`new MonitoringPolicy(…, windowTitles: …)`, `$policy->windowTitles`, a client reading `GET me.monitoring.windowTitles`) | drop it; a missing key means `false` |
+| `ClientApiSettings` built by hand with `$allowTauriWebviewOrigins` | still accepted and ignored (deprecated, removed in 3.0): pass `false` or use named arguments without it |
+| `RecoveringFlusher::resetIfClosed()`, `@NowoTimeTrackBundle/layout.html.twig`, `TimeTrack:LedgerTable` / `TimeTrack:TimesheetWeekGrid` without `dialog_urls` | see [Removed](#removed) |
+
+### 1.x support
+
+The 1.x line (from 1.40) receives security fixes for 6 months after 2.0.0: Moderate and higher are backported to the
+last 1.x minor; Low ones are fixed in 2.x only (upgrade to get them).
 
 ## To 1.41.0
 

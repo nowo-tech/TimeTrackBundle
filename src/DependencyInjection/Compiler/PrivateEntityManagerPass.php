@@ -19,13 +19,13 @@ use function preg_match;
 use function sprintf;
 
 /**
- * Private entity manager wiring (1.23.0, REQ-ARCH-001 rule 6, `database.private_entity_manager: true`): attaches
+ * Private entity manager wiring (1.23.0, REQ-ARCH-001 rule 6; always registered since 2.0): attaches
  * {@see PrivateEntityManagerMiddleware} only to the connection of the source manager (`database.entity_manager`, the
  * first argument of its definition; the default connection when it cannot be read). The host's other connections are
  * never wrapped, and the middleware and the private manager ({@see TimeTrackEntityManager}) always see the same
  * connection.
  *
- * Runs before DoctrineBundle's MiddlewaresPass. Nothing happens without the option (the services are not registered).
+ * Runs before DoctrineBundle's MiddlewaresPass. Nothing happens when the middleware is not registered (doctrine/dbal 3).
  *
  * @internal
  */

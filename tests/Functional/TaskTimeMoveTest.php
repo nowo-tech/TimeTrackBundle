@@ -29,7 +29,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
 use Nowo\TimeTrackBundle\Timesheet\Period;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetSnapshotBuilder;
-use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\MockObject\Stub;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -106,7 +105,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
 
         self::assertSame($before, $conn->fetchAllAssociative(sprintf('SELECT %s FROM time_track_entries ORDER BY id', self::COLUMNS)));
         self::assertSame(3, (int) $conn->fetchOne("SELECT COUNT(*) FROM time_track_entries WHERE board_id_snapshot = 'board-b' AND scope_key = 'tenant-b'"));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         foreach ($this->entityManager()->getRepository(TimeEntry::class)->findAll() as $entry) {
             self::assertSame($entry->getSource() === TimeEntrySource::Import, $entry->isReadOnly());
         }
@@ -166,7 +165,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         $this->timesheet($this->user, 'tenant-a', '2026-W05')->applyApprove(new DateTimeImmutable('2026-02-02 08:00:00'), 'approver', 'hash', null);
         $this->timesheet($this->user, 'tenant-b', '2026-W02')->applySubmit(new DateTimeImmutable('2026-01-12 08:00:00'), (string) $this->user->getId(), 'hash', null);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $result = $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b');
 
@@ -207,7 +206,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertSame([2, 0, 5400], [$result->moved, $result->keptCount(), $result->secondsMoved]);
         self::assertSame(['board-b', 'tenant-a'], $this->boardAndScope($locked));
         self::assertSame(['board-b', 'tenant-a'], $this->boardAndScope($approved));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame($before, [$this->snapshot('2026-W01'), $this->snapshot('2026-W05')]);
     }
 
@@ -323,7 +322,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertSame(1, $before[1]['entries']);
 
         $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         // Audit ID-I1: a snapshot taken before the move no longer matches, which is approve()'s `stale` refusal.
         self::assertNotSame($before[0], $this->snapshot('2026-W06')[0]);
@@ -353,7 +352,6 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertSame([$id], $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b')->keptIds(TaskTimeKeptReason::SourcePeriodLocked));
     }
 
-    #[Group('shared-entity-manager')]
     public function testRunningTimersFollowTheTask(): void
     {
         $other = $this->createUser('other@example.com');
@@ -368,7 +366,8 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         $result = $this->mover()->moveTasks(['task-1', 'task-2'], 'board-b', 'tenant-b');
 
         self::assertSame(2, $result->timersMoved);
-        self::assertFalse($em->contains($timer), 'a loaded timer is detached');
+        // 2.0 (W1-2): TimeTrack never detaches what the application's manager holds; its stale copy is not written back.
+        self::assertTrue($em->contains($timer), 'the application\'s manager is left alone');
         $em->flush();
         $conn = $em->getConnection();
         self::assertSame(['board-b'], array_map(strval(...), $conn->fetchFirstColumn("SELECT board_id_snapshot FROM time_track_active_timers WHERE task_id = 'task-1'")));
@@ -380,8 +379,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         self::assertNull($conn->fetchOne("SELECT board_id_snapshot FROM time_track_active_timers WHERE task_id = 'task-1'"));
     }
 
-    #[Group('shared-entity-manager')]
-    public function testALoadedEntryIsDetachedAndAFlushDoesNotWriteItBack(): void
+    public function testAnEntryTheApplicationLoadedStaysItsOwnAndAFlushDoesNotWriteItBack(): void
     {
         $id    = $this->entry('task-1', '2026-02-02 09:00:00', 3600);
         $em    = $this->entityManager();
@@ -391,7 +389,7 @@ final class TaskTimeMoveTest extends FunctionalTestCase
         $this->mover()->moveTasks(['task-1'], 'board-b', 'tenant-b');
         $em->flush();
 
-        self::assertFalse($em->contains($entry));
+        self::assertTrue($em->contains($entry), '2.0 (W1-2): never detached from the application\'s manager');
         self::assertSame(['board-b', 'tenant-b'], $this->boardAndScope($id));
     }
 

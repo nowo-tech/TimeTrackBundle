@@ -10,7 +10,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackRows;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -27,11 +26,12 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
     /**
      * Receives the entity manager, its registry and (since 1.27.0) the bundle's transaction runner.
      */
+    // @phpstan-ignore constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         private ?TimeTrackTransactionRunner $runner = null,
-        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
+        ?object $hostFlushProbe = null,
     ) {
     }
 
@@ -48,7 +48,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
     public function save(ActiveTimer $timer): void
     {
         if ($this->entityManager->contains($timer)) {
-            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+            RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
 
             return;
         }
@@ -64,7 +64,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
     public function remove(ActiveTimer $timer): void
     {
         $this->entityManager->remove($timer);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -132,7 +132,7 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
      */
     public function runner(): TimeTrackTransactionRunner
     {
-        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -140,6 +140,11 @@ final readonly class DoctrineOrmActiveTimerRepository implements ConditionalActi
      */
     public function findByUserId(string $userId): ?ActiveTimer
     {
+        if ($userId === '') {
+            // A user without an id (persisted but not flushed yet) has no timer; the write that follows refuses it
+            // clearly (TimeTrackEntityManager, W1-2) instead of a database type error on the empty id.
+            return null;
+        }
         /** @var ActiveTimer|null $timer */
         $timer = $this->entityManager->createQueryBuilder()
             ->select('t')

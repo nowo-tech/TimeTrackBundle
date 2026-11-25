@@ -47,9 +47,10 @@ final class FormerPersonSnapshotListener implements ResetInterface
 
     /**
      * @param class-string $userClass `user_class`
-     * @param TimeTrackEntityManager|null $privateEntityManager Since 1.23.0 (`database.private_entity_manager`): dropped
-     *                                                          after a user's entries were settled, so no entry it loaded
-     *                                                          keeps pointing at the deleted user
+     * @param TimeTrackEntityManager|null $privateEntityManager TimeTrack's private entity manager (the only mode since 2.0;
+     *                                                          the container always passes it; null only when built by
+     *                                                          hand): dropped after a user's entries were settled, so no
+     *                                                          entry it loaded keeps pointing at the deleted user
      */
     public function __construct(
         private readonly FormerPersonTimeEntries $entries,

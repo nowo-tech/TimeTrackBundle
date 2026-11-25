@@ -27,7 +27,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\HostFlushListener;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
-use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -49,13 +48,13 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         $writer = $this->writer();
         $writer->upsert(new ImportedTimeEntryClaim($this->user, 'p-1', 'org-a'), $this->data('e-1', 'Secret note'));
         $writer->upsert(new ImportedTimeEntryClaim($this->user, 'p-1', 'org-a'), $this->data('e-2', null, 1800));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $before = $this->reload('e-1');
         $id     = $before->getId();
 
         $result = $writer->moveToPerson(self::SOURCE, $this->managedUser(), new ImportedTimeEntryPerson('p-1', "Ana\nRuiz", 'org-a'), actorId: 'manager-1');
         self::assertSame([2, 0, 0, 5400], [$result->moved, $result->keptLocked, $result->refusedScope, $result->secondsMoved]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
         self::assertNull($entry->getUser());
         self::assertSame('Ana Ruiz', $entry->getPersonName());
@@ -78,7 +77,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         $event = $this->lastEvent();
         self::assertSame('p-1', $event->getFromPersonRef());
         self::assertSame((string) $this->user->getId(), $event->getToUserId());
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
         self::assertSame($this->user->getId(), $entry->getUser() instanceof AppUser ? $entry->getUser()->getId() : null);
         self::assertNull($entry->getPersonRef());
@@ -93,7 +92,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         $writer->upsert($this->user, $this->data('e-1'));
 
         self::assertSame(1, $writer->moveBetweenUsers(self::SOURCE, $this->user, $other)->moved);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $owner = $this->reload('e-1')->getUser();
         self::assertInstanceOf(AppUser::class, $owner);
         self::assertSame($other->getId(), $owner->getId());
@@ -115,7 +114,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         $person = new ImportedTimeEntryPerson('p-1', 'Ana');
         self::assertSame(1, $writer->moveToPerson(self::SOURCE, $this->user, $person, ['named', 'theirs'])->moved);
         self::assertSame(0, $writer->moveToPerson(self::SOURCE, $this->user, $person, [])->moved);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNull($this->reload('named')->getUser());
         self::assertNotNull($this->reload('mine')->getUser());
         self::assertNotNull($this->reload('theirs')->getUser());
@@ -135,7 +134,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertSame([0, 2], [$result->moved, $result->refusedScope], 'another tenant, and a row with none');
         $result = $writer->moveToPerson(self::SOURCE, $this->user, new ImportedTimeEntryPerson('p-1', 'Ana'));
         self::assertSame([1, 1], [$result->moved, $result->refusedScope], 'no scope moves only the row with none');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNull($this->reload('none')->getScopeKey(), 'the scope is never rewritten');
 
         self::assertSame(1, $writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($this->managedUser(), 'p-2', 'org-b'))->refusedScope);
@@ -154,7 +153,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         $ref = FormerPersonTimeEntries::personRefOf($this->user);
 
         self::assertSame(1, $writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($other, $ref))->refusedScope);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNull($this->reload('e-1')->getUser());
         self::assertSame(1, $writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($this->managedUser(), $ref))->moved);
     }
@@ -186,7 +185,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
                 $this->addToAssertionCount(1);
             }
         }
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNotNull($this->reload('e-1')->getUser());
     }
 
@@ -205,7 +204,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         } catch (RuntimeException $exception) {
             self::assertSame('after the move', $exception->getMessage());
         }
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNotNull($this->reload('e-1')->getUser());
     }
 
@@ -243,7 +242,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertSame([0, 1], $this->counts($writer->moveBetweenUsers(self::SOURCE, $this->user, $outsider)));
         self::assertSame([0, 1], $this->counts($writer->moveToUser(self::SOURCE, new ImportedTimeEntryClaim($outsider, 'p-1'))));
         $this->assertMismatchOf('person', fn (): mixed => $writer->upsert(new ImportedTimeEntryClaim($outsider, 'p-1'), $this->data('person')));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertTrue($this->reload('person')->isOwnerless());
 
         $member = $this->entityManager()->find(AppUser::class, $member->getId());
@@ -272,12 +271,11 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
             }
         }
         self::assertSame(1, $writer->moveToPerson(self::SOURCE, $this->user, $person, ['12'])->moved, '12 is not 12abc');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNotNull($this->reload('12abc')->getUser());
         self::assertNull($this->reload('12')->getUser());
     }
 
-    #[Group('shared-entity-manager')]
     public function testSettlingNeverOverwritesAnOwnerFoundMeanwhile(): void
     {
         $other  = $this->createUser('other@example.com');
@@ -295,7 +293,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
 
         $people->anonymiseDeleted($anonymised);
         self::assertSame(1, $people->settleDeleted($ids, FormerPersonTimeEntries::personRefOf($this->user), 'Ana'), 'only the row still with the deleted user');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $owner = $this->reload('to-user')->getUser();
         self::assertInstanceOf(AppUser::class, $owner);
@@ -341,7 +339,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertSame([1, 1], [$batch->mismatched, $batch->created]);
         self::assertSame(ImportedTimeEntryOutcome::Mismatch, $batch->results[0]->outcome);
         self::assertSame(ImportedTimeEntryOutcome::Created, $batch->results[1]->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(3600, $this->reload('owned')->getDurationSeconds(), 'nothing written for that row');
         self::assertNotNull($this->reload('owned')->getUser());
     }
@@ -349,26 +347,27 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
     public function testAHostPostFlushThatFlushesCannotCancelTheSettling(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $this->enforceForeignKeys();
         $this->host()->flushOnPostFlush = true;
         $userId                         = (string) $this->user->getId();
 
         $this->entityManager()->remove($this->managedUser());
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame('user:' . $userId, $this->reload('e-1')->getPersonRef());
     }
 
-    #[Group('shared-entity-manager')]
     public function testARemoveInsideAnOnFlushWithNothingElseToFlushSettlesNothing(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $this->enforceForeignKeys();
-        $user                        = $this->managedUser();
-        $loaded                      = $this->reload('e-1');
+        $user = $this->managedUser();
+        // An entry the application's own manager loaded: the listener reads it again after the flush.
+        $loaded = $this->entityManager()->find(TimeEntry::class, $this->reload('e-1')->getId());
+        self::assertInstanceOf(TimeEntry::class, $loaded);
         $this->host()->removeOnFlush = $user;
 
         $this->entityManager()->flush();
@@ -377,7 +376,7 @@ final class ImportedOwnerMoveTest extends FunctionalTestCase
         self::assertSame($user, $loaded->getUser(), 'a loaded entry is read again');
         self::assertNull($loaded->getPersonRef());
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
         self::assertNotNull($entry->getUser());
         self::assertNull($entry->getPersonRef());

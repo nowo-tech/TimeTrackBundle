@@ -9,6 +9,8 @@ use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
+use Nowo\TimeTrackBundle\Port\Internal\WorkedTimeSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimesheetRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;

@@ -16,7 +16,7 @@ use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Query\TimeEntryRecord;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;

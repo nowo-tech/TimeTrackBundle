@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 

@@ -39,7 +39,7 @@ until a feature is enabled.
 ## One legal register
 
 When the host has a working-time register (Beacon spec 198), it is the only legal record. The bundle reads it through
-`WorkingTime\WorkedTimeSourceInterface` (`isLegalRecord(): true`) and never writes it. Without one, the default
+`WorkingTime\WorkedTimeRecordInterface` (`isLegalRecord(): true`) and never writes it. Without one, the default
 `TaskTimeWorkedTimeSource` sums **live task time** of the scope (imports excluded, overlapping timers merged): every
 balance payload and component then carries `legalRecord: false` / `source: task_time`, and UIs MUST show *"Task time, not
 a working-time record"* (the components do). Task time alone does not record the start and end of the working day.
@@ -47,22 +47,22 @@ a working-time record"* (the components do). Task time alone does not record the
 ## Tenant scopes
 
 Every entry, timesheet and ledger line carries a host `scope_key` (Beacon `org-<uuid>`) from
-`Timesheet\TimesheetScopeProviderInterface` (`timesheets.scope_provider`, or `scope_mode: single` = one scope `''`).
+`Timesheet\TimesheetScopePolicyInterface` (`timesheets.scope_provider`, or `scope_mode: single` = one scope `''`).
 A user in two organisations has two timesheets per week. Approvers come from
-`Timesheet\TimesheetApproverProviderInterface` **per scope**; nothing crosses scopes, and a scope is never taken from a
+`Timesheet\TimesheetApproverPolicyInterface` **per scope**; nothing crosses scopes, and a scope is never taken from a
 request without checking `scopesFor($user)` contains it. Entries written before 1.13 get their scope from
 `nowo:time-track:entries:backfill-scope`; entries the provider cannot place belong to no timesheet (*unassigned*).
 
 ## Hours balance
 
 ```
-expected(d)  ← WorkingCalendarProviderInterface   (schedule − holidays − leave)
-worked(d)    ← WorkedTimeSourceInterface          (register, or live task time)
+expected(d)  ← WorkingCalendarSourceInterface   (schedule − holidays − leave)
+worked(d)    ← WorkedTimeRecordInterface          (register, or live task time)
 diff(d)      = worked(d) − expected(d)             closed days only (before today in the user's zone)
 balance(t)   = Σ diff(d) + Σ ledger seconds (opening, adjustment, overtime_paid, their reversals)
 ```
 
-- Calendar: `WorkingTime\WorkingCalendarProviderInterface::days()` returns one `CalendarDay` per local date
+- Calendar: `WorkingTime\WorkingCalendarSourceInterface::daysFor()` returns one `CalendarDay` per local date
   (`working`, `rest`, `holiday`, `vacation`, `leave`, `absence`, `compensatory`, `none`; kinds only, never causes;
   `label` for public holidays only). The default `DerivedWorkingCalendar` derives it from the 1.12 working hours and days
   off. Every day is validated and fails closed to `none` (warning log with the reason only).
@@ -179,7 +179,7 @@ An action appears only when the guard allows it for the viewer **and** the host 
 reopen, adjustment and reversal load on demand: with `dialog_urls` each is a link to a host page (GET + POST, handed to
 `Ui\TimesheetDialogResponder`) whose form is fetched into one remote UiKit dialog when it opens (fragment for
 `X-Nowo-Dialog: 1`, the full page without JavaScript; 422 in place, 409 on a conflict, 204 + `X-Nowo-Redirect` once
-saved). Without `dialog_urls` (deprecated) they still print a UiKit 2.29 dialog with the form inside the page. Approvers see task titles masked when they cannot see the task, and notes only with
+saved). Since 2.0 `dialog_urls` is required for them: `action_urls` of a dialog action without its `dialog_urls` entry fails the render with a `LogicException` (the 1.x inline dialogs, deprecated in 1.39, are removed). Approvers see task titles masked when they cannot see the task, and notes only with
 `timesheets.approver_sees_notes: true`; imported entries of a task the owner can no longer see are masked for everybody,
 the owner included. The grid and the ledger table refuse (`TimesheetException('not_found')`) a viewer who may not see the
 owner's data in that scope, and the ledger table drops lines of another owner or scope — still, load the data through

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 final readonly class StubTeamContextProvider implements TeamContextProviderInterface

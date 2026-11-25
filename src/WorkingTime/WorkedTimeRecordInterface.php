@@ -8,7 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see WorkedTimeSourceInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `WorkedTimeSourceInterface` (REQ-ARCH-001 rule 3), same
  * `working_time.worked_time_source` option. The bundle reads it, never writes it.
  */
 interface WorkedTimeRecordInterface

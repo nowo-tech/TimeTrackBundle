@@ -22,7 +22,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetLockReason;
 use Nowo\TimeTrackBundle\Enum\TimesheetPeriodKind;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
@@ -60,7 +60,7 @@ final class DddIdHostTest extends FunctionalTestCase
             'user_class'            => SecurityUser::class,
             'accepted_user_classes' => [AppUser::class],
             'user_mapping'          => 'id',
-            'database'              => ['mapping_type' => 'xml', 'private_entity_manager' => true],
+            'database'              => ['mapping_type' => 'xml'],
         ];
     }
 

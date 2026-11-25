@@ -22,7 +22,7 @@ final class EntryOperationsDddHostTest extends EntryOperationsTestCase
             'user_class'            => SecurityUser::class,
             'accepted_user_classes' => [AppUser::class],
             'user_mapping'          => 'id',
-            'database'              => ['mapping_type' => 'xml', 'private_entity_manager' => true],
+            'database'              => ['mapping_type' => 'xml'],
         ];
     }
 

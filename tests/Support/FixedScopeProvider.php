@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use RuntimeException;
 use Symfony\Component\Security\Core\User\UserInterface;
 

@@ -9,7 +9,8 @@ use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
 use Nowo\TimeTrackBundle\Enum\CalendarMatchKind;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskKeyResolverInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 

@@ -50,26 +50,15 @@ only that savepoint is rolled back, and the entity manager stays open.
 
 ## Your entity manager is yours
 
-- **Private entity manager** (`database.private_entity_manager: true`, recommended under load): the bundle reads and
-  writes through its own manager. No bundle write flushes, clears, closes or resets an application entity manager
-  (REQ-ARCH-001 rule 6); a failed unit replaces only the private manager.
-- **Shared manager** (the default until 2.0, the 1.22 behaviour): the bundle's rows live in your manager, so a bundle
-  write flushes your pending work too (first, on its own, before the bundle's unit). Since 1.27.0 a failed unit only
-  detaches the TimeTrack rows it added or changed (and the rows pointing at them); your entities stay managed. When a
-  flush inside the failed unit had written rows of yours (a host port or listener persisted them during the unit), the
-  rollback undid them while Doctrine would keep them as written: the runner then **closes** the manager instead
-  (audit QO-M1), so nothing of yours is silently lost. Imports flush your pending work before they change their batch.
-  A flush that failed (and so closed the manager, as Doctrine does) leaves it **closed for the rest of the request**: your next
-  flush fails loudly instead of silently writing nothing. The runner replaces it at the next request, Messenger message
-  or console command boundary, so a long-running worker never serves a later request with it. **Up to 1.26 the bundle
-  reset your manager in the middle of the request** after any failed TimeTrack flush (a lost start, a raced import, a
-  ledger conflict): every entity you had loaded was detached and its later changes were never written.
+- **Private entity manager** (the only mode since 2.0): the bundle reads and writes through its own manager. No bundle
+  write flushes, clears, closes or resets an application entity manager (REQ-ARCH-001 rule 6); a failed unit replaces
+  only the private manager.
 
-The connection is shared in both modes: when your code opens a transaction around a bundle call, the bundle's unit
+The connection is shared with your manager: when your code opens a transaction around a bundle call, the bundle's unit
 nests in it as a savepoint, and a bundle failure rolls back to that savepoint only (on DBAL 3 enable
 `use_savepoints: true`). A transient failure inside your transaction is not replayed by the bundle: it reaches you as
 `TransientStorageFailure`; clear or reset your entity manager, then retry your whole transaction (after a MySQL / MariaDB
-deadlock the server rolled back all of it, also the pending work the bundle flushed for you before its unit).
+deadlock the server rolled back all of it).
 
 Inside a transaction of yours that already read data (MySQL REPEATABLE READ, PostgreSQL REPEATABLE READ / SERIALIZABLE)
 the read view predates the bundle's locks: a timesheet transition may then hash the entries without one committed just

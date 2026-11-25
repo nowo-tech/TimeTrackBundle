@@ -10,7 +10,7 @@ use Nowo\TimeTrackBundle\Client\ClientAuthResult;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
 use Nowo\TimeTrackBundle\Enum\ClientType;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;

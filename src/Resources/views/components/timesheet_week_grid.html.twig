@@ -67,7 +67,7 @@
                     {#- Since 1.39.0 (options.dialog_urls): a link to the host's dialog page, loaded on demand. -#}
                     <a href="{{ action.url }}" class="{{ nowo_ui_class(name in ['submit', 'approve'] ? 'btn_primary' : 'btn_secondary', _b) }}" data-testid="time-track-{{ name }}-{{ view.id }}"{{ nowo_ui_html_attrs(nowo_ui_remote_form_opener(view.dialogId, ('timesheet.dialog.' ~ name ~ '_title')|trans, false, action.url)) }}>{{ (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans }}</a>
                 {% else %}
-                    {{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: action.form, label: (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans, dialog: action.dialog, dialog_id: 'time-track-' ~ name ~ '-' ~ view.id, title: ('timesheet.dialog.' ~ name ~ '_title')|trans, primary: name in ['submit', 'approve']}) }}
+                    {{ include('@NowoTimeTrackBundle/components/_action.html.twig', {form: action.form, label: (_l['action_' ~ name] ?? ('timesheet.action.' ~ name))|trans, primary: name in ['submit', 'approve']}) }}
                 {% endif %}
             {% endfor %}
         </footer>

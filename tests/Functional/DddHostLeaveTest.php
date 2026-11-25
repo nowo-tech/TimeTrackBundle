@@ -46,7 +46,7 @@ final class DddHostLeaveTest extends FunctionalTestCase
         $this->entityManager()->flush();
         $id = $host->getId();
         self::assertNotNull($id);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $leaves = self::getContainer()->get(StubLeaveProvider::class);
         self::assertInstanceOf(StubLeaveProvider::class, $leaves);

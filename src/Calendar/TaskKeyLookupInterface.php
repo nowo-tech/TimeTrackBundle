@@ -8,7 +8,7 @@ use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see TaskKeyResolverInterface} (REQ-ARCH-001 rule 3), same
+ * Since 1.23.0: framework-free twin of the 1.x `TaskKeyResolverInterface` (REQ-ARCH-001 rule 3), same
  * `calendar.task_key_resolver` option. Same rules for titles (in memory only, linear-time matching).
  */
 interface TaskKeyLookupInterface

@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Ui;
 
+use LogicException;
 use Nowo\TimeTrackBundle\Entity\BalanceLedgerLine;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\LedgerKind;
 use Nowo\TimeTrackBundle\Enum\TimesheetStatus;
 use Nowo\TimeTrackBundle\Exception\TimesheetException;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetFormHandler;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
 use Nowo\TimeTrackBundle\WorkingTime\BalanceReport;
-use Symfony\Component\Form\FormView;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -34,7 +34,6 @@ use function rawurlencode;
 use function sprintf;
 use function str_contains;
 use function str_replace;
-use function trigger_deprecation;
 
 /**
  * Since 1.13: view models of the configurable Twig components (contract §16a; hosts compose their pages from them, no
@@ -89,6 +88,7 @@ final readonly class TimesheetViewBuilder
         $resolver->setAllowedTypes('read_only', ['null', 'bool']);
         /** @var array{labels: array<string, string>, actions: list<string>, action_urls: array<string, string>, dialog_urls: array<string, string>, density: string, show_expected: bool, show_diff: bool, read_only: bool|null} $options */
         $options = $resolver->resolve($options);
+        $this->refuseInlineDialogs('weekGrid', $options, TimesheetFormHandler::COMMENT_ACTIONS);
 
         $owner    = UserIdResolver::getId($viewer) === $timesheet->getOwnerRef();
         $snapshot = $this->timesheets->snapshot($timesheet);
@@ -129,11 +129,7 @@ final readonly class TimesheetViewBuilder
                 // Since 1.39.0: a link to the host's dialog page; the form is built only when the dialog opens.
                 $actions[$action] = ['form' => null, 'dialog' => true, 'url' => $this->withQuery($dialogUrl, 'timesheet', $timesheet->getId())];
             } elseif (is_string($url) && ($action === 'submit' || $action === 'withdraw' ? !$readOnly : true)) {
-                $dialog = in_array($action, TimesheetFormHandler::COMMENT_ACTIONS, true);
-                if ($dialog) {
-                    $this->deprecateInlineDialog('weekGrid', $action);
-                }
-                $actions[$action] = ['form' => $this->forms->decisionForm($action, $timesheet, $url)->createView(), 'dialog' => $dialog, 'url' => null];
+                $actions[$action] = ['form' => $this->forms->decisionForm($action, $timesheet, $url)->createView(), 'dialog' => false, 'url' => null];
             }
         }
         $lazy = array_filter($actions, static fn (array $a): bool => $a['url'] !== null) !== [];
@@ -231,36 +227,24 @@ final readonly class TimesheetViewBuilder
                 $reversed[$line->getReversesId()] = true;
             }
         }
-        $reversalUrl    = $options['action_urls']['reversal'] ?? null;
+        $this->refuseInlineDialogs('ledgerTable', $options, ['reversal', 'add_adjustment']);
         $reversalDialog = $options['dialog_urls']['reversal'] ?? null;
         $rows           = [];
-        $inline         = false;
         foreach ($lines as $line) {
-            $reversible = $canAdjust && in_array('reversal', $options['actions'], true) && (is_string($reversalDialog) || is_string($reversalUrl))
+            $reversible = $canAdjust && in_array('reversal', $options['actions'], true) && is_string($reversalDialog)
                 && !isset($reversed[$line->getId()]) && $line->getKind() !== LedgerKind::Reversal && $line->getKind() !== LedgerKind::OvertimeRatified;
-            // Since 1.39.0: with dialog_urls.reversal a link per row (the form is built when its dialog opens).
-            $opener = $reversible && is_string($reversalDialog) ? $this->withQuery($reversalDialog, 'line', $line->getId()) : null;
-            $form   = $reversible && $opener === null && is_string($reversalUrl) ? $this->forms->ledgerForm($reversalUrl, $line->getId())->createView() : null;
-            $inline = $inline || $form instanceof FormView;
-            $rows[] = $line->toArray() + ['reversed' => isset($reversed[$line->getId()]), 'reversalForm' => $form, 'reversalUrl' => $opener];
+            // Since 1.39.0: a link per row (the form is built when its dialog opens).
+            $opener = $reversible ? $this->withQuery($reversalDialog, 'line', $line->getId()) : null;
+            $rows[] = $line->toArray() + ['reversed' => isset($reversed[$line->getId()]), 'reversalForm' => null, 'reversalUrl' => $opener];
         }
-        if ($inline) {
-            $this->deprecateInlineDialog('ledgerTable', 'reversal');
-        }
-        $addAllowed = $canAdjust && in_array('add_adjustment', $options['actions'], true);
-        $addDialog  = $options['dialog_urls']['add_adjustment'] ?? null;
-        $addUrl     = $options['action_urls']['add_adjustment'] ?? null;
-        $addOpener  = $addAllowed && is_string($addDialog) ? $addDialog : null;
-        $addForm    = $addAllowed && $addOpener === null && is_string($addUrl) ? $this->forms->ledgerForm($addUrl)->createView() : null;
-        if ($addForm instanceof FormView) {
-            $this->deprecateInlineDialog('ledgerTable', 'add_adjustment');
-        }
-        $lazy = $addOpener !== null || array_filter($rows, static fn (array $row): bool => $row['reversalUrl'] !== null) !== [];
+        $addDialog = $options['dialog_urls']['add_adjustment'] ?? null;
+        $addOpener = $canAdjust && in_array('add_adjustment', $options['actions'], true) && is_string($addDialog) ? $addDialog : null;
+        $lazy      = $addOpener !== null || array_filter($rows, static fn (array $row): bool => $row['reversalUrl'] !== null) !== [];
 
         return [
             'rows'     => $rows,
             'columns'  => $options['columns'],
-            'addForm'  => $addForm,
+            'addForm'  => null,
             'addUrl'   => $addOpener,
             'dialogId' => $lazy ? 'time-track-ledger-dialog' : null,
             'labels'   => $options['labels'],
@@ -283,12 +267,21 @@ final readonly class TimesheetViewBuilder
     }
 
     /**
-     * Since 1.39.0: the inline dialog forms (a form and a dialog body per action, rendered whether opened or not)
-     * break the on-demand dialog rule; 2.0 removes them.
+     * Since 2.0 (deprecated in 1.39.0): a dialog action with `options.action_urls` but no `options.dialog_urls` entry
+     * (the removed inline dialog form, printed whether opened or not) fails loudly instead of losing the action.
+     *
+     * @param array{actions: list<string>, action_urls: array<string, string>, dialog_urls: array<string, string>} $options
+     * @param list<string> $dialogs the component's dialog actions
+     *
+     * @throws LogicException when one of them is configured inline
      */
-    private function deprecateInlineDialog(string $component, string $action): void
+    private function refuseInlineDialogs(string $component, array $options, array $dialogs): void
     {
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.39', sprintf('Rendering the "%s" dialog form of the TimeTrack %s inline (options.action_urls without options.dialog_urls.%s) is deprecated and 2.0 removes it: pass options.dialog_urls.%s, the URL of a page served by Nowo\\TimeTrackBundle\\Ui\\TimesheetDialogResponder, so the dialog loads its form on demand.', $action, $component, $action, $action));
+        foreach ($dialogs as $action) {
+            if (in_array($action, $options['actions'], true) && isset($options['action_urls'][$action]) && !isset($options['dialog_urls'][$action])) {
+                throw new LogicException(sprintf('The "%s" dialog of the TimeTrack %s has options.action_urls.%s but no options.dialog_urls.%s: the inline dialog forms were removed in 2.0 (deprecated since 1.39.0). Pass options.dialog_urls.%s, the URL of a page served by Nowo\\TimeTrackBundle\\Ui\\TimesheetDialogResponder, so the dialog loads its form on demand; see UPGRADING "To 2.0.0".', $action, $component, $action, $action, $action));
+            }
+        }
     }
 
     /**

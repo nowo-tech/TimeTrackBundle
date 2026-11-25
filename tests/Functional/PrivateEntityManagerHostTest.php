@@ -26,7 +26,7 @@ final class PrivateEntityManagerHostTest extends FunctionalTestCase
 {
     protected static function timeTrackConfig(): array
     {
-        return ['database' => ['private_entity_manager' => true]];
+        return [];
     }
 
     public function testABundleWriteNeverFlushesTheApplicationsPendingWork(): void

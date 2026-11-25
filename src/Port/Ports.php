@@ -5,59 +5,60 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use LogicException;
-use Nowo\TimeTrackBundle\Calendar\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\Calendar\CalendarCredentialSourceInterface;
 use Nowo\TimeTrackBundle\Calendar\TaskKeyLookupInterface;
-use Nowo\TimeTrackBundle\Calendar\TaskKeyResolverInterface;
-use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialMinterInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserDaysOffSourceInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserLocaleSourceInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserPrivacyProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserPrivacySourceInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileSourceInterface;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsPolicyInterface;
-use Nowo\TimeTrackBundle\Client\IdleCheckSettingsProviderInterface;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Integration\BatchTaskDirectoryInterface;
 use Nowo\TimeTrackBundle\Integration\TaskDirectoryInterface;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamDirectoryInterface;
 use Nowo\TimeTrackBundle\Integration\UserReferenceProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
-use Nowo\TimeTrackBundle\Meeting\MeetingProviderInterface;
 use Nowo\TimeTrackBundle\Meeting\MeetingSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\CalendarCredentialProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserDaysOffProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserLocaleProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserPrivacyProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\EntryOwnersRepositoryInterface;
+use Nowo\TimeTrackBundle\Port\Internal\IdleCheckSettingsProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\MeetingProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskKeyResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetApproverProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkdayProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkedTimeSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\Repository\EntryOwnerRefsRepositoryInterface;
-use Nowo\TimeTrackBundle\Repository\EntryOwnersRepositoryInterface;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TaskAccessPolicyInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetApproverPolicyInterface;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetApproverProviderInterface;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScopePolicyInterface;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
-use Nowo\TimeTrackBundle\Workday\WorkdayProviderInterface;
 use Nowo\TimeTrackBundle\Workday\WorkdaySourceInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeRecordInterface;
-use Nowo\TimeTrackBundle\WorkingTime\WorkedTimeSourceInterface;
-use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarSourceInterface;
 
 use function get_debug_type;
 use function sprintf;
 use function str_starts_with;
-use function trigger_deprecation;
 
 /**
- * Picks the interface the bundle asks a host service through (1.23.0, REQ-ARCH-001 rule 3):
+ * Picks the object the bundle asks a host port through (REQ-ARCH-001 rule 3; since 2.0 the framework-free 1.23 twins
+ * are the only host port interfaces):
  *
- * - the service implements the deprecated interface: it is returned as is and asked exactly as in 1.22 (also when it
- *   implements the 1.23 twin too, until 2.0);
- * - it implements only the 1.23 twin: it is wrapped in the twin's gate (stateless);
- * - neither: a `LogicException` for the configured ports (the build already failed for a class known before
+ * - the service implements the twin: it is wrapped in the twin's gate (stateless), which implements the bundle's
+ *   internal shape of the port (namespace `Port\Internal`);
+ * - it is one of the bundle's own defaults (a `Nowo\TimeTrackBundle\` class implementing the internal shape): it is
+ *   returned as is;
+ * - anything else: a `LogicException` for the configured ports (the build already failed for a class known before
  *   compilation, see {@see TimeTrackPortsPass}), null for the optional extras.
  *
  * The configured ports are container services built by {@see self::port()} (one decision per container); the optional
@@ -68,7 +69,8 @@ use function trigger_deprecation;
 final class Ports
 {
     /**
-     * The configured ports: name => [deprecated interface, 1.23 twin, gate] (a batch task directory gets its own gate).
+     * The configured ports: name => [the bundle's internal shape, the host interface (1.23 twin), gate] (a batch task
+     * directory gets its own gate).
      *
      * @var array<string, array{0: class-string, 1: class-string, 2: class-string}>
      */
@@ -91,11 +93,12 @@ final class Ports
     ];
 
     /**
-     * The service the bundle asks for a configured port (the container factory of `nowo_time_track.port.<name>`).
+     * The service the bundle asks for a configured port (the container factory of the port's slot).
      *
      * @param string $name a key of {@see self::PORTS}
      *
-     * @throws LogicException when the port is unknown or the service implements neither interface
+     * @throws LogicException when the port is unknown or the service implements neither the twin nor (a bundle default)
+     *                        the internal shape
      */
     public static function port(string $name, mixed $service): object
     {
@@ -103,33 +106,25 @@ final class Ports
             throw new LogicException(sprintf('Unknown TimeTrack port "%s".', $name));
         }
 
-        [$legacy, $twin] = self::PORTS[$name];
-        if ($service instanceof $legacy) {
-            self::deprecateLegacy(null, $service::class, $legacy, $twin, TimeTrackPortsPass::SLOTS[$name][1]);
-
+        [$internal, $twin] = self::PORTS[$name];
+        $gate              = self::gate($name, $service);
+        if ($gate !== null) {
+            return $gate;
+        }
+        if ($service instanceof $internal && self::isBundleClass($service::class)) {
             return $service;
         }
 
-        return self::gate($name, $service) ?? throw new LogicException(sprintf('The TimeTrack %s service "%s" must implement "%s" (or the deprecated "%s").', $name, get_debug_type($service), $twin, $legacy));
+        throw new LogicException(sprintf('The TimeTrack %s service "%s" must implement "%s" (since 2.0 the only host interface of this port; see UPGRADING "To 2.0.0").', $name, get_debug_type($service), $twin));
     }
 
     /**
-     * 1.33.0 (REQ-BC-001): a host service that still implements one of the deprecated port interfaces (removed in 2.0)
-     * triggers one notice when the container is built (or, for a service whose class the build cannot know, when it is
-     * created: once per container). The bundle's own default services are not reported.
-     *
-     * @param string|null $serviceId the service id, when known
-     * @param string $class the service's class
-     * @param string $legacy the deprecated interface it implements
-     * @param string $twin the framework-free interface to implement instead
-     * @param string $option the configuration that names the service
+     * Whether the class is one of the bundle's own (its defaults, and its test doubles), which may implement the
+     * internal shape of a port directly.
      */
-    public static function deprecateLegacy(?string $serviceId, string $class, string $legacy, string $twin, string $option): void
+    public static function isBundleClass(string $class): bool
     {
-        if (str_starts_with($class, 'Nowo\\TimeTrackBundle\\') && !str_starts_with($class, 'Nowo\\TimeTrackBundle\\Tests\\')) {
-            return;
-        }
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'The service %s implements the deprecated %s, which 2.0 removes: implement %s instead and keep it configured as %s (a service may implement both while you migrate; drop the deprecated one before 2.0). See UPGRADING "Framework-free host ports".', $serviceId !== null ? sprintf('"%s" (%s)', $serviceId, $class) : $class, $legacy, $twin, $option);
+        return str_starts_with($class, 'Nowo\\TimeTrackBundle\\');
     }
 
     /**
@@ -159,7 +154,7 @@ final class Ports
     }
 
     /**
-     * The locale extra of the profile provider (deprecated interface first, then the 1.23 twin), or null.
+     * The locale extra of the profile provider (a bundle default's own internal shape, else the 1.23 twin of the host source), or null.
      */
     public static function locale(?object $profileProvider): ?ClientUserLocaleProviderInterface
     {
@@ -167,14 +162,13 @@ final class Ports
 
         return match (true) {
             $profileProvider instanceof ClientUserLocaleProviderInterface => $profileProvider,
-            $source instanceof ClientUserLocaleProviderInterface          => $source,
             $source instanceof ClientUserLocaleSourceInterface            => new ClientUserLocaleSourceGate($source),
             default                                                       => null,
         };
     }
 
     /**
-     * The days-off extra of the profile provider (deprecated interface first, then the 1.23 twin), or null.
+     * The days-off extra of the profile provider (a bundle default's own internal shape, else the 1.23 twin of the host source), or null.
      */
     public static function daysOff(?object $profileProvider): ?ClientUserDaysOffProviderInterface
     {
@@ -182,14 +176,13 @@ final class Ports
 
         return match (true) {
             $profileProvider instanceof ClientUserDaysOffProviderInterface => $profileProvider,
-            $source instanceof ClientUserDaysOffProviderInterface          => $source,
             $source instanceof ClientUserDaysOffSourceInterface            => new ClientUserDaysOffSourceGate($source),
             default                                                        => null,
         };
     }
 
     /**
-     * The privacy extra of the profile provider (deprecated interface first, then the 1.23 twin), or null.
+     * The privacy extra of the profile provider (a bundle default's own internal shape, else the 1.23 twin of the host source), or null.
      */
     public static function privacy(?object $profileProvider): ?ClientUserPrivacyProviderInterface
     {
@@ -197,21 +190,20 @@ final class Ports
 
         return match (true) {
             $profileProvider instanceof ClientUserPrivacyProviderInterface => $profileProvider,
-            $source instanceof ClientUserPrivacyProviderInterface          => $source,
             $source instanceof ClientUserPrivacySourceInterface            => new ClientUserPrivacySourceGate($source),
             default                                                        => null,
         };
     }
 
     /**
-     * The owner listing of the entry store (deprecated interface first, then the 1.23 twin), or null.
+     * The owner listing of the entry store (a bundle default's own internal shape, else the 1.23 twin of the host source), or null.
      */
     public static function entryOwners(?object $store): ?EntryOwnersRepositoryInterface
     {
         return match (true) {
-            $store instanceof EntryOwnersRepositoryInterface    => $store,
-            $store instanceof EntryOwnerRefsRepositoryInterface => new EntryOwnerRefsGate($store),
-            default                                             => null,
+            $store instanceof EntryOwnersRepositoryInterface && self::isBundleClass($store::class) => $store,
+            $store instanceof EntryOwnerRefsRepositoryInterface                                    => new EntryOwnerRefsGate($store),
+            default                                                                                => null,
         };
     }
 

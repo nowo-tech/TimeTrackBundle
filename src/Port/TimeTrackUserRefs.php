@@ -34,7 +34,7 @@ final class TimeTrackUserRefs
     }
 
     /**
-     * The Symfony user a reference must carry where the bundle needs the user object (to store it or ask a deprecated
+     * The Symfony user a reference must carry where the bundle needs the user object (to store it or ask an internal
      * port about it).
      *
      * @param string $port the port named in the error

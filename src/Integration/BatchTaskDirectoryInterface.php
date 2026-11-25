@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Integration;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see BatchTaskProviderInterface} (REQ-ARCH-001 rule 3): a
+ * Since 1.23.0: framework-free twin of the 1.x `BatchTaskProviderInterface` (REQ-ARCH-001 rule 3): a
  * {@see TaskDirectoryInterface} that answers {@see TaskDirectoryInterface::canTrackTask()} for many tasks at once.
  */
 interface BatchTaskDirectoryInterface extends TaskDirectoryInterface

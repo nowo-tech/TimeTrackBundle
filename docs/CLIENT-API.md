@@ -9,26 +9,14 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 ## Table of contents
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
-  - [Publishing only some routes (`client_api.routes.include`, 1.30)](#publishing-only-some-routes-client_apiroutesinclude-130)
-  - [Route table](#route-table)
-  - [Alias policy](#alias-policy)
-  - [Hosts must check](#hosts-must-check)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
+- [Changes in 2.0](#changes-in-20)
 - [Changes in 1.41 (monitoring privacy decisions D4, D9, D11)](#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)
 - [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
-  - [GET me: `monitoring`](#get-me-monitoring)
-  - [POST monitoring/acknowledge](#post-monitoringacknowledge)
-  - [Screenshot upload (two steps)](#screenshot-upload-two-steps)
-  - [POST monitoring/screenshots/discarded](#post-monitoringscreenshotsdiscarded)
-  - [DELETE monitoring/screenshots/{id}](#delete-monitoringscreenshotsid)
-  - [POST monitoring/activity](#post-monitoringactivity)
-  - [Client checklist](#client-checklist)
 - [Changes in 1.22 (leave, spec 204)](#changes-in-122-leave-spec-204)
 - [Changes in 1.21 (billable)](#changes-in-121-billable)
-  - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
 - [Changes in 1.19 (links.workingTime)](#changes-in-119-linksworkingtime)
 - [Changes in 1.14 (calendar suggestions, manual entries)](#changes-in-114-calendar-suggestions-manual-entries)
-  - [GET me/meetings (1.14)](#get-memeetings-114)
 - [Changes in 1.13 (working time, timesheets, task effort)](#changes-in-113-working-time-timesheets-task-effort)
 - [Notes](#notes)
 - [Changes in 1.11 (imported entries)](#changes-in-111-imported-entries)
@@ -39,21 +27,6 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 - [Scopes](#scopes)
 - [Errors](#errors)
 - [Endpoints](#endpoints)
-  - [POST login](#post-login)
-  - [POST logout](#post-logout)
-  - [GET me](#get-me)
-  - [GET tasks](#get-tasks)
-  - [GET timer](#get-timer)
-  - [POST timer/start](#post-timerstart)
-  - [POST timer/stop](#post-timerstop)
-  - [POST timer/switch](#post-timerswitch)
-  - [POST timer/discard-idle](#post-timerdiscard-idle)
-  - [POST heartbeat (deprecated)](#post-heartbeat-deprecated)
-  - [GET entries](#get-entries)
-  - [PATCH entries/{id} (1.21)](#patch-entriesid-121)
-  - [GET export](#get-export)
-  - [POST device/code](#post-devicecode)
-  - [POST device/token](#post-devicetoken)
 - [Device verification page](#device-verification-page)
 - [Task details](#task-details)
 - [Client-supplied times](#client-supplied-times)
@@ -87,7 +60,7 @@ lists the route **keys** it wants (the first column of the route table below):
 nowo_time_track:
     client_api:
         routes:
-            include: [login, logout, me, tasks, timer, timer_start, timer_stop, timer_switch, heartbeat, entries]
+            include: [login, logout, me, tasks, timer, timer_start, timer_stop, timer_switch, entries]
 ```
 
 The list applies to the unversioned paths and to the v1 twins alike. A route that is not listed **does not exist**: it
@@ -122,7 +95,6 @@ the container build with a `LogicException` naming the missing key:
 | `timer` | GET, OPTIONS | `/api/time-track/timer` `nowo_time_track_api_timer` | `/api/time-track/v1/timer` `nowo_time_track_api_v1_timer` |
 | `timer_start` | POST, OPTIONS | `/api/time-track/timer/start` `nowo_time_track_api_timer_start` | `/api/time-track/v1/timer/start` `nowo_time_track_api_v1_timer_start` |
 | `timer_stop` | POST, OPTIONS | `/api/time-track/timer/stop` `nowo_time_track_api_timer_stop` | `/api/time-track/v1/timer/stop` `nowo_time_track_api_v1_timer_stop` |
-| `heartbeat` | POST, OPTIONS | `/api/time-track/heartbeat` `nowo_time_track_api_heartbeat` | `/api/time-track/v1/heartbeat` `nowo_time_track_api_v1_heartbeat` |
 | `entries` | GET, OPTIONS | `/api/time-track/entries` `nowo_time_track_api_entries` | `/api/time-track/v1/entries` `nowo_time_track_api_v1_entries` |
 | `timer_switch` | POST, OPTIONS | `/api/time-track/timer/switch` `nowo_time_track_api_timer_switch` | `/api/time-track/v1/timer/switch` `nowo_time_track_api_v1_timer_switch` |
 | `timer_discard_idle` | POST, OPTIONS | `/api/time-track/timer/discard-idle` `nowo_time_track_api_timer_discard_idle` | `/api/time-track/v1/timer/discard-idle` `nowo_time_track_api_v1_timer_discard_idle` |
@@ -191,13 +163,25 @@ after the token lookup and before the last-used update, `ClientCredentialStateIn
 check. Options:
 [CONFIGURATION](CONFIGURATION.md#client-api-129).
 
+## Changes in 2.0
+
+Only what 1.x announced; no route of the 1.9+ clients changes, and the installed-client aliases (unversioned paths) stay.
+
+- `POST heartbeat` (and `/v1/heartbeat`) is gone (`404`); the 1.9+ clients never call it
+  ([details](#post-heartbeat-removed-in-20)).
+- `GET entries` ignores `userId`: the caller's own entries only.
+- `GET me.monitoring` has no `windowTitles` key (always `false` since 1.41; read a missing key as `false`).
+- CORS: exact origins only. `"*"` and "any extension origin" are refused when the container is built, and the Tauri
+  webview origins (`tauri://localhost`, `http(s)://tauri.localhost`) are no longer allowed (the desktop app sends no
+  `Origin` through the Tauri HTTP plugin).
+
 ## Changes in 1.41 (monitoring privacy decisions D4, D9, D11)
 
 Contract §TT-MON v1.1, additive, on the unversioned and the `/v1` paths (no new route, no new scope). Owner decisions of
 the 2026-11-24 TimeTrack Desktop monitoring study:
 
 - **D4 — window titles and project names are never sent.** `GET me.monitoring.windowTitles` is always `false`
-  (deprecated; 2.0 removes the key). No route accepts a title: `windowTitle`, `title` or `project` fields of an activity
+  (deprecated; **removed in 2.0**: the key is absent, read a missing key as `false`). No route accepts a title: `windowTitle`, `title` or `project` fields of an activity
   item and a top-level `windowTitles` are ignored (the bundle never stores, returns or logs them). Clients may read titles **locally**
   (in memory) for task suggestions only, and send `titles=0` in `X-TimeTrack-Capabilities`. The `app` `name` is the
   application's name (`Code`, `Excel`), never the window title or the file or project open in it.
@@ -257,7 +241,6 @@ Present, and `features.monitoring: true`, only when the host has a policy for th
   "kinds": ["screenshots", "apps", "activity"],
   "capture": {"screenshotsPer10Min": 1, "slotMinutes": 10, "reviewWindowMinutes": 10},
   "screenshots": {"enabled": true, "blur": "medium", "fullResolution": false, "maxLongSidePx": 1920},
-  "windowTitles": false,
   "excludedApps": ["vaultapp", "diaryapp"],
   "retentionDays": 30,
   "upload": {"maxBufferedScreenshots": 36, "maxBufferAgeHours": 24},
@@ -266,7 +249,7 @@ Present, and `features.monitoring: true`, only when the host has a policy for th
 }
 ```
 
-- `windowTitles` is always `false` since 1.41 (D4, deprecated key). `purpose` and `teamView`: since 1.41 (D9, see
+- `windowTitles`: always `false` in 1.41 (D4), removed in 2.0 (no key; window titles are never collected). `purpose` and `teamView`: since 1.41 (D9, see
   [above](#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)).
 
 - `capture.screenshotsPer10Min` is always `1` in 1.26 (`0` only without the `screenshots` kind): the server keeps one
@@ -772,8 +755,7 @@ grant.
 | 401 | `invalid_token` | Missing, unknown, expired, revoked token, inactive credential or (since 1.29) an account refused by the user checker (`WWW-Authenticate: Bearer error="invalid_token"`) |
 | 403 | `insufficient_scope` | Token lacks the endpoint scope |
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |
-| 403 | `forbidden` | Deprecated `entries?userId=` for a user the team guard refuses |
-| 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle`, `heartbeat` without a running timer |
+| 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle` without a running timer |
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |
 | 409 | `overlap` | Since 1.14: `POST entries` / an accepted suggestion overlaps a live entry or the running timer |
 | 422 | `invalid_range`, `entry_too_long`, `entry_in_future`, `entry_too_old`, `idempotency_mismatch` | Since 1.14: `POST entries` times (and `Idempotency-Key` reuse) |
@@ -804,7 +786,7 @@ Revokes the presented token. Always `204`.
 ### GET me
 
 Scope: any. `200 {"userId": "42", "identifier": "person@example.com", "displayName": null, "scopes": [...], "workingHours": null, "locale": null, "daysOff": null, ...}`
-(`displayName` / `workingHours` from `ClientUserProfileProviderInterface`; clients suppress reminders outside the
+(`displayName` / `workingHours` from `ClientUserProfileSourceInterface`; clients suppress reminders outside the
 working hours and on days off — the API never pushes). Since 1.12 `workingHours` is always in the `slots` shape and
 `daysOff` lists holidays and vacations: see [Working hours](#working-hours-normalised-since-112) and
 [Days off](#days-off-since-112).
@@ -825,21 +807,21 @@ Since 1.10 the body also carries:
 
 `idle_keep_note` and `limits.idle_check.user_can_disable` are 1.10.1 additions. `user_can_disable` tells the client
 whether it may offer the user a switch to turn the idle check off (organisation policy: `false`; personal accounts may
-get `true` from the host's `IdleCheckSettingsProviderInterface`).
+get `true` from the host's `IdleCheckSettingsPolicyInterface`).
 
 `workday` and `monitoring` are **reserved** and always `false` in 1.10 (`workday` real since 1.13, `monitoring` since 1.26). Clients treat a missing or unknown key as
 `false` and ignore keys they do not know. `limits.idle_check` is the token user's setting (host provider, else the
 instance settings) and is present even when `features.idle_check` is false.
 
 Since 1.11 the body also carries `"locale": "es"` (always present, string or `null`): the user's preferred locale, from
-the profile provider when it also implements `ClientUserLocaleProviderInterface`, else the user's own `getLocale()`
+the profile provider when it also implements `ClientUserLocaleSourceInterface`, else the user's own `getLocale()`
 when the user class has one. Values that are not a locale (`^[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8}){0,3}$`) are sent as
 `null`. The masked title of imported entries is translated into this locale's language when the bundle ships it
 (`de`, `en`, `es`, `fr`, `it`, `nl`, `pt`; since 1.12), else into the host's default locale. Since 1.12 a user
 `getLocale()` that needs arguments is ignored. A masked entry (`taskVisible: false`) has `description: null` (and an
 empty CSV `description` cell) since 1.12.
 
-Since 1.15 the body has `privacy` when the host's profile provider also implements `ClientUserPrivacyProviderInterface`, and
+Since 1.15 the body has `privacy` when the host's profile provider also implements `ClientUserPrivacySourceInterface`, and
 no such key otherwise: an object (usually `url`, `version`, `controllerName`, `dpoContact`, `noticeSummary`) or `null`. It is
 in the language of `Accept-Language` (best match among the host's enabled locales), else the user's own. A `url` that is not
 absolute `http(s)` is sent as `null`, so clients can open any `url` they get.
@@ -858,7 +840,7 @@ otherwise always this shape:
 `timezone` (an IANA identifier, or `null` = the client's local time). A weekday without slots is not a working day.
 Slots are sorted by day, then start.
 
-`ClientUserProfileProviderInterface::getWorkingHours()` may return either shape; the bundle normalises it:
+`ClientUserProfileSourceInterface::workingHoursOf()` may return either shape; the bundle normalises it:
 
 | Provider returns | `GET me` sends |
 |------------------|----------------|
@@ -892,7 +874,7 @@ sends no schedule reminders on those days; the browser extension ignores it.
 - Range: today → today + 60 days in that time zone; entries outside it are dropped, one entry per date (the first the
   provider lists), sorted by date.
 
-Source: the profile provider when it also implements `ClientUserDaysOffProviderInterface::getDaysOff(UserInterface $user,
+Source: the profile provider when it also implements `ClientUserDaysOffSourceInterface::daysOffOf(TimeTrackUserRef $user,
 DateTimeImmutable $from, DateTimeImmutable $to): ?array` (`$from` = start of today, `$to` = end of today + 60, both in
 that time zone). Validation, entry by entry:
 
@@ -931,7 +913,7 @@ of every endpoint.
 ### POST timer/start
 
 Scope `timer:write`. `{"taskId": "task-1", "note": "optional, ≤500 chars", "source": "extension|desktop|web"}` →
-`201 {"timer": {...}}`. Per request `TaskAccessCheckerInterface::canTrack()` → `403 task_forbidden`; `409
+`201 {"timer": {...}}`. Per request `TaskAccessPolicyInterface::mayTrack()` → `403 task_forbidden`; `409
 timer_running`; `source` defaults to the 1.x `clientType` field, else the token's client. The note is stored as
 `metadata.note`.
 
@@ -983,21 +965,21 @@ carry its length only (`note_length`).
 `switch` (a new timer on `taskId` from `to`) | `stop` (no timer), optional `note` (≤ 500 chars, stored on the
 reassigned entry) and `source` (as on `timer/start`). Checks, in order, nothing written before the last:
 `400` when reassign is disabled (`client_api.idle.allow_reassign`), `taskId` is blank, or `then` / `source` is
-invalid → `403 task_forbidden` when `TaskAccessCheckerInterface::canTrack()` refuses (identical answer for a missing
+invalid → `403 task_forbidden` when `TaskAccessPolicyInterface::mayTrack()` refuses (identical answer for a missing
 and a foreign task) → `404` without a timer → `400` when `taskId` is the running task → `400` for a span outside the
 timer → `404` when a concurrent stop won → `409` when a concurrent start took the follow-up slot (entries kept). Both
 entries are written in one unit of work and each dispatches `nowo_time_track.timer.stop`.
 
-### POST heartbeat (deprecated)
+### POST heartbeat (removed in 2.0)
 
-Deprecated since 1.9, removed in 2.0 (`Deprecation: true` header). Scope `timer:write`. `isIdle` is ignored; answers
-`{"timer", "idleThresholdSeconds", "deprecated": true}` or `404`.
+Deprecated since 1.9 and removed in 2.0: the route no longer exists (`404`), and naming it in
+`client_api.routes.include` fails the container build. Clients answer idle time with `timer/discard-idle`.
 
 ### GET entries
 
 Scope `entries:read`. Own entries, newest first: `?from=&to=&limit=1..100&offset=` → `200 {"entries": [...], "limit",
-"offset"}`. `from` / `to`: RFC 3339 or `Y-m-d`, default the last 7 days, span capped at 366 days. The deprecated
-`userId` parameter keeps the 1.x team view through `TeamAccessGuard`.
+"offset"}`. `from` / `to`: RFC 3339 or `Y-m-d`, default the last 7 days, span capped at 366 days. Since 2.0 the
+1.x `userId` parameter (deprecated since 1.9) is ignored: the caller's own entries only.
 Each entry carries `billable` (`true`, `false`, `null`); change it with [PATCH entries/{id}](#patch-entriesid-121) (1.21).
 
 ### GET export
@@ -1052,7 +1034,7 @@ Since 1.10 the task provider may fill `projectId`, `projectTitle` and `url` on `
   other value is published as `null` (logged at debug level as `task_url_dropped`, never with the URL). Clients check
   the origin again before opening it.
 
-On `timer` objects the details are resolved **live** with `TaskProviderInterface::findForUser()` for the token user:
+On `timer` objects the details are resolved **live** with `TaskDirectoryInterface::findTaskFor()` for the token user:
 a task that was deleted or is no longer visible gives `null` details (the stored `taskTitle` snapshot stays), and a
 provider error gives `null` details with a `200`.
 
@@ -1075,6 +1057,6 @@ recorded time, so `endedAt` has no `max_backdate` bound. The overlap check cover
 
 The clients detect idle time locally and ask the user what to do with it, using `features.idle_check` and
 `limits.idle_check` of `GET me` (organisation settings: `client_api.idle_check.*` or the host's
-`IdleCheckSettingsProviderInterface`). **The server only ever receives the user's decision** through
+`IdleCheckSettingsPolicyInterface`). **The server only ever receives the user's decision** through
 `POST timer/discard-idle` (`keep`, `discard`, `split`, `reassign`). No activity signal, idle counter, input count or
-screen data is sent to the server or stored by it; the deprecated `heartbeat` ignores `isIdle`.
+screen data is sent to the server or stored by it (the 1.x `heartbeat`, removed in 2.0, ignored `isIdle`).

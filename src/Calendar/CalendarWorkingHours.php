@@ -6,8 +6,8 @@ namespace Nowo\TimeTrackBundle\Calendar;
 
 use DateTimeImmutable;
 use DateTimeZone;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 

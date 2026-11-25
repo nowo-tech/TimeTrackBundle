@@ -26,8 +26,8 @@ Current release **v1.31.0** (2026-11-18) — see [CHANGELOG.md](CHANGELOG.md).
 
 - Timer, time entries and timesheets for the host's tasks (task provider; [TaskBoard integration](TASK-BOARD-INTEGRATION.md)).
 - Client API for the browser extension and the desktop app ([CLIENT-API.md](CLIENT-API.md)); the clients live in their
-  own repositories (TimeTrack Extension, TimeTrack Desktop). The prototypes under `extension/` and `desktop/` are kept
-  for reference ([BROWSER-EXTENSION.md](BROWSER-EXTENSION.md), [DESKTOP-AGENT.md](DESKTOP-AGENT.md)).
+  own repositories (TimeTrack Extension, TimeTrack Desktop). The 1.x prototypes under `extension/` and `desktop/` were
+  removed in 2.0 ([BROWSER-EXTENSION.md](BROWSER-EXTENSION.md), [DESKTOP-AGENT.md](DESKTOP-AGENT.md)).
 - **1.13**: working time, hours balance and overtime (flags only), balance ledger, weekly timesheets with approval and a
   hard period lock, audit chains, workday client API (R-GDPR §8).
 - **1.14**: calendar suggestions (Google / Microsoft 365, read-only, primary calendar, opt-in, server mode), `POST
@@ -55,21 +55,23 @@ TimeTrack closure plan (Beacon D-20261111-06; each minor is shippable):
   `links.leave` (done on `feat/leave-spec-204`, `ClientUserLeaveProviderInterface`); budget versus actual with TaskBoard here or in its own minor. REQ-ARCH-001, additive: ports with a user
   id value object next to the `UserInterface` ones (rules 1 / 3), and a documented, tested bundle-owned entity manager
   so no service flushes the host's (rule 6).
-- **2.0**: the `UserInterface` ports and entity accessors deprecated in 1.22 are removed.
+- **2.0** (done): the `UserInterface` ports and the event accessors deprecated in 1.23 are removed; the private entity
+  manager is the only mode.
 - **1.25** (Beacon spec 234, AI Flow on Beacon tasks): `HostTimerApi` (timer start / stop / current for token
   principals), `ServiceAccountPolicyInterface` (agents' entries may overlap), the entry channel and service-account mark.
-- **2.0** (Beacon review of 1.25): a dedicated `TimeEntrySource` (and `ClientType`) for entries written through
+- **Later major** (Beacon review of 1.25; not in 2.0.0, which contains only announced deprecations): a dedicated
+  `TimeEntrySource` (and `ClientType`) for entries written through
   `HostTimerApi` (`api` / `agent`); 1.25 stores them as `web` with the `channel` column, because a new enum case would
   break an exhaustive `match` in a host.
-  In the same major, `HostTimerApi`'s constructor takes `Security\TaskAccessPolicyInterface` instead of the deprecated
-  `TaskAccessCheckerInterface` it asks in 1.x (audit PA, Info): 1.25 uses the deprecated slot on purpose, because that
+  Done in 2.0: `HostTimerApi`'s constructor takes `Security\TaskAccessPolicyInterface` (the removed
+  `TaskAccessCheckerInterface` it asked in 1.x is now the bundle's internal shape) (audit PA, Info): 1.25 uses the deprecated slot on purpose, because that
   is the one the ports pass rewrites, so a host configuring either interface is served — but it is a **public** service,
   so the signature change belongs in the 2.0 notes.
 - **1.26** (spec 199; planned for 1.23, before that 1.22 and 1.21): the activity-monitoring API (screenshots, apps,
   activity level), with a full audit. Opt-in: off unless your organisation enables it with a recorded DPIA; you see it
   first. Websites / domains come later, with an extension release.
 - **1.41** (owner decisions D4, D9, D11 of the 2026-11-24 TimeTrack Desktop monitoring study): window titles and
-  project names are never sent (`windowTitles` frozen to false, deprecated; removed in 2.0); team views show project
+  project names are never sent (`windowTitles` frozen to false in 1.41, removed in 2.0); team views show project
   aggregates by default and per-person detail only for a declared billing-evidence purpose, with the organisation's
   recorded opt-in and an audit record of every view; evidence is refused with `on_break` during register breaks and
   after clock-out (spec 198). Privacy-sensitive: a full audit before the tag.

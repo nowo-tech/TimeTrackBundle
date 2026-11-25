@@ -187,7 +187,7 @@ final class BillableClientApiTest extends FunctionalTestCase
         self::assertSame('period_locked', $answer['error'] ?? null);
         self::assertArrayHasKey('lockedThrough', $answer);
         self::assertSame([], $this->audit);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $stored = $this->entityManager()->find(TimeEntry::class, $locked['id']);
         self::assertInstanceOf(TimeEntry::class, $stored);
         self::assertNull($stored->getBillable());

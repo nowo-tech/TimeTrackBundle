@@ -12,14 +12,13 @@ use function array_filter;
 use function array_values;
 use function in_array;
 use function preg_match;
-use function str_starts_with;
 
 /**
  * Builds the JSON / empty responses of the client API with the CORS headers of the allowed origins.
  *
  * CORS (contract v0.2 §4): exact origins only — `client_api.allowed_origins` (through
  * {@see ClientApiSettingsProviderInterface}) plus the constructor list (`clients.cors_allowed_origins`). The desktop
- * app (Tauri HTTP plugin) sends no Origin and needs no CORS header. Deprecated 1.x opt-ins, removed in 2.0: `*` outside
+ * app (Tauri HTTP plugin) sends no Origin and needs no CORS header. Removed in 2.0 (deprecated since 1.9): `*` outside
  * prod, `clients.cors_allow_any_extension_origin`, and the Tauri webview origins (`client_api.allow_tauri_webview_origins`).
  * No `Access-Control-Allow-Credentials`: the API is Bearer-only. Origins from the settings provider (instance settings,
  * e.g. a database-backed form) must be exact `scheme://host[:port]` values: `*`, wildcards and anything with a path,
@@ -27,18 +26,24 @@ use function str_starts_with;
  */
 final readonly class ClientResponseFactory
 {
-    /** Origins of a Tauri webview (1.x desktop agent). */
+    /**
+     * Origins of a Tauri webview (1.x desktop agent).
+     *
+     * @deprecated since 2.0, no longer allowed by the client API (`client_api.allow_tauri_webview_origins` is removed); removed in 3.0
+     */
     public const TAURI_WEBVIEW_ORIGINS = ['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost'];
 
     /**
-     * @param list<string> $allowedOrigins exact origins (e.g. chrome-extension://<id>); '*' allows any origin outside prod (deprecated)
-     * @param bool $allowAnyExtensionOrigin deprecated opt-in: accept every chrome-extension:// and moz-extension:// origin
-     * @param ClientApiSettingsProviderInterface|null $settingsProvider instance settings (allowed origins); null = constructor list + Tauri webview origins
+     * @param list<string> $allowedOrigins exact origins (e.g. chrome-extension://<id>)
+     * @param string $kernelEnvironment @deprecated since 2.0, ignored (it only decided the removed `*`); removed in 3.0
+     * @param bool $allowAnyExtensionOrigin @deprecated since 2.0, ignored (`clients.cors_allow_any_extension_origin` is removed); removed in 3.0
+     * @param ClientApiSettingsProviderInterface|null $settingsProvider instance settings (allowed origins); null = the constructor list only
      */
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
         private array $allowedOrigins,
-        private string $kernelEnvironment = 'prod',
-        private bool $allowAnyExtensionOrigin = false,
+        string $kernelEnvironment = 'prod',
+        bool $allowAnyExtensionOrigin = false,
         private ?ClientApiSettingsProviderInterface $settingsProvider = null,
     ) {
     }
@@ -108,20 +113,7 @@ final readonly class ClientResponseFactory
         $settings = $this->settingsProvider?->getSettings();
         $allowed  = $settings instanceof ClientApiSettings ? [...$this->allowedOrigins, ...$this->exactOrigins($settings->allowedOrigins)] : $this->allowedOrigins;
 
-        if (in_array('*', $allowed, true)) {
-            return $this->kernelEnvironment !== 'prod';
-        }
-
-        if (in_array($origin, $allowed, true)) {
-            return true;
-        }
-
-        if ((!$settings instanceof ClientApiSettings || $settings->allowTauriWebviewOrigins) && in_array($origin, self::TAURI_WEBVIEW_ORIGINS, true)) {
-            return true;
-        }
-
-        return $this->allowAnyExtensionOrigin
-            && (str_starts_with($origin, 'chrome-extension://') || str_starts_with($origin, 'moz-extension://'));
+        return $origin !== '*' && in_array($origin, $allowed, true);
     }
 
     /**

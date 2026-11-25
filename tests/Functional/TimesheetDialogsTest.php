@@ -30,13 +30,10 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Twig\Environment;
+use Twig\Error\RuntimeError;
 
-use function fwrite;
 use function sprintf;
-use function strlen;
 use function substr_count;
-
-use const STDERR;
 
 /**
  * Since 1.39.0 (symfony-beacon rule 2026-11-23, "every dialog loads its content on demand"): with `dialog_urls` the
@@ -101,12 +98,18 @@ final class TimesheetDialogsTest extends FunctionalTestCase
         self::assertCount(50, $lines);
         $props = ['lines' => $lines, 'viewer' => $this->approver, 'owner_id' => (string) $this->user->getId(), 'scope_key' => 'org-a'];
 
-        $inline = $this->render('LedgerTable', $props + ['options' => ['action_urls' => ['add_adjustment' => '/host/ledger', 'reversal' => '/host/ledger/reverse']]]);
-        $lazy   = $this->render('LedgerTable', $props + ['options' => ['dialog_urls' => ['add_adjustment' => '/host/ledger/add', 'reversal' => '/host/ledger/reverse']]]);
-        fwrite(STDERR, sprintf("\n[lazy dialogs] LedgerTable, 50 rows: inline %d bytes, on demand %d bytes\n", strlen($inline), strlen($lazy)));
+        // 2.0 (deprecated since 1.39.0): the inline dialog forms are gone; action_urls without dialog_urls fail loudly.
+        foreach (['add_adjustment' => '/host/ledger', 'reversal' => '/host/ledger/reverse'] as $action => $url) {
+            try {
+                $this->render('LedgerTable', $props + ['options' => ['action_urls' => [$action => $url]]]);
+                self::fail('inline ' . $action);
+            } catch (RuntimeError $e) {
+                self::assertInstanceOf(LogicException::class, $e->getPrevious());
+                self::assertStringContainsString('has options.action_urls.' . $action . ' but no options.dialog_urls.' . $action, $e->getPrevious()->getMessage());
+            }
+        }
+        $lazy = $this->render('LedgerTable', $props + ['options' => ['dialog_urls' => ['add_adjustment' => '/host/ledger/add', 'reversal' => '/host/ledger/reverse']]]);
 
-        self::assertSame(51, substr_count($inline, '<form'), 'before: one form per row + the add form');
-        self::assertSame(51, substr_count($inline, '<dialog'));
         self::assertSame(0, substr_count($lazy, '<form'), 'no form on the page');
         self::assertSame(0, substr_count($lazy, '<textarea'));
         self::assertSame(0, substr_count($lazy, 'name="time_track_ledger'));
@@ -115,7 +118,6 @@ final class TimesheetDialogsTest extends FunctionalTestCase
         self::assertSame(51, substr_count($lazy, 'data-nowo-ui-dialog-open="time-track-ledger-dialog"'));
         self::assertStringContainsString('href="/host/ledger/reverse?line=' . $lines[0]->getId() . '"', $lazy);
         self::assertStringContainsString('href="/host/ledger/add"', $lazy);
-        self::assertLessThan(strlen($inline) / 2, strlen($lazy));
 
         // A `{line}` placeholder is replaced instead of a query parameter.
         $placeholder = $this->render('LedgerTable', $props + ['options' => ['dialog_urls' => ['reversal' => '/host/ledger/{line}/reverse#x']]]);
@@ -222,9 +224,14 @@ final class TimesheetDialogsTest extends FunctionalTestCase
         $submitted = $sheets->submit($this->user, 'org-a', $week);
         $urls      = ['approve' => '/host/approve', 'reject' => '/host/reject'];
 
-        $inline = $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls]]);
-        $lazy   = $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'dialog_urls' => ['reject' => '/host/reject/dialog']]]);
-        self::assertStringContainsString('name="time_track_reject[comment]"', $inline, 'before: the reject form on the page');
+        try {
+            $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls]]);
+            self::fail('2.0: the inline reject dialog is removed');
+        } catch (RuntimeError $e) {
+            self::assertInstanceOf(LogicException::class, $e->getPrevious());
+            self::assertStringContainsString('The "reject" dialog of the TimeTrack weekGrid has options.action_urls.reject but no options.dialog_urls.reject', $e->getPrevious()->getMessage());
+        }
+        $lazy = $this->render('TimesheetWeekGrid', ['timesheet' => $submitted, 'viewer' => $this->approver, 'options' => ['action_urls' => $urls, 'dialog_urls' => ['reject' => '/host/reject/dialog']]]);
         self::assertStringNotContainsString('time_track_reject', $lazy);
         self::assertStringNotContainsString('<textarea', $lazy);
         self::assertStringContainsString('href="/host/reject/dialog?timesheet=' . $submitted->getId() . '"', $lazy);

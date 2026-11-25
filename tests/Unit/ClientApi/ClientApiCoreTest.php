@@ -22,7 +22,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Nowo\TimeTrackBundle\Event\ClientApiEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Security\TaskProviderTaskAccessChecker;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;

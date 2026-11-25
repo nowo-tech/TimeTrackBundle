@@ -15,8 +15,8 @@ use Nowo\TransactionContract\TransientStorageFailure;
 /**
  * Since 1.40.0 (Beacon, REQ-ARCH-001 rules 3 and 6): writes of time entries by ids, so a host corrects or creates
  * entries without loading bundle entities in its own entity manager and without writing the bundle's tables itself
- * (DQL, DBAL). Every write goes through the bundle's own manager and stores, with the private entity manager
- * (`database.private_entity_manager: true`) as with the shared one. Public service (service id = this interface).
+ * (DQL, DBAL). Every write goes through the bundle's own (private, since 2.0 the only mode) entity manager and stores.
+ * Public service (service id = this interface).
  * Not deprecated: 2.0 keeps it.
  *
  * The owner is a user id (`string|int`, the `getId()` of your user) or a {@see TimeTrackUserRef}; a reference whose user

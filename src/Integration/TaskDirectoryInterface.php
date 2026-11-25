@@ -9,7 +9,7 @@ use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see TaskProviderInterface} (REQ-ARCH-001 rule 3), same `task_provider` option.
+ * Since 1.23.0: framework-free twin of the 1.x `TaskProviderInterface` (REQ-ARCH-001 rule 3), same `task_provider` option.
  * Resolves tasks from an external source (e.g. nowo-tech/task-board-bundle).
  */
 interface TaskDirectoryInterface

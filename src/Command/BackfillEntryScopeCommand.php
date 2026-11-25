@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Command;
 
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ScopeBackfillRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Console\Attribute\AsCommand;

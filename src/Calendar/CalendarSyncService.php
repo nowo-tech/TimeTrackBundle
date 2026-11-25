@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Enum\CalendarConnectionMode;
 use Nowo\TimeTrackBundle\Enum\CalendarConnectionStatus;
 use Nowo\TimeTrackBundle\Event\CalendarSyncFinishedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
+use Nowo\TimeTrackBundle\Port\Internal\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarRuleRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarSuggestionRepositoryInterface;

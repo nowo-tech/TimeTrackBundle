@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Psr\Cache\CacheItemPoolInterface;
@@ -73,6 +74,27 @@ abstract class FunctionalTestCase extends WebTestCase
         $em = static::getContainer()->get('doctrine.orm.entity_manager');
 
         return $em;
+    }
+
+    /**
+     * Since 2.0: TimeTrack's private entity manager (the only mode), which holds the rows the bundle's services return.
+     */
+    protected function bundleEntityManager(): EntityManagerInterface
+    {
+        /** @var EntityManagerInterface $em */
+        $em = static::getContainer()->get(TimeTrackEntityManager::class);
+
+        return $em;
+    }
+
+    /**
+     * Since 2.0: forgets what both the application's manager and TimeTrack's private one hold (a test that changed
+     * rows with SQL reads them again).
+     */
+    protected function clearEntityManagers(): void
+    {
+        $this->entityManager()->clear();
+        $this->bundleEntityManager()->clear();
     }
 
     /**

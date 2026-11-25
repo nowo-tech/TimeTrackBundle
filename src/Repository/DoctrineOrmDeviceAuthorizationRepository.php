@@ -9,7 +9,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Doctrine\RecoveringFlusher;
-use Nowo\TimeTrackBundle\Doctrine\TimeTrackHostFlushProbe;
 use Nowo\TimeTrackBundle\Doctrine\TimeTrackSavepoint;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
@@ -28,14 +27,15 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
      * @param EntityManagerInterface $entityManager Entity manager of the configured connection
      * @param ManagerRegistry|null $managerRegistry Resets a closed entity manager after a failed flush (worker mode)
      * @param ClockInterface|null $clock Time source of the expiry checks
-     * @param TimeTrackHostFlushProbe|null $hostFlushProbe 1.33.0: the probe of the shared manager (null with the private one)
+     * @param object|null $hostFlushProbe @deprecated since 2.0, ignored (the 1.33 host-flush probe of the removed shared manager); removed in 3.0
      */
+    // @phpstan-ignore constructor.unusedParameter
     public function __construct(
         private EntityManagerInterface $entityManager,
         private ?ManagerRegistry $managerRegistry = null,
         ?ClockInterface $clock = null,
         private ?TimeTrackTransactionRunner $runner = null,
-        private ?TimeTrackHostFlushProbe $hostFlushProbe = null,
+        ?object $hostFlushProbe = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
     }
@@ -45,7 +45,7 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
      */
     public function runner(): TimeTrackTransactionRunner
     {
-        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry, hostFlushProbe: $this->hostFlushProbe);
+        return $this->runner ?? new TimeTrackTransactionRunner($this->entityManager, $this->managerRegistry);
     }
 
     /**
@@ -72,14 +72,14 @@ final readonly class DoctrineOrmDeviceAuthorizationRepository implements DeviceA
     public function save(DeviceAuthorization $authorization): void
     {
         $this->entityManager->persist($authorization);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /** Removes and flushes a request. */
     public function remove(DeviceAuthorization $authorization): void
     {
         $this->entityManager->remove($authorization);
-        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry, $this->hostFlushProbe);
+        RecoveringFlusher::flush($this->entityManager, $this->managerRegistry);
     }
 
     /** Request with this device code hash. */

@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Calendar\CalendarCredential;
-use Nowo\TimeTrackBundle\Calendar\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\Calendar\CalendarCredentialSourceInterface;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
+use Nowo\TimeTrackBundle\Port\Internal\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\ValueObject\CalendarConnectionRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see CalendarCredentialSourceInterface} (1.23.0) where the bundle asks the deprecated
- * {@see CalendarCredentialProviderInterface}: users become references, connections {@see CalendarConnectionRef}
+ * Asks a host {@see CalendarCredentialSourceInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see CalendarCredentialProviderInterface} (the 1.x interface of that name was removed in 2.0): users become references, connections {@see CalendarConnectionRef}
  * snapshots. Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal

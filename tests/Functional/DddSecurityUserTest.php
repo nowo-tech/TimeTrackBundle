@@ -10,7 +10,7 @@ use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\SecurityUser;
@@ -50,7 +50,7 @@ final class DddSecurityUserTest extends FunctionalTestCase
     {
         $id = $this->user->getId();
         self::assertNotNull($id);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $security = new SecurityUser($id, 'person@example.com');
 
         $timers = self::getContainer()->get(TimerService::class);
@@ -59,14 +59,14 @@ final class DddSecurityUserTest extends FunctionalTestCase
         self::assertInstanceOf(AppUser::class, $timer->getUser());
         self::assertSame((string) $id, $timer->getUserId());
 
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $stored = $this->entityManager()->find(ActiveTimer::class, $timer->getId());
         self::assertInstanceOf(ActiveTimer::class, $stored);
         self::assertSame((string) $id, $stored->getUserId());
 
         $entry = $timers->stop($security);
         self::assertInstanceOf(TimeEntry::class, $entry);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $found = $this->entityManager()->find(TimeEntry::class, $entry->getId());
         self::assertInstanceOf(TimeEntry::class, $found);
@@ -80,12 +80,12 @@ final class DddSecurityUserTest extends FunctionalTestCase
     {
         $id = $this->user->getId();
         self::assertNotNull($id);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);
         $issued = $auth->issueToken(new SecurityUser($id, 'person@example.com'), ClientType::Desktop);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $token = $auth->resolveToken($issued['token']);
         self::assertInstanceOf(ClientToken::class, $token);

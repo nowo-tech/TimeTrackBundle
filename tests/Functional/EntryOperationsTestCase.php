@@ -19,7 +19,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;

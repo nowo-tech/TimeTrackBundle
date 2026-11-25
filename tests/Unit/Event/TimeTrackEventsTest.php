@@ -33,7 +33,7 @@ final class TimeTrackEventsTest extends TestCase
         $task  = new TaskReference('task-1', 'Title', 'board-1', 'Sprint');
         $event = new TimerStartEvent($user, $task, ClientType::Web);
 
-        self::assertSame($user, $event->getUser());
+        self::assertSame($user, $event->userRef()->user());
         self::assertSame($task, $event->getTask());
         self::assertSame(ClientType::Web, $event->getClientType());
     }
@@ -53,7 +53,7 @@ final class TimeTrackEventsTest extends TestCase
         );
         $event = new TimerStopEvent($user, $entry);
 
-        self::assertSame($user, $event->getUser());
+        self::assertSame($user, $event->userRef()->user());
         self::assertSame($entry, $event->getEntry());
     }
 
@@ -64,7 +64,7 @@ final class TimeTrackEventsTest extends TestCase
         $to    = new DateTimeImmutable();
         $event = new TimeEntryListQueryEvent($user, $from, $to);
 
-        self::assertSame($user, $event->getViewer());
+        self::assertSame($user, $event->viewerRef()->user());
         self::assertSame($from, $event->getFrom());
         self::assertSame($to, $event->getTo());
         self::assertSame([], $event->getUserIds());
@@ -88,7 +88,7 @@ final class TimeTrackEventsTest extends TestCase
         );
         $event = new TimeEntryAccessCheckEvent($user, $entry, 'edit', false);
 
-        self::assertSame($user, $event->getUser());
+        self::assertSame($user, $event->userRef()->user());
         self::assertSame($entry, $event->getEntry());
         self::assertSame('edit', $event->getAction());
         self::assertFalse($event->isGranted());

@@ -8,13 +8,13 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 
 /**
- * Since 1.23.0: framework-free twin of {@see ClientUserDaysOffProviderInterface} (REQ-ARCH-001 rule 3), an optional
+ * Since 1.23.0: framework-free twin of the 1.x `ClientUserDaysOffProviderInterface` (REQ-ARCH-001 rule 3), an optional
  * extra of the `client_api.profile_provider` service. Same contract and privacy rules.
  */
 interface ClientUserDaysOffSourceInterface
 {
     /**
-     * Days off of the user between `$from` and `$to` (see {@see ClientUserDaysOffProviderInterface::getDaysOff()}).
+     * Days off of the user between `$from` and `$to` (see the 1.x `ClientUserDaysOffProviderInterface::getDaysOff()`).
      *
      * @return list<array{date: string, kind: string, label?: string|null}>|null
      */

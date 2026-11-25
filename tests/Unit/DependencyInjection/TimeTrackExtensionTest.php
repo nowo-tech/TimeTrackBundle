@@ -17,20 +17,22 @@ use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
 use Nowo\TimeTrackBundle\DependencyInjection\TimeTrackExtension;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackEntityManager;
+use Nowo\TimeTrackBundle\Doctrine\TimeTrackManagerRegistry;
 use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureConflictFormatter;
 use Nowo\TimeTrackBundle\EventSubscriber\StorageFailureSubscriber;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\NoServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmActiveTimerRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmClientTokenRepository;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
@@ -58,6 +60,8 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_column;
+use function array_intersect;
+use function array_keys;
 use function is_subclass_of;
 
 final class TimeTrackExtensionTest extends TestCase
@@ -76,23 +80,13 @@ final class TimeTrackExtensionTest extends TestCase
 
         self::assertSame(User::class, $container->getParameter('nowo_time_track.user_class'));
         self::assertTrue($container->getParameter('nowo_time_track.clients.enabled'));
-        self::assertSame(
-            '@NowoTimeTrackBundle/layout.html.twig',
-            $container->getParameter('nowo_time_track.templates.layout'),
-        );
+        self::assertFalse($container->hasParameter('nowo_time_track.templates.layout'), 'removed in 2.0');
+        self::assertFalse($container->hasParameter('nowo_time_track.templates'), 'removed in 2.0');
         self::assertTrue($container->hasAlias(TaskProviderInterface::class));
         self::assertTrue($container->hasAlias(TeamContextProviderInterface::class));
         self::assertTrue($container->hasDefinition(StubTaskProvider::class));
         self::assertTrue($container->hasDefinition(TimeTrackTwigExtension::class));
-        self::assertSame(
-            '@NowoTimeTrackBundle/layout.html.twig',
-            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$layoutTemplate'),
-        );
-        self::assertSame('tabler', $container->getParameter('nowo_time_track.templates.css_framework'));
-        self::assertSame(
-            'tabler',
-            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
-        );
+        self::assertSame([], array_intersect(['$layoutTemplate', '$cssFramework'], array_keys($container->getDefinition(TimeTrackTwigExtension::class)->getArguments())));
     }
 
     /**
@@ -174,7 +168,7 @@ final class TimeTrackExtensionTest extends TestCase
         self::assertSame(DoctrineUserReferenceResolver::class, (string) $container->getAlias(UserReferenceResolverInterface::class));
         $resolver = $container->getDefinition(DoctrineUserReferenceResolver::class);
         self::assertSame(User::class, $resolver->getArgument('$userClass'));
-        self::assertSame('doctrine.orm.default_entity_manager', (string) $resolver->getArgument('$entityManager'));
+        self::assertSame(TimeTrackEntityManager::class, (string) $resolver->getArgument('$entityManager'));
         self::assertSame([], $resolver->getArgument('$acceptedUserClasses'), 'JV-T3: only user_class by default');
         foreach ([TimerService::class, ManualEntryService::class, ImportedTimeEntryWriter::class, TimesheetService::class, ClientAuthService::class, DeviceAuthorizationService::class] as $serviceId) {
             $argument = $container->getDefinition($serviceId)->getArgument('$userReferences');
@@ -212,7 +206,7 @@ final class TimeTrackExtensionTest extends TestCase
 
         (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
         self::assertNull($container->getDefinition(ClientLoginRateLimiter::class)->getArgument('$maxAttemptsPerIp'));
-        self::assertFalse($container->getDefinition(ClientResponseFactory::class)->getArgument('$allowAnyExtensionOrigin'));
+        self::assertArrayNotHasKey('$allowAnyExtensionOrigin', $container->getDefinition(ClientResponseFactory::class)->getArguments());
 
         $container = new ContainerBuilder();
         $container->setParameter('kernel.environment', 'test');
@@ -220,12 +214,10 @@ final class TimeTrackExtensionTest extends TestCase
         (new TimeTrackExtension())->load([[
             'user_class' => User::class,
             'clients'    => [
-                'cors_allow_any_extension_origin' => true,
-                'login_rate_limit'                => ['max_attempts_per_ip' => 25],
+                'login_rate_limit' => ['max_attempts_per_ip' => 25],
             ],
         ]], $container);
         self::assertSame(25, $container->getDefinition(ClientLoginRateLimiter::class)->getArgument('$maxAttemptsPerIp'));
-        self::assertTrue($container->getDefinition(ClientResponseFactory::class)->getArgument('$allowAnyExtensionOrigin'));
     }
 
     public function testLoadInjectsManagerRegistryForWorkerSafeDoctrineAccess(): void
@@ -236,12 +228,17 @@ final class TimeTrackExtensionTest extends TestCase
 
         (new TimeTrackExtension())->load([['user_class' => User::class]], $container);
 
-        foreach ([DoctrineOrmActiveTimerRepository::class, DoctrineOrmClientTokenRepository::class, DoctrineOrmTimeEntryRepository::class, TeamAccessGuard::class] as $serviceId) {
+        // Since 2.0 the stores always get the private entity manager and its registry (REQ-ARCH-001 rule 6).
+        foreach ([DoctrineOrmActiveTimerRepository::class, DoctrineOrmClientTokenRepository::class, DoctrineOrmTimeEntryRepository::class] as $serviceId) {
             $argument = $container->getDefinition($serviceId)->getArgument('$managerRegistry');
             self::assertInstanceOf(Reference::class, $argument);
-            self::assertSame('doctrine', (string) $argument);
-            self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $argument->getInvalidBehavior());
+            self::assertSame(TimeTrackManagerRegistry::class, (string) $argument);
+            self::assertSame(TimeTrackEntityManager::class, (string) $container->getDefinition($serviceId)->getArgument('$entityManager'));
         }
+        $argument = $container->getDefinition(TeamAccessGuard::class)->getArgument('$managerRegistry');
+        self::assertInstanceOf(Reference::class, $argument);
+        self::assertSame('doctrine', (string) $argument);
+        self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $argument->getInvalidBehavior());
     }
 
     public function testLoadWiresTheClockIntoTheTokenRepositoryAndTheReportsPageSize(): void
@@ -258,48 +255,6 @@ final class TimeTrackExtensionTest extends TestCase
         self::assertSame(ContainerInterface::NULL_ON_INVALID_REFERENCE, $clock->getInvalidBehavior());
         self::assertArrayNotHasKey('$clock', $container->getDefinition(DoctrineOrmTimeEntryRepository::class)->getArguments());
         self::assertSame(25, $container->getParameter('nowo_time_track.reports.page_size'));
-    }
-
-    public function testLoadWiresCustomLayoutIntoTwigGlobalArgument(): void
-    {
-        $container = new ContainerBuilder();
-        $container->setParameter('kernel.environment', 'test');
-        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
-
-        (new TimeTrackExtension())->load([[
-            'user_class' => User::class,
-            'templates'  => ['layout' => 'base.html.twig'],
-        ]], $container);
-
-        self::assertSame('base.html.twig', $container->getParameter('nowo_time_track.templates.layout'));
-        self::assertSame(
-            'base.html.twig',
-            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$layoutTemplate'),
-        );
-        $templates = $container->getParameter('nowo_time_track.templates');
-        self::assertIsArray($templates);
-        self::assertSame('base.html.twig', $templates['layout']);
-    }
-
-    public function testLoadWiresCustomCssFrameworkIntoTwigGlobalArgument(): void
-    {
-        $container = new ContainerBuilder();
-        $container->setParameter('kernel.environment', 'test');
-        $container->setParameter('kernel.bundles', ['SecurityBundle' => SecurityBundle::class]);
-
-        (new TimeTrackExtension())->load([[
-            'user_class' => User::class,
-            'templates'  => ['css_framework' => 'custom'],
-        ]], $container);
-
-        self::assertSame('custom', $container->getParameter('nowo_time_track.templates.css_framework'));
-        self::assertSame(
-            'custom',
-            $container->getDefinition(TimeTrackTwigExtension::class)->getArgument('$cssFramework'),
-        );
-        $templates = $container->getParameter('nowo_time_track.templates');
-        self::assertIsArray($templates);
-        self::assertSame('custom', $templates['css_framework']);
     }
 
     public function testPrependRegistersDoctrineMapping(): void
@@ -333,42 +288,24 @@ final class TimeTrackExtensionTest extends TestCase
         self::assertSame([['css_framework' => 'tabler', 'icon_set' => 'tabler-icons']], $container->getExtensionConfig('nowo_ui_kit'));
     }
 
-    public function testPrependUiKitDefaultsMapsBootstrapAlias(): void
-    {
-        $container = $this->containerWithUiKit();
-        $container->loadFromExtension('nowo_time_track', ['templates' => ['css_framework' => 'bootstrap']]);
-
-        (new TimeTrackExtension())->prepend($container);
-
-        self::assertSame(
-            ['css_framework' => 'bootstrap5', 'icon_set' => 'bootstrap-icons'],
-            $container->getExtensionConfig('nowo_ui_kit')[0],
-        );
-    }
-
-    public function testPrependUiKitKeepsHostCssFrameworkAndDerivesIconsFromTemplates(): void
+    public function testPrependUiKitOnlyFillsWhatTheHostDidNotSet(): void
     {
         $container = $this->containerWithUiKit();
         $container->loadFromExtension('nowo_ui_kit', ['css_framework' => 'tailwind']);
-        $container->loadFromExtension('nowo_time_track', ['templates' => ['css_framework' => 'tabler']]);
 
         (new TimeTrackExtension())->prepend($container);
 
         $configs = $container->getExtensionConfig('nowo_ui_kit');
         self::assertSame(['icon_set' => 'tabler-icons'], $configs[0]);
         self::assertSame(['css_framework' => 'tailwind'], $configs[1]);
-    }
 
-    public function testPrependUiKitOnlyFillsMissingCssFramework(): void
-    {
         $container = $this->containerWithUiKit();
         $container->loadFromExtension('nowo_ui_kit', ['icon_set' => 'svg_inline']);
-        $container->loadFromExtension('nowo_time_track', ['templates' => ['css_framework' => 'custom']]);
 
         (new TimeTrackExtension())->prepend($container);
 
         $configs = $container->getExtensionConfig('nowo_ui_kit');
-        self::assertSame(['css_framework' => 'custom'], $configs[0]);
+        self::assertSame(['css_framework' => 'tabler'], $configs[0]);
         self::assertSame(['icon_set' => 'svg_inline'], $configs[1]);
     }
 

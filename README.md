@@ -17,8 +17,8 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
 - Web UI at `/tools/time-track` (timer + paginated reports)
 - Stateless client API for the browser extension and the desktop app (`Bearer` session tokens linked to host credentials, scopes, per-request credential and task checks, device flow, rate limits, audit events) — [reference](docs/CLIENT-API.md)
 - Single active timer per user (409 on conflict)
-- Teams and managers v1 via `TeamContextProviderInterface`
-- Task integration via `TaskProviderInterface` (designed for `nowo-tech/task-board-bundle`)
+- Teams and managers v1 via `TeamDirectoryInterface`
+- Task integration via `TaskDirectoryInterface` (designed for `nowo-tech/task-board-bundle`)
 - Symfony events for timer start/stop and entry ACL
 - **Ops:** `nowo:time-track:client-tokens:purge` for expired browser/desktop tokens
 - **Working time and timesheets (1.13, opt-in)**: hours balance and overtime from a host working calendar and worked
@@ -120,8 +120,8 @@ With TaskBoard only, configure `nowo_time_track.task_provider: nowo_task_board.t
 - [Client API reference](docs/CLIENT-API.md)
 - [Working time, balance and timesheets](docs/WORKING-TIME.md)
 - [Meetings API (host guide)](docs/MEETINGS.md)
-- [Browser extension](docs/BROWSER-EXTENSION.md)
-- [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — `desktop/` tray app
+- [Browser extension](docs/BROWSER-EXTENSION.md) — [nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension)
+- [Desktop agent (Tauri)](docs/DESKTOP-AGENT.md) — [nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)
 - [TaskBoard integration](docs/TASK-BOARD-INTEGRATION.md)
 - [Roadmap](docs/ROADMAP.md)
 
@@ -134,7 +134,7 @@ make release-check
 ```
 
 - **PHP:** 100% lines — controllers, Doctrine repositories and listeners included (functional tests on in-memory SQLite, `tests/Functional/`); only pure interfaces are excluded (`phpunit.xml.dist`)
-- **TS/JS:** N/A (desktop agent lives in `desktop/`, outside bundle PHP coverage)
+- **TS/JS:** N/A (the clients live in their own repositories)
 - **Python:** N/A
 
 ## License

@@ -6,12 +6,12 @@ namespace Nowo\TimeTrackBundle\Port;
 
 use Nowo\TimeTrackBundle\Client\IdleCheckSettings;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsPolicyInterface;
-use Nowo\TimeTrackBundle\Client\IdleCheckSettingsProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\IdleCheckSettingsProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see IdleCheckSettingsPolicyInterface} (1.23.0) where the bundle asks the deprecated
- * {@see IdleCheckSettingsProviderInterface}. Exceptions propagate. Built by {@see Ports}; stateless.
+ * Asks a host {@see IdleCheckSettingsPolicyInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see IdleCheckSettingsProviderInterface} (the 1.x interface of that name was removed in 2.0). Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal
  */

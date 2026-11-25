@@ -42,7 +42,7 @@ final class DddXmlHostTest extends FunctionalTestCase
         $this->entityManager()->flush();
         $id = $host->getId();
         self::assertNotNull($id);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         // Through the services, with the host's wrapper security user.
         $security = new SecurityUser($id, 'ana@example.com');
@@ -58,7 +58,7 @@ final class DddXmlHostTest extends FunctionalTestCase
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);
         $token = $auth->issueToken($security, ClientType::Desktop)['token'];
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $me = $this->api('GET', '/api/time-track/me', null, $token);
         self::assertResponseIsSuccessful();

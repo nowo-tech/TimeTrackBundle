@@ -10,7 +10,6 @@ use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Event\PostFlushEventArgs;
 use LogicException;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -26,6 +25,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryOutcome;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Import\InvalidImportedTimeEntryException;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
@@ -35,7 +35,6 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -93,7 +92,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $writer = $this->writer();
         $person = new ImportedTimeEntryPerson('p-1', 'Ana Ruiz');
         $writer->upsertForPerson($person, $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson($person, $this->data('e-1'))->outcome);
         self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana R. Ruiz'), $this->data('e-1'))->outcome);
@@ -163,7 +162,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->enforceForeignKeys();
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $imported = $this->reload('e-1');
         self::assertNull($imported->getUser());
@@ -176,13 +175,12 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertFalse($reloaded->isReadOnly());
     }
 
-    #[Group('shared-entity-manager')]
     public function testASqlDeleteOfTheUserKeepsTheEntriesThroughTheForeignKey(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1'));
         $this->enforceForeignKeys();
         $this->entityManager()->getConnection()->executeStatement('DELETE FROM app_user WHERE id = ?', [$this->user->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entry = $this->reload('e-1');
         self::assertNull($entry->getUser());
@@ -191,7 +189,6 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame(['name' => null, 'anonymised' => false], $entry->toArray()['person'] ?? null);
     }
 
-    #[Group('shared-entity-manager')]
     public function testTheListenerIgnoresOtherEntitiesAndSnapshotsTheConfiguredUser(): void
     {
         self::assertInstanceOf(FormerPersonSnapshotListener::class, self::getContainer()->get(FormerPersonSnapshotListener::class));
@@ -200,9 +197,9 @@ final class FormerPeopleTest extends FunctionalTestCase
 
         // Removing an entry is not removing a user: nothing is snapshotted on the others.
         $this->writer()->upsert($this->user, $this->data('e-2'));
-        $this->entityManager()->remove($entry);
-        $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->bundleEntityManager()->remove($entry);
+        $this->bundleEntityManager()->flush();
+        $this->clearEntityManagers();
 
         self::assertNull($this->reload('e-2')->getPersonRef());
     }
@@ -213,7 +210,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $userId = (string) $this->user->getId();
 
         self::assertSame(1, $this->people()->release($this->user, "Ana\nRuiz"));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entry = $this->reload('e-1');
         self::assertNull($entry->getUser());
@@ -225,7 +222,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertInstanceOf(AppUser::class, $user);
         $this->entityManager()->remove($user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame('Ana Ruiz', $this->reload('e-1')->getPersonName());
     }
 
@@ -238,7 +235,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $liveId = $live->getId();
 
         self::assertSame(2, $this->people()->anonymiseUser($this->user));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entry = $this->reload('e-1');
         self::assertNull($entry->getUser());
@@ -267,7 +264,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertCount(1, $this->people()->export('p-1'));
         self::assertSame('Ana', $this->people()->export('p-1')[0]['personName']);
         self::assertSame(1, $this->people()->anonymisePerson('p-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertNull($this->reload('e-1')->getPersonName());
         self::assertSame(3600, $this->reload('e-1')->getDurationSeconds());
@@ -283,11 +280,11 @@ final class FormerPeopleTest extends FunctionalTestCase
         $person = new ImportedTimeEntryPerson('p-1', 'Ana');
         $writer->upsertForPerson($person, $this->data('e-1', description: 'Secret'));
         $this->people()->anonymisePerson('p-1');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson($person, $this->data('e-1', description: 'Secret'))->outcome);
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsert($this->managedUser(), $this->data('e-1', seconds: 60))->outcome, 'neither a user can claim it');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entry = $this->reload('e-1');
         self::assertNull($entry->getUser());
@@ -300,7 +297,7 @@ final class FormerPeopleTest extends FunctionalTestCase
     {
         $writer = $this->writer();
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $claim = new ImportedTimeEntryClaim($this->managedUser(), 'p-1');
 
         self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsert($claim, $this->data('e-1'))->outcome);
@@ -317,7 +314,7 @@ final class FormerPeopleTest extends FunctionalTestCase
     {
         $writer = $this->writer();
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-a'), $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $user = $this->managedUser();
 
         $this->assertMismatch(fn (): mixed => $writer->upsert($user, $this->data('e-1', seconds: 60)), 'a plain user row never takes it');
@@ -327,7 +324,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->assertMismatch(fn (): mixed => $writer->upsert(new ImportedTimeEntryClaim($user, 'P-1', 'org-a'), $this->data('e-1')), 'references are case-sensitive');
         $this->assertMismatch(fn (): mixed => $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-b'), $this->data('e-1')), 'the same person in another tenant');
         $this->assertMismatch(fn (): mixed => $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1')), 'the same person with no tenant');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame(3600, $this->reload('e-1')->getDurationSeconds());
 
         self::assertSame(ImportedTimeEntryOutcome::Updated, $writer->upsert(new ImportedTimeEntryClaim($this->managedUser(), 'p-1', 'org-a'), $this->data('e-1'))->outcome);
@@ -338,7 +335,7 @@ final class FormerPeopleTest extends FunctionalTestCase
     {
         $writer = $this->writer();
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $racing = new RacingImportedTimeEntryRepository($this->repository());
         $racing->staleReads(2);
@@ -346,7 +343,7 @@ final class FormerPeopleTest extends FunctionalTestCase
 
         self::assertSame(ImportedTimeEntryOutcome::Updated, $result->outcome);
         self::assertSame(2, $racing->saveAllCalls);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame($this->user->getId(), $this->userIdOf($this->reload('e-1')));
     }
 
@@ -354,7 +351,7 @@ final class FormerPeopleTest extends FunctionalTestCase
     {
         $writer = $this->writer();
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $user = $this->managedUser();
 
         $this->assertMismatch(fn (): mixed => $writer->upsert(new ImportedTimeEntryClaim($user, 'p-1', 'org-b'), $this->data('e-1')), 'a claim cannot cross tenants through a row with no scope');
@@ -368,7 +365,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana', 'org-a'), $this->data('e-1'));
         $writer->upsert($this->user, $this->data('e-2'));
         $other = $this->createUser('other@example.com');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $rows = [
             [$this->managedUser(), $this->data('e-new')],
             [$this->managedUser(), $this->data('e-1')],
@@ -404,7 +401,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $leaver = $this->reload('released')->getUser();
         self::assertInstanceOf(AppUser::class, $leaver);
         $this->people()->release($leaver, 'Leaver');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $this->assertMismatch(fn (): mixed => $writer->upsert($this->managedUser(), $this->data('released')), 'another user cannot take a deleted user\'s entry');
     }
 
@@ -413,11 +410,11 @@ final class FormerPeopleTest extends FunctionalTestCase
         $writer = $this->writer();
         $writer->upsert($this->user, $this->data('e-1'));
         $this->people()->release($this->user, 'Ana');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $person = new ImportedTimeEntryPerson('p-evil', 'Other');
 
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson($person, $this->data('e-1', seconds: 60))->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
         self::assertSame(3600, $entry->getDurationSeconds());
         self::assertSame('Ana', $entry->getPersonName());
@@ -429,7 +426,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $writer = $this->writer();
         $writer->upsert($this->user, $this->data('e-1'));
         $this->people()->release($this->user, 'Ana');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $user = $this->managedUser();
 
         $this->assertMismatch(fn (): mixed => $writer->upsert($user, $this->data('e-1')), 'a re-created user with the same id takes nothing');
@@ -437,7 +434,6 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertSame($user->getId(), $this->userIdOf($this->reload('e-1')));
     }
 
-    #[Group('shared-entity-manager')]
     public function testAnEntryThatLostItsUserInSqlIsFrozenForASync(): void
     {
         $writer = $this->writer();
@@ -445,11 +441,11 @@ final class FormerPeopleTest extends FunctionalTestCase
         $other  = $this->createUser('other@example.com');
         $writer->upsert($other, $this->data('e-1'));
         $conn->executeStatement('UPDATE time_track_entries SET user_id = NULL');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('e-1', seconds: 60))->outcome);
         self::assertSame(ImportedTimeEntryOutcome::Unchanged, $writer->upsert($this->managedUser(), $this->data('e-1', seconds: 60))->outcome);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
         self::assertNull($entry->getPersonName());
         self::assertSame(3600, $entry->getDurationSeconds());
@@ -469,7 +465,7 @@ final class FormerPeopleTest extends FunctionalTestCase
 
         self::assertSame(['Ana'], array_column($this->people()->export('ana-1'), 'personName'));
         self::assertSame(1, $this->people()->anonymisePerson('ana-1'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertSame('Other', $this->reload('e-2')->getPersonName());
     }
 
@@ -486,10 +482,10 @@ final class FormerPeopleTest extends FunctionalTestCase
     {
         $this->writer()->upsert($this->user, $this->data('e-1', description: 'Secret'));
         $this->people()->release($this->user, 'Ana');
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(1, $this->people()->anonymiseUser($this->user));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->reload('e-1');
         self::assertNull($entry->getPersonName());
         self::assertNull($entry->getPersonRef());
@@ -508,7 +504,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->enforceForeignKeys();
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entries = $this->entityManager()->getRepository(TimeEntry::class)->findAll();
         self::assertCount(2, $entries);
@@ -525,7 +521,7 @@ final class FormerPeopleTest extends FunctionalTestCase
     {
         $this->service()->start($this->user, 'task-1', ClientType::Web, ['note' => 'Secret']);
         $this->people()->anonymiseUser($this->user);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entry = $this->entityManager()->getRepository(TimeEntry::class)->findOneBy(['taskId' => 'task-1']);
         self::assertInstanceOf(TimeEntry::class, $entry);
@@ -549,18 +545,23 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->entityManager()->getConnection()->executeStatement('UPDATE time_track_entries SET user_id = NULL');
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-1', 'Ana'), $this->data('old'));
         $writer->upsertForPerson(new ImportedTimeEntryPerson('p-2', 'Luis'), $this->data('new', start: new DateTimeImmutable('2026-03-01 10:00:00')));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertSame(1, $this->people()->anonymiseUnidentified());
         self::assertSame(1, $this->people()->anonymiseOwnerlessEndedBefore(new DateTimeImmutable('2026-02-01')));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         self::assertNull($this->reload('raw')->getDescription());
         self::assertNull($this->reload('old')->getPersonName());
         self::assertSame('Luis', $this->reload('new')->getPersonName());
     }
 
-    #[Group('shared-entity-manager')]
-    public function testADeleteKeepsThePendingWorkOfLoadedEntriesAndNamesNewOnes(): void
+    /**
+     * Since 2.0 (private manager only): entries TimeTrack loaded live in its own manager. Deleting the user with the
+     * application's manager drops that manager (no reference to a removed user stays in memory); a change made to such an
+     * entry without a TimeTrack write is not stored (UPGRADING "Private manager only"). An entry the application
+     * inserts in the same flush is named.
+     */
+    public function testADeleteDropsTheLoadedEntriesAndNamesNewOnes(): void
     {
         $this->writer()->upsert($this->user, $this->data('loaded'));
         $loaded = $this->reload('loaded');
@@ -573,11 +574,10 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->enforceForeignKeys();
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        self::assertNull($loaded->getUser(), 'no reference to a removed user stays in memory');
-        $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        self::assertFalse($this->bundleEntityManager()->contains($loaded), 'no reference to a removed user stays in memory');
+        $this->clearEntityManagers();
 
-        self::assertSame('org-pending', $this->reload('loaded')->getScopeKey());
+        self::assertNull($this->reload('loaded')->getScopeKey(), 'a change never written through TimeTrack is not stored');
         self::assertSame('user:' . $userId, $this->reload('loaded')->getPersonRef());
         $reloaded = $this->entityManager()->find(TimeEntry::class, $insertedId);
         self::assertInstanceOf(TimeEntry::class, $reloaded);
@@ -587,7 +587,7 @@ final class FormerPeopleTest extends FunctionalTestCase
     public function testAFailedDeleteLeavesNoSnapshotOnALivingUsersRows(): void
     {
         $this->writer()->upsert($this->user, $this->data('e-1', description: 'Kept'));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $conn = $this->entityManager()->getConnection();
         $this->enforceForeignKeys();
         $conn->executeStatement('CREATE TABLE block_user_delete (user_id INT NOT NULL, CONSTRAINT fk_block_user_delete FOREIGN KEY (user_id) REFERENCES app_user (id))');
@@ -626,7 +626,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $listener->onFlush(new OnFlushEventArgs($this->entityManager()));
         $listener->reset();
         $listener->postFlush(new PostFlushEventArgs($this->entityManager()));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertNull($this->reload('e-1')->getPersonRef(), 'what a failed flush prepared is never written');
     }
@@ -643,7 +643,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
         $dispatcher->dispatch(new TerminateEvent(self::$kernel ?? throw new LogicException('no kernel'), new Request(), new Response()), KernelEvents::TERMINATE);
         $listener->postFlush(new PostFlushEventArgs($this->entityManager()));
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertNull($this->reload('e-1')->getPersonRef(), 'what a failed flush prepared is never written');
     }
@@ -653,7 +653,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->writer()->upsert($this->user, $this->data('e-1'));
 
         $this->entityManager()->remove($this->user);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertNull($this->reload('e-1')->getPersonRef());
     }
@@ -716,7 +716,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->enforceForeignKeys();
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $entries = $this->entityManager()->getRepository(TimeEntry::class)->findBy(['taskId' => 'task-1']);
         self::assertCount(1, $entries);
@@ -758,7 +758,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $this->enforceForeignKeys();
         $this->entityManager()->remove($this->user);
         $this->entityManager()->flush();
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertCount(2, $this->entityManager()->getRepository(TimeEntry::class)->findAll());
         self::assertSame([], $repository->findLiveOverlapping((string) $other->getId(), $now->modify('-2 hours'), $now->modify('+2 hours')));
@@ -782,7 +782,7 @@ final class FormerPeopleTest extends FunctionalTestCase
         $timers->stopForUserDeletion($this->user);
         $this->people()->release($this->user, 'Ana');
         $conn->executeStatement('DELETE FROM app_user WHERE id = ?', [$this->user->getId()]);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
         $entry = $this->entityManager()->getRepository(TimeEntry::class)->findOneBy(['taskId' => 'task-2']);
         self::assertInstanceOf(TimeEntry::class, $entry);
         self::assertSame('Ana', $entry->getPersonName());
@@ -984,7 +984,7 @@ final class FormerPeopleTest extends FunctionalTestCase
             }
         }
         $writer->upsertMany($rows);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         self::assertCount(DoctrineOrmTimeEntryRepository::FORMER_PERSON_BATCH + 2, $this->people()->export('p-1'));
         self::assertSame(DoctrineOrmTimeEntryRepository::FORMER_PERSON_BATCH + 2, $this->people()->anonymisePerson('p-1'));

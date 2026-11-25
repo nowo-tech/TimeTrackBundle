@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Port;
 
 use DateTimeImmutable;
-use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingCalendarSourceInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see WorkingCalendarSourceInterface} (1.23.0) where the bundle asks the deprecated
- * {@see WorkingCalendarProviderInterface}. Exceptions propagate. Built by {@see Ports}; stateless.
+ * Asks a host {@see WorkingCalendarSourceInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see WorkingCalendarProviderInterface} (the 1.x interface of that name was removed in 2.0). Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal
  */

@@ -13,8 +13,6 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\Event;
 
-use function trigger_deprecation;
-
 /**
  * Dispatched after a timer was started.
  */
@@ -34,19 +32,7 @@ final class TimerStartEvent extends Event
     }
 
     /**
-     * Timer owner.
-     *
-     * @deprecated since 1.23.0, use {@see self::userRef()} (framework-free, REQ-ARCH-001 rule 3); removed in 2.0 (1.33.0: triggers a deprecation notice).
-     */
-    public function getUser(): UserInterface
-    {
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'Nowo\\TimeTrackBundle\\Event\\TimerStartEvent::getUser() is deprecated since 1.23.0 and 2.0 removes it: read userRef() instead (or the 1.18 getUserId()).');
-
-        return $this->user;
-    }
-
-    /**
-     * Since 1.23.0: framework-free reference of {@see self::getUser()} (REQ-ARCH-001 rule 3): class, id, identifier and
+     * Since 1.23.0: framework-free reference of the user (REQ-ARCH-001 rule 3): class, id, identifier and
      * roles; the object itself through `userRef()->user()`. Built per call: compare with `isSameUserAs()`.
      */
     public function userRef(): TimeTrackUserRef
@@ -78,7 +64,7 @@ final class TimerStartEvent extends Event
         return $this->startTime;
     }
 
-    /** Since 1.18: id of {@see self::getUser()}, the timer owner (acting user), as a string (`getId()`). */
+    /** Since 1.18: id of the user, the timer owner (acting user), as a string (`getId()`). */
     public function getUserId(): string
     {
         return UserIdResolver::getId($this->user);

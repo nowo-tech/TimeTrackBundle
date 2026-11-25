@@ -22,7 +22,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubWorkdayProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedScopeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetService;
-use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 use function array_column;
@@ -302,7 +301,6 @@ class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertNull($managed['tasks'][1]['loggedSecondsScope'] ?? null, 'no scope without a figure');
     }
 
-    #[Group('shared-entity-manager')]
     public function testRunningTimersAndLockedSwitches(): void
     {
         $token  = $this->token(ClientScope::TimerWrite, ClientScope::TimerRead, ClientScope::TimesheetWrite);
@@ -334,7 +332,8 @@ class WorkingTimeClientApiTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(201);
         $sheet = $sheets->view($this->user, (string) $this->user->getId(), 'org-a', $current);
         $sheet->applyLock(new DateTimeImmutable(), TimesheetLockReason::Manual);
-        $this->entityManager()->flush();
+        // 2.0: the timesheet TimesheetService returned belongs to TimeTrack's private manager; flush that one.
+        $this->bundleEntityManager()->flush();
         $idle = $this->api('POST', '/api/time-track/timer/discard-idle', ['from' => (new DateTimeImmutable('-20 minutes'))->format(DATE_ATOM), 'to' => (new DateTimeImmutable('-10 minutes'))->format(DATE_ATOM), 'action' => 'discard'], $token);
         self::assertResponseStatusCodeSame(409);
         self::assertSame('period_locked', $idle['error'] ?? null);

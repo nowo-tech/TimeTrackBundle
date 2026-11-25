@@ -8,7 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryRemoval;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryScope;
-use Nowo\TimeTrackBundle\Repository\ImportedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ImportedTimeEntryRepositoryInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**

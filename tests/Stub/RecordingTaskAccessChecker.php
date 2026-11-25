@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 use function in_array;

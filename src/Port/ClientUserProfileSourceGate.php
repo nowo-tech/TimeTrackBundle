@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientUserProfileSourceInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see ClientUserProfileSourceInterface} (1.23.0) where the bundle asks the deprecated
- * {@see ClientUserProfileProviderInterface}. Its optional extras (locale, days off, privacy) are reached through
+ * Asks a host {@see ClientUserProfileSourceInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see ClientUserProfileProviderInterface} (the 1.x interface of that name was removed in 2.0). Its optional extras (locale, days off, privacy) are reached through
  * {@see Ports} with {@see self::source()}. Exceptions propagate. Stateless.
  *
  * @internal

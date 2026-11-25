@@ -6,7 +6,7 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Client;
 
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;

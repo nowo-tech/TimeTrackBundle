@@ -6,9 +6,9 @@ namespace Nowo\TimeTrackBundle\Calendar;
 
 use Nowo\TimeTrackBundle\Entity\CalendarRule;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarRuleRepositoryInterface;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timesheet\TimesheetScope;
 use Psr\Clock\ClockInterface;

@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Security;
 
 use Nowo\TimeTrackBundle\Dto\TaskReference;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Throwable;
 

@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-23 (1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
+**Last audited**: 2026-11-24 (2.0.0: removed 1.x files dropped, the Port/Internal shapes and RemovedPortsPass mapped; 1.41.0 monitoring files mapped; 2026-11-23 1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -26,8 +26,8 @@
 | `Dto/TaskReference.php` | Task DTO | FR-DTO-001 |
 | `Dto/TaskListQuery.php` | Task list query | FR-DTO-001 |
 | `Dto/TimeEntryPage.php` | Reports page of entries | FR-DTO-002 |
-| `Integration/TaskProviderInterface.php` | Task provider contract | FR-INT-001 |
-| `Integration/TeamContextProviderInterface.php` | Team context contract | FR-INT-002 |
+| `Port/Internal/TaskProviderInterface.php` | Task provider contract (2.0: internal shape of the bundle's defaults; the 1.x host interface `Integration/TaskProviderInterface.php` was removed) | FR-INT-001 |
+| `Port/Internal/TeamContextProviderInterface.php` | Team context contract (2.0: internal shape of the bundle's defaults; the 1.x host interface `Integration/TeamContextProviderInterface.php` was removed) | FR-INT-002 |
 | `Bridge/StubTaskProvider.php` | Demo task provider | FR-BRIDGE-001 |
 | `Bridge/NullTeamContextProvider.php` | Null team provider | FR-BRIDGE-001 |
 | `Repository/ActiveTimerRepositoryInterface.php` | Active timer repo IF | FR-REPO-001 |
@@ -75,8 +75,6 @@
 
 | Source file | Spec section | Requirement IDs |
 | --- | --- | --- |
-| `Resources/views/layout.html.twig` | Deprecated 1.x layout shim (maps to the UiKit admin layout) | FR-TPL-001 |
-| `Resources/views/_legacy_layout.html.twig` | Deprecated bridge for 1.x host layouts | FR-TPL-001 |
 | `Resources/views/time_track/index.html.twig` | Timer index | FR-TPL-001 |
 | `Resources/views/time_track/reports.html.twig` | Reports page | FR-TPL-001 |
 | `Resources/views/components/dialog_form.html.twig` | Timesheet dialog content (1.39, `TimesheetDialogResponder`) | FR-TS-003 |
@@ -101,7 +99,7 @@
 | `Calendar/CalendarAttendee.php` | Calendar integration (1.20+) | FR-CAL-001 |
 | `Calendar/CalendarConnectionService.php` | Calendar integration (1.20+) | FR-CAL-001 |
 | `Calendar/CalendarCredential.php` | Calendar integration (1.20+) | FR-CAL-002 |
-| `Calendar/CalendarCredentialProviderInterface.php` | Calendar integration (1.20+) | FR-CAL-002 |
+| `Port/Internal/CalendarCredentialProviderInterface.php` | Calendar integration (1.20+) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Calendar/CalendarCredentialProviderInterface.php` was removed) | FR-CAL-002 |
 | `Calendar/CalendarCredentialSourceInterface.php` | Calendar integration (1.20+) | FR-CAL-002 |
 | `Calendar/CalendarDescriptor.php` | Calendar integration (1.20+) | FR-CAL-001 |
 | `Calendar/CalendarEventSourceInterface.php` | Calendar integration (1.20+) | FR-CAL-001 |
@@ -133,7 +131,7 @@
 | `Calendar/MicrosoftCalendarOAuthClient.php` | Calendar integration (1.20+) | FR-CAL-002 |
 | `Calendar/SensitiveValue.php` | Calendar integration (1.20+) | FR-CAL-001 |
 | `Calendar/TaskKeyLookupInterface.php` | Calendar integration (1.20+) | FR-CAL-001 |
-| `Calendar/TaskKeyResolverInterface.php` | Calendar integration (1.20+) | FR-CAL-001 |
+| `Port/Internal/TaskKeyResolverInterface.php` | Calendar integration (1.20+) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Calendar/TaskKeyResolverInterface.php` was removed) | FR-CAL-001 |
 | `Controller/TimeTrackCalendarApiController.php` | Calendar integration (1.20+) | FR-CAL-004 |
 | `Entity/CalendarConnection.php` | Calendar integration (1.20+) | FR-CAL-001 |
 | `Entity/CalendarRule.php` | Calendar integration (1.20+) | FR-CAL-001 |
@@ -175,7 +173,7 @@
 | `Client/ClientApiRateLimiter.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientApiSettings.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientApiSettingsProviderInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
-| `Client/ClientCredentialIssuerInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
+| `Port/Internal/ClientCredentialIssuerInterface.php` | Client API (spec 002) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Client/ClientCredentialIssuerInterface.php` was removed) | FR-CLIENT-005 |
 | `Client/ClientCredentialMinterInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientCredentialStateInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientDaysOffNormalizer.php` | Client API (spec 002) | FR-CLIENT-005 |
@@ -186,15 +184,15 @@
 | `Client/ClientPrivacyNormalizer.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientTaskPresenter.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientTokenRevoker.php` | Client API (spec 002) | FR-CLIENT-005 |
-| `Client/ClientUserDaysOffProviderInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
+| `Port/Internal/ClientUserDaysOffProviderInterface.php` | Client API (spec 002) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Client/ClientUserDaysOffProviderInterface.php` was removed) | FR-CLIENT-005 |
 | `Client/ClientUserDaysOffSourceInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientUserLeave.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientUserLeaveProviderInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
-| `Client/ClientUserLocaleProviderInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
+| `Port/Internal/ClientUserLocaleProviderInterface.php` | Client API (spec 002) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Client/ClientUserLocaleProviderInterface.php` was removed) | FR-CLIENT-005 |
 | `Client/ClientUserLocaleSourceInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
-| `Client/ClientUserPrivacyProviderInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
+| `Port/Internal/ClientUserPrivacyProviderInterface.php` | Client API (spec 002) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Client/ClientUserPrivacyProviderInterface.php` was removed) | FR-CLIENT-005 |
 | `Client/ClientUserPrivacySourceInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
-| `Client/ClientUserProfileProviderInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
+| `Port/Internal/ClientUserProfileProviderInterface.php` | Client API (spec 002) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Client/ClientUserProfileProviderInterface.php` was removed) | FR-CLIENT-005 |
 | `Client/ClientUserProfileSourceInterface.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientWorkingHoursNormalizer.php` | Client API (spec 002) | FR-CLIENT-005 |
 | `Client/ClientWorkingTimeContext.php` | Client API (spec 002) | FR-CLIENT-005 |
@@ -214,7 +212,7 @@
 | --- | --- | --- |
 | `Client/IdleCheckSettings.php` | Client API settings and idle check | FR-CLIENT-006 |
 | `Client/IdleCheckSettingsPolicyInterface.php` | Client API settings and idle check | FR-CLIENT-006 |
-| `Client/IdleCheckSettingsProviderInterface.php` | Client API settings and idle check | FR-CLIENT-006 |
+| `Port/Internal/IdleCheckSettingsProviderInterface.php` | Client API settings and idle check (2.0: internal shape of the bundle's defaults; the 1.x host interface `Client/IdleCheckSettingsProviderInterface.php` was removed) | FR-CLIENT-006 |
 | `Client/IdleCheckSettingsResolver.php` | Client API settings and idle check | FR-CLIENT-006 |
 | `Enum/IdleFollowUp.php` | Client API settings and idle check | FR-CLIENT-006 |
 | `Enum/IdleResolution.php` | Client API settings and idle check | FR-CLIENT-006 |
@@ -262,7 +260,7 @@
 | `Timesheet/SingleScopeProvider.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetAccessGuard.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetApproverPolicyInterface.php` | Timesheets (period lock, approval) | FR-TS-001 |
-| `Timesheet/TimesheetApproverProviderInterface.php` | Timesheets (period lock, approval) | FR-TS-001 |
+| `Port/Internal/TimesheetApproverProviderInterface.php` | Timesheets (period lock, approval) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Timesheet/TimesheetApproverProviderInterface.php` was removed) | FR-TS-001 |
 | `Timesheet/TimesheetAuditTrail.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetFormHandler.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetFormResult.php` | Timesheets (period lock, approval) | FR-TS-003 |
@@ -270,7 +268,7 @@
 | `Timesheet/TimesheetPersonalDataExporter.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetScope.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetScopePolicyInterface.php` | Timesheets (period lock, approval) | FR-TS-001 |
-| `Timesheet/TimesheetScopeProviderInterface.php` | Timesheets (period lock, approval) | FR-TS-001 |
+| `Port/Internal/TimesheetScopeProviderInterface.php` | Timesheets (period lock, approval) (2.0: internal shape of the bundle's defaults; the 1.x host interface `Timesheet/TimesheetScopeProviderInterface.php` was removed) | FR-TS-001 |
 | `Timesheet/TimesheetService.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetSnapshot.php` | Timesheets (period lock, approval) | FR-TS-001 |
 | `Timesheet/TimesheetSnapshotBuilder.php` | Timesheets (period lock, approval) | FR-TS-001 |
@@ -307,7 +305,7 @@
 | `Meeting/MeetingContext.php` | Meetings | FR-MEET-001 |
 | `Meeting/MeetingLinkDetector.php` | Meetings | FR-MEET-001 |
 | `Meeting/MeetingPage.php` | Meetings | FR-MEET-001 |
-| `Meeting/MeetingProviderInterface.php` | Meetings | FR-MEET-001 |
+| `Port/Internal/MeetingProviderInterface.php` | Meetings (2.0: internal shape of the bundle's defaults; the 1.x host interface `Meeting/MeetingProviderInterface.php` was removed) | FR-MEET-001 |
 | `Meeting/MeetingQuery.php` | Meetings | FR-MEET-001 |
 | `Meeting/MeetingQueryParser.php` | Meetings | FR-MEET-001 |
 | `Meeting/MeetingRequestException.php` | Meetings | FR-MEET-001 |
@@ -372,8 +370,8 @@
 | `WorkingTime/TaskTimeWorkedTimeSource.php` | Working time and balances | FR-WT-001 |
 | `WorkingTime/WorkedDay.php` | Working time and balances | FR-WT-001 |
 | `WorkingTime/WorkedTimeRecordInterface.php` | Working time and balances | FR-WT-001 |
-| `WorkingTime/WorkedTimeSourceInterface.php` | Working time and balances | FR-WT-001 |
-| `WorkingTime/WorkingCalendarProviderInterface.php` | Working time and balances | FR-WT-001 |
+| `Port/Internal/WorkedTimeSourceInterface.php` | Working time and balances (2.0: internal shape of the bundle's defaults; the 1.x host interface `WorkingTime/WorkedTimeSourceInterface.php` was removed) | FR-WT-001 |
+| `Port/Internal/WorkingCalendarProviderInterface.php` | Working time and balances (2.0: internal shape of the bundle's defaults; the 1.x host interface `WorkingTime/WorkingCalendarProviderInterface.php` was removed) | FR-WT-001 |
 | `WorkingTime/WorkingCalendarSourceInterface.php` | Working time and balances | FR-WT-001 |
 | `WorkingTime/WorkingTimeBalanceCalculator.php` | Working time and balances | FR-WT-001 |
 | `WorkingTime/WorkingTimeBalanceService.php` | Working time and balances | FR-WT-001 |
@@ -396,8 +394,9 @@
 | Source file | Spec section | Requirement IDs |
 | --- | --- | --- |
 | `DependencyInjection/Compiler/TimeTrackPortsPass.php` | Framework-free ports | FR-PORT-003 |
+| `DependencyInjection/Compiler/RemovedPortsPass.php` | Framework-free ports (2.0: a service still on a removed 1.x port interface fails the build, W1-1) | FR-PORT-003 |
 | `Integration/BatchTaskDirectoryInterface.php` | Framework-free ports | FR-PORT-002 |
-| `Integration/BatchTaskProviderInterface.php` | Framework-free ports | FR-PORT-002 |
+| `Port/Internal/BatchTaskProviderInterface.php` | Framework-free ports (2.0: internal shape of the bundle's defaults; the 1.x host interface `Integration/BatchTaskProviderInterface.php` was removed) | FR-PORT-002 |
 | `Integration/NoServiceAccountPolicy.php` | Framework-free ports | FR-PORT-002 |
 | `Integration/NullTimeEntryBillableDefaultProvider.php` | Framework-free ports | FR-PORT-002 |
 | `Integration/PassThroughUserReferenceResolver.php` | Framework-free ports | FR-PORT-002 |
@@ -406,7 +405,7 @@
 | `Integration/TeamDirectoryInterface.php` | Framework-free ports | FR-PORT-002 |
 | `Integration/TimeEntryBillableDefaultProviderInterface.php` | Framework-free ports | FR-PORT-002 |
 | `Integration/UserReferenceProviderInterface.php` | Framework-free ports | FR-PORT-002 |
-| `Integration/UserReferenceResolverInterface.php` | Framework-free ports | FR-PORT-002 |
+| `Port/Internal/UserReferenceResolverInterface.php` | Framework-free ports (2.0: internal shape of the bundle's defaults; the 1.x host interface `Integration/UserReferenceResolverInterface.php` was removed) | FR-PORT-002 |
 | `Internal/HiddenValues.php` | Framework-free ports | FR-PORT-002 |
 | `Port/BatchTaskDirectoryGate.php` | Framework-free ports | FR-PORT-001 |
 | `Port/CalendarCredentialSourceGate.php` | Framework-free ports | FR-PORT-001 |
@@ -462,7 +461,6 @@
 | `Doctrine/UnitOfWorkBoundaries.php` | Transactions, locks and savepoints | FR-TX-002 |
 | `EventSubscriber/StorageFailureSubscriber.php` | Transactions, locks and savepoints | FR-TX-004 |
 | `EventSubscriber/StorageFailureConflictFormatter.php` | Transactions, locks and savepoints | FR-TX-004 |
-| `Transaction/TimeTrackFlushObserver.php` | Transactions, locks and savepoints | FR-TX-001 |
 | `Transaction/TimeTrackTransactionRunner.php` | Transactions, locks and savepoints | FR-TX-001 |
 
 ## Domain services
@@ -537,14 +535,14 @@
 | `Repository/DoctrineOrmTimesheetEventRepository.php` | Repositories | FR-REPO-004 |
 | `Repository/DoctrineOrmTimesheetRepository.php` | Repositories | FR-REPO-004 |
 | `Repository/EntryOwnerRefsRepositoryInterface.php` | Repositories | FR-REPO-004 |
-| `Repository/EntryOwnersRepositoryInterface.php` | Repositories | FR-REPO-004 |
-| `Repository/FilteredImportedTimeEntryRepositoryInterface.php` | Repositories | FR-REPO-004 |
+| `Port/Internal/EntryOwnersRepositoryInterface.php` | Repositories (2.0: internal shape of the bundle's defaults; the 1.x host interface `Repository/EntryOwnersRepositoryInterface.php` was removed) | FR-REPO-004 |
+| `Port/Internal/FilteredImportedTimeEntryRepositoryInterface.php` | Repositories (2.0: internal shape of the bundle's defaults; the 1.x host interface `Repository/FilteredImportedTimeEntryRepositoryInterface.php` was removed) | FR-REPO-004 |
 | `Repository/FilteredImportedTimeEntryStoreInterface.php` | Repositories | FR-REPO-004 |
 | `Repository/FindableTimeEntryRepositoryInterface.php` | Repositories | FR-REPO-004 |
 | `Repository/FormerOwnerTimesheetRepositoryInterface.php` | Repositories | FR-REPO-004 |
 | `Repository/FormerPersonTimeEntryRepositoryInterface.php` | Repositories | FR-REPO-004 |
 | `Repository/ImportedTimeEntryOwnerRepositoryInterface.php` | Repositories | FR-REPO-004 |
-| `Repository/ImportedTimeEntryRepositoryInterface.php` | Repositories | FR-REPO-004 |
+| `Port/Internal/ImportedTimeEntryRepositoryInterface.php` | Repositories (2.0: internal shape of the bundle's defaults; the 1.x host interface `Repository/ImportedTimeEntryRepositoryInterface.php` was removed) | FR-REPO-004 |
 | `Repository/ImportedTimeEntryRepositoryResolver.php` | Repositories | FR-REPO-004 |
 | `Repository/ImportedTimeEntryStoreInterface.php` | Repositories | FR-REPO-004 |
 | `Repository/LatestTimeEntryRepositoryInterface.php` | Repositories | FR-REPO-004 |
@@ -584,7 +582,7 @@
 
 | Source file | Spec section | Requirement IDs |
 | --- | --- | --- |
-| `Security/TaskAccessCheckerInterface.php` | Task access | FR-SEC-002 |
+| `Port/Internal/TaskAccessCheckerInterface.php` | Task access (2.0: internal shape of the bundle's defaults; the 1.x host interface `Security/TaskAccessCheckerInterface.php` was removed) | FR-SEC-002 |
 | `Security/TaskAccessPolicyInterface.php` | Task access | FR-SEC-002 |
 | `Security/TaskProviderTaskAccessChecker.php` | Task access | FR-SEC-002 |
 
@@ -626,7 +624,7 @@
 | `Workday/WorkdayConflictException.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayForbiddenException.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayHistorySourceInterface.php` | Workday | FR-WDAY-001, FR-MON-006 |
-| `Workday/WorkdayProviderInterface.php` | Workday | FR-WDAY-001 |
+| `Port/Internal/WorkdayProviderInterface.php` | Workday (2.0: internal shape of the bundle's defaults; the 1.x host interface `Workday/WorkdayProviderInterface.php` was removed) | FR-WDAY-001 |
 | `Workday/WorkdaySourceInterface.php` | Workday | FR-WDAY-001 |
 | `Workday/WorkdayState.php` | Workday | FR-WDAY-001 |
 
@@ -665,7 +663,6 @@
 | `Enum/ClientSessionRevocation.php` | Result of revocation by id | FR-CLIENT-008 |
 | `Event/ClientSessionAccessCheckEvent.php` | Grant or deny a client session revocation | FR-CLIENT-008 |
 | `Event/TimerStartedWithoutTaskEvent.php` | A timer without a task was started | FR-EVT-005 |
-| `Doctrine/TimeTrackHostFlushProbe.php` | Host flush migration list (shared manager mode) | FR-PEM-004 |
 
 ## Writes by id (1.40)
 
@@ -690,9 +687,9 @@ Every file tracked under `src/` (PHP classes, Twig views, XML mapping, YAML conf
 
 | Category | Files | Mapped |
 | --- | ---: | ---: |
-| PHP classes (`src/**/*.php`) | 481 | 481 |
-| Other production files (Twig, XML mapping, YAML, translations) | 34 | 34 |
-| **Total production sources** | **515** | **515** |
+| PHP classes (`src/**/*.php`) | 480 | 480 |
+| Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
+| **Total production sources** | **512** | **512** |
 
-Audit command: `git ls-files src | wc -l` → 515 at 1.41.0 (refreshed with the monitoring privacy decisions D4, D9,
+Audit command: `git ls-files src | wc -l` → 512 at 2.0.0 (the removed 1.x files dropped, the internal port shapes mapped; 515 at 1.41.0, refreshed with the monitoring privacy decisions D4, D9,
 D11; the 1.38–1.39 files are mapped too).

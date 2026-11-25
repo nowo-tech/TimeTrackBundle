@@ -8,11 +8,14 @@ use BackedEnum;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use LogicException;
 
 use function array_key_first;
 use function bin2hex;
+use function in_array;
 use function is_object;
 use function random_bytes;
+use function sprintf;
 
 /**
  * 1.27.0 (Beacon spec 239): writes the row of a new TimeTrack entity whose unique key another request may take at the
@@ -48,6 +51,10 @@ final class TimeTrackRows
      */
     public static function insert(EntityManagerInterface $entityManager, object $entity, bool $manage = false): ?UniqueConstraintViolationException
     {
+        if ($entityManager instanceof TimeTrackEntityManager) {
+            // 2.0 (audit ZAR-4): a row your manager loaded is refused here too, never reported as "written meanwhile".
+            $entityManager->refuseLoadedElsewhere($entity);
+        }
         $metadata = $entityManager->getClassMetadata($entity::class);
         if ($metadata->isVersioned && $metadata->versionField !== null) {
             // The TimeTrack versions are integers (Timesheet): a new row starts at 1, as the ORM's own insert does.
@@ -114,7 +121,13 @@ final class TimeTrackRows
                 // An object of another unit of work (your user as your manager or your firewall loaded it): this
                 // manager's reference to the same row, so it is never treated as new.
                 $targetMetadata = $entityManager->getClassMetadata($target::class);
-                $reference      = $entityManager->getReference($targetMetadata->getName(), $targetMetadata->getIdentifierValues($target));
+                $identifier     = $targetMetadata->getIdentifierValues($target);
+                if ($identifier === [] || in_array(null, $identifier, true) || ($entityManager instanceof TimeTrackEntityManager && $entityManager->source()->getUnitOfWork()->isScheduledForInsert($target))) {
+                    // 2.0 (W1-2, XS-I2): an object of yours with no row yet (persisted but not flushed) is never written
+                    // as a missing or dangling reference.
+                    throw new LogicException(sprintf('TimeTrack: the %s row points at a %s ("%s") that has no row yet (persisted but not flushed, or not saved at all). Flush your %s first; TimeTrack wrote nothing.', $entity::class, $targetMetadata->getName(), $field, $targetMetadata->getName()));
+                }
+                $reference = $entityManager->getReference($targetMetadata->getName(), $identifier);
                 if ($reference !== null) {
                     $metadata->setFieldValue($entity, $field, $reference);
                     $target = $reference;

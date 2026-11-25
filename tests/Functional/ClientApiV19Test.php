@@ -73,7 +73,7 @@ final class ClientApiV19Test extends FunctionalTestCase
         $me = $this->api('GET', '/api/time-track/me', null, $token);
         self::assertSame(['timer:read'], $me['scopes'] ?? null);
 
-        foreach ([['GET', '/api/time-track/tasks'], ['GET', '/api/time-track/entries'], ['GET', '/api/time-track/export'], ['POST', '/api/time-track/timer/start'], ['POST', '/api/time-track/timer/switch'], ['POST', '/api/time-track/timer/discard-idle'], ['POST', '/api/time-track/heartbeat']] as [$method, $uri]) {
+        foreach ([['GET', '/api/time-track/tasks'], ['GET', '/api/time-track/entries'], ['GET', '/api/time-track/export'], ['POST', '/api/time-track/timer/start'], ['POST', '/api/time-track/timer/switch'], ['POST', '/api/time-track/timer/discard-idle']] as [$method, $uri]) {
             $body = $this->api($method, $uri, null, $token);
             self::assertResponseStatusCodeSame(403, $uri);
             self::assertSame('insufficient_scope', $body['error'] ?? null);
@@ -194,7 +194,7 @@ final class ClientApiV19Test extends FunctionalTestCase
 
     public function testCorsAllowsExactOriginsOnly(): void
     {
-        foreach (['moz-extension://v19-uuid' => true, 'chrome-extension://functional' => true, 'tauri://localhost' => true, 'moz-extension://other' => false, 'https://evil.example' => false] as $origin => $allowed) {
+        foreach (['moz-extension://v19-uuid' => true, 'chrome-extension://functional' => true, 'tauri://localhost' => false, 'https://tauri.localhost' => false, 'moz-extension://other' => false, 'https://evil.example' => false] as $origin => $allowed) {
             $this->api('OPTIONS', '/api/time-track/timer/switch', null, null, ['HTTP_ORIGIN' => $origin]);
             self::assertResponseStatusCodeSame(204);
             if ($allowed) {

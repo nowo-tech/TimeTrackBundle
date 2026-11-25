@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Stub;
 
 use Nowo\TimeTrackBundle\Calendar\CalendarCredential;
-use Nowo\TimeTrackBundle\Calendar\CalendarCredentialProviderInterface;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
+use Nowo\TimeTrackBundle\Port\Internal\CalendarCredentialProviderInterface;
 use RuntimeException;
 use Symfony\Component\Security\Core\User\UserInterface;
 

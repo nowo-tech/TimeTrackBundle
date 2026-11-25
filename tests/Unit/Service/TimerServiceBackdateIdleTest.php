@@ -160,7 +160,7 @@ final class TimerServiceBackdateIdleTest extends TestCase
         self::assertSame(ClientType::Extension, $idle[2]->getClientType());
         self::assertNull($idle[0]->getTargetTaskId());
         self::assertNull($idle[0]->getFollowUp());
-        self::assertSame($this->user, $idle[0]->getUser());
+        self::assertSame($this->user, $idle[0]->userRef()->user());
         self::assertSame('2026-11-02 09:10:00', $idle[0]->getFrom()->format('Y-m-d H:i:s'));
         self::assertSame('2026-11-02 09:20:00', $idle[0]->getTo()->format('Y-m-d H:i:s'));
     }

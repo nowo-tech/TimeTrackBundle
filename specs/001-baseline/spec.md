@@ -135,7 +135,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 
 ### UI & i18n
 
-- **FR-TPL-001**: `time_track/index.html.twig` and `time_track/reports.html.twig` render the manage UI on the UiKit list scaffold with view models from `Ui/TimeTrackPages` (REQ-UI-003, see docs/TEMPLATES.md); `layout.html.twig` / `_legacy_layout.html.twig` are deprecated 1.x shims (removed in 2.0).
+- **FR-TPL-001**: `time_track/index.html.twig` and `time_track/reports.html.twig` render the manage UI on the UiKit list scaffold with view models from `Ui/TimeTrackPages` (REQ-UI-003, see docs/TEMPLATES.md); the 1.x shims `layout.html.twig` / `_legacy_layout.html.twig` were removed in 2.0.
 - **FR-I18N-001**: `NowoTimeTrackBundle.en.yaml`, `.es.yaml` translation catalogs.
 
 ### Device authorization (client apps, v0.2 contract §2)
@@ -185,7 +185,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-MON-001**: `MonitoringGate` runs the refusal checks before any byte is accepted; `MonitoringPolicy` + policy source port, `MonitoringSettings`, `MonitoringContext`, acknowledgement (`MonitoringAcknowledgement`, store port), upload intent and claim, signer (`HmacMonitoringUploadSigner`), image inspector, evidence store port, activity budget and items.
 - **FR-MON-002**: `TimeTrackMonitoringApiController`.
 - **FR-MON-003**: `MonitoringSpanDiscardedEvent` and `MonitoringSpanDiscardListener`.
-- **FR-MON-004** (1.41, owner decision D4 of 2026-11-24): window titles and project names are never collected — `MonitoringPolicy::$windowTitles` and `GET me.monitoring.windowTitles` are frozen to false (deprecated, removed in 2.0); title fields sent by a client are ignored.
+- **FR-MON-004** (1.41, owner decision D4 of 2026-11-24): window titles and project names are never collected — the policy has no title switch and `GET me.monitoring` no `windowTitles` key (frozen to false and deprecated in 1.41, removed in 2.0); title fields sent by a client are ignored.
 - **FR-MON-005** (1.41, D9; audit ZBB): `MonitoringPolicy` `purpose` / `teamView` / `perPersonDetailRecordedAt`; `MonitoringTeamViewGuard` gives third parties project aggregates unless the policy is an organisation's billing-evidence opt-in whose date has come, the worker acknowledged it after that date and a listener records the view; it dispatches `MonitoringPersonDetailViewedEvent` before each per-person view and returns a `MonitoringPersonDetailGrant` whose `visibleSince` bounds the evidence shown (`MonitoringTeamDetailDeniedException` otherwise). Own view = same user class and id.
 - **FR-MON-006** (1.41, D11): `MonitoringGate` refuses evidence with `on_break` when the workday register (spec 198) shows a break or no clocked `work` stretch over the instant or the whole slot (night shifts through the day before), and with `workday_unknown` when the register is on but the day cannot be read; `WorkdayHistorySourceInterface` gives earlier days.
 
@@ -234,7 +234,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 - **FR-PD-002** (1.35.0, audit YI L1): `Doctrine\OwnedRows` matches the rows a user owns byte for byte (the SQL match is checked again in PHP, writes go by primary key) and `Doctrine\OwnerIdColumn` tells whether a user id can be stored in the owner column so a query never sends a value the column type rejects.
 - **FR-CLIENT-008** (1.34.0): `Repository\ClientSessionRepositoryInterface`, `Dto\ClientSessionRecord` (scalars, never the token hash), `ValueObject\ClientSessionId` (lower-cased UUID), `Enum\ClientSessionRevocation` and `Event\ClientSessionAccessCheckEvent` (`TimeTrackEvents::CLIENT_SESSION_ACCESS_CHECK`: owner and `security.admin_roles` granted, a listener may grant or deny) serve `ClientTokenRevoker::revokeById()`; `Repository\UserClientTokenRepositoryInterface` (1.35.0) revokes every client session of one user.
 - **FR-EVT-005** (1.36.0, Beacon spec 250): `Event\TimerStartedWithoutTaskEvent` (`TimeTrackEvents::TIMER_START_WITHOUT_TASK`) is dispatched when a timer without a task starts (`entries.allow_without_task`), with ids and scalars only; `TIMER_START` is not dispatched for it.
-- **FR-PEM-004** (1.33.0, REQ-ARCH-001 rule 6): `Doctrine\TimeTrackHostFlushProbe`, registered only with `database.private_entity_manager: false`, lists what the shared entity manager flush wrote on the host\'s behalf as a deprecation migration list; the private manager needs no probe.
+- **FR-PEM-004** (1.33.0, removed in 2.0 with the shared-manager mode; REQ-ARCH-001 rule 6): `Doctrine\TimeTrackHostFlushProbe`, registered only with `database.private_entity_manager: false`, lists what the shared entity manager flush wrote on the host\'s behalf as a deprecation migration list; the private manager needs no probe.
 
 ### Writes by id (1.40)
 

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
-use Nowo\TimeTrackBundle\Integration\TeamContextProviderInterface;
 use Nowo\TimeTrackBundle\Integration\TeamDirectoryInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TeamContextProviderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * Asks a host {@see TeamDirectoryInterface} (1.23.0) where the bundle asks the deprecated
- * {@see TeamContextProviderInterface}. Exceptions propagate. Built by {@see Ports}; stateless.
+ * Asks a host {@see TeamDirectoryInterface} (1.23.0) where the bundle asks its internal shape
+ * {@see TeamContextProviderInterface} (the 1.x interface of that name was removed in 2.0). Exceptions propagate. Built by {@see Ports}; stateless.
  *
  * @internal
  */

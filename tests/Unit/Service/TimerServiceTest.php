@@ -14,7 +14,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\IdleFollowUp;
 use Nowo\TimeTrackBundle\Enum\IdleResolution;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
-use Nowo\TimeTrackBundle\Integration\TaskProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
@@ -118,6 +118,17 @@ final class TimerServiceTest extends TestCase
     public function testHeartbeatWithoutActiveTimerReturnsNull(): void
     {
         self::assertNull($this->service->heartbeat($this->user));
+        self::assertNull($this->service->keepAlive($this->user));
+    }
+
+    public function testKeepAliveTouchesTheRunningTimerWithoutAnActivitySignal(): void
+    {
+        $this->service->start($this->user, 'task-1', ClientType::Web);
+
+        $timer = $this->service->keepAlive($this->user);
+
+        self::assertNotNull($timer);
+        self::assertArrayNotHasKey('isIdle', $timer->getMetadata() ?? []);
     }
 
     public function testStartInvalidTaskThrows(): void

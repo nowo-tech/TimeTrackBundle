@@ -22,22 +22,23 @@ use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 use Throwable;
+use WeakMap;
 
 use function array_keys;
 use function array_sum;
+use function in_array;
 use function is_object;
 use function is_string;
 use function ksort;
 use function sprintf;
 
 /**
- * TimeTrack's private entity manager (1.23.0, REQ-ARCH-001 rule 6; opt-in with
- * `nowo_time_track.database.private_entity_manager: true` until 2.0).
+ * TimeTrack's private entity manager (1.23.0, REQ-ARCH-001 rule 6; opt-in in 1.x, the only mode since 2.0).
  *
  * Up to 1.22 the bundle wrote its rows (time entries, timers, timesheets, audit rows, ledger lines, client tokens, device
  * codes, calendar rows) through `database.entity_manager` (default: the application's `default` manager): saving one
- * flushed every change the application had left pending in that unit of work, and a failed write closed it. With the
- * option on, the bundle writes and reads its own entities through a **private** manager created on the connection,
+ * flushed every change the application had left pending in that unit of work, and a failed write closed it. Since 2.0
+ * (opt-in since 1.23.0), the bundle writes and reads its own entities through a **private** manager created on the connection,
  * configuration (mapping, metadata cache, proxies; its own repository factory, {@see TimeTrackRepositoryFactory}) and
  * event manager (table prefix, host listeners) of that source manager. Its unit of work holds only TimeTrack rows (and
  * references to the host users they point at): a TimeTrack flush never commits an application change, and a failed
@@ -81,6 +82,16 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
     private array $uncommitted = [];
 
     /**
+     * Since 2.0 (W1-2): the TimeTrack rows any manager loaded (the application's, or an earlier private manager). Such
+     * an instance handed to {@see self::persist()} while this manager does not hold it would be inserted again; it is
+     * refused instead. Weak: an entry disappears with its object (kept across boundaries on purpose: an instance a worker
+     * kept from an earlier request is refused too).
+     *
+     * @var WeakMap<object, true>
+     */
+    private WeakMap $loaded;
+
+    /**
      * @param ManagerRegistry $registry The application's Doctrine registry (the source manager is resolved per call)
      * @param string $sourceManagerName `database.entity_manager` (the manager 1.22 wrote the TimeTrack rows through)
      * @param LoggerInterface|null $logger warns when a boundary drops pending changes
@@ -92,6 +103,7 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
     ) {
         // No wrapped manager yet: every read of $this->wrapped goes through __get() (resolved per call).
         unset($this->{'wrapped'});
+        $this->loaded = new WeakMap();
     }
 
     /**
@@ -254,9 +266,14 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
                 }
                 $target     = $live->getClassMetadata($value::class);
                 $identifier = $target->getIdentifierValues($value);
-                if ($identifier !== []) {
-                    $metadata->setFieldValue($entity, $field, $live->getReference($target->getName(), $identifier));
+                // A row your manager only scheduled (an id from a sequence or the constructor, not inserted yet) is not one either.
+                $unsaved   = $identifier === [] || in_array(null, $identifier, true) || $this->source()->getUnitOfWork()->isScheduledForInsert($value);
+                $reference = $unsaved ? null : $live->getReference($target->getName(), $identifier);
+                if ($reference === null) {
+                    // W1-2 (XS-I1 / XS-I2): an unsaved (or vanished) object of yours is never treated as a new row.
+                    throw new LogicException(sprintf('TimeTrack: the %s row points at a %s ("%s") that has no row yet (persisted but not flushed, or not saved at all). Flush your %s first; TimeTrack wrote nothing.', $entity::class, $target->getName(), $field, $target->getName()));
                 }
+                $metadata->setFieldValue($entity, $field, $reference);
             }
         }
     }
@@ -281,12 +298,42 @@ final class TimeTrackEntityManager extends EntityManagerDecorator implements Res
     /**
      * Rows loaded by the private manager inside a transaction may be the application's uncommitted writes: a rollback
      * of that level makes the identity map stale too (audit NJV-1). Doctrine `postLoad` listener; other managers'
-     * loads are ignored.
+     * loads only mark the TimeTrack rows they load (since 2.0, {@see self::persist()}).
      */
     public function postLoad(PostLoadEventArgs $args): void
     {
+        $entity = $args->getObject();
+        if (TimeTrackManagerRegistry::isBundleEntity($entity::class)) {
+            // @igor-ignore - Weak map keyed by the loaded object itself: no request data is kept once the object is gone.
+            $this->loaded[$entity] = true;
+        }
         if ($this->current instanceof EntityManagerInterface && $args->getObjectManager() === $this->current) {
             $this->wrote();
+        }
+    }
+
+    /**
+     * Since 2.0 (W1-2, REQ-ARCH-001 rule 6): a TimeTrack row that another manager loaded (your manager, or a private
+     * manager of an earlier request) is refused instead of being inserted again (a duplicate row or a unique violation).
+     *
+     * @throws LogicException when the row was loaded by another manager
+     */
+    public function persist(object $object): void
+    {
+        $this->refuseLoadedElsewhere($object);
+        $this->live()->persist($object);
+    }
+
+    /**
+     * Since 2.0 (W1-2, audit ZAR-4): refuses a TimeTrack row that another manager loaded and this one does not hold,
+     * also on the bundle's DBAL insert path ({@see TimeTrackRows::insert()}).
+     *
+     * @throws LogicException when the row was loaded by another manager
+     */
+    public function refuseLoadedElsewhere(object $object): void
+    {
+        if (isset($this->loaded[$object]) && !$this->live()->contains($object)) {
+            throw new LogicException(sprintf('TimeTrack: this %s row was loaded by another entity manager (your application\'s, or TimeTrack\'s in an earlier request) and would be inserted again. Change TimeTrack rows on instances loaded through TimeTrack in the same request (its services and repositories); nothing was written. See UPGRADING "To 2.0.0", "Private manager only".', $object::class));
         }
     }
 

@@ -19,10 +19,6 @@ use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientPrivacyNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
-use Nowo\TimeTrackBundle\Client\ClientUserDaysOffProviderInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserLocaleProviderInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserPrivacyProviderInterface;
-use Nowo\TimeTrackBundle\Client\ClientUserProfileProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
@@ -44,9 +40,13 @@ use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserDaysOffProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserLocaleProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserPrivacyProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\ClientUserProfileProviderInterface;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Port\Ports;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
-use Nowo\TimeTrackBundle\Security\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
@@ -85,7 +85,6 @@ use function preg_match;
 use function preg_replace;
 use function sprintf;
 use function strtolower;
-use function trigger_deprecation;
 use function trim;
 
 use const DATE_ATOM;
@@ -157,6 +156,8 @@ final readonly class TimeTrackClientApiController
     /**
      * Receives the services of the client API.
      *
+     * @param TeamAccessGuard $teamAccessGuard @deprecated since 2.0, ignored (it only checked the removed `GET entries?userId=`); removed in 3.0
+     * @param int $idleThresholdSeconds @deprecated since 2.0, ignored (it was only answered by the removed `POST heartbeat`); removed in 3.0
      * @param bool $allowMetadata `client_api.allow_metadata`: accept free `metadata` on timer start (default false)
      * @param ClockInterface|null $clock Reference time of the default periods (defaults to the system clock)
      * @param LoggerInterface|null $logger Logs throttled logins without username or IP and (1.12) malformed working hours / days off without user data (defaults to no logging)
@@ -171,13 +172,14 @@ final readonly class TimeTrackClientApiController
      * @param MeetingContext|null $meetings Meetings API (`me.features.meetings`, `me.meetings`, `me.links.calendars`, 1.14; null = off)
      * @param MonitoringContext|null $monitoring Activity monitoring (`me.features.monitoring`, `me.monitoring`, 1.26; null = off)
      */
+    // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
         private ClientAuthService $authService,
         private TimerService $timerService,
-        private TeamAccessGuard $teamAccessGuard,
+        TeamAccessGuard $teamAccessGuard,
         private ClientResponseFactory $responseFactory,
         private ClientLoginRateLimiter $loginRateLimiter,
-        private int $idleThresholdSeconds,
+        int $idleThresholdSeconds,
         private ClientApiGuard $guard,
         private TaskAccessCheckerInterface $taskAccessChecker,
         private ClientUserProfileProviderInterface $profileProvider,
@@ -621,37 +623,8 @@ final readonly class TimeTrackClientApiController
     }
 
     /**
-     * POST heartbeat (deprecated since 1.9, removed in 2.0): keeps answering with the running timer; `isIdle` is
-     * ignored (idle is the user's decision on the client, see `timer/discard-idle`). 1.33.0: triggers a deprecation
-     * notice.
-     */
-    #[Route('/api/time-track/heartbeat', name: 'nowo_time_track_api_heartbeat', methods: ['POST', 'OPTIONS'])]
-    public function heartbeat(Request $request): Response
-    {
-        $principal = $this->authorize($request, ClientScope::TimerWrite);
-        if ($principal instanceof Response) {
-            return $principal;
-        }
-
-        // 1.33.0: the server-side notice of the client call 2.0 removes (once per request).
-        trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'A client called "POST /api/time-track/heartbeat" (deprecated since 1.9): 2.0 removes it. Update the client: the 1.9+ browser extension and desktop agent no longer call it (idle is answered with "timer/discard-idle").');
-        $timer    = $this->timerService->keepAlive($principal->user);
-        $response = $timer instanceof ActiveTimer
-            ? $this->responseFactory->json([
-                'timer'                => $this->taskPresenter->timer($timer, $principal->user, $request),
-                'idleThresholdSeconds' => $this->idleThresholdSeconds,
-                'deprecated'           => true,
-            ], Response::HTTP_OK, $request)
-            : $this->noActiveTimer($request);
-        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
-        $response->headers->set('Deprecation', 'true');
-
-        return $response;
-    }
-
-    /**
-     * GET entries: own time entries of a period (`from`, `to`, `limit` 1-100, `offset`). The deprecated `userId`
-     * parameter keeps the 1.x team view (checked by the team guard); 1.33.0: it triggers a deprecation notice.
+     * GET entries: own time entries of a period (`from`, `to`, `limit` 1-100, `offset`). Since 2.0 the 1.x `userId`
+     * parameter (deprecated since 1.9) is gone: the caller's own entries only.
      */
     #[Route('/api/time-track/entries', name: 'nowo_time_track_api_entries', methods: ['GET', 'OPTIONS'])]
     public function entries(Request $request): Response
@@ -661,27 +634,11 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $period       = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'), $this->clock->now());
-        $limit        = max(1, min(self::ENTRIES_MAX_LIMIT, $request->query->getInt('limit', self::ENTRIES_MAX_LIMIT)));
-        $offset       = max(0, $request->query->getInt('offset', 0));
-        $targetUserId = $request->query->getString('userId') ?: null;
-        $user         = $principal->user;
-
-        if ($targetUserId !== null) {
-            // 1.33.0: the server-side notice of the parameter 2.0 removes (once per request).
-            trigger_deprecation('nowo-tech/time-track-bundle', '1.33', 'A client called "GET /api/time-track/entries" with "userId" (deprecated since 1.9): 2.0 removes the parameter and the endpoint returns the caller\'s own entries only. Update the client; read other people\'s entries in the web reports.');
-        }
-        if ($targetUserId !== null && $targetUserId !== UserIdResolver::getId($user)) {
-            if (!$this->teamAccessGuard->canViewUserEntries($user, $targetUserId)) {
-                $this->auditor->denied('forbidden', $principal->token, $request->getClientIp());
-
-                return $this->responseFactory->error('forbidden', 'Forbidden.', Response::HTTP_FORBIDDEN, $request);
-            }
-
-            $list = $this->timerService->listEntriesPage($user, $period['from'], $period['to'], 1 + intdiv($offset, $limit), $limit, $targetUserId, false)->entries;
-        } else {
-            $list = $this->timerService->listOwnEntries($user, $period['from'], $period['to'], $limit, $offset);
-        }
+        $period = QueryPeriodResolver::resolve($request->query->getString('from'), $request->query->getString('to'), $this->clock->now());
+        $limit  = max(1, min(self::ENTRIES_MAX_LIMIT, $request->query->getInt('limit', self::ENTRIES_MAX_LIMIT)));
+        $offset = max(0, $request->query->getInt('offset', 0));
+        $user   = $principal->user;
+        $list   = $this->timerService->listOwnEntries($user, $period['from'], $period['to'], $limit, $offset);
 
         $hidden      = $this->timerService->hiddenTaskEntryIds($list);
         $hiddenTitle = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($user);

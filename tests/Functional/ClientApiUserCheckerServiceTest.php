@@ -43,12 +43,12 @@ final class ClientApiUserCheckerServiceTest extends FunctionalTestCase
         $this->entityManager()->flush();
         $id = $host->getId();
         self::assertNotNull($id);
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $auth = self::getContainer()->get(ClientAuthService::class);
         self::assertInstanceOf(ClientAuthService::class, $auth);
         $token = $auth->issueToken(new SecurityUser($id, 'ana@example.com'), ClientType::Desktop)['token'];
-        $this->entityManager()->clear();
+        $this->clearEntityManagers();
 
         $checker = self::getContainer()->get(SwitchableUserChecker::class);
         self::assertInstanceOf(SwitchableUserChecker::class, $checker);

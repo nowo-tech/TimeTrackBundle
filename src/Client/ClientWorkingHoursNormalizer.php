@@ -27,7 +27,7 @@ use function usort;
  * `{timezone: ?string, slots: list<{day: 1-7, from: "HH:MM", to: "HH:MM"}>}` (`day`: ISO weekday, 1 = Monday;
  * `from` inclusive, `to` exclusive, local time in `timezone`).
  *
- * {@see ClientUserProfileProviderInterface::getWorkingHours()} may return either that `slots` shape or the documented
+ * the 1.x `ClientUserProfileProviderInterface::getWorkingHours()` may return either that `slots` shape or the documented
  * 1.9 `days` shape `{timezone, days: {mon: [["09:00", "17:00"]], ...}}` (day keys `mon`…`sun` or `monday`…`sunday`, any
  * case; a range is `["09:00", "17:00"]` or `{from, to}`). When both keys are present `slots` wins.
  *

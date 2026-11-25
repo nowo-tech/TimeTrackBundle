@@ -24,6 +24,7 @@ use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryData;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
+use Nowo\TimeTrackBundle\Port\Internal\TimesheetScopeProviderInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimeEntryRepository;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
@@ -36,7 +37,6 @@ use Nowo\TimeTrackBundle\Tests\Support\FixedWorkingCalendar;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\Tests\Support\TimesheetFixtures;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
-use Nowo\TimeTrackBundle\Timesheet\TimesheetScopeProviderInterface;
 use Nowo\TransactionContract\TransientStorageFailure;
 use Nowo\TransactionDoctrine\ConflictCode;
 

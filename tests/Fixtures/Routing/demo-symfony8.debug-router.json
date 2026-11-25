@@ -224,30 +224,6 @@
             "utf8": true
         }
     },
-    "nowo_time_track_api_heartbeat": {
-        "path": "/api/time-track/heartbeat",
-        "pathRegex": "{^/api/time\\-track/heartbeat$}sDu",
-        "host": "ANY",
-        "hostRegex": "",
-        "scheme": "ANY",
-        "method": "POST|OPTIONS",
-        "class": "Symfony\\Component\\Routing\\Route",
-        "defaults": {
-            "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientApiController::heartbeat"
-        },
-        "requirements": {
-            "action": "clock-in|break-start|break-end|clock-out",
-            "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
-            "id": "[A-Za-z0-9-]{1,36}",
-            "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-            "screenshotId": "[A-Za-z0-9_-]{1,64}",
-            "_locale": "en|es"
-        },
-        "options": {
-            "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
-            "utf8": true
-        }
-    },
     "nowo_time_track_api_entries": {
         "path": "/api/time-track/entries",
         "pathRegex": "{^/api/time\\-track/entries$}sDu",

@@ -6,9 +6,9 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Repository;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use LogicException;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
 
 /**
  * Since 1.22.1 (audit NL): the retention purge owns a DBAL transaction (a savepoint inside a host one) and never
@@ -16,41 +16,26 @@ use RuntimeException;
  */
 final class DoctrineOrmTimesheetRepositoryPurgeTest extends TestCase
 {
-    public function testAFailedPurgeRollsBackItsOwnTransactionWithoutFlushingOrClearing(): void
+    /**
+     * 2.0 (audit ZAR-1): a store built by hand with a manager that is not TimeTrack's private one (the application's)
+     * refuses the purge before it touches the manager or its connection.
+     */
+    public function testAStoreBuiltWithAnotherManagerRefusesBeforeTouchingIt(): void
     {
-        $failure    = new RuntimeException('Query failed');
         $connection = $this->createMock(Connection::class);
-        $connection->expects(self::once())->method('beginTransaction');
-        $connection->expects(self::never())->method('commit');
-        $connection->method('isTransactionActive')->willReturn(true);
-        // Since 1.27.0 a unit of work of the bundle's runner: entry level 0, its own level 1 rolled back once.
-        $connection->method('getTransactionNestingLevel')->willReturnOnConsecutiveCalls(0, 1, 1);
-        $connection->expects(self::once())->method('rollBack');
+        $connection->expects(self::never())->method('beginTransaction');
+        $connection->expects(self::never())->method('rollBack');
+        $connection->expects(self::never())->method('executeStatement');
 
         $em = $this->createMock(EntityManagerInterface::class);
         $em->method('getConnection')->willReturn($connection);
-        $em->method('createQueryBuilder')->willThrowException($failure);
+        $em->expects(self::never())->method('createQueryBuilder');
         $em->expects(self::never())->method('flush');
         $em->expects(self::never())->method('clear');
-        $em->expects(self::never())->method('wrapInTransaction');
-        $em->expects(self::never())->method('detach');
+        $em->expects(self::never())->method('close');
 
-        $this->expectExceptionObject($failure);
-        (new DoctrineOrmTimesheetRepository($em))->purgeBefore('2021-01-01');
-    }
-
-    public function testAFailureAfterTheTransactionEndedIsRethrownWithoutRollback(): void
-    {
-        $failure    = new RuntimeException('Connection lost');
-        $connection = $this->createMock(Connection::class);
-        $connection->method('isTransactionActive')->willReturn(false);
-        $connection->expects(self::never())->method('rollBack');
-
-        $em = $this->createMock(EntityManagerInterface::class);
-        $em->method('getConnection')->willReturn($connection);
-        $em->method('createQueryBuilder')->willThrowException($failure);
-
-        $this->expectExceptionObject($failure);
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('only runs units of work on Nowo\\TimeTrackBundle\\Doctrine\\TimeTrackEntityManager');
         (new DoctrineOrmTimesheetRepository($em))->purgeBefore('2021-01-01');
     }
 }

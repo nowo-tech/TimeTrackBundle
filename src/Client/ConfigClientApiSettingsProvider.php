@@ -14,6 +14,7 @@ final readonly class ConfigClientApiSettingsProvider implements ClientApiSetting
 
     /**
      * @param list<string> $allowedOrigins
+     * @param bool $allowTauriWebviewOrigins @deprecated since 2.0, ignored (see {@see ClientApiSettings}); removed in 3.0
      */
     public function __construct(
         array $allowedOrigins = [],
@@ -21,7 +22,7 @@ final readonly class ConfigClientApiSettingsProvider implements ClientApiSetting
         int $perIpLimit = 300,
         int $deviceIpLimit = 30,
         int $windowSeconds = 60,
-        bool $allowTauriWebviewOrigins = true,
+        bool $allowTauriWebviewOrigins = false,
         int $backdateMaxSeconds = 86_400,
         int $clockSkewSeconds = 120,
         bool $allowIdleReassign = true,

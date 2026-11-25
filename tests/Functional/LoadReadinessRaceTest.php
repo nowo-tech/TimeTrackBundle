@@ -7,7 +7,6 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use Closure;
 use DateTimeImmutable;
 use Doctrine\ORM\Event\OnFlushEventArgs;
-use Nowo\TimeTrackBundle\Client\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -19,8 +18,9 @@ use Nowo\TimeTrackBundle\Event\TimeEntryCreatedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationNotPendingException;
-use Nowo\TimeTrackBundle\Integration\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringAcknowledgement;
+use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
+use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefFactory;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmMonitoringAcknowledgementStore;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
@@ -32,7 +32,6 @@ use Nowo\TimeTrackBundle\Tests\Stub\StubServiceAccountPolicy;
 use Nowo\TimeTrackBundle\Tests\Support\HookClock;
 use Nowo\TimeTrackBundle\Tests\Support\ServiceCopy;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
-use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -67,7 +66,6 @@ final class LoadReadinessRaceTest extends FunctionalTestCase
      * R1: a concurrent start commits its timer between this start's check and its insert. Up to 1.26 the insert failed
      * on the unique `user_id` index, closed the manager and reset the application's manager (its user detached).
      */
-    #[Group('shared-entity-manager')]
     public function testAConcurrentStartIsRefusedWithoutResettingTheApplicationsManager(): void
     {
         $clock = new HookClock(new NativeClock());
@@ -160,7 +158,6 @@ final class LoadReadinessRaceTest extends FunctionalTestCase
      * Since 1.27.0: an answer stored inside a transaction whose commit then failed is dropped, so a retry with the same
      * key writes the entry instead of replaying a 201 for an entry that does not exist.
      */
-    #[Group('shared-entity-manager')]
     public function testAnAnswerOfAFailedCommitIsNeverReplayed(): void
     {
         $token   = $this->entriesToken($this->user);
@@ -275,7 +272,6 @@ final class LoadReadinessRaceTest extends FunctionalTestCase
      * R8 (spec 199): a concurrent request stores the same acknowledgement between this one's check and its insert. Up to
      * 1.26 the insert failed on the unique key, closed the manager and reset the application's manager.
      */
-    #[Group('shared-entity-manager')]
     public function testAConcurrentAcknowledgementNeverResetsTheApplicationsManager(): void
     {
         $references = self::getContainer()->get(UserReferenceResolverInterface::class);
