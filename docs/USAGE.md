@@ -679,7 +679,8 @@ final class ChatScopeFamily implements DeviceScopeFamilyProviderInterface
 }
 ```
 
-The configured `client_api.credential_issuer` must implement `ClientFamilyCredentialMinterInterface`: `mintForFamily()`
+The configured `client_api.credential_issuer` must implement `ClientFamilyCredentialMinterInterface` (the build fails
+when a family other than `time` is registered without one; the default opaque issuer mints `time` credentials only): `mintForFamily()`
 receives a `DeviceCredentialRequest` (user, client type and name, family, scopes, device key) for every approved request,
 `time` included, so the credential list can group a device's families.
 
@@ -689,11 +690,16 @@ receives a `DeviceCredentialRequest` (user, client type and name, family, scopes
 2. Right after, it asks for chat **proving it is the same device** with the token it just got:
    `POST /api/time-track/v1/device/code {clientType, clientName, family: "chat", scopes: ["chat:read"]}` with
    `Authorization: Bearer <time token>`. The new request gets that token's device key (`401 invalid_token` when the token
-   is not valid). The approval page names the family ("… asks for access to: Chat"), one family per approval.
+   is not valid) and **only that token's owner may approve it**: another user's approval is refused
+   (`DeviceAuthorizationRefusedException::LINK_MISMATCH`, the request is denied, nothing is minted). The approval page
+   names the family ("… asks for access to: Chat"), one family per approval.
 3. `POST device/token` answers `{token, expiresAt, scopes, scopeFamily: "chat"}`.
 
 The default verification page and a host page built on `DeviceAuthorizationService` read the family with
-`DeviceAuthorization::getScopeFamily()` and its label with `DeviceScopeFamilyRegistry::labelOf()`.
+`DeviceAuthorization::getScopeFamily()` and its label with `DeviceScopeFamilyRegistry::labelOf()`. A host page also
+skips a request for which `DeviceAuthorizationService::isFamilyAvailable()` is false (its family or a scope is no longer
+registered) and catches `DeviceAuthorizationRefusedException` from `approve()` (`reason`: `device_link_mismatch` or
+`scope_family_unavailable`; the request is already denied, nothing was minted).
 
 ### Authenticate another bundle's API with a family token
 

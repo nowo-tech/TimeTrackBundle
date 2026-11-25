@@ -144,17 +144,17 @@ the device requests; no row is rewritten.
 MySQL 8.4 (`mysql-up.sql`):
 
 ```sql
--- TimeTrackBundle 2.2.0, MySQL 8.4, default table prefix. Device-flow scope families (Beacon Desktop BD-2): the scope family of every client session token and device request (existing rows become "time"), the device key that groups a device's tokens and the name the device gave. The family is compared in PHP only, never in SQL. No row is rewritten. Each statement is one atomic change.
+-- TimeTrackBundle 2.2.0, MySQL 8.4, default table prefix. Device-flow scope families (Beacon Desktop BD-2): the scope family of every client session token and device request (existing rows become "time"), the device key that groups a device's tokens, the name the device gave, and the owner of the token a device request was linked with (only that user may approve it). The family is compared in PHP only, never in SQL. No row is rewritten. Each statement is one atomic change.
 ALTER TABLE time_track_client_tokens ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL, ADD device_key VARCHAR(36) DEFAULT NULL, ADD client_name VARCHAR(100) DEFAULT NULL, ALGORITHM=INSTANT;
-ALTER TABLE time_track_device_codes ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL, ADD device_key VARCHAR(36) DEFAULT NULL, ALGORITHM=INSTANT;
+ALTER TABLE time_track_device_codes ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL, ADD device_key VARCHAR(36) DEFAULT NULL, ADD link_owner_id VARCHAR(191) DEFAULT NULL, ALGORITHM=INSTANT;
 ```
 
 MariaDB 10.6+ / 11.4 (`mariadb-up.sql`):
 
 ```sql
--- TimeTrackBundle 2.2.0, MariaDB 10.6+ / 11.4, default table prefix. Device-flow scope families (Beacon Desktop BD-2): the scope family of every client session token and device request (existing rows become "time"), the device key that groups a device's tokens and the name the device gave. The family is compared in PHP only, never in SQL. No row is rewritten. Each statement is one atomic change.
+-- TimeTrackBundle 2.2.0, MariaDB 10.6+ / 11.4, default table prefix. Device-flow scope families (Beacon Desktop BD-2): the scope family of every client session token and device request (existing rows become "time"), the device key that groups a device's tokens, the name the device gave, and the owner of the token a device request was linked with (only that user may approve it). The family is compared in PHP only, never in SQL. No row is rewritten. Each statement is one atomic change.
 ALTER TABLE time_track_client_tokens ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL, ADD device_key VARCHAR(36) DEFAULT NULL, ADD client_name VARCHAR(100) DEFAULT NULL, ALGORITHM=INSTANT;
-ALTER TABLE time_track_device_codes ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL, ADD device_key VARCHAR(36) DEFAULT NULL, ALGORITHM=INSTANT;
+ALTER TABLE time_track_device_codes ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL, ADD device_key VARCHAR(36) DEFAULT NULL, ADD link_owner_id VARCHAR(191) DEFAULT NULL, ALGORITHM=INSTANT;
 ```
 
 PostgreSQL 16 (`postgresql-up.sql`):
@@ -168,6 +168,7 @@ ALTER TABLE time_track_client_tokens ADD device_key VARCHAR(36) DEFAULT NULL;
 ALTER TABLE time_track_client_tokens ADD client_name VARCHAR(100) DEFAULT NULL;
 ALTER TABLE time_track_device_codes ADD scope_family VARCHAR(32) DEFAULT 'time' NOT NULL;
 ALTER TABLE time_track_device_codes ADD device_key VARCHAR(36) DEFAULT NULL;
+ALTER TABLE time_track_device_codes ADD link_owner_id VARCHAR(191) DEFAULT NULL;
 COMMIT;
 ```
 
@@ -182,16 +183,18 @@ ALTER TABLE time_track_client_tokens ADD COLUMN device_key VARCHAR(36) DEFAULT N
 ALTER TABLE time_track_client_tokens ADD COLUMN client_name VARCHAR(100) DEFAULT NULL;
 ALTER TABLE time_track_device_codes ADD COLUMN scope_family VARCHAR(32) DEFAULT 'time' NOT NULL;
 ALTER TABLE time_track_device_codes ADD COLUMN device_key VARCHAR(36) DEFAULT NULL;
+ALTER TABLE time_track_device_codes ADD COLUMN link_owner_id VARCHAR(191) DEFAULT NULL;
 COMMIT;
 ```
 
-Rollback to 2.1 (`*-down.sql`) first deletes the tokens of every family other than `time` (2.1 knows no families and
-would accept them on the time routes that need no scope). MySQL:
+Rollback to 2.1 (`*-down.sql`) first deletes the tokens and the device requests of every family other than `time`
+(2.1 knows no families and would accept them as time tokens on the routes that need no scope). MySQL:
 
 ```sql
--- TimeTrackBundle 2.2.0 rollback to 2.1, MySQL 8.4. The first statement revokes every token of a family other than "time": 2.1 knows no families and would accept them as time tokens on the routes that need no scope (GET me, logout).
+-- TimeTrackBundle 2.2.0 rollback to 2.1, MySQL 8.4. The first statements revoke every token and drop every device request of a family other than "time": 2.1 knows no families and would accept them as time tokens on the routes that need no scope (GET me, logout).
 DELETE FROM time_track_client_tokens WHERE scope_family <> 'time';
-ALTER TABLE time_track_device_codes DROP scope_family, DROP device_key;
+DELETE FROM time_track_device_codes WHERE scope_family <> 'time';
+ALTER TABLE time_track_device_codes DROP scope_family, DROP device_key, DROP link_owner_id;
 ALTER TABLE time_track_client_tokens DROP scope_family, DROP device_key, DROP client_name;
 ```
 
@@ -211,10 +214,14 @@ The family is compared in PHP only (never in a `WHERE`), so the new columns are 
    implements `DeviceScopeFamilyProviderInterface` (autoconfigured). The `time` key and the time scopes are refused.
 2. Make the credential minter family-aware: implement `ClientFamilyCredentialMinterInterface::mintForFamily()` so the
    credential stores the family and the device key (one "connected app" row per device with one badge per family).
-   Approving a request of another family with a plain minter fails and issues nothing.
-3. Authenticate the other bundle's API with `ClientFamilyTokenAuthenticator` (for ChatKit: implement its
+   The build fails when a family other than `time` is registered without one (the default opaque issuer mints `time`
+   credentials only).
+3. If you render your own approval page: skip requests for which `DeviceAuthorizationService::isFamilyAvailable()` is
+   false, and catch `DeviceAuthorizationRefusedException` from `approve()` (a request linked to another user's token, or
+   whose family is gone; it is already denied and nothing was minted).
+4. Authenticate the other bundle's API with `ClientFamilyTokenAuthenticator` (for ChatKit: implement its
    `ChatClientPrincipalResolverInterface` over it) and add that API's path to your stateless API firewall.
-4. Optional, explicit tenant context: set `client_api.context.policy` (a `ClientContextPolicyInterface`) and
+5. Optional, explicit tenant context: set `client_api.context.policy` (a `ClientContextPolicyInterface`) and
    `client_api.context.header` (Beacon: `X-Beacon-Context`). The policy is asked on every request and must never change
    the user's stored web context.
 

@@ -76,6 +76,8 @@ device:
   denied_status: "Geweigerd"
   expired: "Dit verzoek is verlopen of al afgehandeld. Begin opnieuw op het apparaat."
   expired_status: "Verlopen"
+  link_mismatch: "Dit verzoek kwam van een apparaat dat met een ander account is aangemeld en is daarom geweigerd. Er is niets gekoppeld. Verwachtte je het niet, dan probeert iemand misschien via jou toegang te krijgen."
+  link_mismatch_status: "Geweigerd"
 downloads:
   title: "Tijdregistratie-apps"
   get: "Downloaden"

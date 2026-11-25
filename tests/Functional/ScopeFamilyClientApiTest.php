@@ -9,12 +9,15 @@ use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Client\CurrentClientContext;
 use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
+use Nowo\TimeTrackBundle\Client\DeviceScopeRequest;
 use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
+use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Event\ClientApiEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
 use Nowo\TimeTrackBundle\Query\ConnectedClientDevicesQueryInterface;
+use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Tests\Stub\RecordingFamilyCredentialMinter;
 use Nowo\TimeTrackBundle\Tests\Stub\StubClientContextPolicy;
 use Symfony\Component\DomCrawler\Crawler;
@@ -184,6 +187,41 @@ final class ScopeFamilyClientApiTest extends FunctionalTestCase
         self::assertSame(['time'], $this->devices()->devicesOf($owner)[0]->scopeFamilies);
         $revoked = array_values(array_filter($this->events, static fn (ClientApiEvent $e): bool => $e->action === ClientApiAuditAction::SessionRevoked));
         self::assertSame('chat', $revoked[0]->scopeFamily ?? null);
+    }
+
+    /** Audit ZBV-M1: a device that links user A's token can only be approved by A. */
+    public function testAnotherUserCannotApproveARequestLinkedToMyToken(): void
+    {
+        $this->createUser('other@example.com');
+        $attacker = $this->login('other@example.com');
+        $grant    = $this->api('POST', '/api/time-track/v1/device/code', ['clientType' => 'desktop', 'clientName' => 'Laptop', 'family' => 'chat', 'scopes' => ['chat:read']], $attacker);
+        self::assertResponseIsSuccessful();
+
+        $crawler = $this->openApproval($this->string($grant, 'userCode'));
+        $this->client->submit($crawler->filter('[data-testid="time-track-device-approve"]')->form());
+        self::assertSelectorExists('[data-testid="time-track-device-result"]');
+        self::assertSelectorTextContains('body', 'signed in to another account');
+        self::assertSame([], $this->minter()->requests, 'no credential minted');
+
+        $token = $this->api('POST', '/api/time-track/v1/device/token', ['deviceCode' => $this->string($grant, 'deviceCode')]);
+        self::assertResponseStatusCodeSame(400);
+        self::assertSame('access_denied', $token['error'] ?? null);
+        $denied = array_values(array_filter($this->events, static fn (ClientApiEvent $e): bool => $e->action === ClientApiAuditAction::DeviceDenied));
+        self::assertSame('device_link_mismatch', $denied[0]->reason ?? null);
+        self::assertSame('chat', $denied[0]->scopeFamily ?? null);
+    }
+
+    /** Audit ZBV-L1: a pending request of a family that is not registered is never shown (no raw key on the page). */
+    public function testARequestOfAnUnregisteredFamilyIsNotShown(): void
+    {
+        $devices = self::getContainer()->get(DeviceAuthorizationService::class);
+        self::assertInstanceOf(DeviceAuthorizationService::class, $devices);
+        $grant = $devices->startFamily(ClientType::Desktop, 'Laptop', new DeviceScopeRequest('voice', ['voice:call']));
+
+        $this->openApproval($grant->userCode);
+        self::assertSelectorExists('[data-testid="time-track-device-result"]');
+        self::assertSelectorTextNotContains('body', 'voice');
+        self::assertSame([], $this->minter()->requests);
     }
 
     public function testTheLinkTokenMustBeValid(): void

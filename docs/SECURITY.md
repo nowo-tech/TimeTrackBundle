@@ -110,7 +110,10 @@ Since 2.2.0 (Beacon Desktop BD-2, Beacon constraints R3, R4, R7):
   on the routes that need no scope (`GET me`); `ClientFamilyTokenAuthenticator` refuses every token whose family is not
   the API's (a `time` token never opens the chat API). An unregistered family or scope is refused at `device/code`
   (`400 invalid_scope`), a request never mixes families, and a family other than `time` has no default scopes. A family
-  removed from the registry stops its tokens at their next use (the authenticator only serves registered families).
+  removed from the registry stops its tokens at their next use (the authenticator only serves registered families),
+  and a pending or approved request of such a family (or with a scope no longer in it) is refused at approval and at
+  the exchange, under the lock, and never shown on the default page (audit ZBV-L1). Registering the family again revives
+  its unexpired tokens: revoke them first if that is not wanted.
   The family is compared in PHP (`===`), never in a SQL `WHERE`, so no collation can widen it.
 - **No new way to get a token.** Family tokens are issued only through the device flow, after the signed-in user's
   approval on a page that names the family (one family per approval); the password `login` always issues `time`
@@ -120,10 +123,14 @@ Since 2.2.0 (Beacon Desktop BD-2, Beacon constraints R3, R4, R7):
   per-token limits, account status through the user checker, the host credential state on every request) before the
   family, the scope and the context; every refusal is audited with the family (`ClientApiEvent::$scopeFamily`).
 - **Device key linking.** `device/code` may carry the Bearer token of the same device so the new family token joins its
-  device row. The presented token must pass the full token checks (`401 invalid_token` otherwise), so only a holder of a
-  valid token of that device can join it; the key only groups the approving user's own sessions (it grants nothing and
-  is never compared across users). A credential minter that does not know families can never mint a non-`time`
-  credential (the approval fails and nothing is issued).
+  device row. The presented token must pass the full token checks (`401 invalid_token` otherwise), and the request
+  stores the **owner** of that token (`link_owner_id`): only that user may approve it. Another user's approval is
+  refused under the request lock, the request is denied, nothing is minted and the refusal is audited
+  (`device_denied`, reason `device_link_mismatch`; audit ZBV-M1, unreleased code). So a device key only ever groups
+  the sessions of the user who owns it.
+- **Credential minting.** A credential minter that does not know families can never mint a non-`time` credential (the
+  approval fails and nothing is issued); the default opaque issuer mints `time` credentials only, and the build fails
+  when a family other than `time` is registered without a `ClientFamilyCredentialMinterInterface` (audit ZBV-I1).
 - **Tenant context.** The context header is checked by the host `ClientContextPolicyInterface` on **every** request
   (no cache): unknown, revoked and non-existent contexts all answer the same `403 context_forbidden`; a malformed value
   (over 128 characters, non-visible ASCII) never reaches the policy; a policy exception fails closed (logged with the
@@ -131,8 +138,11 @@ Since 2.2.0 (Beacon Desktop BD-2, Beacon constraints R3, R4, R7):
 - **Worker mode.** Families and contexts are resolved per call; nothing about a request, user, token, family or tenant
   is kept in a service (`ScopeFamilyWorkerModeTest`: two people, two contexts, two families and a revocation in one
   kernel; flat memory over 1,000 steps).
-- **Rollback.** The 2.2.0 `*-down.sql` scripts delete the tokens of other families first: 2.1 has no family check and
-  would accept them on the time routes that need no scope.
+- **Rollback.** The 2.2.0 `*-down.sql` scripts delete the tokens and the device requests of other families first: 2.1
+  has no family check and would accept them as time tokens on the routes that need no scope (audit ZBV-L2).
+- **Context and idempotency.** The allowed context key is part of the idempotency body hash, so a key reused under
+  another context is a mismatch, never a replay of the other context's answer (audit ZBV-L3); answers carry
+  `Vary: <context header>` when a policy is on (audit ZBV-I4).
 
 ## Reports
 

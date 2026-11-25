@@ -13,18 +13,23 @@ use Nowo\TimeTrackBundle\Client\ClientContextResolver;
 use Nowo\TimeTrackBundle\Client\ClientCredentialMinterInterface;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientFamilyTokenAuthenticator;
+use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Client\ConfigDeviceScopeFamilyProvider;
 use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
+use Nowo\TimeTrackBundle\Client\DeviceScopeRequest;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
+use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationRefusedException;
 use Nowo\TimeTrackBundle\Port\ClientCredentialMinterGate;
 use Nowo\TimeTrackBundle\Port\Internal\TaskProviderInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Tests\Stub\RecordingFamilyCredentialMinter;
 use Nowo\TimeTrackBundle\Tests\Stub\StubClientContextPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
@@ -68,11 +73,13 @@ final class FamilyCredentialAndAuthenticatorTest extends TestCase
         (new ClientCredentialMinterGate($plain))->issueForFamily($user, $request('chat'));
     }
 
-    public function testTheOpaqueIssuerServesEveryFamily(): void
+    public function testTheOpaqueIssuerMintsTimeCredentialsOnly(): void
     {
         $user = new TestUser('u-1', 'u@example.com');
 
-        self::assertStringStartsWith('device:', (new OpaqueClientCredentialIssuer())->issueForFamily($user, new DeviceCredentialRequest(TimeTrackUserRefs::fromUser($user), ClientType::Desktop, 'L', 'chat', ['chat:read'], 'k')));
+        self::assertStringStartsWith('device:', (new OpaqueClientCredentialIssuer())->issueForFamily($user, new DeviceCredentialRequest(TimeTrackUserRefs::fromUser($user), ClientType::Desktop, 'L', 'time', ['timer:read'], 'k')));
+        $this->expectException(LogicException::class);
+        (new OpaqueClientCredentialIssuer())->issueForFamily($user, new DeviceCredentialRequest(TimeTrackUserRefs::fromUser($user), ClientType::Desktop, 'L', 'chat', ['chat:read'], 'k'));
     }
 
     public function testTheDeviceKeyOfALinkTokenNeedsAnActiveAccountAndCredential(): void
@@ -90,18 +97,18 @@ final class FamilyCredentialAndAuthenticatorTest extends TestCase
         $old   = $stack->authService->issueToken($user, ClientType::Desktop, 'c1');
         $new   = $stack->authService->issueFamilyToken($user, ClientType::Desktop, 'c2', 'chat', ['chat:read'], 'dev-9', 'Laptop');
 
-        self::assertNull($stack->guard->deviceKeyOf('unknown', null));
+        self::assertNull($stack->guard->deviceLinkOf('unknown', null));
         $tokenId = $stack->tokens->findValidByTokenHash(ClientAuthService::hashToken($old['token']))?->getId();
-        self::assertSame($tokenId, $stack->guard->deviceKeyOf($old['token'], null), 'a token issued without a device key is its own device');
-        self::assertSame('dev-9', $stack->guard->deviceKeyOf($new['token'], null));
+        self::assertSame(['deviceKey' => $tokenId, 'ownerId' => 'u-1'], $stack->guard->deviceLinkOf($old['token'], null), 'a token issued without a device key is its own device');
+        self::assertSame(['deviceKey' => 'dev-9', 'ownerId' => 'u-1'], $stack->guard->deviceLinkOf($new['token'], null));
 
         $state->active = false;
-        self::assertNull($stack->guard->deviceKeyOf($new['token'], null));
+        self::assertNull($stack->guard->deviceLinkOf($new['token'], null));
 
         $checker = new SwitchableUserChecker();
         $checker->refuse('u@example.com');
         $guard = new ClientApiGuard($stack->authService, $stack->responses, $stack->rateLimiter, $stack->settings, $state, $stack->auditor, new ClientAccountChecker($checker, $stack->tokens, false));
-        self::assertNull($guard->deviceKeyOf($new['token'], null));
+        self::assertNull($guard->deviceLinkOf($new['token'], null));
     }
 
     public function testTheTimeLogoutLeavesAnotherFamilysTokenAlone(): void
@@ -161,5 +168,83 @@ final class FamilyCredentialAndAuthenticatorTest extends TestCase
 
         self::assertSame('Authorization, Content-Type, Idempotency-Key, X-Beacon-Context', (new ClientResponseFactory(['chrome-extension://unit'], contextHeader: 'X-Beacon-Context'))->empty(204, $request)->headers->get('Access-Control-Allow-Headers'));
         self::assertSame('Authorization, Content-Type, Idempotency-Key', (new ClientResponseFactory(['chrome-extension://unit']))->empty(204, $request)->headers->get('Access-Control-Allow-Headers'));
+        // Audit ZBV-I4: the answer varies by the context header (with or without CORS).
+        self::assertSame(['X-Beacon-Context', 'Origin'], (new ClientResponseFactory(['chrome-extension://unit'], contextHeader: 'X-Beacon-Context'))->json([], 200, $request)->getVary());
+        self::assertSame(['X-Beacon-Context'], (new ClientResponseFactory([], contextHeader: 'X-Beacon-Context'))->json([], 200, Request::create('/'))->getVary());
+        self::assertSame([], (new ClientResponseFactory([]))->json([], 200, Request::create('/'))->getVary());
+    }
+
+    public function testTheIdempotencyHashIsBoundToTheContext(): void
+    {
+        self::assertSame('h', ClientIdempotencyStore::contextHash('h', null));
+        self::assertNotSame(ClientIdempotencyStore::contextHash('h', 'org:a'), ClientIdempotencyStore::contextHash('h', 'org:b'));
+        self::assertNotSame('h', ClientIdempotencyStore::contextHash('h', 'personal'));
+    }
+
+    public function testAFamilyNoLongerRegisteredIsNeitherApprovedNorExchanged(): void
+    {
+        $user    = new TestUser('u-1', 'u@example.com');
+        $minter  = new RecordingFamilyCredentialMinter();
+        $stack   = new ClientApiStack($this->createStub(ClientAuthenticatorInterface::class), $this->createStub(TaskProviderInterface::class));
+        $chat    = new DeviceScopeFamilyRegistry([new ConfigDeviceScopeFamilyProvider(['chat' => ['label' => 'Chat', 'scopes' => ['chat:read' => 'Read']]])]);
+        $with    = new DeviceAuthorizationService($stack->devices, new ClientCredentialMinterGate($minter), $stack->authService, $stack->auditor, $stack->rateLimiter, clock: $stack->clock, families: $chat);
+        $without = new DeviceAuthorizationService($stack->devices, new ClientCredentialMinterGate($minter), $stack->authService, $stack->auditor, $stack->rateLimiter, clock: $stack->clock);
+
+        // Unregistered at approval: refused and denied, nothing minted.
+        $grant   = $with->startFamily(ClientType::Desktop, 'L', new DeviceScopeRequest('chat', ['chat:read']));
+        $pending = $with->findPending($grant->userCode, $user);
+        self::assertInstanceOf(DeviceAuthorization::class, $pending);
+        self::assertTrue($with->isFamilyAvailable($pending));
+        self::assertFalse($without->isFamilyAvailable($pending));
+        try {
+            $without->approve($pending, $user);
+            self::fail('refused');
+        } catch (DeviceAuthorizationRefusedException $e) {
+            self::assertSame(DeviceAuthorizationRefusedException::FAMILY_UNAVAILABLE, $e->reason);
+        }
+        self::assertSame([], $minter->requests);
+        self::assertSame('access_denied', $with->poll($grant->deviceCode)->error);
+
+        // A scope removed from the family counts as unavailable too.
+        $narrow = new DeviceScopeFamilyRegistry([new ConfigDeviceScopeFamilyProvider(['chat' => ['label' => 'Chat', 'scopes' => ['chat:write' => 'Send']]])]);
+        self::assertFalse((new DeviceAuthorizationService($stack->devices, new ClientCredentialMinterGate($minter), $stack->authService, $stack->auditor, $stack->rateLimiter, families: $narrow))->isFamilyAvailable($pending));
+
+        // Unregistered after the approval: no token.
+        $grant   = $with->startFamily(ClientType::Desktop, 'L', new DeviceScopeRequest('chat', ['chat:read']));
+        $pending = $with->findPending($grant->userCode, $user);
+        self::assertInstanceOf(DeviceAuthorization::class, $pending);
+        $with->approve($pending, $user);
+        self::assertSame('access_denied', $without->poll($grant->deviceCode)->error);
+    }
+
+    public function testOnlyTheOwnerOfTheLinkedTokenMayApprove(): void
+    {
+        $owner   = new TestUser('u-1', 'a@example.com');
+        $other   = new TestUser('u-2', 'b@example.com');
+        $minter  = new RecordingFamilyCredentialMinter();
+        $stack   = new ClientApiStack($this->createStub(ClientAuthenticatorInterface::class), $this->createStub(TaskProviderInterface::class));
+        $chat    = new DeviceScopeFamilyRegistry([new ConfigDeviceScopeFamilyProvider(['chat' => ['label' => 'Chat', 'scopes' => ['chat:read' => 'Read']]])]);
+        $devices = new DeviceAuthorizationService($stack->devices, new ClientCredentialMinterGate($minter), $stack->authService, $stack->auditor, $stack->rateLimiter, clock: $stack->clock, families: $chat);
+
+        $grant   = $devices->startFamily(ClientType::Desktop, 'L', new DeviceScopeRequest('chat', ['chat:read']), null, 'dev-a', 'u-1');
+        $pending = $devices->findPending($grant->userCode, $other);
+        self::assertInstanceOf(DeviceAuthorization::class, $pending);
+        self::assertSame('u-1', $pending->getLinkOwnerId());
+        try {
+            $devices->approve($pending, $other);
+            self::fail('refused');
+        } catch (DeviceAuthorizationRefusedException $e) {
+            self::assertSame(DeviceAuthorizationRefusedException::LINK_MISMATCH, $e->reason);
+        }
+        self::assertSame([], $minter->requests);
+        self::assertSame('access_denied', $devices->poll($grant->deviceCode)->error);
+
+        // A link owner without a device key is ignored (no link).
+        $grant = $devices->startFamily(ClientType::Desktop, 'L', new DeviceScopeRequest('chat', ['chat:read']), null, null, 'u-1');
+        $mine  = $devices->findPending($grant->userCode, $owner);
+        self::assertInstanceOf(DeviceAuthorization::class, $mine);
+        self::assertNull($mine->getLinkOwnerId());
+        $devices->approve($mine, $other);
+        self::assertCount(1, $minter->requests);
     }
 }

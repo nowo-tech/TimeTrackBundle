@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [[Unreleased]](#unreleased)
   - [Added (2.2.0)](#added-220)
+  - [Security (2.2.0, audit ZBV, unreleased code)](#security-220-audit-zbv-unreleased-code)
   - [Changed (2.2.0)](#changed-220)
   - [Fixed (2.2.0)](#fixed-220)
   - [Tests (2.2.0)](#tests-220)
@@ -295,7 +296,20 @@ Installed time clients (contract v0.4) are unchanged. Apply `docs/sql/2.2.0` (se
 - The default verification page names the family ("… asks for access to: Chat") and lists a host family's scope
   labels (7 locales).
 - Schema: `scope_family` (default `time`), `device_key`, `client_name` on `time_track_client_tokens`; `scope_family`,
-  `device_key` on `time_track_device_codes` (`docs/sql/2.2.0`, demo migration `Version20261126000000`).
+  `device_key`, `link_owner_id` on `time_track_device_codes` (`docs/sql/2.2.0`, demo migration `Version20261126000000`).
+
+### Security (2.2.0, audit ZBV, unreleased code)
+
+- ZBV-M1: a `device/code` linked with a Bearer token stores that token's owner (`link_owner_id`); only that user may
+  approve it. Another user's approval is refused under the lock (`DeviceAuthorizationRefusedException`, request
+  denied, nothing minted, audited `device_link_mismatch`).
+- ZBV-L1: a family (or scope) no longer registered is refused at approval and at the exchange, under the lock, and the
+  default page never shows such a request.
+- ZBV-L2: the `*-down.sql` scripts and the demo migration also delete the non-`time` device requests.
+- ZBV-L3: the allowed context key is part of the idempotency body hash (`ClientIdempotencyStore::contextHash()`).
+- ZBV-I1: the default opaque issuer mints `time` credentials only; the build fails when a non-time family is registered
+  without a `ClientFamilyCredentialMinterInterface` (`ScopeFamilyMinterPass`).
+- ZBV-I4: answers carry `Vary: <context header>` when a context policy is on.
 
 ### Changed (2.2.0)
 

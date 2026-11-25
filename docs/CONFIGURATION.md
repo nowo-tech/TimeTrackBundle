@@ -273,8 +273,9 @@ tokens only and the context header is ignored, exactly as in 2.1.
 | `client_api.context.required` | `false` | `true`: a request without the header answers `400 context_required`; `false`: no header means no context |
 
 The credential minter (`client_api.credential_issuer`) must implement `ClientFamilyCredentialMinterInterface` as soon as
-a family other than `time` is registered: approving such a request with a plain `ClientCredentialMinterInterface`
-fails and issues nothing.
+a family other than `time` is registered (configured or through a provider service): otherwise the container build
+fails (the default opaque issuer mints `time` credentials only). A minter whose class cannot be known at build time is
+checked at approval instead (approving fails and issues nothing).
 
 ```yaml
 nowo_time_track:

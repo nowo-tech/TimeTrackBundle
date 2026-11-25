@@ -94,6 +94,10 @@ final readonly class ClientResponseFactory
 
     private function applyCors(Response $response, ?Request $request): void
     {
+        // Since 2.2.0 (audit ZBV-I4): an answer depends on the context header when a context policy is on.
+        if ($this->contextHeader !== null) {
+            $response->setVary($this->contextHeader, false);
+        }
         if (!$request instanceof Request) {
             return;
         }
@@ -107,7 +111,7 @@ final readonly class ClientResponseFactory
         $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key' . ($this->contextHeader !== null ? ', ' . $this->contextHeader : ''));
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Expose-Headers', 'Retry-After');
-        $response->headers->set('Vary', 'Origin');
+        $response->setVary('Origin', false);
     }
 
     private function isOriginAllowed(string $origin): bool

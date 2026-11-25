@@ -246,7 +246,7 @@ final readonly class TimeTrackMonitoringApiController
         }
         $payload  = $this->payload($request);
         $userId   = UserIdResolver::getId($principal->user);
-        $bodyHash = hash('sha256', 'monitoring_acknowledge' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash = ClientIdempotencyStore::contextHash(hash('sha256', 'monitoring_acknowledge' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
         $replay   = $this->idempotency->find($userId, 'monitoring_acknowledge:' . $key, $bodyHash);
         if ($replay === false) {
             return $this->idempotencyMismatch($request);
@@ -307,7 +307,7 @@ final readonly class TimeTrackMonitoringApiController
         }
         $userId          = UserIdResolver::getId($principal->user);
         $idempotencyHash = hash('sha256', $key);
-        $bodyHash        = hash('sha256', 'monitoring_intent' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash        = ClientIdempotencyStore::contextHash(hash('sha256', 'monitoring_intent' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
 
         try {
             $intents  = $this->intents();
@@ -700,7 +700,7 @@ final readonly class TimeTrackMonitoringApiController
         }
         $payload  = $this->payload($request);
         $userId   = UserIdResolver::getId($principal->user);
-        $bodyHash = hash('sha256', 'monitoring_activity' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash = ClientIdempotencyStore::contextHash(hash('sha256', 'monitoring_activity' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
         $replay   = $this->idempotency->find($userId, 'monitoring_activity:' . $key, $bodyHash);
         if ($replay === false) {
             return $this->idempotencyMismatch($request);

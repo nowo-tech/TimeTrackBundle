@@ -76,6 +76,8 @@ device:
   denied_status: "Abgelehnt"
   expired: "Diese Anfrage ist abgelaufen oder wurde bereits entschieden. Starte erneut am Gerät."
   expired_status: "Abgelaufen"
+  link_mismatch: "Diese Anfrage kam von einem Gerät, das mit einem anderen Konto angemeldet ist, und wurde abgelehnt. Es wurde nichts verbunden. Wenn du sie nicht erwartet hast, versucht vielleicht jemand, über dich Zugriff zu bekommen."
+  link_mismatch_status: "Abgelehnt"
 downloads:
   title: "Zeiterfassungs-Apps"
   get: "Herunterladen"

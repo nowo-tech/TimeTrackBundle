@@ -76,6 +76,8 @@ device:
   denied_status: "Denied"
   expired: "This request expired or was already decided. Start again from the device."
   expired_status: "Expired"
+  link_mismatch: "This request came from a device signed in to another account, so it was refused. Nothing was connected. If you did not expect it, someone may be trying to get access through you."
+  link_mismatch_status: "Refused"
 downloads:
   title: "Time tracking apps"
   get: "Download"

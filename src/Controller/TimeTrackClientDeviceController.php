@@ -76,11 +76,11 @@ final readonly class TimeTrackClientDeviceController
             return $this->responseFactory->error('invalid_scope', 'scopes must be a non-empty list of known scopes of one scope family (or omitted for the default time scopes); family must be a registered scope family.', Response::HTTP_BAD_REQUEST, $request);
         }
 
-        $deviceKey = null;
-        $linked    = ClientApiGuard::bearerToken($request);
+        $link   = null;
+        $linked = ClientApiGuard::bearerToken($request);
         if ($linked !== null) {
-            $deviceKey = $this->guard->deviceKeyOf($linked, $request->getClientIp());
-            if ($deviceKey === null) {
+            $link = $this->guard->deviceLinkOf($linked, $request->getClientIp());
+            if ($link === null) {
                 return $this->responseFactory->error('invalid_token', 'The token of this device is invalid, expired or revoked: sign in again.', Response::HTTP_UNAUTHORIZED, $request, [
                     'WWW-Authenticate' => 'Bearer error="invalid_token"',
                 ]);
@@ -88,7 +88,7 @@ final readonly class TimeTrackClientDeviceController
         }
 
         try {
-            $grant = $this->deviceService->startFamily($clientType, is_string($payload['clientName'] ?? null) ? $payload['clientName'] : '', $scopes, $request->getClientIp(), $deviceKey);
+            $grant = $this->deviceService->startFamily($clientType, is_string($payload['clientName'] ?? null) ? $payload['clientName'] : '', $scopes, $request->getClientIp(), $link['deviceKey'] ?? null, $link['ownerId'] ?? null);
         } catch (DeviceFlowCapacityExceededException $exception) {
             return $this->responseFactory->error('rate_limited', 'Too many pending device requests. Try again later.', Response::HTTP_TOO_MANY_REQUESTS, $request, [
                 'Retry-After' => (string) $exception->retryAfter,

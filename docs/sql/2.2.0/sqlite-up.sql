@@ -6,4 +6,5 @@ ALTER TABLE time_track_client_tokens ADD COLUMN device_key VARCHAR(36) DEFAULT N
 ALTER TABLE time_track_client_tokens ADD COLUMN client_name VARCHAR(100) DEFAULT NULL;
 ALTER TABLE time_track_device_codes ADD COLUMN scope_family VARCHAR(32) DEFAULT 'time' NOT NULL;
 ALTER TABLE time_track_device_codes ADD COLUMN device_key VARCHAR(36) DEFAULT NULL;
+ALTER TABLE time_track_device_codes ADD COLUMN link_owner_id VARCHAR(191) DEFAULT NULL;
 COMMIT;

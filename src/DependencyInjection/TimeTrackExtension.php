@@ -71,6 +71,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackMonitoringApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ClientUserCheckerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ScopeFamilyMinterPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeSubjectProvidersPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
@@ -1563,6 +1564,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
 
+        $container->setParameter(ScopeFamilyMinterPass::ISSUER_PARAMETER, $api['credential_issuer']);
         $this->registerScopeFamilies($container, $api['device_flow']['scope_families'], $api['context'], $loggerRef);
 
         $container->setDefinition(DeviceAuthorizationService::class, (new Definition(DeviceAuthorizationService::class))
@@ -1577,6 +1579,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$maxPending'          => $device['max_pending'],
                 '$clock'               => $clockRef,
                 '$accountChecker'      => new Reference(ClientAccountChecker::class),
+                '$families'            => new Reference(DeviceScopeFamilyRegistry::class),
             ]));
 
         $container->setDefinition(ClientTaskPresenter::class, (new Definition(ClientTaskPresenter::class))
@@ -1644,6 +1647,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setParameter('nowo_time_track.client_api.context.header', $context['header']);
+        // Since 2.2.0 (audit ZBV-I1): read by ScopeFamilyMinterPass.
+        $container->setParameter('nowo_time_track.client_api.device_flow.scope_families', $families);
         $container->getDefinition(ClientResponseFactory::class)->setArgument('$contextHeader', is_string($policy) && $policy !== '' ? $context['header'] : null);
         $container->getDefinition(ClientApiGuard::class)->setArgument('$contexts', new Reference(ClientContextResolver::class));
         $container->setDefinition(CurrentClientContext::class, (new Definition(CurrentClientContext::class))

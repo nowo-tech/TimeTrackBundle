@@ -25,6 +25,8 @@
 | `Client/CurrentClientContext.php` | Current request context reader | FR-FAM-007 |
 | `Query/ConnectedClientDevicesQueryInterface.php` | Connected devices port | FR-FAM-009 |
 | `Query/ConnectedDeviceView.php` | Device row view | FR-FAM-009 |
+| `Exception/DeviceAuthorizationRefusedException.php` | Approval refused under the lock (audit ZBV-M1, ZBV-L1) | FR-FAM-003, FR-FAM-005 |
+| `DependencyInjection/Compiler/ScopeFamilyMinterPass.php` | Build fails without a family-aware minter (audit ZBV-I1) | FR-FAM-005 |
 
 ## Files changed for 2.2.0 (also listed in the baseline / client API inventories)
 
@@ -41,6 +43,9 @@
 | `Service/DeviceAuthorizationService.php` | `startFamily()`, family approval and exchange | FR-FAM-003, FR-FAM-005 |
 | `Controller/TimeTrackClientDeviceController.php` | `family`, Bearer link, `scopeFamily` | FR-FAM-003 |
 | `Controller/TimeTrackClientApiController.php` | Time-only logout, `me.contexts` | FR-FAM-004, FR-FAM-007 |
+| `Controller/TimeTrackDeviceVerificationController.php` | Hides unavailable families, link-mismatch outcome | FR-FAM-003, FR-FAM-010 |
+| `Client/ClientIdempotencyStore.php` | Context-bound idempotency hash (audit ZBV-L3) | FR-FAM-007 |
+| `TimeTrackBundle.php` | Registers `ScopeFamilyMinterPass` | FR-FAM-005 |
 | `Controller/TimeTrackCalendarApiController.php`, `TimeTrackClientAllocationApiController.php`, `TimeTrackMonitoringApiController.php`, `TimeTrackWorkingTimeApiController.php` | Family in action audits | FR-FAM-008 |
 | `Dto/DevicePollResult.php` | `scopeFamily` key | FR-FAM-003 |
 | `Query/ClientSessionView.php`, `Query/DeviceSignInView.php`, `Query/DoctrineTimeTrackQuery.php` | Family views, `devicesOf()` | FR-FAM-009 |

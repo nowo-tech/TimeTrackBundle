@@ -61,6 +61,7 @@ class DeviceAuthorization
      * @param string|null $ipPrefix IPv4 /24 or IPv6 /64 of the requesting device (shown on the approval page)
      * @param string $scopeFamily Since 2.2.0: the requested scope family (default `time`)
      * @param string|null $deviceKey Since 2.2.0: the device key the issued token gets
+     * @param string|null $linkOwnerId Since 2.2.0: the user id of the token the device presented (null = none)
      */
     public function __construct(
         #[ORM\Column(name: 'device_code_hash', type: 'string', length: 64, unique: true)]
@@ -82,6 +83,9 @@ class DeviceAuthorization
         private string $scopeFamily = DeviceScopeFamily::TIME,
         #[ORM\Column(name: 'device_key', type: 'string', length: 36, nullable: true)]
         private ?string $deviceKey = null,
+        // Since 2.2.0 (audit ZBV-M1): only this user may approve; compared in PHP (===), never in SQL.
+        #[ORM\Column(name: 'link_owner_id', type: 'string', length: 191, nullable: true)]
+        private ?string $linkOwnerId = null,
     ) {
         $this->id     = Uuid::generate()->toString();
         $this->scopes = $this->scopeFamily === DeviceScopeFamily::TIME
@@ -93,6 +97,12 @@ class DeviceAuthorization
     public function getScopeFamily(): string
     {
         return $this->scopeFamily;
+    }
+
+    /** Since 2.2.0 (audit ZBV-M1): the user id of the token the device presented, or null. */
+    public function getLinkOwnerId(): ?string
+    {
+        return $this->linkOwnerId;
     }
 
     /** Since 2.2.0: the device key the issued token gets. */

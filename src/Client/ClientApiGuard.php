@@ -8,6 +8,7 @@ use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
+use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -166,11 +167,14 @@ final readonly class ClientApiGuard
     }
 
     /**
-     * Since 2.2.0 (Beacon Desktop, Q-BD-6 / Q-BD-19): the device key of a token a device presents on `device/code` to
-     * join the new family's token to the same device row — the token must pass the same checks as on any API request
-     * (valid, account active, credential active), whatever its family. Null (audited as `invalid_token`) otherwise.
+     * Since 2.2.0 (Beacon Desktop, Q-BD-6 / Q-BD-19): the device key and the owner's user id of a token a device presents
+     * on `device/code` to join the new family's token to the same device row — the token must pass the same checks as on
+     * any API request (valid, account active, credential active), whatever its family. Null (audited) otherwise. The
+     * owner is stored on the request: only that user may approve it (audit ZBV-M1).
+     *
+     * @return array{deviceKey: string, ownerId: string}|null
      */
-    public function deviceKeyOf(string $plainToken, ?string $clientIp): ?string
+    public function deviceLinkOf(string $plainToken, ?string $clientIp): ?array
     {
         $token = $this->authService->findToken($plainToken);
         if (!$token instanceof ClientToken) {
@@ -191,7 +195,7 @@ final readonly class ClientApiGuard
             return null;
         }
 
-        return $token->getDeviceKey() ?? $token->getId();
+        return ['deviceKey' => $token->getDeviceKey() ?? $token->getId(), 'ownerId' => UserIdResolver::getId($user)];
     }
 
     /**

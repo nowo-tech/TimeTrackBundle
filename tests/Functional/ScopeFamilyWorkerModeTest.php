@@ -9,6 +9,7 @@ use Nowo\TimeTrackBundle\Client\ClientFamilyTokenAuthenticator;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Tests\Stub\RecordingFamilyCredentialMinter;
 use Nowo\TimeTrackBundle\Tests\Stub\StubClientContextPolicy;
 use Nowo\TimeTrackBundle\Tests\Support\FunctionalKernel;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
@@ -49,9 +50,10 @@ final class ScopeFamilyWorkerModeTest extends FunctionalTestCase
     {
         return [
             'client_api' => [
-                'rate_limit'  => ['per_token' => 0, 'per_ip' => 0],
-                'device_flow' => ['enabled' => true, 'scope_families' => ['chat' => ['label' => 'Chat', 'scopes' => ['chat:read' => 'Read']]]],
-                'context'     => ['policy' => StubClientContextPolicy::class, 'header' => 'X-Beacon-Context'],
+                'rate_limit'        => ['per_token' => 0, 'per_ip' => 0],
+                'device_flow'       => ['enabled' => true, 'scope_families' => ['chat' => ['label' => 'Chat', 'scopes' => ['chat:read' => 'Read']]]],
+                'context'           => ['policy' => StubClientContextPolicy::class, 'header' => 'X-Beacon-Context'],
+                'credential_issuer' => RecordingFamilyCredentialMinter::class,
             ],
         ];
     }

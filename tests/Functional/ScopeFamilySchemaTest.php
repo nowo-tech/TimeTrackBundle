@@ -9,8 +9,10 @@ use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\MariaDBPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\ORM\Tools\SchemaTool;
+use Nowo\TimeTrackBundle\Client\DeviceScopeRequest;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
+use Nowo\TimeTrackBundle\Service\DeviceAuthorizationService;
 use Nowo\TimeTrackBundle\Tests\Support\AllocationSchema;
 use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 
@@ -34,16 +36,21 @@ final class ScopeFamilySchemaTest extends FunctionalTestCase
         self::assertInstanceOf(ClientAuthService::class, $auth);
         $time = $auth->issueToken($this->user, ClientType::Desktop);
         $auth->issueFamilyToken($this->user, ClientType::Desktop, 'c', 'chat', ['chat:read'], 'dev', 'Laptop');
+        $devices = self::getContainer()->get(DeviceAuthorizationService::class);
+        self::assertInstanceOf(DeviceAuthorizationService::class, $devices);
+        $devices->start(ClientType::Desktop, 'Time');
+        $devices->startFamily(ClientType::Desktop, 'Chat', new DeviceScopeRequest('chat', ['chat:read']), null, 'dev', 'owner');
         $this->clearEntityManagers();
 
         $this->runScripts($conn, 'down');
-        foreach (['time_track_client_tokens' => ['scope_family', 'device_key', 'client_name'], 'time_track_device_codes' => ['scope_family', 'device_key']] as $table => $columns) {
+        foreach (['time_track_client_tokens' => ['scope_family', 'device_key', 'client_name'], 'time_track_device_codes' => ['scope_family', 'device_key', 'link_owner_id']] as $table => $columns) {
             $introspected = $conn->createSchemaManager()->introspectTable($table);
             foreach ($columns as $column) {
                 self::assertFalse($introspected->hasColumn($column), $table . '.' . $column);
             }
         }
         self::assertSame([ClientAuthService::hashToken($time['token'])], $conn->fetchFirstColumn('SELECT token_hash FROM time_track_client_tokens'), 'the rollback revokes the chat token only');
+        self::assertSame(['Time'], $conn->fetchFirstColumn('SELECT client_name FROM time_track_device_codes'), 'the rollback drops the chat request only (audit ZBV-L2)');
 
         $this->runScripts($conn, 'up');
         ScopeKeyCollation::apply($conn);

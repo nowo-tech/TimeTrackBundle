@@ -76,6 +76,8 @@ device:
   denied_status: "Rifiutato"
   expired: "Questa richiesta è scaduta o è già stata decisa. Ricomincia dal dispositivo."
   expired_status: "Scaduto"
+  link_mismatch: "Questa richiesta veniva da un dispositivo collegato a un altro account, quindi è stata rifiutata. Non è stato collegato nulla. Se non te l’aspettavi, qualcuno potrebbe cercare di ottenere l’accesso tramite te."
+  link_mismatch_status: "Rifiutata"
 downloads:
   title: "App di monitoraggio del tempo"
   get: "Scarica"

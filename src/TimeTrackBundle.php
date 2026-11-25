@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ClientUserCheckerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\RemovedPortsPass;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ScopeFamilyMinterPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeSubjectProvidersPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TwigPathsPass;
@@ -37,6 +38,8 @@ final class TimeTrackBundle extends Bundle
         $container->addCompilerPass(new TimeTrackPortsPass());
         // Since 2.1.0 (Beacon spec 256): the time subject providers (tagged) and the activity type provider slot.
         $container->addCompilerPass(new TimeSubjectProvidersPass());
+        // Since 2.2.0 (audit ZBV-I1): a non-time scope family needs a family-aware credential minter.
+        $container->addCompilerPass(new ScopeFamilyMinterPass());
         // Since 1.29: client_api.user_checker → security.user_checker.<firewall>.
         $container->addCompilerPass(new ClientUserCheckerPass());
         // Since 1.23.0: before DoctrineBundle's MiddlewaresPass (the rollback middleware of the private entity manager).

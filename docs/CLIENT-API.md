@@ -184,6 +184,11 @@ Additive (Beacon Desktop BD-2). A v0.4 client changes nothing: no `family` means
   answers `403 context_forbidden`; with `client_api.context.required`, no header answers `400 context_required`.
   `GET me` then adds `contexts` (`[{key, label}]`, the default first) and `context` (the key this request named, or
   null). Without a policy the header is ignored and the keys are absent.
+  The context is part of the `Idempotency-Key` check: the same key and body under another context answer the key
+  mismatch error, never the other context's stored answer. Answers carry `Vary: <context header>`.
+- A `device/code` linked with a Bearer token can only be approved by that token's owner; another user's approval
+  denies the request (`device/token` answers `access_denied`). A request whose family is no longer registered is denied
+  too.
 - Other families' APIs (e.g. `/api/chat/v1`) are served by their own bundles; their token comes from this device flow
   with `family` set, and they answer the same error codes.
 

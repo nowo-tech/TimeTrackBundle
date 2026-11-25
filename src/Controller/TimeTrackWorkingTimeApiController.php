@@ -145,7 +145,7 @@ final readonly class TimeTrackWorkingTimeApiController
         $payload  = $this->payload($request);
         $raw      = $payload['occurredAt'] ?? null;
         $userId   = UserIdResolver::getId($principal->user);
-        $bodyHash = hash('sha256', $verb->value . "\0" . (is_string($raw) ? $raw : ''));
+        $bodyHash = ClientIdempotencyStore::contextHash(hash('sha256', $verb->value . "\0" . (is_string($raw) ? $raw : '')), $principal->contextKey);
         $replay   = $this->idempotency->find($userId, $key, $bodyHash);
         if ($replay === false) {
             return $this->responseFactory->error('idempotency_mismatch', 'This Idempotency-Key was used with another request.', Response::HTTP_UNPROCESSABLE_ENTITY, $request);

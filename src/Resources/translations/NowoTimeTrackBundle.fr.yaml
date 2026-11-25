@@ -76,6 +76,8 @@ device:
   denied_status: "Refusé"
   expired: "Cette demande a expiré ou a déjà été traitée. Recommencez depuis l’appareil."
   expired_status: "Expiré"
+  link_mismatch: "Cette demande venait d’un appareil connecté à un autre compte : elle a été refusée. Rien n’a été connecté. Si vous ne l’attendiez pas, quelqu’un essaie peut-être d’obtenir un accès par votre intermédiaire."
+  link_mismatch_status: "Refusée"
 downloads:
   title: "Applications de suivi du temps"
   get: "Télécharger"

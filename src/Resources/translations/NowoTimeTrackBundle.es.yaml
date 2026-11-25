@@ -76,6 +76,8 @@ device:
   denied_status: "Denegado"
   expired: "Esta solicitud ha caducado o ya se decidió. Vuelve a empezar desde el dispositivo."
   expired_status: "Caducado"
+  link_mismatch: "Esta solicitud venía de un dispositivo con la sesión de otra cuenta, así que se ha rechazado. No se ha conectado nada. Si no la esperabas, puede que alguien intente conseguir acceso a través de ti."
+  link_mismatch_status: "Rechazada"
 downloads:
   title: "Apps de registro de tiempo"
   get: "Descargar"
