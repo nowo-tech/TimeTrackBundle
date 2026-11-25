@@ -290,6 +290,41 @@ final class AllocationDatabaseTest extends FunctionalTestCase
         self::assertEquals(new TimeEntryTotals([]), $nothing);
     }
 
+    /**
+     * Audit ZBQ-L2: with key filters (owners, scopes, boards, tasks) the totals group the key columns too, check them
+     * again in PHP, then merge the groups, sort them (seconds descending, then the key) and cut them in PHP: one group
+     * per grouping value whatever the rows behind it, `truncated` counted on the merged groups. Still one statement.
+     */
+    public function testTotalsMergeTheRowsOfEveryKeyColumnIntoOneGroup(): void
+    {
+        $scopes                                       = $this->service(FixedScopeProvider::class);
+        $scopes->memberships[$this->id($this->other)] = ['org-a', 'org-b'];
+        $person                                       = $this->id($this->user);
+        $other                                        = $this->id($this->other);
+        $this->manual($this->user, TimeAllocation::task('task-1', $this->customer('c-1'), 'dev'), '-2 days 08:00', 600);
+        $this->manual($this->user, TimeAllocation::task('task-3', $this->customer('c-1'), 'dev'), '-2 days 09:00', 1200);
+        $this->manual($this->other, TimeAllocation::task('task-1', $this->customer('c-1'), 'dev'), '-2 days 08:00', 300);
+        $this->manual($this->other, TimeAllocation::task('task-3', $this->customer('c-2'), 'support'), '-2 days 10:00', 2100);
+        $this->manual($this->user, TimeAllocation::task('task-1', null, 'meeting'), '-2 days 11:00', 2100);
+        $this->manual($this->user, TimeAllocation::task('task-3'), '-2 days 12:00', 600);
+        $keys = fn (string ...$taskIds): TimeEntryCriteria => new TimeEntryCriteria(ownerIds: [$person, $other], scopeKeys: ['org-a', 'org-b'], taskIds: $taskIds === [] ? ['task-1', 'task-3'] : array_values($taskIds), boardIds: ['board-1', 'board-2'], startedFrom: $this->at('-3 days 00:00'), startedTo: $this->at('+1 day 00:00'));
+
+        // c-1 sits on three rows (two owners, two scopes, two boards, two tasks); the subject-less time on two.
+        self::assertSame([['|', 2700, 2], ['customer|c-1', 2100, 3], ['customer|c-2', 2100, 1]], $this->grouped($keys(), TimeEntryGrouping::Subject), 'ties by the key: c-1 before c-2');
+        self::assertSame([['dev', 2100, 3], ['meeting', 2100, 1], ['support', 2100, 1], ['', 600, 1]], $this->grouped($keys(), TimeEntryGrouping::ActivityType));
+        self::assertSame([[$person, 4500, 4], [$other, 2400, 2]], $this->grouped($keys(), TimeEntryGrouping::Owner));
+        self::assertSame([['|', 2100, 1], ['customer|c-1', 900, 2]], $this->grouped($keys('task-1'), TimeEntryGrouping::Subject), 'one task: its rows only');
+
+        // The cut counts merged groups: three groups from six rows are not truncated at a limit of three.
+        $cut = $this->totals($keys(), TimeEntryGrouping::Subject, 2);
+        self::assertSame([2, true], [count($cut->totals), $cut->truncated]);
+        self::assertFalse($this->totals($keys(), TimeEntryGrouping::Subject, 3)->truncated);
+        self::assertSame(1, $this->statements(fn (): TimeEntryTotals => $this->totals($keys(), TimeEntryGrouping::Subject)));
+
+        // Several scopes alone (the scope column only): the person's time in org-a and org-b is one group per subject.
+        self::assertSame([['|', 2700, 2], ['customer|c-1', 1800, 2]], $this->grouped(new TimeEntryCriteria(ownerIds: [$person], scopeKeys: ['org-a', 'org-b'], startedFrom: $this->at('-3 days 00:00'), startedTo: $this->at('+1 day 00:00')), TimeEntryGrouping::Subject));
+    }
+
     public function testTotalsRefuseUnboundedQueries(): void
     {
         $from  = new DateTimeImmutable('2026-01-01 00:00:00');

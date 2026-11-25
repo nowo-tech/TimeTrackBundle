@@ -17,7 +17,9 @@ use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
 use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
+use Nowo\TimeTrackBundle\Port\Internal\TaskAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Service\TimerService;
@@ -41,14 +43,16 @@ use function preg_match;
  * No new client scope (Q-TS-12): existing tokens keep working without a new sign-in.
  *
  * - `POST timer/allocate` (`timer:write`) `{subject?, activityTypeKey?}`: sets, changes or clears (`subject: null`) the
- *   subject and activity type of the running timer, task timer or not, under the owner's lock (last write wins,
+ *   subject and activity type of the running timer, task timer or not (a task timer's task access is checked again when
+ *   its subject changes: 403 `task_forbidden`), under the owner's lock (last write wins,
  *   `TimerAllocatedEvent`); 404 `no_active_timer`, 403 `subject_forbidden`, 422 `allocation_conflict` /
  *   `activity_type_unknown` / `activity_type_inactive`, 409 `allocation_required` when clearing would leave the time
  *   unallocated.
  * - `GET subjects/search?type=&q=&limit=&scopeKey=` (`tasks:read`): the provider's search for the token's user in one of
  *   their scopes (default: the current one); `limit` ≤ 50, `q` ≤ 100 characters, rate-limited per token
  *   (`entries.subjects.search.max_per_minute`). Results are a hint: every write checks `canLog` again (Q-TS-4).
- * - `GET activity-types?scopeKey=` (`tasks:read`): the active activity types of one of the user's scopes.
+ * - `GET activity-types?scopeKey=` (`tasks:read`): the active activity types of one of the user's scopes, rate-limited
+ *   per token like the search.
  *
  * Labels are plain text (JSON-encoded); subject URLs follow the task URL rule. Stateless.
  */
@@ -67,6 +71,8 @@ final readonly class TimeTrackClientAllocationApiController
         private ClientAllocationPresenter $allocations,
         private ClientTaskPresenter $taskPresenter,
         private int $searchPerMinute = 60,
+        // Audit ZBQ-L3: the task of a running task timer is checked again when its subject changes.
+        private ?TaskAccessCheckerInterface $taskAccess = null,
     ) {
     }
 
@@ -90,10 +96,17 @@ final readonly class TimeTrackClientAllocationApiController
             return $this->responseFactory->error('invalid_request', 'Send subject and/or activityTypeKey.', Response::HTTP_BAD_REQUEST, $request);
         }
 
+        $active = $patch->changesSubject ? $this->timerService->getActive($principal->user) : null;
+        if ($active instanceof ActiveTimer && $active->hasTask() && $patch->changesSubjectOf($active->subject()) && $this->taskAccess instanceof TaskAccessCheckerInterface && !$this->taskAccess->canTrack($principal->user, $active->getTaskId())) {
+            return $this->taskForbidden($principal, $request);
+        }
+
         try {
             $timer = $this->timerService->allocateRunning($principal->user, $patch);
         } catch (TimeAllocationException $e) {
             return $this->refused($e, $principal, $request);
+        } catch (TaskNotTrackableException) {
+            return $this->taskForbidden($principal, $request);
         } catch (ActiveTimerConflictException) {
             return $this->responseFactory->error('timer_running', 'The running timer changed; try again.', Response::HTTP_CONFLICT, $request);
         }
@@ -162,6 +175,11 @@ final readonly class TimeTrackClientAllocationApiController
         if ($scope instanceof Response) {
             return $scope;
         }
+        // Audit ZBQ: one host call per request, rate-limited per token like the subject search.
+        $retry = $this->rateLimiter->hit('activity_types', $principal->token->getTokenHash(), $this->searchPerMinute, 60);
+        if ($retry > 0) {
+            return $this->responseFactory->error('rate_limited', 'Too many requests. Try again later.', Response::HTTP_TOO_MANY_REQUESTS, $request, ['Retry-After' => (string) $retry]);
+        }
 
         return $this->responseFactory->json([
             'scopeKey'      => $scope,
@@ -195,6 +213,16 @@ final readonly class TimeTrackClientAllocationApiController
         }
 
         return $this->responseFactory->error($e->errorCode, 'The allocation of this time was refused.', $e->httpStatus(), $request);
+    }
+
+    /**
+     * 403 `task_forbidden` (audited, throttled), as on `timer/start`.
+     */
+    private function taskForbidden(ClientApiPrincipal $principal, Request $request): JsonResponse
+    {
+        $this->auditor->denied('task_forbidden', $principal->token, $request->getClientIp());
+
+        return $this->responseFactory->error('task_forbidden', 'You may not track time on this task.', Response::HTTP_FORBIDDEN, $request);
     }
 
     /**

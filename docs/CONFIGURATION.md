@@ -466,8 +466,8 @@ nowo_time_track:
 nowo_time_track:
   entries:
     allow_without_task: false       # 1.36: timers and entries with neither task nor subject (USAGE "Entries without a task")
-    require_allocation: false       # 2.1: refuse interactive stops / manual entries with neither task nor subject (409 allocation_required)
-    require_activity_type: false    # 2.1: refuse them without an activity type (only with an ActivityTypeProviderInterface)
+    require_allocation: false       # 2.1: refuse interactive stops / manual entries with neither task nor subject (409 allocation_required); a UX gate: system stops store unallocated entries and dispatch TimeEntryUnallocatedEvent
+    require_activity_type: false    # 2.1: refuse them without an activity type (only with an ActivityTypeProviderInterface; needs v0.4 clients, UPGRADING "To 2.1.0")
     subjects:                       # 2.1 (Beacon spec 256): providers implement Subject\TimeSubjectProviderInterface (autoconfigured)
       scope_subject:
         enabled: false              # built-in "the tenant itself" provider over the timesheet scope port

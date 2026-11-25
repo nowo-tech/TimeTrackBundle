@@ -65,7 +65,8 @@ interface TimeEntryOperationsInterface
      * times-only fix of an entry on a subject the owner lost access to stays possible, Q-TS-8); a subject next to a task
      * needs a type that allows tasks (`allocation_conflict`); an activity type that is set must exist and be active in the
      * entry's scope; clearing the subject of an entry without a task is refused when it would leave it unallocated under
-     * `entries.require_allocation` or without `entries.allow_without_task`. The task itself is never changed here (moving
+     * `entries.require_allocation` or without `entries.allow_without_task`, and clearing the activity type is refused
+     * (`activity_type_required`) under an effective `entries.require_activity_type`. The task itself is never changed here (moving
      * task time stays `TaskTimeMover`). The changed fields then also list `subject` and `activity_type_key`, after the
      * first four.
      *

@@ -515,10 +515,18 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
         }
 
+        // Audit ZBQ-L3: a change of the subject of a task timer asks the task access again first.
+        $active = $patch->changesSubject ? $this->timerService->getActive($principal->user) : null;
+        if ($active instanceof ActiveTimer && $active->hasTask() && $patch->changesSubjectOf($active->subject()) && !$this->taskAccessChecker->canTrack($principal->user, $active->getTaskId())) {
+            return $this->taskForbidden($principal, $request);
+        }
+
         try {
             $result = $this->timerService->stopAt($principal->user, $endedAt, $this->settingsProvider->getSettings()->backdate, $this->note($payload), $patch, true);
         } catch (TimeAllocationException $e) {
             return $this->allocationRefused($e, $principal, $request);
+        } catch (TaskNotTrackableException) {
+            return $this->taskForbidden($principal, $request);
         }
         if ($result === null) {
             return $this->noActiveTimer($request);

@@ -691,6 +691,7 @@ use Nowo\TimeTrackBundle\Subject\{TimeAllocation, TimeAllocationPatch, TimeSubje
 
 $hostTimerApi->startAllocated($actorRef, TimeAllocation::subject(new TimeSubjectRef('customer', '42'), 'support_call'), scopeKey: 'org-1');
 $hostTimerApi->startAllocated($actorRef, TimeAllocation::task('task-7', new TimeSubjectRef('customer', '42')));
+$hostTimerApi->allocate($actorRef, TimeAllocationPatch::keep()->withSubject(new TimeSubjectRef('customer', '42'))); // running timer
 $hostTimerApi->stop($actorRef, allocation: TimeAllocationPatch::keep()->withActivityType('support_call'));
 $operations->createManual($ownerId, new ManualTimeEntryDraft(null, $start, $end, allocation: TimeAllocation::subject($customer)));
 $operations->correct($ownerId, $entryId, $version, TimeEntryCorrection::allocation(TimeAllocationPatch::keep()->withSubject($other)));
@@ -717,7 +718,10 @@ between calls (FrankenPHP worker mode, kernel reset false): cache in your own ta
 - Deny by default: an unknown type, an unknown id and no access all answer `subject_forbidden`; a provider exception is
   logged (class only) and read as denied, never a 500.
 - `canLog` is asked for the **owner** of the time (also when you write for another person), in the entry's scope (the
-  task's scope on a task entry); a correction asks it only when the subject changes.
+  task's scope on a task entry); a correction asks it only when the subject changes. Changing the subject of a running
+  task timer checks the task access again first.
+- `require_allocation` is a UX gate: listen to `TimeEntryUnallocatedEvent` for the time system stops store unallocated;
+  `require_activity_type` needs v0.4 clients (UPGRADING "To 2.1.0").
 - `entries.require_allocation: true` refuses **interactive** stops (client API, `HostTimerApi::stop()`, the web UI) and
   manual entries with neither task nor subject (`TimeAllocationRequiredException`, 409); stops the bundle triggers
   (start-replacing, switch, idle, user deletion) store the entry unallocated and dispatch `TimeEntryUnallocatedEvent`.

@@ -15,6 +15,8 @@ use Nowo\TimeTrackBundle\Entry\TimeEntryOperations;
 use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Event\TimerAllocatedEvent;
+use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
 use Nowo\TimeTrackBundle\Exception\TimeAllocationRequiredException;
 use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
@@ -34,7 +36,10 @@ use Nowo\TimeTrackBundle\Tests\Support\HookedActivityTypeProvider;
 use Nowo\TimeTrackBundle\Tests\Support\HookedCustomerSubjectProvider;
 use Nowo\TimeTrackBundle\Tests\Support\ServiceCopy;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+
+use function array_column;
 
 /**
  * Since 2.1.0 (Beacon spec 256, design §13, REQ-RUNTIME-003): the races of the allocation write paths, each played
@@ -214,6 +219,75 @@ final class AllocationRaceTest extends FunctionalTestCase
     }
 
     /**
+     * Audit ZBQ-I4, `timer/allocate` racing `timer/switch`, allocate first: the allocation commits after the switch
+     * checked its next subject and before it locks; the switch's stop records the old timer as it is then (with the
+     * allocated subject), and the new timer runs on the switch's subject.
+     */
+    public function testAnAllocationCommittedBeforeASwitchLocksIsRecordedOnTheOldEntry(): void
+    {
+        $this->timers()->start($this->user, 'task-1', ClientType::Desktop);
+        $this->hooked->onCanLog = function (): void {
+            self::assertNotNull($this->otherTimers()->allocateRunning($this->otherUser(), TimeAllocationPatch::keep()->withSubject(new TimeSubjectRef('customer', 'c-3'))));
+        };
+
+        $switched = $this->hookedTimers()->switchTo($this->user, TimeAllocation::subject(new TimeSubjectRef('customer', 'c-1')), ClientType::Desktop);
+
+        self::assertSame('c-3', $switched['entry']?->subject()?->id);
+        self::assertSame([['customer', 'c-3', 'task-1']], $this->entryRows(), 'the old entry carries the allocation that committed first');
+        self::assertSame([['customer', 'c-1', null]], $this->timerRows());
+        self::assertFalse($this->connection()->isTransactionActive());
+    }
+
+    /**
+     * Audit ZBQ-I4, `timer/allocate` racing `timer/switch`, switch first: the switch commits after the allocation loaded
+     * (and checked) the old timer; under the lock the allocation finds another timer, checks again for it (canLog asked
+     * twice) and lands on the new timer. The old entry keeps what it had.
+     */
+    public function testAnAllocationAfterASwitchCommittedMeanwhileLandsOnTheNewTimerAfterTheChecks(): void
+    {
+        $this->timers()->start($this->user, 'task-1', ClientType::Desktop);
+        $this->hooked->onCanLog = function (): void {
+            $this->otherTimers()->switchTo($this->otherUser(), 'task-3', ClientType::Desktop);
+        };
+
+        $timer = $this->hookedTimers()->allocateRunning($this->user, TimeAllocationPatch::keep()->withSubject(new TimeSubjectRef('customer', 'c-1')));
+
+        self::assertSame(['task-3', 'c-1'], [$timer?->getTaskId(), $timer?->subject()?->id]);
+        self::assertSame(['c-1', 'c-1'], array_column($this->hooked->canLogCalls, 'id'), 'checked again for the new timer');
+        self::assertSame([[null, null, 'task-1']], $this->entryRows(), 'the switched-away entry is not allocated');
+        self::assertSame([['customer', 'c-1', 'task-3']], $this->timerRows());
+    }
+
+    /**
+     * Audit ZBQ-I4, `timer/allocate` racing `timer/allocate`: the other allocation commits after this one checked and
+     * before it locks; both run under the owner's lock one after the other, the last write wins and each dispatches its
+     * own `TimerAllocatedEvent` (this one with the other's subject as the previous one).
+     */
+    public function testTwoAllocationsAreSerialisedAndTheLastWriteWins(): void
+    {
+        $this->timers()->start($this->user, 'task-1', ClientType::Desktop);
+        $events = [];
+        foreach ($this->containers() as $container) {
+            $dispatcher = $container->get(EventDispatcherInterface::class);
+            self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+            $dispatcher->addListener(TimeTrackEvents::TIMER_ALLOCATED, static function (TimerAllocatedEvent $event) use (&$events): void {
+                $events[] = [$event->previousSubject?->id, $event->subject?->id];
+            });
+        }
+        $this->hooked->onCanLog = function (): void {
+            self::assertSame('c-2', $this->otherTimers()->allocateRunning($this->otherUser(), TimeAllocationPatch::keep()->withSubject(new TimeSubjectRef('customer', 'c-2')))?->subject()?->id);
+        };
+
+        $timer = $this->hookedTimers()->allocateRunning($this->user, TimeAllocationPatch::keep()->withSubject(new TimeSubjectRef('customer', 'c-1')));
+
+        self::assertSame('c-1', $timer?->subject()?->id);
+        self::assertSame([['customer', 'c-1', 'task-1']], $this->timerRows(), 'the last write wins');
+        self::assertSame([[null, 'c-2'], ['c-2', 'c-1']], $events, 'one event each, the second over the first one\'s subject');
+        self::assertSame([], $this->entryRows());
+        self::assertFalse($this->connection()->isTransactionActive());
+    }
+
+    /**
      * Correct racing correct on the allocation: both read the same version; the other one commits its subject first.
      * The version covers the subject, so this one is `conflict`, never an overwrite.
      */
@@ -319,6 +393,21 @@ final class AllocationRaceTest extends FunctionalTestCase
     {
         $rows = [];
         foreach ($this->connection()->fetchAllAssociative('SELECT subject_type, subject_id, task_id FROM time_track_entries ORDER BY started_at') as $row) {
+            $rows[] = [$row['subject_type'], $row['subject_id'], $row['task_id']];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Every running timer as [subject_type, subject_id, task_id], read through SQL.
+     *
+     * @return list<array{0: mixed, 1: mixed, 2: mixed}>
+     */
+    private function timerRows(): array
+    {
+        $rows = [];
+        foreach ($this->connection()->fetchAllAssociative('SELECT subject_type, subject_id, task_id FROM time_track_active_timers') as $row) {
             $rows[] = [$row['subject_type'], $row['subject_id'], $row['task_id']];
         }
 

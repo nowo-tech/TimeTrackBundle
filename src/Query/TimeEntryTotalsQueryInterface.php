@@ -14,7 +14,10 @@ use InvalidArgumentException;
  *
  * Bounded: the criteria must carry a key (as every query) **and** a closed start range (`startedFrom` and `startedTo`) of
  * at most {@see self::MAX_RANGE_DAYS} days; one SQL statement (no OFFSET, no follow-up query per group), served by the
- * tenant indexes for scope queries and by the owner index for owner queries. Like the list port it applies **no access
+ * tenant indexes for scope queries and by the owner index for owner queries. The key columns the criteria filter by
+ * (scope, board, owner, task) are grouped too and checked again byte for byte in PHP, like the list port (audit
+ * ZBQ-L2); the groups are merged, sorted (seconds descending, then key) and cut in PHP while the statement is read as a
+ * stream. Like the list port it applies **no access
  * rule**: pass the owners and scopes the viewer may see, and label subject groups with `TimeSubjectLabelResolver` (one
  * `describe()` per type). Group keys are checked again byte for byte in PHP. Stateless.
  */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Query;
 
 use DateTimeImmutable;
+use Doctrine\ORM\AbstractQuery;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use InvalidArgumentException;
@@ -23,6 +24,7 @@ use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timer\TimerSnapshot;
+use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Psr\Clock\ClockInterface;
 use SortDirection;
 
@@ -39,9 +41,11 @@ use function is_scalar;
 use function is_string;
 use function min;
 use function preg_match;
+use function strcmp;
 use function strlen;
 use function strrpos;
 use function substr;
+use function usort;
 
 /**
  * Since 1.35.0 (DDD-host checklist B7): the Doctrine implementation of {@see TimeEntryQueryInterface} (and since 2.1.0
@@ -220,32 +224,50 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             TimeEntryGrouping::Task                   => ['e.taskId AS gTask'],
             TimeEntryGrouping::Allocation             => ["CASE WHEN e.taskId IS NOT NULL AND e.subjectType IS NOT NULL THEN 'task_subject' WHEN e.taskId IS NOT NULL THEN 'task' WHEN e.subjectType IS NOT NULL THEN 'subject' ELSE 'none' END AS gAllocation"],
         };
-        $query = $this->entryQuery($criteria)->select(...[...$columns, 'SUM(e.durationSeconds) AS seconds', 'COUNT(e.id) AS entries']);
-        // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
-        $query->orderBy('seconds', SortDirection::Descending);
-        foreach ($columns as $column) {
-            $alias = substr($column, (int) strrpos($column, ' AS ') + 4);
+        // Audit ZBQ-L2: the key columns the criteria filter by are grouped too and checked again byte for byte in PHP, as
+        // the list port does (a host column left on a folding collation would otherwise add `acme`'s time to `ACME`'s);
+        // the groups are then merged, sorted and cut here. Still one statement, read as a stream.
+        $keys = array_filter([
+            'kScope' => $criteria->scopeKeys !== null ? 'e.scopeKey AS kScope' : null,
+            'kBoard' => $criteria->boardIds !== null ? 'e.boardIdSnapshot AS kBoard' : null,
+            'kOwner' => $criteria->ownerIds !== null ? 'IDENTITY(e.user) AS kOwner' : null,
+            'kTask'  => $criteria->taskIds !== null ? 'e.taskId AS kTask' : null,
+        ]);
+        $query = $this->entryQuery($criteria)->select(...[...$columns, ...array_values($keys), 'SUM(e.durationSeconds) AS seconds', 'COUNT(e.id) AS entries']);
+        foreach ([...$columns, ...array_values($keys)] as $column) {
             // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
-            $query->addGroupBy($alias)->addOrderBy($alias, SortDirection::Ascending);
+            $query->addGroupBy(substr($column, (int) strrpos($column, ' AS ') + 4));
         }
-        // One statement; limit + 1 tells a truncated answer without a second query.
-        /** @var list<array<string, mixed>> $rows */
-        // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
-        $rows = $query->setMaxResults($limit + 1)->getQuery()->getArrayResult();
 
         $merged = [];
-        foreach ($rows as $row) {
+        // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
+        foreach ($query->getQuery()->toIterable([], AbstractQuery::HYDRATE_ARRAY) as $row) {
+            /** @var array<string, mixed> $row */
             $key = $this->groupKey($groupBy, $row);
-            // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike group here.
-            if (!$this->groupMatches($criteria, $key)) {
+            // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
+            if (!$this->groupMatches($criteria, $key) || !$this->keysMatch($criteria, $row)) {
                 continue; // @codeCoverageIgnore
             }
             $id          = $key->key();
             $merged[$id] = new TimeEntryTotal($key, ($merged[$id]->seconds ?? 0) + $this->int($row['seconds']), ($merged[$id]->entries ?? 0) + $this->int($row['entries']));
         }
         $totals = array_values($merged);
+        usort($totals, static fn (TimeEntryTotal $a, TimeEntryTotal $b): int => $b->seconds <=> $a->seconds ?: strcmp($a->key->key(), $b->key->key()));
 
-        return new TimeEntryTotals(array_slice($totals, 0, $limit), count($rows) > $limit);
+        return new TimeEntryTotals(array_slice($totals, 0, $limit), count($totals) > $limit);
+    }
+
+    /**
+     * Audit ZBQ-L2: whether the key columns of a totals row match the criteria byte for byte.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function keysMatch(TimeEntryCriteria $criteria, array $row): bool
+    {
+        return ($criteria->scopeKeys === null || ScopeKeys::isOneOf($this->nullableString($row['kScope'] ?? null), $criteria->scopeKeys))
+            && ($criteria->boardIds === null || in_array($this->nullableString($row['kBoard'] ?? null), $criteria->boardIds, true))
+            && ($criteria->ownerIds === null || in_array($this->owner(['userId' => $row['kOwner'] ?? null]), $criteria->ownerIds, true))
+            && ($criteria->taskIds === null || in_array($this->nullableString($row['kTask'] ?? null), $criteria->taskIds, true));
     }
 
     /**

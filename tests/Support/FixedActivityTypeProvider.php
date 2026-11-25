@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Closure;
 use Nowo\TimeTrackBundle\Subject\ActivityType;
 use Nowo\TimeTrackBundle\Subject\ActivityTypeList;
 use Nowo\TimeTrackBundle\Subject\ActivityTypeProviderInterface;
@@ -24,12 +25,20 @@ final class FixedActivityTypeProvider implements ActivityTypeProviderInterface
     /** @var bool whether activityTypesFor() throws */
     public bool $fail = false;
 
+    /** @var (Closure(string): mixed)|null since audit ZBQ-L4: runs once, with the scope key, on the next activityTypesFor() call */
+    public ?Closure $onList = null;
+
     /**
      * The activity types of the scope.
      */
     public function activityTypesFor(string $scopeKey): ActivityTypeList
     {
         $this->asked[] = $scopeKey;
+        $hook          = $this->onList;
+        $this->onList  = null;
+        if ($hook instanceof Closure) {
+            $hook($scopeKey);
+        }
         if ($this->fail) {
             throw new RuntimeException('activity store down');
         }
@@ -45,6 +54,7 @@ final class FixedActivityTypeProvider implements ActivityTypeProviderInterface
         $this->perScope = [];
         $this->asked    = [];
         $this->fail     = false;
+        $this->onList   = null;
     }
 
     /**

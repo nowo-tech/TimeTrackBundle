@@ -414,16 +414,19 @@ final readonly class TimeTrackCalendarApiController
                 }
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
             }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash, $nonce, $principal, $request, &$stored): void {
-                // Audit QO-L2: pending until the commit; confirmed right after it (then replayed unconditionally).
-                $this->idempotency->savePending($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $this->entryBody($principal, $entry, $request)], $nonce);
+                // Audit QO-L2: pending until the commit; confirmed right after it (then replayed unconditionally). Audit
+                // ZBQ-L5: no host port under the owner's lock: the pending body has no subject label (masked shape); the
+                // labelled body replaces it at the confirmation, after the commit.
+                $this->idempotency->savePending($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $this->entryBody($principal, $entry, $request, false)], $nonce);
                 $stored = true;
             }, $billable, scopeKey: $scopeKey);
-            $this->idempotency->confirm($userId, $idempotencyKey, $nonce);
+            $body = ['entry' => $this->entryBody($principal, $entry, $request)];
+            $this->idempotency->confirm($userId, $idempotencyKey, $nonce, $body);
             if ($subject instanceof TimeSubjectRef) {
                 $this->auditor?->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $subject->type);
             }
 
-            return $this->responseFactory->json(['entry' => $this->entryBody($principal, $entry, $request)], Response::HTTP_CREATED, $request);
+            return $this->responseFactory->json($body, Response::HTTP_CREATED, $request);
         } catch (IdempotentReplayException $replay) {
             return $this->responseFactory->json($replay->body, $replay->status, $request);
         } catch (ManualEntryException $e) {
@@ -532,11 +535,16 @@ final readonly class TimeTrackCalendarApiController
     /**
      * Since 2.1.0: the wire shape of a written entry, with its subject and activity type (the token's user as viewer).
      *
+     * @param bool $labelled false = without asking the host ports (the masked subject, the activity type by key): the
+     *                       body stored under the owner's lock
+     *
      * @return array<string, mixed>
      */
-    private function entryBody(ClientApiPrincipal $principal, TimeEntry $entry, Request $request): array
+    private function entryBody(ClientApiPrincipal $principal, TimeEntry $entry, Request $request, bool $labelled = true): array
     {
-        return $entry->toArray() + ['locked' => false] + ($this->allocations?->single($principal->user, $entry, $request) ?? ['subject' => AllocationLabels::none()->subject($entry->getScopeKey(), $entry->subject()), 'activityType' => AllocationLabels::none()->activityType($entry->getScopeKey(), $entry->getActivityTypeKey())]);
+        $labels = $labelled ? $this->allocations?->single($principal->user, $entry, $request) : null;
+
+        return $entry->toArray() + ['locked' => false] + ($labels ?? ['subject' => AllocationLabels::none()->subject($entry->getScopeKey(), $entry->subject()), 'activityType' => AllocationLabels::none()->activityType($entry->getScopeKey(), $entry->getActivityTypeKey())]);
     }
 
     /**

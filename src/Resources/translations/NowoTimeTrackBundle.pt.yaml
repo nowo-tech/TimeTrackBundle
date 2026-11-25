@@ -47,6 +47,7 @@ flash:
   no_active_timer: Nenhum temporizador ativo.
   allocation_required: "Atribua este tempo a uma tarefa ou a um assunto antes de parar o temporizador."
   activity_type_required: "Escolha um tipo de atividade antes de parar o temporizador."
+  activity_type_refused: "Esse tipo de atividade não pode ser usado. Escolha outro."
 device:
   intro: "Introduza o código mostrado pela aplicação de ambiente de trabalho ou pela extensão do navegador."
   user_code: "Código do dispositivo"
@@ -192,3 +193,6 @@ client_api:
   leave_absent: "Ausente"
 subjects:
   not_visible: "Assunto não visível"
+stop:
+  activity_type: "Tipo de atividade"
+  activity_type_placeholder: "Escolha um tipo de atividade"

@@ -47,6 +47,7 @@ flash:
   no_active_timer: No active timer.
   allocation_required: "Allocate this time to a task or a subject before you stop the timer."
   activity_type_required: "Choose an activity type before you stop the timer."
+  activity_type_refused: "That activity type cannot be used. Choose another one."
 device:
   intro: "Enter the code shown by the desktop app or the browser extension."
   user_code: "Device code"
@@ -192,3 +193,6 @@ client_api:
   leave_absent: "Absent"
 subjects:
   not_visible: "Subject not visible"
+stop:
+  activity_type: "Activity type"
+  activity_type_placeholder: "Choose an activity type"

@@ -941,3 +941,14 @@ Choices made where the design left the mechanics open; none changes a decided be
 - **Labels across tenants:** `TimeSubjectLabelResolver::forPage()` labels the entries of the context's tenant; the
   bundle's own surfaces (a person's entries over several tenants) call `describe()` once per (tenant, type).
 - **Audit:** client API writes that set a subject record the new audit action `subject_allocated` (reason = type).
+- **Audit ZBQ (2026-11-25) follow-ups:** a stop patch that clears the subject follows the clearing rule (L1); a change of
+  the subject of a running task timer re-checks the task (L3, as §13 says); `totals()` groups the filtered key columns
+  too and re-checks them in PHP, merging, sorting and cutting the groups in PHP from one streamed statement (L2); the
+  web Stop form offers the activity type under `require_activity_type`, and UPGRADING states the v0.4 client
+  requirement (L4); `POST entries` resolves labels after the commit (L5); a correction cannot clear the activity type
+  under `require_activity_type` (I5); `GET activity-types` is rate-limited; `HostTimerApi::allocate()` added.
+- **Exception family (I6):** the bundle has no exception base class; every refusal extends the SPL `RuntimeException`
+  (or `InvalidArgumentException`) with a stable `errorCode`, and `TimeAllocationException` follows that convention.
+- **Task moves across tenants (I3):** the subject stays (§7.2, the host's call); it was checked in the old tenant and is
+  masked in the new one unless the provider allows it there. Documented in UPGRADING.
+- **GDPR export (I1):** keeps `subjectId` for a masked subject (Q-TS-17, the person's own processing record).

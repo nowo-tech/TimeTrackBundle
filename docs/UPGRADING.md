@@ -236,6 +236,23 @@ nowo_time_track:
 `require_allocation: true` with `allow_without_task: true` and no subject provider fails the build (a timer without a
 task could never be allocated).
 
+**Client versions.** `require_activity_type: true` (and `require_allocation: true` for timers without a task that your
+own code starts) needs clients that speak contract v0.4: a desktop app or browser extension older than v0.4 never sends
+`activityTypeKey` or `subject` and gets `409` on every stop of such a timer (its time keeps running until a system
+stop). Turn these options on only after your users run v0.4 clients, and give your own UI an allocate step
+(`HostTimerApi::allocate()` or `HostTimerApi::stop(…, $patch)`). The bundle's web timer page asks for the activity type
+on Stop; it cannot pick a subject.
+
+**`require_allocation` is a UX gate, not an invariant.** Stops the bundle triggers (switch, start-replacing, idle
+discard / split / reassign, user deletion) store the entry unallocated and dispatch `TimeEntryUnallocatedEvent`
+(`nowo_time_track.time_entry.unallocated`): listen to it (and list `AllocationFilter::Unallocated`) to ask the person to
+allocate the time; `check-allocation` lists such rows too.
+
+**Task moves across tenants.** `TaskTimeMover` keeps the subject of a task + subject entry (design §7.2: re-allocating
+after a task move is your call). The subject was checked in the old tenant; in the new one it is shown masked unless
+your provider allows it there, so no label leaks. Clear or re-allocate it with `correct()` after such a move if you
+need it in the new tenant.
+
 ### Back-fill existing entries
 
 The mapping of existing time to subjects is your data (Q-TS-22): write it in your own DBAL migration, constrained by the

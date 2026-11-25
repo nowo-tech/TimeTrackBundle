@@ -465,7 +465,9 @@ final readonly class TimerService
      *                          default, as in 2.0) is a stop the system triggers: never refused
      *
      * @throws TimeAllocationException When the patch's subject or activity type is refused (since 2.1.0; nothing is written)
-     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation (since 2.1.0; the timer keeps running)
+     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation, or the patch clears the subject
+     *                                         of time without a task that may not stay unallocated (since 2.1.0; the timer keeps running)
+     * @throws TaskNotTrackableException When the patch changes the subject of a task timer whose task the user may no longer track (since 2.1.0)
      *
      * @return TimeEntry|null The recorded entry, or null when no timer was running (or a concurrent stop recorded it)
      */
@@ -496,6 +498,10 @@ final readonly class TimerService
     {
         $scope   = false;
         $subject = $patch->subjectAfter($timer->subject());
+        // Audit ZBQ-L3 (design §13): a change of the subject of a task timer checks the task again first.
+        if ($patch->changesSubjectOf($timer->subject()) && $timer->hasTask() && !$this->taskProvider->canUserTrack($user, $timer->getTaskId())) {
+            throw TaskNotTrackableException::forTask($timer->getTaskId());
+        }
         if ($patch->changesSubjectOf($timer->subject()) && $subject instanceof TimeSubjectRef) {
             $scope = $this->timerScopeKey($user, $timer);
             $this->allocations->assertSubject($user, $scope, $subject, $timer->hasTask());
@@ -551,7 +557,9 @@ final readonly class TimerService
      *                          `entries.require_allocation` / `require_activity_type` when the time misses it
      *
      * @throws TimeAllocationException When the patch's subject or activity type is refused (since 2.1.0; nothing is written)
-     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation (since 2.1.0; the timer keeps running)
+     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation, or the patch clears the subject
+     *                                         of time without a task that may not stay unallocated (since 2.1.0; the timer keeps running)
+     * @throws TaskNotTrackableException When the patch changes the subject of a task timer whose task the user may no longer track (since 2.1.0)
      *
      * @return array{entry: TimeEntry, endTime: ClampedTime|null}|null The entry and the clamp result, or null when no timer was running
      */
@@ -940,6 +948,7 @@ final readonly class TimerService
      * after the commit when something changed.
      *
      * @throws TimeAllocationException When the subject or activity type is refused, or the change would leave the time unallocated
+     * @throws TaskNotTrackableException When the subject of a task timer changes and the user may no longer track the task
      * @throws ActiveTimerConflictException When the running timer was replaced on every attempt
      *
      * @return ActiveTimer|null The running timer as it is now, or null when none runs
@@ -1345,6 +1354,13 @@ final readonly class TimerService
             $activity = $patch->activityTypeAfter($current->getActivityTypeKey());
             if ($patch->changesSubjectOf($current->subject())) {
                 $allocations->assertAllowsTask($subject, $current->hasTask());
+                // Audit ZBQ-L1: clearing the subject of time without a task follows the clearing rule (as allocate and
+                // correct do): never left unallocated without `allow_without_task` or under `require_allocation`.
+                try {
+                    $allocations->assertMayClearSubject($current->hasTask(), $current->subject(), $subject);
+                } catch (TimeAllocationException) {
+                    throw new TimeAllocationRequiredException(TimerSnapshot::fromTimer($current));
+                }
             }
             $missing = $interactive ? $allocations->missingRequirement($current->hasTask(), $subject, $activity) : null;
             if ($missing !== null) {

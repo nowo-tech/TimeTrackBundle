@@ -38,6 +38,7 @@ use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\InternalTestSubjectProvider;
 use Nowo\TimeTrackBundle\Tests\Support\RecordingLogger;
+use Nowo\TimeTrackBundle\Tests\Support\RevocableTaskProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -80,8 +81,11 @@ final class TimerServiceAllocationTest extends TestCase
 
     private EventDispatcher $dispatcher;
 
+    private RevocableTaskProvider $tasks;
+
     protected function setUp(): void
     {
+        $this->tasks               = new RevocableTaskProvider();
         $this->user                = new TestUser('user-1', 'person@example.com');
         $this->clock               = new MockClock('2026-11-24 10:00:00');
         $this->timers              = new InMemoryActiveTimerRepository();
@@ -523,13 +527,124 @@ final class TimerServiceAllocationTest extends TestCase
     }
 
     /**
+     * Audit ZBQ-L1: a stop patch that clears the subject of a task-less timer follows the clearing rule of allocate and
+     * correct: refused (`allocation_required`, the timer keeps running, nothing written) without `allow_without_task`
+     * or under `require_allocation`; allowed (an unallocated entry) otherwise.
+     */
+    public function testAStopPatchClearingTheSubjectOfATaskLessTimerFollowsTheClearingRule(): void
+    {
+        $clear = TimeAllocationPatch::keep()->withoutSubject();
+        foreach ([[false, false, false], [true, true, false], [true, false, false], [false, true, true]] as [$requireAllocation, $allowWithoutTask, $allowed]) {
+            $this->timers  = new InMemoryActiveTimerRepository();
+            $this->entries = new InMemoryTimeEntryRepository();
+            $service       = $this->service(requireAllocation: $requireAllocation, allowWithoutTask: $allowWithoutTask);
+            $timer         = $service->start($this->user, TimeAllocation::subject($this->customer('c-1')), ClientType::Web);
+            $this->clock->modify('+10 minutes');
+            $label = json_encode([$requireAllocation, $allowWithoutTask]);
+            if ($allowed) {
+                $entry = $service->stop($this->user, null, null, $clear, true);
+                self::assertNotNull($entry, (string) $label);
+                self::assertSame([null, null], [$entry->subject(), $entry->taskIdOrNull()], (string) $label);
+                self::assertNull($service->getActive($this->user));
+
+                continue;
+            }
+            foreach ([
+                fn (): mixed => $service->stop($this->user, null, null, $clear, true),
+                fn (): mixed => $service->stopAt($this->user, null, null, null, $clear, true),
+                fn (): mixed => $service->stop($this->user, null, null, $clear),
+            ] as $call) {
+                try {
+                    $call();
+                    self::fail('expected allocation_required ' . $label);
+                } catch (TimeAllocationRequiredException $exception) {
+                    self::assertSame([TimeAllocationException::ALLOCATION_REQUIRED, 409, $timer->getId(), 'c-1'], [$exception->errorCode, $exception->httpStatus(), $exception->timer->timerId, $exception->timer->subject?->id], (string) $label);
+                }
+            }
+            self::assertSame('c-1', $service->getActive($this->user)?->subject()?->id, 'the timer keeps running ' . $label);
+            self::assertSame([], $this->stored(), 'nothing is written ' . $label);
+        }
+    }
+
+    /**
+     * Audit ZBQ-L1, the auditor's exact repro: allow_without_task off, require_allocation off, a subject timer stopped
+     * with a patch that clears the subject is refused (before the fix it stored an unallocated entry).
+     */
+    public function testTheAuditorsReproIsRefused(): void
+    {
+        $service = $this->service(requireAllocation: false, allowWithoutTask: false);
+        $service->start($this->user, TimeAllocation::subject($this->customer('c-1')), ClientType::Web);
+
+        try {
+            $service->stop($this->user, null, null, TimeAllocationPatch::keep()->withoutSubject(), true);
+            self::fail('expected allocation_required');
+        } catch (TimeAllocationRequiredException $exception) {
+            self::assertSame(TimeAllocationException::ALLOCATION_REQUIRED, $exception->errorCode);
+        }
+        self::assertSame('c-1', $service->getActive($this->user)?->subject()?->id);
+        self::assertSame([], $this->stored());
+        self::assertSame([], $this->names(TimeTrackEvents::TIMER_STOP));
+    }
+
+    /**
+     * Audit ZBQ-L3 (design §13): a change of the subject of a running task timer asks the task provider again; when the
+     * user may no longer track the task, allocate and stop patches are refused before anything is written. An activity
+     * type change alone and a task-less timer are not re-checked.
+     */
+    public function testChangingTheSubjectOfATaskTimerChecksTheTaskAgain(): void
+    {
+        $service              = $this->service();
+        $timer                = $service->start($this->user, TimeAllocation::task('task-1', $this->customer('c-1')), ClientType::Web);
+        $this->tasks->revoked = ['task-1'];
+        $this->tasks->asked   = [];
+        $canLog               = count($this->customers->canLogCalls);
+
+        foreach ([
+            fn (): mixed => $service->allocateRunning($this->user, TimeAllocationPatch::keep()->withSubject($this->customer('c-2'))),
+            fn (): mixed => $service->allocateRunning($this->user, TimeAllocationPatch::keep()->withoutSubject()),
+            fn (): mixed => $service->stop($this->user, null, null, TimeAllocationPatch::keep()->withSubject($this->customer('c-2')), true),
+            fn (): mixed => $service->stopAt($this->user, null, null, null, TimeAllocationPatch::keep()->withoutSubject()->withActivityType('dev'), true),
+        ] as $call) {
+            try {
+                $call();
+                self::fail('expected TaskNotTrackableException');
+            } catch (TaskNotTrackableException $exception) {
+                self::assertStringContainsString('task-1', $exception->getMessage());
+            }
+        }
+        self::assertSame(['task-1', 'task-1', 'task-1', 'task-1'], $this->tasks->asked);
+        self::assertCount($canLog, $this->customers->canLogCalls, 'the task first: the subject is never asked');
+        self::assertSame([$timer->getId(), 'c-1', null], [$service->getActive($this->user)?->getId(), $service->getActive($this->user)?->subject()?->id, $service->getActive($this->user)?->getActivityTypeKey()]);
+        self::assertSame([], $this->stored());
+        self::assertSame([], $this->of(TimerAllocatedEvent::class));
+
+        // The same subject again is no change; an activity type alone is not a subject change: no task re-check.
+        $after = $service->allocateRunning($this->user, TimeAllocationPatch::keep()->withSubject($this->customer('c-1'))->withActivityType('dev'));
+        self::assertSame(['c-1', 'dev'], [$after?->subject()?->id, $after?->getActivityTypeKey()]);
+        $entry = $service->stop($this->user, null, null, TimeAllocationPatch::keep()->withActivityType('support'), true);
+        self::assertSame(['task-1', 'c-1', 'support'], [$entry?->getTaskId(), $entry?->subject()?->id, $entry?->getActivityTypeKey()]);
+        self::assertSame(['task-1', 'task-1', 'task-1', 'task-1'], $this->tasks->asked, 'not asked again');
+
+        // A task-less timer has no task to check.
+        $service->start($this->user, TimeAllocation::subject($this->customer('c-1')), ClientType::Web);
+        self::assertSame('c-2', $service->allocateRunning($this->user, TimeAllocationPatch::keep()->withSubject($this->customer('c-2')))?->subject()?->id);
+        self::assertSame('c-1', $service->stop($this->user, null, null, TimeAllocationPatch::keep()->withSubject($this->customer('c-1')), true)?->subject()?->id);
+        self::assertSame(['task-1', 'task-1', 'task-1', 'task-1'], $this->tasks->asked);
+
+        // Task access back: the change goes through.
+        $this->tasks->revoked = [];
+        $service->start($this->user, 'task-1', ClientType::Web);
+        self::assertSame('c-2', $service->allocateRunning($this->user, TimeAllocationPatch::keep()->withSubject($this->customer('c-2')))?->subject()?->id);
+    }
+
+    /**
      * The service under test.
      */
     private function service(bool $requireAllocation = false, bool $requireActivityType = false, bool $allowWithoutTask = true, bool $activities = true): TimerService
     {
         $guard = AllocationFixtures::guard([$this->customers, $this->internal], $activities ? $this->activities : null, $requireAllocation, $requireActivityType, $allowWithoutTask, $this->logger);
 
-        return new TimerService(new StubTaskProvider(), $this->timers, $this->entries, $this->dispatcher, $this->clock, $this->logger, scopeProvider: $this->scopes(), billableDefaults: $this->billable, allowWithoutTask: $allowWithoutTask, allocationGuard: $guard);
+        return new TimerService($this->tasks, $this->timers, $this->entries, $this->dispatcher, $this->clock, $this->logger, scopeProvider: $this->scopes(), billableDefaults: $this->billable, allowWithoutTask: $allowWithoutTask, allocationGuard: $guard);
     }
 
     /**

@@ -178,12 +178,37 @@ final readonly class HostTimerApi
      * @throws LogicException When the reference carries no security user object
      * @throws TimeAllocationException When the patch's subject or activity type is refused (nothing is written)
      * @throws TimeAllocationRequiredException When the time misses a required allocation (the timer keeps running)
+     * @throws TaskNotTrackableException When the patch changes the subject of a task timer whose task the access policy now refuses
      */
     public function stop(TimeTrackUserRef $actor, ?string $note = null, ?TimeAllocationPatch $allocation = null): ?TimerEntrySnapshot
     {
-        $entry = $this->timers->stop($this->user($actor), null, $note, $allocation, true);
+        $user = $this->user($actor);
+        $this->assertTaskAccessForPatch($user, $allocation);
+        $entry = $this->timers->stop($user, null, $note, $allocation, true);
 
         return $entry instanceof TimeEntry ? TimerEntrySnapshot::fromEntry($entry) : null;
+    }
+
+    /**
+     * Since 2.1.0 (Beacon spec 256, audit ZBQ): sets, changes or clears the subject and the activity type of the actor's
+     * running timer (task timer or not), with the checks of the client API's `timer/allocate`: on a task timer the access
+     * policy decides first when the subject changes, then `canLog` for the actor in the timer's scope, `allowsTask()`,
+     * the activity type, and the clearing rule. Under the owner's lock; last write wins; `TimerAllocatedEvent`.
+     *
+     * @throws LogicException When the reference carries no security user object
+     * @throws TaskNotTrackableException When the subject of a task timer changes and the task is refused
+     * @throws TimeAllocationException When the subject or activity type is refused, or the time would be left unallocated
+     * @throws ActiveTimerConflictException When the running timer was replaced on every attempt
+     *
+     * @return TimerSnapshot|null The running timer as it is now, or null when none runs
+     */
+    public function allocate(TimeTrackUserRef $actor, TimeAllocationPatch $allocation): ?TimerSnapshot
+    {
+        $user = $this->user($actor);
+        $this->assertTaskAccessForPatch($user, $allocation);
+        $timer = $this->timers->allocateRunning($user, $allocation);
+
+        return $timer instanceof ActiveTimer ? TimerSnapshot::fromTimer($timer) : null;
     }
 
     /**
@@ -196,6 +221,20 @@ final readonly class HostTimerApi
         $timer = $this->timers->getActive($this->user($actor));
 
         return $timer instanceof ActiveTimer ? TimerSnapshot::fromTimer($timer) : null;
+    }
+
+    /**
+     * Audit ZBQ-L3 (design §13): a change of the subject of a running task timer asks the access policy about the task
+     * again (one answer for "refused" and "unknown", as on start).
+     *
+     * @throws TaskNotTrackableException When the policy refuses the task
+     */
+    private function assertTaskAccessForPatch(UserInterface $user, ?TimeAllocationPatch $patch): void
+    {
+        $timer = $patch instanceof TimeAllocationPatch && $patch->changesSubject ? $this->timers->getActive($user) : null;
+        if ($timer instanceof ActiveTimer && $timer->hasTask() && $patch->changesSubjectOf($timer->subject()) && !$this->taskAccess->canTrack($user, $timer->getTaskId())) {
+            throw TaskNotTrackableException::forTask($timer->getTaskId());
+        }
     }
 
     private function user(TimeTrackUserRef $actor): UserInterface

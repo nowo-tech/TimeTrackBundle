@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Support;
 
+use Closure;
 use Nowo\TimeTrackBundle\Subject\TimeSubjectContext;
 use Nowo\TimeTrackBundle\Subject\TimeSubjectLabel;
 use Nowo\TimeTrackBundle\Subject\TimeSubjectLabels;
@@ -52,6 +53,9 @@ abstract class AllocationTestSubjectProvider implements TimeSubjectProviderInter
     /** @var bool whether every method throws */
     public bool $fail = false;
 
+    /** @var (Closure(): mixed)|null since audit ZBQ-L5: runs on every describe() call (e.g. to see whether a lock is held) */
+    public ?Closure $onDescribe = null;
+
     /**
      * Resets the provider to "nothing allowed, nothing recorded".
      */
@@ -67,6 +71,7 @@ abstract class AllocationTestSubjectProvider implements TimeSubjectProviderInter
         $this->searchResults = [];
         $this->searchCalls   = [];
         $this->fail          = false;
+        $this->onDescribe    = null;
     }
 
     /**
@@ -93,6 +98,9 @@ abstract class AllocationTestSubjectProvider implements TimeSubjectProviderInter
             $ids[] = $subject->id;
         }
         $this->describeCalls[] = ['actor' => $context->actor->id, 'scope' => $context->scopeKey, 'ids' => $ids];
+        if ($this->onDescribe instanceof Closure) {
+            ($this->onDescribe)();
+        }
         $this->throwWhenFailing();
         $labels = [];
         foreach ($subjects as $subject) {

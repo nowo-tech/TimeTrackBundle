@@ -47,6 +47,7 @@ flash:
   no_active_timer: Nessun timer attivo.
   allocation_required: "Assegna questo tempo a un’attività o a un soggetto prima di fermare il timer."
   activity_type_required: "Scegli un tipo di attività prima di fermare il timer."
+  activity_type_refused: "Questo tipo di attività non può essere usato. Scegline un altro."
 device:
   intro: "Inserisci il codice mostrato dall’app desktop o dall’estensione del browser."
   user_code: "Codice del dispositivo"
@@ -192,3 +193,6 @@ client_api:
   leave_absent: "Assente"
 subjects:
   not_visible: "Soggetto non visibile"
+stop:
+  activity_type: "Tipo di attività"
+  activity_type_placeholder: "Scegli un tipo di attività"

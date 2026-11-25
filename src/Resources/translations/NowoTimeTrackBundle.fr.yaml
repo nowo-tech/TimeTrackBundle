@@ -47,6 +47,7 @@ flash:
   no_active_timer: Aucun minuteur actif.
   allocation_required: "Affectez ce temps à une tâche ou à un objet avant d’arrêter le minuteur."
   activity_type_required: "Choisissez un type d’activité avant d’arrêter le minuteur."
+  activity_type_refused: "Ce type d’activité ne peut pas être utilisé. Choisissez-en un autre."
 device:
   intro: "Saisissez le code affiché par l’application de bureau ou l’extension du navigateur."
   user_code: "Code de l’appareil"
@@ -192,3 +193,6 @@ client_api:
   leave_absent: "Absent"
 subjects:
   not_visible: "Objet non visible"
+stop:
+  activity_type: "Type d’activité"
+  activity_type_placeholder: "Choisissez un type d’activité"

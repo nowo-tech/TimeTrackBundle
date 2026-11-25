@@ -14,6 +14,7 @@ use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\TimeEntryCorrectedEvent;
 use Nowo\TimeTrackBundle\Event\TimeTrackEvents;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
 use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
@@ -201,6 +202,10 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         $subjectChanged  = $patch->changesSubjectOf($current->subject());
         $activityChanged = $patch->changesActivityTypeOf($current->getActivityTypeKey());
         $subject         = $patch->subjectAfter($current->subject());
+        // Audit ZBQ-I5: with an effective `require_activity_type` a correction never clears the activity type.
+        if ($activityChanged && $patch->activityTypeAfter($current->getActivityTypeKey()) === null && $this->manualEntries->allocationGuard()->requiresActivityType()) {
+            throw new TimeAllocationException(TimeAllocationException::ACTIVITY_TYPE_REQUIRED);
+        }
         if ($subjectChanged) {
             $guard = $this->manualEntries->allocationGuard();
             $guard->assertAllowsTask($subject, $current->hasTask());

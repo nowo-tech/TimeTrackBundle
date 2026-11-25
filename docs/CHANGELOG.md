@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [[Unreleased]](#unreleased)
   - [Added (2.1.0)](#added-210)
+  - [Security (2.1.0, audit ZBQ, unreleased code)](#security-210-audit-zbq-unreleased-code)
   - [Tests (2.1.0)](#tests-210)
 - [[2.0.0] - 2026-11-25](#200---2026-11-25)
   - [Changed](#changed)
@@ -309,7 +310,22 @@ configured nothing changes: the new columns stay NULL and every subject or activ
 - **Command:** `nowo:time-track:entries:check-allocation [--scope=] [--fix-report]`, read-only check of the column
   contract after a host back-fill (non-zero exit on findings; counts allocated entries in locked periods).
 - **Web UI:** a subject / activity type column on the reports page while a provider is configured; the stop button is
-  an interactive stop (flash message under `require_allocation`).
+  an interactive stop (flash message under `require_allocation`) and, under an effective `require_activity_type`, asks
+  for the activity type.
+- `HostTimerApi::allocate()`: the subject / activity type of the actor's running timer (the checks of `timer/allocate`).
+
+### Security (2.1.0, audit ZBQ, unreleased code)
+
+- A stop that clears the subject of a timer without a task follows the clearing rule (`allocation_required`, the timer
+  keeps running) instead of storing time with neither task nor subject (ZBQ-L1).
+- Changing the subject of a running task timer (stop patch, `timer/allocate`, `HostTimerApi`) checks the task access
+  again first (`task_forbidden`, design §13; ZBQ-L3).
+- `TimeEntryTotalsQueryInterface::totals()` checks the key columns (scope, board, owner, task) again byte for byte in PHP
+  like the list port (ZBQ-L2).
+- `POST entries` no longer asks the host subject / activity type ports under the owner's lock: the idempotent answer is
+  stored without labels and completed after the commit (ZBQ-L5).
+- A correction cannot clear the activity type under an effective `require_activity_type` (ZBQ-I5); `GET
+  activity-types` is rate-limited per token like the subject search.
 
 ### Tests (2.1.0)
 
