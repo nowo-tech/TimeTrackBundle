@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Tests\Unit\ClientApi;
 
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Dto\DevicePollResult;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Enum\ClientType;
@@ -69,6 +70,11 @@ final class DeviceAuthorizationServiceTest extends TestCase
                 $this->calls[] = [$clientType, $clientName];
 
                 return 'app-password:7';
+            }
+
+            public function issueForFamily(UserInterface $user, DeviceCredentialRequest $request): string
+            {
+                return $this->issueForDevice($user, $request->clientType, $request->clientName, []);
             }
         };
         $stack   = new ClientApiStack($this->createStub(ClientAuthenticatorInterface::class), $this->createStub(TaskProviderInterface::class), issuer: $issuer);

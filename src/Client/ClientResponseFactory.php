@@ -38,6 +38,7 @@ final readonly class ClientResponseFactory
      * @param string $kernelEnvironment @deprecated since 2.0, ignored (it only decided the removed `*`); removed in 3.0
      * @param bool $allowAnyExtensionOrigin @deprecated since 2.0, ignored (`clients.cors_allow_any_extension_origin` is removed); removed in 3.0
      * @param ClientApiSettingsProviderInterface|null $settingsProvider instance settings (allowed origins); null = the constructor list only
+     * @param string|null $contextHeader Since 2.2.0: the context header (`client_api.context.header`) browsers may send; null = none
      */
     // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
@@ -45,6 +46,7 @@ final readonly class ClientResponseFactory
         string $kernelEnvironment = 'prod',
         bool $allowAnyExtensionOrigin = false,
         private ?ClientApiSettingsProviderInterface $settingsProvider = null,
+        private ?string $contextHeader = null,
     ) {
     }
 
@@ -102,7 +104,7 @@ final readonly class ClientResponseFactory
         }
 
         $response->headers->set('Access-Control-Allow-Origin', $origin);
-        $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key');
+        $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key' . ($this->contextHeader !== null ? ', ' . $this->contextHeader : ''));
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Expose-Headers', 'Retry-After');
         $response->headers->set('Vary', 'Origin');

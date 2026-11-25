@@ -7,6 +7,9 @@ namespace Nowo\TimeTrackBundle\DependencyInjection;
 use DateTimeZone;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Nowo\TimeTrackBundle\Client\ConfigDeviceScopeFamilyProvider;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\UserRef\UserMapping;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
@@ -23,6 +26,7 @@ use function preg_match;
 use function str_contains;
 use function str_ends_with;
 use function str_starts_with;
+use function strtolower;
 use function trim;
 
 /**
@@ -1003,6 +1007,35 @@ final class Configuration implements ConfigurationInterface
                         ->integerNode('lookup_window_seconds')->defaultValue(900)->min(60)->end()
                         ->integerNode('max_pending_per_prefix')->info('Device requests created per client IPv4 /24 or IPv6 /64 within code_ttl (0 = off).')->defaultValue(20)->min(0)->end()
                         ->integerNode('max_pending')->info('Pending, not expired device requests in total; device/code answers 429 above it (0 = off).')->defaultValue(10000)->min(0)->end()
+                        ->arrayNode('scope_families')
+                            ->info('Since 2.2.0: extra scope families of the device flow (key => label and scope => label), e.g. chat: {label: Chat, scopes: {"chat:read": "Read your conversations"}}. The time family is the bundle\'s own; one token per family; deny by default. Services implementing DeviceScopeFamilyProviderInterface add more.')
+                            ->useAttributeAsKey('key')
+                            ->arrayPrototype()
+                                ->children()
+                                    ->scalarNode('label')->isRequired()->cannotBeEmpty()->end()
+                                    ->arrayNode('scopes')
+                                        ->isRequired()
+                                        ->requiresAtLeastOneElement()
+                                        ->useAttributeAsKey('scope')
+                                        ->scalarPrototype()->cannotBeEmpty()->end()
+                                    ->end()
+                                ->end()
+                            ->end()
+                            ->validate()
+                                ->always(static function (array $families): array {
+                                    foreach ($families as $key => $family) {
+                                        // Builds each family once: a malformed key, label or scope fails the build.
+                                        new DeviceScopeFamily((string) $key, (string) $family['label'], $family['scopes']);
+                                    }
+                                    if (isset($families[DeviceScopeFamily::TIME])) {
+                                        throw new InvalidConfigurationException('client_api.device_flow.scope_families cannot define the "time" family: it belongs to TimeTrackBundle.');
+                                    }
+                                    (new DeviceScopeFamilyRegistry([new ConfigDeviceScopeFamilyProvider($families)]))->all();
+
+                                    return $families;
+                                })
+                            ->end()
+                        ->end()
                     ->end()
                     ->validate()
                         ->ifTrue(static fn (array $v): bool => $v['enabled'] && !$v['default_page'] && !is_string($v['verification_uri']))
@@ -1029,6 +1062,33 @@ final class Configuration implements ConfigurationInterface
         $this->addClientApiLinksWorkingTimeRouteToTaskUrlSections($clientApi);
         $this->addClientApiRateLimitToMonitoringSections($clientApi);
         $this->addClientApiDeviceFlowSection($clientApi);
+        $this->addClientApiContextSection($clientApi);
+    }
+
+    /**
+     * Since 2.2.0: adds the `context` section (explicit tenant context header, Beacon Desktop Q-BD-7).
+     */
+    private function addClientApiContextSection(ArrayNodeDefinition $clientApi): void
+    {
+        $clientApi
+            ->children()
+                ->arrayNode('context')
+                    ->info('Since 2.2.0: explicit tenant context of client API requests (a header checked on every request by a host ClientContextPolicyInterface; the user\'s stored web context is never changed). Off without a policy.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('policy')->info('Service id implementing ClientContextPolicyInterface (null = off: the header is ignored).')->defaultNull()->end()
+                        ->scalarNode('header')
+                            ->info('Name of the context header (Beacon: X-Beacon-Context).')
+                            ->defaultValue('X-Client-Context')
+                            ->validate()
+                                ->ifTrue(static fn (mixed $v): bool => !is_string($v) || preg_match('/\A[A-Za-z][A-Za-z0-9-]{0,63}\z/', $v) !== 1 || in_array(strtolower($v), ['authorization', 'content-type', 'idempotency-key', 'origin', 'cookie', 'host'], true))
+                                ->thenInvalid('client_api.context.header must be a header name of letters, digits and dashes (at most 64), not a standard header: %s')
+                            ->end()
+                        ->end()
+                        ->booleanNode('required')->info('Refuse a request without the header (400 context_required); false = no header means no context.')->defaultFalse()->end()
+                    ->end()
+                ->end()
+            ->end();
     }
 
     /**

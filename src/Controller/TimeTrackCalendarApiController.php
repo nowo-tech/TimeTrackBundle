@@ -423,7 +423,7 @@ final readonly class TimeTrackCalendarApiController
             $body = ['entry' => $this->entryBody($principal, $entry, $request)];
             $this->idempotency->confirm($userId, $idempotencyKey, $nonce, $body);
             if ($subject instanceof TimeSubjectRef) {
-                $this->auditor?->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $subject->type);
+                $this->auditor?->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $subject->type, $principal->token->getScopeFamily());
             }
 
             return $this->responseFactory->json($body, Response::HTTP_CREATED, $request);

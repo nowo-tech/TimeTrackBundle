@@ -114,7 +114,7 @@ final readonly class TimeTrackClientAllocationApiController
             return $this->responseFactory->error('no_active_timer', 'No active timer.', Response::HTTP_NOT_FOUND, $request);
         }
         if ($patch->changesSubject && $patch->subject instanceof TimeSubjectRef) {
-            $this->auditor->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $patch->subject->type);
+            $this->auditor->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $patch->subject->type, $principal->token->getScopeFamily());
         }
 
         return $this->responseFactory->json([

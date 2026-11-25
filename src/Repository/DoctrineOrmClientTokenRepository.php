@@ -20,6 +20,7 @@ use Symfony\Component\Clock\NativeClock;
 
 use function is_array;
 use function is_scalar;
+use function is_string;
 
 /**
  * Doctrine ORM store of the hashed client tokens.
@@ -138,7 +139,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
     public function findSessionById(string $sessionId): ?ClientSessionRecord
     {
         $row = $this->entityManager->createQueryBuilder()
-            ->select('t.id AS id', 'IDENTITY(t.user) AS ownerId', 't.credentialId AS credentialId', 't.clientType AS clientType')
+            ->select('t.id AS id', 'IDENTITY(t.user) AS ownerId', 't.credentialId AS credentialId', 't.clientType AS clientType', 't.scopeFamily AS scopeFamily')
             ->from(ClientToken::class, 't')
             ->where('t.id = :id')
             ->setParameter('id', $sessionId)
@@ -156,6 +157,7 @@ final readonly class DoctrineOrmClientTokenRepository implements ClientTokenRepo
             (string) $row['ownerId'],
             is_scalar($credentialId) ? (string) $credentialId : null,
             $clientType instanceof ClientType ? $clientType : ClientType::from(is_scalar($clientType) ? (string) $clientType : ''),
+            is_string($row['scopeFamily'] ?? null) ? $row['scopeFamily'] : 'time',
         );
     }
 

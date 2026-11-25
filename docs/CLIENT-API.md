@@ -1,4 +1,4 @@
-# Client API reference (1.29, contract v0.3.1 + timetrack-next v1.1 + §TT-MON)
+# Client API reference (1.29, contract v0.3.1 + timetrack-next v1.1 + §TT-MON; 2.2 contract v0.5)
 
 API of the browser extension ([nowo-tech/time-track-extension](https://github.com/nowo-tech/time-track-extension))
 and the desktop app ([nowo-tech/time-track-desktop](https://github.com/nowo-tech/time-track-desktop)). Enabled with
@@ -10,6 +10,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
+- [Changes in 2.2 (scope families, contract v0.5)](#changes-in-22-scope-families-contract-v05)
 - [Changes in 2.1 (subjects and activity types, spec 256)](#changes-in-21-subjects-and-activity-types-spec-256)
 - [Changes in 2.0](#changes-in-20)
 - [Changes in 1.41 (monitoring privacy decisions D4, D9, D11)](#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)
@@ -163,6 +164,28 @@ signs in again. With `revoke_tokens: false` the token works again as soon as the
 after the token lookup and before the last-used update, `ClientCredentialStateInterface`, the rate limit and the scope
 check. Options:
 [CONFIGURATION](CONFIGURATION.md#client-api-129).
+
+## Changes in 2.2 (scope families, contract v0.5)
+
+Additive (Beacon Desktop BD-2). A v0.4 client changes nothing: no `family` means `time`.
+
+- `POST device/code` `{clientType, clientName, scopes?, family?}`:
+  - `family`: a registered scope family (`time`, or a host family such as `chat`). Omitted: derived from `scopes`, else
+    `time`. The scopes of a family other than `time` must be listed. Mixing families, an unknown family or scope, or a
+    `family` that does not own the scopes: `400 invalid_scope`.
+  - Optional `Authorization: Bearer <token>` of a token the device already holds (any family): the new token joins that
+    device (same device key, one "connected app" row with one badge per family). Not valid: `401 invalid_token`.
+  - The answer adds `scopeFamily`.
+- `POST device/token` and `POST login` answers add `scopeFamily` (`login` is always `time`).
+- Only a `time` token opens the routes of this API: a token of another family gets `403 insufficient_scope` on every
+  route, `GET me` included. `POST logout` revokes a `time` token only (204 either way).
+- Tenant context (only when the host sets `client_api.context.policy`): send the context header (Beacon:
+  `X-Beacon-Context: personal` or `org:<uuid>`) on every request. A context you may not use (unknown, revoked, malformed)
+  answers `403 context_forbidden`; with `client_api.context.required`, no header answers `400 context_required`.
+  `GET me` then adds `contexts` (`[{key, label}]`, the default first) and `context` (the key this request named, or
+  null). Without a policy the header is ignored and the keys are absent.
+- Other families' APIs (e.g. `/api/chat/v1`) are served by their own bundles; their token comes from this device flow
+  with `family` set, and they answer the same error codes.
 
 ## Changes in 2.1 (subjects and activity types, spec 256)
 

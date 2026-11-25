@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use Closure;
 use DateTimeImmutable;
 use Doctrine\ORM\Event\OnFlushEventArgs;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -244,6 +245,11 @@ final class LoadReadinessRaceTest extends FunctionalTestCase
                 $this->issued[] = $id = 'credential-' . (count($this->issued) + 1);
 
                 return $id;
+            }
+
+            public function issueForFamily(UserInterface $user, DeviceCredentialRequest $request): string
+            {
+                return $this->issueForDevice($user, $request->clientType, $request->clientName, []);
             }
         };
         $devices = ServiceCopy::with($devices, ['credentialIssuer' => $issuer]);

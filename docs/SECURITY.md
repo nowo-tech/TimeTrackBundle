@@ -6,6 +6,7 @@
 - [Attack surface](#attack-surface)
 - [Threat model](#threat-model)
 - [Client API](#client-api)
+- [Scope families and tenant context (2.2)](#scope-families-and-tenant-context-22)
 - [Reports](#reports)
 - [Imported entries (1.11)](#imported-entries-111)
 - [Timesheets, balance and lock (1.13)](#timesheets-balance-and-lock-113)
@@ -99,6 +100,39 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   and the leave warnings log the reason only (no user id, date, label or exception message). `GET workday` answers
   carry `Cache-Control: no-store, private` and `Vary: Authorization`. The bundle's reminder suppression fails open when
   the provider throws: the host register must suppress reminders on leave days itself (FR-025).
+
+## Scope families and tenant context (2.2)
+
+Since 2.2.0 (Beacon Desktop BD-2, Beacon constraints R3, R4, R7):
+
+- **One family per token, deny by default.** A token carries one scope family. The time API guard refuses every token
+  whose family is not `time` (`403 insufficient_scope`, audited as `request_denied` with reason `scope_family`), including
+  on the routes that need no scope (`GET me`); `ClientFamilyTokenAuthenticator` refuses every token whose family is not
+  the API's (a `time` token never opens the chat API). An unregistered family or scope is refused at `device/code`
+  (`400 invalid_scope`), a request never mixes families, and a family other than `time` has no default scopes. A family
+  removed from the registry stops its tokens at their next use (the authenticator only serves registered families).
+  The family is compared in PHP (`===`), never in a SQL `WHERE`, so no collation can widen it.
+- **No new way to get a token.** Family tokens are issued only through the device flow, after the signed-in user's
+  approval on a page that names the family (one family per approval); the password `login` always issues `time`
+  tokens. The time API's `logout` revokes `time` tokens only; a family API revokes its own through
+  `ClientFamilyTokenAuthenticator::revoke()`.
+- **Same checks for every family.** The family authenticator runs the time API's checks in the same order (per-IP and
+  per-token limits, account status through the user checker, the host credential state on every request) before the
+  family, the scope and the context; every refusal is audited with the family (`ClientApiEvent::$scopeFamily`).
+- **Device key linking.** `device/code` may carry the Bearer token of the same device so the new family token joins its
+  device row. The presented token must pass the full token checks (`401 invalid_token` otherwise), so only a holder of a
+  valid token of that device can join it; the key only groups the approving user's own sessions (it grants nothing and
+  is never compared across users). A credential minter that does not know families can never mint a non-`time`
+  credential (the approval fails and nothing is issued).
+- **Tenant context.** The context header is checked by the host `ClientContextPolicyInterface` on **every** request
+  (no cache): unknown, revoked and non-existent contexts all answer the same `403 context_forbidden`; a malformed value
+  (over 128 characters, non-visible ASCII) never reaches the policy; a policy exception fails closed (logged with the
+  exception class only). The policy is read-only by contract: the bundle never writes the user's stored web context.
+- **Worker mode.** Families and contexts are resolved per call; nothing about a request, user, token, family or tenant
+  is kept in a service (`ScopeFamilyWorkerModeTest`: two people, two contexts, two families and a revocation in one
+  kernel; flat memory over 1,000 steps).
+- **Rollback.** The 2.2.0 `*-down.sql` scripts delete the tokens of other families first: 2.1 has no family check and
+  would accept them on the time routes that need no scope.
 
 ## Reports
 

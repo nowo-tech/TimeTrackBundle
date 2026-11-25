@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 2.2 (device-flow scope families, Beacon Desktop BD-2)](#re-audit-22-device-flow-scope-families-beacon-desktop-bd-2)
 - [Re-audit 1.37 (entry access by id)](#re-audit-137-entry-access-by-id)
 - [Re-audit 1.36 (entries without a task, Beacon spec 250)](#re-audit-136-entries-without-a-task-beacon-spec-250)
 - [Re-audit 1.35 (read and personal-data ports)](#re-audit-135-read-and-personal-data-ports)
@@ -28,6 +29,18 @@
 - [Findings](#findings)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 2.2 (device-flow scope families, Beacon Desktop BD-2)
+
+- `DeviceScopeFamilyRegistry`, `ConfigDeviceScopeFamilyProvider`, `ClientContextResolver`, `ClientFamilyTokenAuthenticator`
+  and `CurrentClientContext` are `final readonly` with only collaborators and configuration: the families are read from
+  the providers on every call, the context policy is asked on every request, and the principal is built per call.
+  Nothing about a request, user, token, family or tenant is kept in a service, a static or a memo.
+- The allowed context of a time API request lives in a request attribute (`CurrentClientContext::ATTRIBUTE`), dropped
+  with the request; the guard never writes it to a service.
+- Test: `ScopeFamilyWorkerModeTest` (kernel not reset, debug off): two people, two contexts and two families in turn on
+  one kernel for 250 rounds with the chat token revoked mid-run (refused at its next use), and the family paths keep a
+  flat memory (under 64 KB) over 1,000 steps.
 
 ## Re-audit 1.37 (entry access by id)
 

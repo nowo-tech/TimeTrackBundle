@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (2.2.0)](#added-220)
+  - [Changed (2.2.0)](#changed-220)
+  - [Fixed (2.2.0)](#fixed-220)
+  - [Tests (2.2.0)](#tests-220)
 - [[2.1.0] - 2026-11-25](#210---2026-11-25)
   - [Added (2.1.0)](#added-210)
   - [Security (2.1.0, audit ZBQ, unreleased code)](#security-210-audit-zbq-unreleased-code)
@@ -260,6 +264,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+TimeTrack 2.2.0 (minor, Beacon Desktop phase BD-2): device-flow **scope families**, so the desktop app can hold a
+separate, separately revocable token for another bundle's client API (Beacon: ChatKit's chat API) next to its time
+token. Design: `time-track-desktop` `docs/design/BEACON_DESKTOP.md` §4 (owner answers Q-BD-1..19 as recommended).
+Installed time clients (contract v0.4) are unchanged. Apply `docs/sql/2.2.0` (see UPGRADING "To 2.2.0").
+
+### Added (2.2.0)
+
+- Scope families: `DeviceScopeFamily`, `DeviceScopeFamilyProviderInterface` (autoconfigured, tag
+  `nowo_time_track.device_scope_family_provider`), `client_api.device_flow.scope_families` and the public
+  `DeviceScopeFamilyRegistry`. TimeTrack owns `time`; one family per token; deny by default.
+- Client API contract v0.5: `POST device/code` takes `family` (default `time`, or derived from the scopes; mixing
+  families is `400 invalid_scope`) and an optional `Authorization: Bearer` token of the same device (its device key is
+  reused; `401 invalid_token` when not valid); `device/code`, `device/token` and `login` answer `scopeFamily`.
+- `ClientFamilyCredentialMinterInterface::mintForFamily(DeviceCredentialRequest)`: the host credential gets the family,
+  its scopes and the device key (Q-BD-19). `OpaqueClientCredentialIssuer` serves every family.
+- `ClientFamilyTokenAuthenticator` (public): authenticates a family token for another bundle's API with the time API's
+  checks plus the family, scope and context (`ClientFamilyAuthentication`, `ClientFamilyPrincipal`), and `revoke()` for
+  that API's logout. Host-agnostic (no HTTP types); Beacon wires ChatKit's `ChatClientPrincipalResolverInterface` on it.
+- Explicit tenant context (Q-BD-7): `client_api.context.{policy, header, required}` and `ClientContextPolicyInterface`,
+  checked on every request (`403 context_forbidden`, `400 context_required`); `CurrentClientContext::key()` for host
+  services; `GET me.contexts` / `me.context` with a policy; the header is added to the CORS allowed headers.
+- Connected apps (Q-BD-19): `ConnectedClientDevicesQueryInterface::devicesOf()` (one `ConnectedDeviceView` per device
+  with its family badges and sessions); `ClientSessionView` gains `scopeFamily`, `deviceKey`, `clientName`;
+  `DeviceSignInView` gains `scopeFamily`; the personal data export lists them.
+- Audit per family: `ClientApiEvent::$scopeFamily` (and `toArray()['scopeFamily']`), `ClientApiAuditor::record()` /
+  `recordForUserId()` / `denied()` take the family; the denial throttle is kept per family; new denial reasons
+  `scope_family`, `context_forbidden`, `context_required`.
+- The default verification page names the family ("… asks for access to: Chat") and lists a host family's scope
+  labels (7 locales).
+- Schema: `scope_family` (default `time`), `device_key`, `client_name` on `time_track_client_tokens`; `scope_family`,
+  `device_key` on `time_track_device_codes` (`docs/sql/2.2.0`, demo migration `Version20261126000000`).
+
+### Changed (2.2.0)
+
+- The time API refuses a token of another family on every route (`403 insufficient_scope`), and its `logout` revokes
+  `time` tokens only.
+
+### Fixed (2.2.0)
+
+- Tests: `SecurityAuditClTest::testDeviceCodesCappedPerPrefix` flaked (200 instead of 429) when its 21 requests
+  crossed the epoch-aligned 600-second window of the per-prefix cap; it now runs on a frozen clock like the per-IP test.
+
+### Tests (2.2.0)
+
+- `ScopeFamilyClientApiTest` (end to end: chat flow, refusals, chained flow and device rows, context header, CORS),
+  `ScopeFamilyWorkerModeTest` (worker mode without reset, revocation mid-run, flat memory), `ScopeFamilySchemaTest`
+  (reference migrations on every platform), unit tests of the registry, context resolver, authenticator and entities.
 
 ## [2.1.0] - 2026-11-25
 

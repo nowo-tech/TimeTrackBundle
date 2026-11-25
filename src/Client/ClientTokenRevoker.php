@@ -203,7 +203,7 @@ final readonly class ClientTokenRevoker implements ClientSessionRevokerInterface
         }
 
         try {
-            $this->auditor?->recordForUserId(ClientApiAuditAction::SessionRevoked, $session->ownerId, $session->credentialId, $session->clientType, null, $isOwner ? 'owner' : 'other');
+            $this->auditor?->recordForUserId(ClientApiAuditAction::SessionRevoked, $session->ownerId, $session->credentialId, $session->clientType, null, $isOwner ? 'owner' : 'other', $session->scopeFamily);
         } catch (Throwable $exception) {
             $this->logger->warning('TimeTrack client session audit listener failed.', ['bundle' => 'time_track', 'action' => 'client_session_revoke', 'exception' => $exception::class]);
         }

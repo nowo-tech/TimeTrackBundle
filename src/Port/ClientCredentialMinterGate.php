@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port;
 
+use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientCredentialMinterInterface;
+use Nowo\TimeTrackBundle\Client\ClientFamilyCredentialMinterInterface;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
+
+use function sprintf;
 
 /**
  * Asks a host {@see ClientCredentialMinterInterface} (1.23.0) where the bundle asks its internal shape
@@ -30,5 +37,23 @@ final readonly class ClientCredentialMinterGate implements ClientCredentialIssue
     public function issueForDevice(UserInterface $user, ClientType $clientType, string $clientName, array $scopes): string
     {
         return $this->minter->mintForDevice(TimeTrackUserRefs::fromUser($user), $clientType, $clientName, $scopes);
+    }
+
+    /**
+     * Since 2.2.0: {@see ClientFamilyCredentialMinterInterface::mintForFamily()} when the minter implements it; a plain
+     * minter gets {@see ClientCredentialMinterInterface::mintForDevice()} for the `time` family only.
+     *
+     * @throws LogicException For another family with a minter that does not know scope families
+     */
+    public function issueForFamily(UserInterface $user, DeviceCredentialRequest $request): string
+    {
+        if ($this->minter instanceof ClientFamilyCredentialMinterInterface) {
+            return $this->minter->mintForFamily($request);
+        }
+        if ($request->scopeFamily !== DeviceScopeFamily::TIME) {
+            throw new LogicException(sprintf('nowo_time_track: the device request is for the "%s" scope family, but the credential minter "%s" does not implement %s.', $request->scopeFamily, $this->minter::class, ClientFamilyCredentialMinterInterface::class));
+        }
+
+        return $this->minter->mintForDevice($request->user, $request->clientType, $request->clientName, ClientScope::normalize($request->scopes));
     }
 }

@@ -17,12 +17,14 @@ final readonly class ClientSessionRecord
      * @param string $ownerId Id of the session owner (the `user_id` column)
      * @param string|null $credentialId Host credential the session was issued from
      * @param ClientType $clientType Client that holds the session
+     * @param string $scopeFamily Since 2.2.0: scope family of the session (`time` for every older row)
      */
     public function __construct(
         public string $id,
         public string $ownerId,
         public ?string $credentialId,
         public ClientType $clientType,
+        public string $scopeFamily = 'time',
     ) {
     }
 }

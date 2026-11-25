@@ -17,10 +17,13 @@ final readonly class ClientApiPrincipal
 {
     /**
      * Pairs the user with the token.
+     *
+     * @param string|null $contextKey Since 2.2.0: the tenant context the request named and the host policy allowed (null = none)
      */
     public function __construct(
         public UserInterface $user,
         public ClientToken $token,
+        public ?string $contextKey = null,
     ) {
     }
 }

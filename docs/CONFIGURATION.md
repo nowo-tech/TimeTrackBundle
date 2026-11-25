@@ -12,6 +12,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [FormKit profile (REQ-TWIG-005)](#formkit-profile-req-twig-005)
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Client API 1.9](#client-api-19)
+- [Device-flow scope families and tenant context (2.2)](#device-flow-scope-families-and-tenant-context-22)
 - [Client API 1.10](#client-api-110)
 - [Client API 1.29](#client-api-129)
 - [Client distribution](#client-distribution)
@@ -258,6 +259,41 @@ nowo_time_track:
             default_page: false
             verification_uri: 'https://beacon.example/account/security/time-apps/connect'
 ```
+
+## Device-flow scope families and tenant context (2.2)
+
+Since 2.2.0 (Beacon Desktop BD-2). Both are off by default: with nothing configured the device flow issues `time`
+tokens only and the context header is ignored, exactly as in 2.1.
+
+| Key | Default | Description |
+|---|---|---|
+| `client_api.device_flow.scope_families` | `{}` | Extra scope families: `<key>: { label: <name>, scopes: { '<resource>:<action>': <label> } }`. Key: `[a-z][a-z0-9_]{0,31}`; scope: `<resource>:<action>` in lower case. `time` and the time scopes are TimeTrack's own and refused; a scope belongs to one family. Services implementing `DeviceScopeFamilyProviderInterface` (autoconfigured, tag `nowo_time_track.device_scope_family_provider`) add more |
+| `client_api.context.policy` | `null` | Service id implementing `ClientContextPolicyInterface`: turns the explicit tenant context on (asked on every request; it must never change the user's stored web context) |
+| `client_api.context.header` | `X-Client-Context` | Name of the context header (Beacon: `X-Beacon-Context`). Letters, digits and dashes; standard headers (`Authorization`, `Cookie`, …) are refused. Added to the CORS `Access-Control-Allow-Headers` when a policy is set |
+| `client_api.context.required` | `false` | `true`: a request without the header answers `400 context_required`; `false`: no header means no context |
+
+The credential minter (`client_api.credential_issuer`) must implement `ClientFamilyCredentialMinterInterface` as soon as
+a family other than `time` is registered: approving such a request with a plain `ClientCredentialMinterInterface`
+fails and issues nothing.
+
+```yaml
+nowo_time_track:
+    client_api:
+        credential_issuer: App\TimeTrack\Client\AppPasswordDeviceIssuer   # implements ClientFamilyCredentialMinterInterface
+        device_flow:
+            enabled: true
+            scope_families:
+                chat:
+                    label: Chat
+                    scopes:
+                        'chat:read': 'Read your conversations'
+                        'chat:write': 'Send messages'
+        context:
+            policy: App\TimeTrack\Client\OrganizationContextPolicy
+            header: X-Beacon-Context
+```
+
+Container parameter: `%nowo_time_track.client_api.context.header%` (the header name, for hosts that read it elsewhere).
 
 ## Client API 1.10
 

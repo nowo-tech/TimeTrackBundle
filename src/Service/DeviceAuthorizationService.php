@@ -9,6 +9,10 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
+use Nowo\TimeTrackBundle\Client\DeviceScopeRequest;
 use Nowo\TimeTrackBundle\Dto\DeviceCodeGrant;
 use Nowo\TimeTrackBundle\Dto\DevicePollResult;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -22,10 +26,12 @@ use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\ValueObject\Uuid;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -55,6 +61,9 @@ use function trim;
  * - Approval asks the host for a credential ({@see ClientCredentialIssuerInterface}), so the device shows in the host's
  *   credential list and is revoked like the others.
  * - CSRF: forms that approve or deny use {@see self::csrfTokenId()} (bound to the action and the request id).
+ * - Since 2.2.0 (Beacon Desktop BD-2) a request names one scope family ({@see DeviceScopeFamily}; `time` by default) and
+ *   carries a device key: new, or the key of a token the device already holds (the app chains "Connect chat" after its
+ *   time sign-in, Q-BD-6), so the host can list one row per device with one revocable badge per family (Q-BD-19).
  */
 final readonly class DeviceAuthorizationService
 {
@@ -113,6 +122,19 @@ final readonly class DeviceAuthorizationService
      */
     public function start(ClientType $clientType, string $clientName, ?array $scopes = null, ?string $clientIp = null): DeviceCodeGrant
     {
+        return $this->startFamily($clientType, $clientName, new DeviceScopeRequest(DeviceScopeFamily::TIME, ClientScope::values(ClientScope::normalize($scopes))), $clientIp);
+    }
+
+    /**
+     * Since 2.2.0: creates a pending request for one scope family ({@see self::start()} for the `time` family).
+     *
+     * @param DeviceScopeRequest $scopes Family and scopes, parsed by {@see DeviceScopeFamilyRegistry::resolve()}
+     * @param string|null $deviceKey Device key of a token the device proved it holds (null = a new device key)
+     *
+     * @throws DeviceFlowCapacityExceededException When a cap is reached
+     */
+    public function startFamily(ClientType $clientType, string $clientName, DeviceScopeRequest $scopes, ?string $clientIp = null, ?string $deviceKey = null): DeviceCodeGrant
+    {
         $ttl      = max(60, $this->codeTtlSeconds);
         $ipPrefix = IpPrefix::of($clientIp);
         $this->checkCapacity($ipPrefix, $ttl);
@@ -126,11 +148,13 @@ final readonly class DeviceAuthorizationService
             self::hash($userCode),
             $clientType,
             $this->cleanClientName($clientName, $clientType),
-            ClientScope::normalize($scopes),
+            $scopes->scopes,
             // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
             $now->add(new DateInterval('PT' . $ttl . 'S')),
             $now,
             $ipPrefix,
+            $scopes->family,
+            $deviceKey ?? Uuid::generate()->toString(),
         ));
 
         return new DeviceCodeGrant($deviceCode, self::formatUserCode($userCode), $ttl, max(1, $this->intervalSeconds));
@@ -180,12 +204,22 @@ final readonly class DeviceAuthorizationService
     {
         // @igor-ignore - the closure runs once inside this call, it is not stored.
         [$current, $credentialId] = $this->decide($authorization, function (DeviceAuthorization $current) use ($user): string {
-            $credentialId = $this->credentialIssuer->issueForDevice($user, $current->getClientType(), $current->getClientName(), $current->getScopes());
-            $current->approve($this->userReferences->reference($user), $credentialId);
+            // Since 2.2.0: the family-aware issuer gets the family, its scopes and the device key (a request created
+            // before 2.2 gets a new device key now).
+            $deviceKey    = $current->getDeviceKey() ?? Uuid::generate()->toString();
+            $credentialId = $this->credentialIssuer->issueForFamily($user, new DeviceCredentialRequest(
+                TimeTrackUserRefs::fromUser($user),
+                $current->getClientType(),
+                $current->getClientName(),
+                $current->getScopeFamily(),
+                $current->getScopeValues(),
+                $deviceKey,
+            ));
+            $current->approve($this->userReferences->reference($user), $credentialId, $deviceKey);
 
             return $credentialId;
         });
-        $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $current->getClientType(), $clientIp);
+        $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $current->getClientType(), $clientIp, null, $current->getScopeFamily());
 
         return $credentialId;
     }
@@ -203,7 +237,7 @@ final readonly class DeviceAuthorizationService
 
             return null;
         });
-        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp);
+        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp, null, $current->getScopeFamily());
     }
 
     /**
@@ -359,10 +393,18 @@ final readonly class DeviceAuthorizationService
             return DevicePollResult::error(DevicePollResult::EXPIRED);
         }
 
-        $token = $this->authService->issueToken($user, $authorization->getClientType(), $authorization->getCredentialId(), $authorization->getScopes());
+        $token = $this->authService->issueFamilyToken(
+            $user,
+            $authorization->getClientType(),
+            $authorization->getCredentialId(),
+            $authorization->getScopeFamily(),
+            $authorization->getScopeValues(),
+            $authorization->getDeviceKey(),
+            $authorization->getClientName(),
+        );
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $this->repository->remove($authorization);
-        $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $authorization->getCredentialId(), $authorization->getClientType(), $clientIp);
+        $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $authorization->getCredentialId(), $authorization->getClientType(), $clientIp, null, $authorization->getScopeFamily());
 
         return DevicePollResult::issued($token);
     }

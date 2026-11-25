@@ -10,6 +10,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
@@ -79,7 +80,7 @@ final readonly class ClientAuthService
      * @param string $password Plain password (never logged)
      * @param ClientType $clientType Client asking for the token
      *
-     * @return array{token: string, expiresAt: string, scopes: list<string>}|null The plain token, its expiry and scopes, or null on bad credentials
+     * @return array{token: string, expiresAt: string, scopes: list<string>, scopeFamily: string}|null The plain token, its expiry and scopes (since 2.2.0 and its scope family, `time`), or null on bad credentials
      */
     public function login(string $username, string $password, ClientType $clientType): ?array
     {
@@ -171,13 +172,15 @@ final readonly class ClientAuthService
      * Revokes a Bearer token (no-op for an unknown or expired token).
      *
      * @param string $plainToken Token sent by the client
+     * @param string|null $scopeFamily Since 2.2.0: revoke only a token of this scope family (null = any family); the time
+     *                                 API's `logout` passes `time`, so a token of another family is left alone there
      *
      * @return ClientToken|null The revoked token (detached), or null when nothing was revoked
      */
-    public function logout(string $plainToken): ?ClientToken
+    public function logout(string $plainToken, ?string $scopeFamily = null): ?ClientToken
     {
         $entity = $this->tokenRepository->findValidByTokenHash(self::hashToken($plainToken));
-        if (!$entity instanceof ClientToken) {
+        if (!$entity instanceof ClientToken || ($scopeFamily !== null && $entity->getScopeFamily() !== $scopeFamily)) {
             return null;
         }
 
@@ -189,37 +192,59 @@ final readonly class ClientAuthService
     }
 
     /**
-     * Issues a session token linked to a host credential (login and device flow).
+     * Issues a `time` session token linked to a host credential (login and device flow).
      *
      * @param UserInterface $user Token owner
      * @param ClientType $clientType Client holding the token
      * @param string|null $credentialId Host credential the token comes from
      * @param list<ClientScope>|null $scopes Granted scopes (null = the default scopes; an empty list grants none)
      *
-     * @return array{token: string, expiresAt: string, scopes: list<string>}
+     * @return array{token: string, expiresAt: string, scopes: list<string>, scopeFamily: string}
      */
     public function issueToken(UserInterface $user, ClientType $clientType, ?string $credentialId = null, ?array $scopes = null): array
     {
-        $scopes     = ClientScope::normalize($scopes);
+        return $this->issueFamilyToken($user, $clientType, $credentialId, DeviceScopeFamily::TIME, ClientScope::values(ClientScope::normalize($scopes)));
+    }
+
+    /**
+     * Since 2.2.0 (Beacon Desktop BD-2): issues a session token of one scope family (device flow). The family and its
+     * scopes were checked against the registered families by the caller.
+     *
+     * @param UserInterface $user Token owner
+     * @param ClientType $clientType Client holding the token
+     * @param string|null $credentialId Host credential the token comes from
+     * @param string $scopeFamily Scope family of the token
+     * @param list<string> $scopes Granted scope values of that family (an empty list grants none)
+     * @param string|null $deviceKey Device key that groups the device's tokens
+     * @param string|null $clientName Name the device gave
+     *
+     * @return array{token: string, expiresAt: string, scopes: list<string>, scopeFamily: string}
+     */
+    public function issueFamilyToken(UserInterface $user, ClientType $clientType, ?string $credentialId, string $scopeFamily, array $scopes, ?string $deviceKey = null, ?string $clientName = null): array
+    {
         $plainToken = $this->generatePlainToken();
         $now        = $this->clock->now();
         // @igor-ignore - DateTimeImmutable::add() returns a new instance; the clock value is not mutated.
         $expiresAt = $now->add(new DateInterval('PT' . max(1, $this->tokenTtlSeconds) . 'S'));
-
-        $this->tokenRepository->save(new ClientToken(
+        $token     = new ClientToken(
             self::hashToken($plainToken),
             $expiresAt,
             $this->userReferences->reference($user),
             $clientType,
             $now,
             $credentialId,
-            ClientScope::values($scopes),
-        ));
+            $scopes,
+            $scopeFamily,
+            $deviceKey,
+            $clientName,
+        );
+        $this->tokenRepository->save($token);
 
         return [
-            'token'     => $plainToken,
-            'expiresAt' => $expiresAt->format(DATE_ATOM),
-            'scopes'    => ClientScope::values($scopes),
+            'token'       => $plainToken,
+            'expiresAt'   => $expiresAt->format(DATE_ATOM),
+            'scopes'      => $token->getScopeValues(),
+            'scopeFamily' => $scopeFamily,
         ];
     }
 

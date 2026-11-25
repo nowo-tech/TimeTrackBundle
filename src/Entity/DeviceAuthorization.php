@@ -7,15 +7,25 @@ namespace Nowo\TimeTrackBundle\Entity;
 use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 
+use function array_filter;
+use function array_unique;
+use function array_values;
+use function is_string;
+use function preg_match;
+
 /**
  * Device authorization request of the device flow (RFC 8628 shape). Device code and user code are stored as SHA-256
  * hashes only; the request is single use (approved → consumed on the first token exchange) and expires after
  * `client_api.device_flow.code_ttl`.
+ *
+ * Since 2.2.0 a request names one scope family ({@see DeviceScopeFamily}) and may carry the device key of a token the
+ * device already holds (proven with its Bearer token), so the new token joins that device's row.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_device_codes')]
@@ -44,11 +54,21 @@ class DeviceAuthorization
     #[ORM\Column(type: 'json')]
     private array $scopes;
 
+    /** Since 2.2.0: the requested scope family. */
+    #[ORM\Column(name: 'scope_family', type: 'string', length: 32, options: ['default' => 'time'])]
+    private string $scopeFamily;
+
+    /** Since 2.2.0: the device key the issued token gets. */
+    #[ORM\Column(name: 'device_key', type: 'string', length: 36, nullable: true)]
+    private ?string $deviceKey;
+
     /**
      * Creates a pending request.
      *
-     * @param list<ClientScope> $scopes Requested scopes
+     * @param list<ClientScope|string> $scopes Requested scopes (since 2.2.0 the scope values of `$scopeFamily`)
      * @param string|null $ipPrefix IPv4 /24 or IPv6 /64 of the requesting device (shown on the approval page)
+     * @param string $scopeFamily Since 2.2.0: the requested scope family (default `time`)
+     * @param string|null $deviceKey Since 2.2.0: the device key the issued token gets
      */
     public function __construct(
         #[ORM\Column(name: 'device_code_hash', type: 'string', length: 64, unique: true)]
@@ -66,9 +86,37 @@ class DeviceAuthorization
         private DateTimeImmutable $createdAt,
         #[ORM\Column(name: 'ip_prefix', type: 'string', length: 64, nullable: true)]
         private ?string $ipPrefix = null,
+        string $scopeFamily = DeviceScopeFamily::TIME,
+        ?string $deviceKey = null,
     ) {
-        $this->id     = Uuid::generate()->toString();
-        $this->scopes = ClientScope::values($scopes);
+        $this->id          = Uuid::generate()->toString();
+        $this->scopeFamily = $scopeFamily;
+        $this->deviceKey   = $deviceKey;
+        $this->scopes      = $scopeFamily === DeviceScopeFamily::TIME
+            ? ClientScope::values(ClientScope::normalize($scopes))
+            : array_values(array_unique(array_filter($scopes, static fn (mixed $scope): bool => is_string($scope) && preg_match(DeviceScopeFamily::SCOPE_PATTERN, $scope) === 1)));
+    }
+
+    /** Since 2.2.0: the requested scope family. */
+    public function getScopeFamily(): string
+    {
+        return $this->scopeFamily;
+    }
+
+    /** Since 2.2.0: the device key the issued token gets. */
+    public function getDeviceKey(): ?string
+    {
+        return $this->deviceKey;
+    }
+
+    /**
+     * Since 2.2.0: the requested scope values of the request's family.
+     *
+     * @return list<string>
+     */
+    public function getScopeValues(): array
+    {
+        return $this->scopeFamily === DeviceScopeFamily::TIME ? ClientScope::values($this->getScopes()) : $this->scopes;
     }
 
     /** Request id (UUID). */
@@ -108,13 +156,13 @@ class DeviceAuthorization
     }
 
     /**
-     * Requested scopes.
+     * Requested time scopes (since 2.2.0 none for a request of another scope family).
      *
      * @return list<ClientScope>
      */
     public function getScopes(): array
     {
-        return ClientScope::normalize($this->scopes);
+        return $this->scopeFamily === DeviceScopeFamily::TIME ? ClientScope::normalize($this->scopes) : [];
     }
 
     /** Current state. */
@@ -161,9 +209,13 @@ class DeviceAuthorization
 
     /**
      * Marks the request approved by the user with the credential the host issued.
+     *
+     * @param string|null $deviceKey Since 2.2.0: the device key given to the host (kept when null)
      */
-    public function approve(object $user, string $credentialId): void
+    public function approve(object $user, string $credentialId, ?string $deviceKey = null): void
     {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->deviceKey = $deviceKey ?? $this->deviceKey;
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->status = DeviceAuthorizationStatus::Approved;
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.

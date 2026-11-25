@@ -11,6 +11,12 @@
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Read ports and personal data (1.35)](#read-ports-and-personal-data-135)
 - [Entries without a task (1.36, Beacon spec 250)](#entries-without-a-task-136-beacon-spec-250)
+- [Device-flow scope families (2.2, Beacon Desktop)](#device-flow-scope-families-22-beacon-desktop)
+  - [Register a family](#register-a-family)
+  - [Two approvals chained by the app (Q-BD-6)](#two-approvals-chained-by-the-app-q-bd-6)
+  - [Authenticate another bundle's API with a family token](#authenticate-another-bundles-api-with-a-family-token)
+  - [Tenant context header (Q-BD-7)](#tenant-context-header-q-bd-7)
+  - [Connected apps (Q-BD-19)](#connected-apps-q-bd-19)
 - [Time subjects and activity types (2.1, Beacon spec 256)](#time-subjects-and-activity-types-21-beacon-spec-256)
   - [Standard Symfony host](#standard-symfony-host)
   - [DDD / hexagonal host](#ddd--hexagonal-host)
@@ -631,6 +637,110 @@ $manualEntries->create($user, null, $start, $end, TimeEntrySource::Manual, descr
   the time stays).
 - Idle decisions on such a timer: `split` continues it without a task (same description and scope); `reassign` gives
   the span to a task and `continue` resumes without one.
+
+## Device-flow scope families (2.2, Beacon Desktop)
+
+Since 2.2.0 (Beacon Desktop BD-2, design `time-track-desktop` `docs/design/BEACON_DESKTOP.md` §4). The device flow can
+issue tokens for **another bundle's client API** (e.g. ChatKit's `/api/chat/v1`) next to the time API:
+
+- a **scope family** is a named set of scopes; TimeTrack owns `time` (every `ClientScope`), the host registers others
+  (e.g. `chat` with `chat:read`, `chat:write`);
+- **one token per family**: a device request names the scopes of one family only (`400 invalid_scope` otherwise); a
+  `chat` token never opens the time API and a `time` token never opens the chat API (both `403 insufficient_scope`);
+- **deny by default**: an unregistered family or scope is refused; a family other than `time` needs an explicit scope
+  list;
+- each token is **revocable on its own** (its own credential and session id), and the tokens of one device share a
+  **device key**, so an account page can show one row per device with one badge per family (Q-BD-19);
+- installed `time` clients (contract v0.4) change nothing: no `family` means `time`.
+
+### Register a family
+
+```yaml
+nowo_time_track:
+    client_api:
+        device_flow:
+            enabled: true
+            scope_families:
+                chat: { label: Chat, scopes: { 'chat:read': 'Read your conversations', 'chat:write': 'Send messages' } }
+```
+
+or a service (autoconfigured):
+
+```php
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyProviderInterface;
+
+final class ChatScopeFamily implements DeviceScopeFamilyProviderInterface
+{
+    public function scopeFamilies(): iterable
+    {
+        yield new DeviceScopeFamily('chat', 'Chat', ['chat:read' => 'Read your conversations', 'chat:write' => 'Send messages']);
+    }
+}
+```
+
+The configured `client_api.credential_issuer` must implement `ClientFamilyCredentialMinterInterface`: `mintForFamily()`
+receives a `DeviceCredentialRequest` (user, client type and name, family, scopes, device key) for every approved request,
+`time` included, so the credential list can group a device's families.
+
+### Two approvals chained by the app (Q-BD-6)
+
+1. The app signs in for time as today: `POST /api/time-track/v1/device/code {clientType, clientName}`.
+2. Right after, it asks for chat **proving it is the same device** with the token it just got:
+   `POST /api/time-track/v1/device/code {clientType, clientName, family: "chat", scopes: ["chat:read"]}` with
+   `Authorization: Bearer <time token>`. The new request gets that token's device key (`401 invalid_token` when the token
+   is not valid). The approval page names the family ("… asks for access to: Chat"), one family per approval.
+3. `POST device/token` answers `{token, expiresAt, scopes, scopeFamily: "chat"}`.
+
+The default verification page and a host page built on `DeviceAuthorizationService` read the family with
+`DeviceAuthorization::getScopeFamily()` and its label with `DeviceScopeFamilyRegistry::labelOf()`.
+
+### Authenticate another bundle's API with a family token
+
+`ClientFamilyTokenAuthenticator` (public service) runs the time API's checks in the same order (per-IP limit, token,
+account status, credential state, per-token limit), then the **family**, the scope and the tenant context; every refusal
+is audited with the family. No HTTP types: pass the header values, map the answer.
+
+```php
+use Nowo\TimeTrackBundle\Client\ClientFamilyTokenAuthenticator;
+
+final class ChatClientPrincipalResolver implements ChatClientPrincipalResolverInterface // ChatKit's port
+{
+    public function __construct(private ClientFamilyTokenAuthenticator $tokens, private UserRepository $users)
+    {
+    }
+
+    public function resolve(string $bearer, ChatRequestContext $ctx): ?ChatClientPrincipal
+    {
+        $answer = $this->tokens->authenticate('chat', 'Bearer ' . $bearer, $ctx->requiredScope, $ctx->clientIp, $ctx->header($this->tokens->contextHeaderName()));
+        if (!$answer->isAuthenticated()) {
+            return null; // or map $answer->error / status() / headers() to the API's error answer
+        }
+        $p = $answer->principal;
+
+        return new ChatClientPrincipal($this->users->chatUser($p->user), $p->scopes, $p->tokenId, $p->contextKey);
+    }
+}
+```
+
+The family API's `logout` calls `revoke('chat', $authorizationHeader, $clientIp)` (a token of another family is left
+alone; the time API's `logout` likewise revokes `time` tokens only).
+
+### Tenant context header (Q-BD-7)
+
+With `client_api.context.policy` set, a client names its tenant on every request in the context header (Beacon:
+`X-Beacon-Context: personal` or `org:<uuid>`). The `ClientContextPolicyInterface` is asked **on every request**
+(`contextFor()`): an unknown, revoked or non-existent context answers `403 context_forbidden`. The policy must be
+read-only: it never changes the user's stored web context. On the time API the allowed key is a request attribute
+that host services read through `CurrentClientContext::key()`; `GET me` lists `contexts` (`contextsOf()`) and the
+`context` of the request. For another family the key is `ClientFamilyPrincipal::$contextKey`.
+
+### Connected apps (Q-BD-19)
+
+`ConnectedClientDevicesQueryInterface::devicesOf($userId)` groups the user's unexpired sessions by device key:
+one `ConnectedDeviceView` per device with `scopeFamilies` (badges, `time` first), `clientName`, `lastUsedAt` and its
+`ClientSessionView`s (each with `scopeFamily`). Revoke one badge with `ClientTokenRevoker::revokeById($session->id, $actor)`
+or the credential with `revokeByCredential()`. `ClientSessionView` and `DeviceSignInView` carry `scopeFamily` too.
 
 ## Time subjects and activity types (2.1, Beacon spec 256)
 

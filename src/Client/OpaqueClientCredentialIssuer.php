@@ -22,4 +22,12 @@ final readonly class OpaqueClientCredentialIssuer implements ClientCredentialIss
     {
         return 'device:' . Uuid::generate()->toString();
     }
+
+    /**
+     * Since 2.2.0: returns a new opaque credential id for a request of any scope family.
+     */
+    public function issueForFamily(UserInterface $user, DeviceCredentialRequest $request): string
+    {
+        return 'device:' . Uuid::generate()->toString();
+    }
 }

@@ -15,7 +15,7 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
 ## Features
 
 - Web UI at `/tools/time-track` (timer + paginated reports)
-- Stateless client API for the browser extension and the desktop app (`Bearer` session tokens linked to host credentials, scopes, per-request credential and task checks, device flow, rate limits, audit events) — [reference](docs/CLIENT-API.md)
+- Stateless client API for the browser extension and the desktop app (`Bearer` session tokens linked to host credentials, scopes, per-request credential and task checks, device flow with scope families for other bundles' client APIs (2.2), explicit tenant context header, rate limits, audit events) — [reference](docs/CLIENT-API.md)
 - Single active timer per user (409 on conflict)
 - Teams and managers v1 via `TeamDirectoryInterface`
 - Task integration via `TaskDirectoryInterface` (designed for `nowo-tech/task-board-bundle`)

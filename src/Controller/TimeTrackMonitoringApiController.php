@@ -277,7 +277,7 @@ final readonly class TimeTrackMonitoringApiController
                 $this->auditor->monitoringRefused('notice_mismatch', $principal->token, $request->getClientIp());
             } else {
                 $this->context->acknowledge($principal->user, new MonitoringAcknowledgement($version, $this->clock->now(), $principal->token->getClientType()->value, strtolower($sha)));
-                $this->auditor->record(ClientApiAuditAction::MonitoringAcknowledged, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), 'v' . $version);
+                $this->auditor->record(ClientApiAuditAction::MonitoringAcknowledged, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), 'v' . $version, $principal->token->getScopeFamily());
                 $status = Response::HTTP_NO_CONTENT;
                 $body   = [];
             }
@@ -486,7 +486,7 @@ final readonly class TimeTrackMonitoringApiController
             $id     = $this->store($principal, $intent, $path);
             $stored = true;
             $this->markStoredQuietly($intent->getId(), $id);
-            $this->auditor->record(ClientApiAuditAction::MonitoringUploaded, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp());
+            $this->auditor->record(ClientApiAuditAction::MonitoringUploaded, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), null, $principal->token->getScopeFamily());
 
             return $this->responseFactory->json(['id' => $id], Response::HTTP_CREATED, $request);
         } catch (MonitoringEvidenceRejectedException) {

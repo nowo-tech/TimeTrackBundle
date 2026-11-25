@@ -20,7 +20,7 @@ final readonly class DevicePollResult
 
     /**
      * @param string|null $error Error code (null on success)
-     * @param array{token: string, expiresAt: string, scopes: list<string>}|null $token Issued token (null on error)
+     * @param array{token: string, expiresAt: string, scopes: list<string>, scopeFamily?: string}|null $token Issued token (null on error)
      */
     private function __construct(
         public ?string $error,
@@ -37,7 +37,7 @@ final readonly class DevicePollResult
     /**
      * Issued token.
      *
-     * @param array{token: string, expiresAt: string, scopes: list<string>} $token
+     * @param array{token: string, expiresAt: string, scopes: list<string>, scopeFamily?: string} $token
      */
     public static function issued(array $token): self
     {

@@ -171,7 +171,7 @@ final readonly class TimeTrackWorkingTimeApiController
             return $this->responseFactory->error('forbidden', 'Forbidden.', Response::HTTP_FORBIDDEN, $request);
         }
         $this->idempotency->save($userId, $key, $bodyHash, $status, $body);
-        $this->auditor->record(ClientApiAuditAction::WorkdayAction, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $verb->value);
+        $this->auditor->record(ClientApiAuditAction::WorkdayAction, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $verb->value, $principal->token->getScopeFamily());
 
         return $this->responseFactory->json($body, $status, $request);
     }
@@ -257,7 +257,7 @@ final readonly class TimeTrackWorkingTimeApiController
             $service = $this->context->timesheets();
             $period  = $service->period($principal->user, $scope->key, $periodKey);
             $sheet   = $submit ? $service->submit($principal->user, $scope->key, $period, $client) : $service->withdraw($principal->user, $scope->key, $period, $client);
-            $this->auditor->record($submit ? ClientApiAuditAction::TimesheetSubmitted : ClientApiAuditAction::TimesheetWithdrawn, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp());
+            $this->auditor->record($submit ? ClientApiAuditAction::TimesheetSubmitted : ClientApiAuditAction::TimesheetWithdrawn, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), null, $principal->token->getScopeFamily());
 
             return $sheet;
         });
