@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-25 (2.1.0: new files in [`005-time-subject-activity`](../005-time-subject-activity/code-inventory.md)); 2026-11-24 (2.0.0: removed 1.x files dropped, the Port/Internal shapes and RemovedPortsPass mapped; 1.41.0 monitoring files mapped; 2026-11-23 1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
+**Last audited**: 2026-11-27 (2.2.0: the union of this inventory and those of specs [`002`](../002-client-api/code-inventory.md), [`005`](../005-time-subject-activity/code-inventory.md) and [`006`](../006-scope-families/code-inventory.md) maps every one of the 566 files of `git ls-files src`, checked path by path; 2026-11-25 (2.1.0: new files in [`005-time-subject-activity`](../005-time-subject-activity/code-inventory.md)); 2026-11-24 (2.0.0: removed 1.x files dropped, the Port/Internal shapes and RemovedPortsPass mapped; 1.41.0 monitoring files mapped; 2026-11-23 1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
 
 ## PHP classes (`src/**/*.php`)
 
@@ -691,5 +691,5 @@ Every file tracked under `src/` (PHP classes, Twig views, XML mapping, YAML conf
 | Other production files (Twig, XML mapping, YAML, translations) | 32 | 32 |
 | **Total production sources** | **512** | **512** |
 
-Audit command: `git ls-files src | wc -l` → 512 at 2.0.0 (the removed 1.x files dropped, the internal port shapes mapped; 515 at 1.41.0, refreshed with the monitoring privacy decisions D4, D9,
+Coverage at 2.2.0 (2026-11-27): `git ls-files src | wc -l` → **566**, all mapped across the four inventories (this file lists 512 of them; the 2.1.0 files are in 005 and the 2.2.0 scope-family files in 006, a few files appear in more than one). Audit command, 2.0.0 figure: `git ls-files src | wc -l` → 512 at 2.0.0 (the removed 1.x files dropped, the internal port shapes mapped; 515 at 1.41.0, refreshed with the monitoring privacy decisions D4, D9,
 D11; the 1.38–1.39 files are mapped too).

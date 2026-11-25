@@ -2,7 +2,7 @@
 
 **Spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-25 (2.2.0, unreleased)
+**Last audited**: 2026-11-27 (2.2.0, released)
 
 ## New PHP classes (`src/**/*.php`)
 
