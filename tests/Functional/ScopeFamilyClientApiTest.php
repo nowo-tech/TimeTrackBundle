@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Tests\Functional;
 use Nowo\TimeTrackBundle\Client\ClientFamilyTokenAuthenticator;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Client\CurrentClientContext;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientSessionRevocation;
@@ -157,7 +158,7 @@ final class ScopeFamilyClientApiTest extends FunctionalTestCase
         $chat = $this->deviceFlow(['clientType' => 'desktop', 'clientName' => 'Laptop', 'family' => 'chat', 'scopes' => ['chat:read', 'chat:write']], $time);
 
         $requests = $this->minter()->requests;
-        self::assertSame(['time', 'chat'], array_map(static fn ($r): string => $r->scopeFamily, $requests));
+        self::assertSame(['time', 'chat'], array_map(static fn (DeviceCredentialRequest $r): string => $r->scopeFamily, $requests));
         self::assertSame($requests[0]->deviceKey, $requests[1]->deviceKey, 'one device key for both families');
 
         $owner   = (string) $this->user->getId();

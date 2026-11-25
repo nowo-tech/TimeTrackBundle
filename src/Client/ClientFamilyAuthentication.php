@@ -78,7 +78,7 @@ final readonly class ClientFamilyAuthentication
     {
         return match ($this->error) {
             'invalid_token'      => ['WWW-Authenticate' => 'Bearer error="invalid_token"'],
-            'insufficient_scope' => ['WWW-Authenticate' => 'Bearer error="insufficient_scope", scope="' . (string) $this->requiredScope . '"'],
+            'insufficient_scope' => ['WWW-Authenticate' => 'Bearer error="insufficient_scope", scope="' . $this->requiredScope . '"'],
             'rate_limited'       => ['Retry-After' => (string) $this->retryAfter],
             default              => [],
         };

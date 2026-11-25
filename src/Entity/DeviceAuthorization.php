@@ -54,14 +54,6 @@ class DeviceAuthorization
     #[ORM\Column(type: 'json')]
     private array $scopes;
 
-    /** Since 2.2.0: the requested scope family. */
-    #[ORM\Column(name: 'scope_family', type: 'string', length: 32, options: ['default' => 'time'])]
-    private string $scopeFamily;
-
-    /** Since 2.2.0: the device key the issued token gets. */
-    #[ORM\Column(name: 'device_key', type: 'string', length: 36, nullable: true)]
-    private ?string $deviceKey;
-
     /**
      * Creates a pending request.
      *
@@ -86,13 +78,13 @@ class DeviceAuthorization
         private DateTimeImmutable $createdAt,
         #[ORM\Column(name: 'ip_prefix', type: 'string', length: 64, nullable: true)]
         private ?string $ipPrefix = null,
-        string $scopeFamily = DeviceScopeFamily::TIME,
-        ?string $deviceKey = null,
+        #[ORM\Column(name: 'scope_family', type: 'string', length: 32, options: ['default' => 'time'])]
+        private string $scopeFamily = DeviceScopeFamily::TIME,
+        #[ORM\Column(name: 'device_key', type: 'string', length: 36, nullable: true)]
+        private ?string $deviceKey = null,
     ) {
-        $this->id          = Uuid::generate()->toString();
-        $this->scopeFamily = $scopeFamily;
-        $this->deviceKey   = $deviceKey;
-        $this->scopes      = $scopeFamily === DeviceScopeFamily::TIME
+        $this->id     = Uuid::generate()->toString();
+        $this->scopes = $this->scopeFamily === DeviceScopeFamily::TIME
             ? ClientScope::values(ClientScope::normalize($scopes))
             : array_values(array_unique(array_filter($scopes, static fn (mixed $scope): bool => is_string($scope) && preg_match(DeviceScopeFamily::SCOPE_PATTERN, $scope) === 1)));
     }

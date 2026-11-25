@@ -87,7 +87,7 @@ final class DeviceScopeFamilyRegistryTest extends TestCase
         ] as $families) {
             $provider = new class($families) implements DeviceScopeFamilyProviderInterface {
                 /** @param list<mixed> $families */
-                public function __construct(private array $families)
+                public function __construct(private readonly array $families)
                 {
                 }
 

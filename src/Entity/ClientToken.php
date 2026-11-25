@@ -51,18 +51,6 @@ class ClientToken
     #[ORM\Column(type: 'json', nullable: true)]
     private ?array $scopes;
 
-    /** Since 2.2.0: the scope family ({@see DeviceScopeFamily::TIME} for every older row). */
-    #[ORM\Column(name: 'scope_family', type: 'string', length: 32, options: ['default' => 'time'])]
-    private string $scopeFamily;
-
-    /** Since 2.2.0: groups the tokens of one device across families (null: issued before 2.2 or by a password login). */
-    #[ORM\Column(name: 'device_key', type: 'string', length: 36, nullable: true)]
-    private ?string $deviceKey;
-
-    /** Since 2.2.0: the name the device gave in the device flow (null: issued before 2.2 or by a password login). */
-    #[ORM\Column(name: 'client_name', type: 'string', length: 100, nullable: true)]
-    private ?string $clientName;
-
     /**
      * Creates a token (only the SHA-256 hash is stored).
      *
@@ -85,18 +73,18 @@ class ClientToken
         #[ORM\Column(name: 'credential_id', type: 'string', length: 191, nullable: true)]
         private ?string $credentialId = null,
         ?array $scopes = null,
-        string $scopeFamily = DeviceScopeFamily::TIME,
-        ?string $deviceKey = null,
-        ?string $clientName = null,
+        #[ORM\Column(name: 'scope_family', type: 'string', length: 32, options: ['default' => 'time'])]
+        private string $scopeFamily = DeviceScopeFamily::TIME,
+        #[ORM\Column(name: 'device_key', type: 'string', length: 36, nullable: true)]
+        private ?string $deviceKey = null,
+        #[ORM\Column(name: 'client_name', type: 'string', length: 100, nullable: true)]
+        private ?string $clientName = null,
     ) {
-        $this->id          = Uuid::generate()->toString();
-        $this->createdAt   = $createdAt ?? new DateTimeImmutable();
-        $this->scopeFamily = $scopeFamily;
-        $this->deviceKey   = $deviceKey;
-        $this->clientName  = $clientName;
-        $this->scopes      = $scopeFamily === DeviceScopeFamily::TIME
+        $this->id        = Uuid::generate()->toString();
+        $this->createdAt = $createdAt ?? new DateTimeImmutable();
+        $this->scopes    = $this->scopeFamily === DeviceScopeFamily::TIME
             ? ($scopes === null ? null : ClientScope::values(ClientScope::normalize($scopes)))
-            : self::familyScopeValues($scopes ?? []);
+            : $this->familyScopeValues($scopes ?? []);
     }
 
     /**
@@ -138,7 +126,7 @@ class ClientToken
      */
     public function getScopeValues(): array
     {
-        return $this->isTimeFamily() ? ClientScope::values($this->getScopes()) : self::familyScopeValues($this->scopes ?? []);
+        return $this->isTimeFamily() ? ClientScope::values($this->getScopes()) : $this->familyScopeValues($this->scopes ?? []);
     }
 
     /**
@@ -270,7 +258,7 @@ class ClientToken
      *
      * @return list<string>
      */
-    private static function familyScopeValues(array $scopes): array
+    private function familyScopeValues(array $scopes): array
     {
         return array_values(array_unique(array_filter($scopes, static fn (mixed $scope): bool => is_string($scope) && preg_match(DeviceScopeFamily::SCOPE_PATTERN, $scope) === 1)));
     }

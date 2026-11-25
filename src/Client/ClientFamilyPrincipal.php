@@ -6,6 +6,8 @@ namespace Nowo\TimeTrackBundle\Client;
 
 use Nowo\TimeTrackBundle\Enum\ClientType;
 
+use function in_array;
+
 /**
  * Since 2.2.0 (Beacon Desktop BD-2): the caller of another bundle's client API, authenticated with a device-flow token of
  * that API's scope family ({@see ClientFamilyTokenAuthenticator}). A host maps it to the other bundle's own principal
@@ -42,12 +44,6 @@ final readonly class ClientFamilyPrincipal
      */
     public function hasScope(string $scope): bool
     {
-        foreach ($this->scopes as $granted) {
-            if ($granted === $scope) {
-                return true;
-            }
-        }
-
-        return false;
+        return in_array($scope, $this->scopes, true);
     }
 }

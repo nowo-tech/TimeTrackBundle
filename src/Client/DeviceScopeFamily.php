@@ -52,7 +52,7 @@ final readonly class DeviceScopeFamily
         if (preg_match(self::KEY_PATTERN, $key) !== 1) {
             throw new InvalidArgumentException(sprintf('Invalid device scope family key "%s" (expected %s).', $key, self::KEY_PATTERN));
         }
-        self::assertLabel($label, 'family "' . $key . '"');
+        $this->assertLabel($label, 'family "' . $key . '"');
         if ($scopes === []) {
             throw new InvalidArgumentException(sprintf('The device scope family "%s" has no scope.', $key));
         }
@@ -61,7 +61,7 @@ final readonly class DeviceScopeFamily
             if (!is_string($scope) || preg_match(self::SCOPE_PATTERN, $scope) !== 1) {
                 throw new InvalidArgumentException(sprintf('Invalid scope "%s" in the device scope family "%s" (expected %s).', (string) $scope, $key, self::SCOPE_PATTERN));
             }
-            self::assertLabel($scopeLabel, 'scope "' . $scope . '"');
+            $this->assertLabel($scopeLabel, 'scope "' . $scope . '"');
         }
     }
 
@@ -99,7 +99,7 @@ final readonly class DeviceScopeFamily
         return preg_match(self::KEY_PATTERN, $key) === 1;
     }
 
-    private static function assertLabel(mixed $label, string $what): void
+    private function assertLabel(mixed $label, string $what): void
     {
         if (!is_string($label) || trim($label) === '' || mb_strlen($label) > self::LABEL_MAX_LENGTH || preg_match('/[\x00-\x1F\x7F]/u', $label) === 1) {
             throw new InvalidArgumentException(sprintf('The label of the device scope %s must be 1 to %d characters without control characters.', $what, self::LABEL_MAX_LENGTH));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Tests\Functional;
 
+use Nowo\TimeTrackBundle\Client\ClientFamilyPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientFamilyTokenAuthenticator;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
 use Nowo\TimeTrackBundle\Enum\ClientType;
@@ -41,7 +42,7 @@ final class ScopeFamilyWorkerModeTest extends FunctionalTestCase
      */
     protected static function createKernel(array $options = []): KernelInterface
     {
-        return new FunctionalKernel(static::timeTrackConfig(), false, false, false);
+        return new FunctionalKernel(self::timeTrackConfig(), false, false, false);
     }
 
     protected static function timeTrackConfig(): array
@@ -72,7 +73,7 @@ final class ScopeFamilyWorkerModeTest extends FunctionalTestCase
                 // The other person is no member of org:acme: refused there, allowed in personal; never the first one's context.
                 self::assertSame($round % 2 === 0 ? 'personal' : null, $answer->principal?->contextKey, sprintf('round %d', $round));
                 self::assertSame($round % 2 === 0 ? null : 'context_forbidden', $answer->error);
-                if ($answer->principal !== null) {
+                if ($answer->principal instanceof ClientFamilyPrincipal) {
                     self::assertSame((string) $other->getId(), $answer->principal->userId);
                 }
             } else {
