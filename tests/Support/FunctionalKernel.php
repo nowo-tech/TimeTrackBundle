@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
 use Nowo\TimeTrackBundle\Repository\MonitoringUploadIntentRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Subject\ActivityTypeProviderInterface;
 use Nowo\TimeTrackBundle\Tests\Fixtures\DddHost\HostUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\FunctionalEntity\AppUser;
 use Nowo\TimeTrackBundle\Tests\Fixtures\HostTimer\HostTimerTestController;
@@ -92,8 +93,10 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
      * @param string|null $serviceFixture since 2.0: a directory of tests/Fixtures/RemovedPorts whose classes the
      *                                    application autodiscovers (ConfiguredTaskProvider: registered and configured as
      *                                    `task_provider` instead)
+     * @param bool $allocationProviders since 2.1.0: registers the test subject providers (`customer`, `internal`; tagged by
+     *                                  autoconfiguration) and {@see FixedActivityTypeProvider} as the activity type provider
      */
-    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false, private readonly array $securityConfig = [], private readonly ?string $serviceFixture = null)
+    public function __construct(private readonly array $timeTrackConfig = [], private readonly bool $plainEntryStore = false, private readonly bool $xmlHostUser = false, bool $debug = true, private readonly bool $psrOnlyClock = false, private readonly bool $frozenClock = false, private readonly array $securityConfig = [], private readonly ?string $serviceFixture = null, private readonly bool $allocationProviders = false)
     {
         parent::__construct('test', $debug);
     }
@@ -127,7 +130,7 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize($this->securityConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . ($this->serviceFixture ?? '') . PHP_VERSION_ID . self::databaseUrl());
+        return sys_get_temp_dir() . '/nowo_time_track_functional/' . md5(serialize($this->timeTrackConfig) . serialize($this->securityConfig) . serialize(self::privateEntityManager()) . ($this->plainEntryStore ? 'plain' : '') . ($this->xmlHostUser ? 'xml-host-user' : '') . ($this->debug ? '' : 'no-debug') . ($this->psrOnlyClock ? 'psr-only-clock' : '') . ($this->frozenClock ? 'frozen-clock' : '') . ($this->serviceFixture ?? '') . ($this->allocationProviders ? 'allocation' : '') . PHP_VERSION_ID . self::databaseUrl());
     }
 
     /**
@@ -220,6 +223,13 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
             // Since 1.19.1: the host's own PSR clock wins over the framework's `clock` alias (as in Beacon).
             $container->services()->set(PsrOnlyClock::class)->public();
             $container->services()->alias(ClockInterface::class, PsrOnlyClock::class)->public();
+        }
+        if ($this->allocationProviders) {
+            // Since 2.1.0 (Beacon spec 256): subject providers tagged by autoconfiguration, and the activity type port.
+            $container->services()->set(CustomerTestSubjectProvider::class)->autoconfigure()->public();
+            $container->services()->set(InternalTestSubjectProvider::class)->autoconfigure()->public();
+            $container->services()->set(FixedActivityTypeProvider::class)->public();
+            $container->services()->alias(ActivityTypeProviderInterface::class, FixedActivityTypeProvider::class);
         }
         if ($this->serviceFixture !== null) {
             // "Dir/Case" is a directory of tests/Fixtures; a bare "Case" one of tests/Fixtures/RemovedPorts.

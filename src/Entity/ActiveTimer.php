@@ -8,6 +8,7 @@ use App\Entity\User;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
@@ -23,6 +24,10 @@ use const DATE_ATOM;
  * Since 1.36.0 (Beacon spec 250, `entries.allow_without_task`) a timer may run without a task: `task_id` is NULL, the
  * user's free text is in `description`, and the tenant scope chosen at start is in `scope_key`, so the entry the stop
  * records lands in that tenant ({@see self::withoutTask()}). A task timer leaves both columns null.
+ *
+ * Since 2.1.0 (Beacon spec 256) a timer may carry a subject (`subject_type` + `subject_id`, both or neither) and an
+ * activity type (`activity_type_key`); its stop copies them to the entry. A subject timer without a task keeps its tenant
+ * in `scope_key` like a 1.36 timer without a task.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_active_timers')]
@@ -46,6 +51,18 @@ class ActiveTimer
     /** Since 1.36.0: the tenant scope chosen when a timer without a task started (null on a task timer, or no scope). */
     #[ORM\Column(name: 'scope_key', type: 'string', length: 64, nullable: true)]
     private ?string $scopeKey = null;
+
+    /** Since 2.1.0: the type of the subject the time is logged on (null = none; set together with the id). */
+    #[ORM\Column(name: 'subject_type', type: 'string', length: 32, nullable: true)]
+    private ?string $subjectType = null;
+
+    /** Since 2.1.0: the host's id of the subject (null = none; set together with the type). */
+    #[ORM\Column(name: 'subject_id', type: 'string', length: 64, nullable: true)]
+    private ?string $subjectId = null;
+
+    /** Since 2.1.0: the activity type key (null = none). */
+    #[ORM\Column(name: 'activity_type_key', type: 'string', length: 64, nullable: true)]
+    private ?string $activityTypeKey = null;
 
     /**
      * Starts a timer (start time: the given one, else now).
@@ -154,6 +171,43 @@ class ActiveTimer
     public function getScopeKey(): ?string
     {
         return $this->scopeKey;
+    }
+
+    /**
+     * Since 2.1.0: the subject the time is logged on, or null (also for a pair a host wrote by hand that breaks the
+     * column contract: the `check-allocation` command reports it).
+     */
+    public function subject(): ?TimeSubjectRef
+    {
+        return TimeSubjectRef::tryFromColumns($this->subjectType, $this->subjectId);
+    }
+
+    /**
+     * Since 2.1.0: the activity type key, or null.
+     */
+    public function getActivityTypeKey(): ?string
+    {
+        return $this->activityTypeKey;
+    }
+
+    /**
+     * Since 2.1.0: sets the subject and the activity type. No checks here: the timer service checks `canLog`, the
+     * provider's `allowsTask()` and the activity type before, and calls it under the owner's lock.
+     *
+     * @internal used by the bundle's timer service only
+     *
+     * @phpstan-impure
+     */
+    public function allocate(?TimeSubjectRef $subject, ?string $activityTypeKey): self
+    {
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->subjectType = $subject?->type;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->subjectId = $subject?->id;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->activityTypeKey = $activityTypeKey;
+
+        return $this;
     }
 
     /**

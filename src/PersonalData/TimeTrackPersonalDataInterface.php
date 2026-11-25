@@ -25,6 +25,11 @@ interface TimeTrackPersonalDataInterface
      * `calendarConnections`, `calendarRules` and `calendarSuggestions`. Cells hold the stored text: a host writing a CSV
      * passes them through `TimeEntryCsv::cell()`.
      *
+     * Since 2.1.0 (Beacon spec 256, Q-TS-17) entries and the running timer that carry a subject or an activity type also
+     * have `subjectType`, `subjectId`, `subjectLabel`, `activityTypeKey` and `activityTypeLabel`: ids and keys always,
+     * labels resolved with the data subject as actor (a reference by id, without a user object) and masked when not
+     * readable. Erasure keeps the three columns and the time: they describe the work, not the person.
+     *
      * Most sections select scalars; `formerPersonEntries` and the calendar sections are read through the bundle's stores,
      * which load entities into the bundle's entity manager (the private one with `database.private_entity_manager: true`,
      * dropped at the request boundary; with the shared manager they stay managed until the host clears it). Nothing is

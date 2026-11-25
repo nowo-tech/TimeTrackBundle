@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Event;
 
 use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
@@ -57,5 +58,17 @@ final class TimeEntryCreatedEvent extends Event
     public function getTaskId(): ?string
     {
         return $this->entry->taskIdOrNull();
+    }
+
+    /** Since 2.1.0: the subject of the entry, or null (Beacon spec 256). */
+    public function getSubject(): ?TimeSubjectRef
+    {
+        return $this->entry->subject();
+    }
+
+    /** Since 2.1.0: the activity type key of the entry, or null. */
+    public function getActivityTypeKey(): ?string
+    {
+        return $this->entry->getActivityTypeKey();
     }
 }

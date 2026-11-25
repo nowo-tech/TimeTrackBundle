@@ -39,11 +39,15 @@ reports:
   task_not_visible: Aufgabe nicht sichtbar
   no_task: "Keine Aufgabe"
   former_person: "Ehemalige Person"
+  subject: "Gegenstand"
 flash:
   timer_started: Timer gestartet.
   timer_already_active: Sie haben bereits einen aktiven Timer.
   timer_stopped: Timer gestoppt.
   no_active_timer: Kein aktiver Timer.
+  allocation_required: "Ordne diese Zeit einer Aufgabe oder einem Gegenstand zu, bevor du den Timer stoppst."
+  activity_type_required: "Wähle eine Tätigkeitsart, bevor du den Timer stoppst."
+  activity_type_refused: "Diese Tätigkeitsart kann nicht verwendet werden. Wähle eine andere."
 device:
   intro: "Gib den Code ein, den die Desktop-App oder die Browser-Erweiterung anzeigt."
   user_code: "Gerätecode"
@@ -187,3 +191,8 @@ ledger:
     reversal_title: "Diese Buchung stornieren"
 client_api:
   leave_absent: "Abwesend"
+subjects:
+  not_visible: "Gegenstand nicht sichtbar"
+stop:
+  activity_type: "Tätigkeitsart"
+  activity_type_placeholder: "Tätigkeitsart wählen"

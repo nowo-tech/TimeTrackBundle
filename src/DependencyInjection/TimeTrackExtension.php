@@ -52,6 +52,7 @@ use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Command\BackfillEntryScopeCommand;
 use Nowo\TimeTrackBundle\Command\CalendarSyncCommand;
+use Nowo\TimeTrackBundle\Command\CheckAllocationCommand;
 use Nowo\TimeTrackBundle\Command\PurgeExpiredClientTokensCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsAutoLockCommand;
 use Nowo\TimeTrackBundle\Command\TimesheetsPurgeCommand;
@@ -64,6 +65,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackMonitoringApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ClientUserCheckerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeSubjectProvidersPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\FormerPersonSnapshotListener;
@@ -116,6 +118,7 @@ use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
 use Nowo\TimeTrackBundle\Query\DoctrineTimeTrackQuery;
 use Nowo\TimeTrackBundle\Query\RunningTimerQueryInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
+use Nowo\TimeTrackBundle\Query\TimeEntryTotalsQueryInterface;
 use Nowo\TimeTrackBundle\Repository\ActiveTimerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\BalanceLedgerRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\CalendarConnectionRepositoryInterface;
@@ -156,6 +159,14 @@ use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Subject\ActivityTypeCatalog;
+use Nowo\TimeTrackBundle\Subject\AllocationGuard;
+use Nowo\TimeTrackBundle\Subject\AllocationLabeler;
+use Nowo\TimeTrackBundle\Subject\EmptySubjectProviders;
+use Nowo\TimeTrackBundle\Subject\ScopeTimeSubjectProvider;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectLabelResolver;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectProviderInterface;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRegistry;
 use Nowo\TimeTrackBundle\TaskMove\TaskTimeMover;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timesheet\AuditChainVerifier;
@@ -349,7 +360,17 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$entityManager' => $emRef,
                 '$clock'         => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ]));
-        foreach ([TimeEntryQueryInterface::class, RunningTimerQueryInterface::class, ClientAccessQueryInterface::class] as $port) {
+        // Since 2.1.0 (Beacon spec 256): the read-only allocation check on the bundle's entity manager.
+        $container->setDefinition(CheckAllocationCommand::class, (new Definition(CheckAllocationCommand::class))
+            ->setArguments([
+                '$entityManager' => $emRef,
+                '$subjects'      => new Reference(TimeSubjectRegistry::class),
+                '$activityTypes' => new Reference(ActivityTypeCatalog::class),
+                '$lockGuard'     => new Reference(PeriodLockGuard::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ])
+            ->addTag('console.command'));
+        // Since 2.1.0: the bounded totals port (Beacon spec 256) on the same service.
+        foreach ([TimeEntryQueryInterface::class, TimeEntryTotalsQueryInterface::class, RunningTimerQueryInterface::class, ClientAccessQueryInterface::class] as $port) {
             $container->setAlias($port, DoctrineTimeTrackQuery::class)->setPublic(true);
         }
         $container->setDefinition(DoctrineTimeTrackPersonalData::class, (new Definition(DoctrineTimeTrackPersonalData::class))
@@ -364,6 +385,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$calendars'     => new Reference(CalendarPersonalDataExporter::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$clock'         => new Reference(ClockInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
                 '$logger'        => new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+                '$allocations'   => new Reference(AllocationLabeler::class),
+                '$userClass'     => '%nowo_time_track.user_class%',
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->setAlias(TimeTrackPersonalDataInterface::class, DoctrineTimeTrackPersonalData::class)->setPublic(true);
@@ -678,15 +701,56 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
 
     /**
      * Since 1.36.0 (Beacon spec 250): `entries.allow_without_task` (default false) on the services that write time.
+     * Since 2.1.0 (Beacon spec 256): the subject providers (tagged for autoconfiguration, wired by
+     * {@see TimeSubjectProvidersPass}), the activity type slot, the allocation checks and requirements, the public label
+     * resolver and the optional built-in "tenant itself" provider.
      *
      * @param array<string, mixed> $config
      */
     private function registerEntriesWithoutTask(ContainerBuilder $container, array $config): void
     {
-        /** @var array{allow_without_task: bool} $entries */
+        /** @var array{allow_without_task: bool, require_allocation: bool, require_activity_type: bool, subjects: array{scope_subject: array{enabled: bool, type: string}, search: array{max_per_minute: int}}} $entries */
         $entries = $config['entries'];
         $container->setParameter('nowo_time_track.entries.allow_without_task', $entries['allow_without_task']);
-        $container->getDefinition(TimerService::class)->setArgument('$allowWithoutTask', $entries['allow_without_task']);
+        $container->setParameter('nowo_time_track.entries.require_allocation', $entries['require_allocation']);
+        $container->setParameter('nowo_time_track.entries.require_activity_type', $entries['require_activity_type']);
+        $container->setParameter('nowo_time_track.entries.subjects.search.max_per_minute', $entries['subjects']['search']['max_per_minute']);
+
+        $container->registerForAutoconfiguration(TimeSubjectProviderInterface::class)->addTag(TimeSubjectProvidersPass::TAG);
+        $loggerRef = new Reference('logger', ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
+        $container->setDefinition(TimeSubjectRegistry::class, (new Definition(TimeSubjectRegistry::class))->setArguments([
+            '$providers'  => new Definition(EmptySubjectProviders::class),
+            '$allowsTask' => [],
+            '$logger'     => $loggerRef,
+        ])->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(ActivityTypeCatalog::class, (new Definition(ActivityTypeCatalog::class))->setArguments([
+            '$provider' => new Reference(TimeSubjectProvidersPass::ACTIVITY_TYPES_SLOT, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            '$logger'   => $loggerRef,
+        ])->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setDefinition(AllocationGuard::class, (new Definition(AllocationGuard::class))->setArguments([
+            '$subjects'            => new Reference(TimeSubjectRegistry::class),
+            '$activityTypes'       => new Reference(ActivityTypeCatalog::class),
+            '$requireAllocation'   => $entries['require_allocation'],
+            '$requireActivityType' => $entries['require_activity_type'],
+            '$allowWithoutTask'    => $entries['allow_without_task'],
+        ]));
+        $container->setDefinition(TimeSubjectLabelResolver::class, (new Definition(TimeSubjectLabelResolver::class, [new Reference(TimeSubjectRegistry::class)]))->setPublic(true));
+        $container->setDefinition(AllocationLabeler::class, (new Definition(AllocationLabeler::class))->setArguments([
+            '$labels'        => new Reference(TimeSubjectLabelResolver::class),
+            '$activityTypes' => new Reference(ActivityTypeCatalog::class),
+            '$translator'    => new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+        ]));
+        if ($entries['subjects']['scope_subject']['enabled']) {
+            $container->setDefinition(ScopeTimeSubjectProvider::class, (new Definition(ScopeTimeSubjectProvider::class))->setArguments([
+                '$scopes' => new Reference(TimesheetScopeProviderInterface::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                '$type'   => $entries['subjects']['scope_subject']['type'],
+                '$logger' => $loggerRef,
+            ])->addTag(TimeSubjectProvidersPass::TAG, ['type' => $entries['subjects']['scope_subject']['type']]));
+        }
+
+        $container->getDefinition(TimerService::class)
+            ->setArgument('$allowWithoutTask', $entries['allow_without_task'])
+            ->setArgument('$allocationGuard', new Reference(AllocationGuard::class));
     }
 
     /**

@@ -15,6 +15,7 @@ use LogicException;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entity\Timesheet;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Tests\Support\AllocationSchema;
 use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 
 use function dirname;
@@ -52,6 +53,7 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $em->flush();
 
         // Since 1.25.0: the later migrations are rolled back first and applied again last (1.36.0 rebuilds the table on SQLite).
+        AllocationSchema::down($conn);
         $this->runSql($this->platformName() . '-down.sql', '1.36.0');
         $this->runSql($this->platformName() . '-down.sql', '1.25.0');
         $this->runSql($this->platformName() . '-down.sql');
@@ -65,6 +67,7 @@ final class FormerPeopleSchemaTest extends FunctionalTestCase
         $this->runSql($this->platformName() . '-up.sql');
         $this->runSql($this->platformName() . '-up.sql', '1.25.0');
         $this->runSql($this->platformName() . '-up.sql', '1.36.0');
+        AllocationSchema::up($conn);
         ScopeKeyCollation::apply($conn);
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.15 mapping');
         self::assertSame(['Kept', '3600'], [(string) $conn->fetchOne('SELECT task_title_snapshot FROM time_track_entries'), (string) $conn->fetchOne('SELECT duration_seconds FROM time_track_entries')]);

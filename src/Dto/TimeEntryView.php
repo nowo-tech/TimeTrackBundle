@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Dto;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 
 /**
  * Since 1.18: read-only snapshot of a time entry with scalar ids, for listeners that translate the bundle's events
@@ -35,6 +36,10 @@ final readonly class TimeEntryView
         public bool $serviceAccount = false,
         // Since 1.36.0: an entry without a task (its taskId is '' and its taskTitle '').
         public bool $withoutTask = false,
+        // Since 2.1.0 (Beacon spec 256): the subject (no label: labels go through TimeSubjectLabelResolver, which applies
+        // canRead) and the activity type key.
+        public ?TimeSubjectRef $subject = null,
+        public ?string $activityTypeKey = null,
     ) {
     }
 
@@ -67,6 +72,8 @@ final readonly class TimeEntryView
             $entry->channel(),
             $entry->isServiceAccount(),
             !$entry->hasTask(),
+            $entry->subject(),
+            $entry->getActivityTypeKey(),
         );
     }
 }

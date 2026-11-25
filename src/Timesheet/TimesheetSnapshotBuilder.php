@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Timesheet;
 
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Support\StorageTime;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -13,6 +14,7 @@ use Nowo\TimeTrackBundle\WorkingTime\BalanceReport;
 use Nowo\TimeTrackBundle\WorkingTime\WorkingTimeBalanceService;
 use Symfony\Component\Security\Core\User\UserInterface;
 
+use function array_values;
 use function count;
 use function strcmp;
 use function usort;
@@ -22,6 +24,10 @@ use function usort;
  * start date in the timesheet's zone; imported entries are listed and counted apart (`importedSeconds`), excluded
  * from `taskSeconds`. `entries_hash = sha256(canonical_json(sorted [id, taskId, startedAt UTC, endedAt UTC,
  * durationSeconds, source]))`: notes and descriptions are not covered. `byTask` holds ids only.
+ *
+ * Since 2.1.0 (Beacon spec 256, Q-TS-14) the totals also have `bySubject` (`{subjectType, subjectId, seconds}`) and
+ * `byActivityType` (`{activityTypeKey, seconds}`), ids only like `byTask`; the hash is unchanged (it never covered the
+ * allocation, so approved hashes stay valid and a back-fill of approved periods does not invalidate them).
  */
 final readonly class TimesheetSnapshotBuilder
 {
@@ -58,6 +64,8 @@ final readonly class TimesheetSnapshotBuilder
         $taskSeconds = 0;
         $imported    = 0;
         $byTask      = [];
+        $bySubject   = [];
+        $byActivity  = [];
         foreach ($entries as $entry) {
             if (!$entry->getSource()->isLive()) {
                 $imported += $entry->getDurationSeconds();
@@ -65,6 +73,14 @@ final readonly class TimesheetSnapshotBuilder
             }
             $taskSeconds += $entry->getDurationSeconds();
             $byTask[$entry->getTaskId()] = ($byTask[$entry->getTaskId()] ?? 0) + $entry->getDurationSeconds();
+            $subject                     = $entry->subject();
+            if ($subject instanceof TimeSubjectRef) {
+                $bySubject[$subject->key()] = ['subjectType' => $subject->type, 'subjectId' => $subject->id, 'seconds' => ($bySubject[$subject->key()]['seconds'] ?? 0) + $entry->getDurationSeconds()];
+            }
+            $activity = $entry->getActivityTypeKey();
+            if ($activity !== null) {
+                $byActivity[$activity] = ['activityTypeKey' => $activity, 'seconds' => ($byActivity[$activity]['seconds'] ?? 0) + $entry->getDurationSeconds()];
+            }
         }
         $tasks = [];
         foreach ($byTask as $taskId => $seconds) {
@@ -92,6 +108,8 @@ final readonly class TimesheetSnapshotBuilder
             'policy'            => $report?->policy,
             'flags'             => $report?->flagCounts() ?? [],
             'byTask'            => $tasks,
+            'bySubject'         => array_values($bySubject),
+            'byActivityType'    => array_values($byActivity),
         ];
 
         return new TimesheetSnapshot($entries, $unassigned, $totals, self::hash($entries), $report);

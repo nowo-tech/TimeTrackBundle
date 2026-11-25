@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Event;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Enum\ClientType;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
@@ -15,6 +16,9 @@ use Symfony\Contracts\EventDispatcher\Event;
  * carries a task. Ids and scalars only (REQ-ARCH-001 rule 4): never the user, the timer entity or the free text, so a
  * listener of a private entity manager host holds nothing of the bundle's unit of work. The stop of such a timer
  * dispatches {@see TimeTrackEvents::TIMER_STOP} like every stop ({@see TimerStopEvent::getTaskId()} is null).
+ *
+ * Since 2.1.0 (Beacon spec 256) it is also the event of a timer on a subject alone ({@see self::$subject}); TIMER_START
+ * stays task-only for its listeners.
  */
 final class TimerStartedWithoutTaskEvent extends Event
 {
@@ -33,6 +37,9 @@ final class TimerStartedWithoutTaskEvent extends Event
         public readonly ClientType $clientType,
         public readonly DateTimeImmutable $startedAt,
         public readonly ?ClampedTime $startTime = null,
+        // Since 2.1.0: the subject of the timer (null = none) and its activity type key.
+        public readonly ?TimeSubjectRef $subject = null,
+        public readonly ?string $activityTypeKey = null,
     ) {
     }
 
@@ -42,5 +49,17 @@ final class TimerStartedWithoutTaskEvent extends Event
     public function getTaskId(): null
     {
         return null;
+    }
+
+    /** Since 2.1.0: the subject of the timer, or null. */
+    public function getSubject(): ?TimeSubjectRef
+    {
+        return $this->subject;
+    }
+
+    /** Since 2.1.0: the activity type key of the timer, or null. */
+    public function getActivityTypeKey(): ?string
+    {
+        return $this->activityTypeKey;
     }
 }

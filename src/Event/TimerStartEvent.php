@@ -8,6 +8,7 @@ use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -28,6 +29,9 @@ final class TimerStartEvent extends Event
         private readonly TaskReference $task,
         private readonly ClientType $clientType,
         private readonly ?ClampedTime $startTime = null,
+        // Since 2.1.0 (Beacon spec 256): a subject next to the task (a type that allows tasks) and the activity type.
+        private readonly ?TimeSubjectRef $subject = null,
+        private readonly ?string $activityTypeKey = null,
     ) {
     }
 
@@ -80,5 +84,17 @@ final class TimerStartEvent extends Event
     public function getBoardId(): ?string
     {
         return $this->task->boardId;
+    }
+
+    /** Since 2.1.0: the subject next to the task, or null (Beacon spec 256). */
+    public function getSubject(): ?TimeSubjectRef
+    {
+        return $this->subject;
+    }
+
+    /** Since 2.1.0: the activity type key of the timer, or null. */
+    public function getActivityTypeKey(): ?string
+    {
+        return $this->activityTypeKey;
     }
 }

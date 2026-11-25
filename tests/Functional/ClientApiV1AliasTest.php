@@ -67,6 +67,10 @@ final class ClientApiV1AliasTest extends FunctionalTestCase
         ['nowo_time_track_api_monitoring_screenshot_discarded', '/api/time-track/monitoring/screenshots/discarded', 'nowo_time_track_api_v1_monitoring_screenshot_discarded', '/api/time-track/v1/monitoring/screenshots/discarded', 'POST|OPTIONS'],
         ['nowo_time_track_api_monitoring_screenshot_delete', '/api/time-track/monitoring/screenshots/{screenshotId}', 'nowo_time_track_api_v1_monitoring_screenshot_delete', '/api/time-track/v1/monitoring/screenshots/{screenshotId}', 'DELETE|OPTIONS'],
         ['nowo_time_track_api_monitoring_activity', '/api/time-track/monitoring/activity', 'nowo_time_track_api_v1_monitoring_activity', '/api/time-track/v1/monitoring/activity', 'POST|OPTIONS'],
+        // Since 2.1.0 (contract v0.4).
+        ['nowo_time_track_api_timer_allocate', '/api/time-track/timer/allocate', 'nowo_time_track_api_v1_timer_allocate', '/api/time-track/v1/timer/allocate', 'POST|OPTIONS'],
+        ['nowo_time_track_api_subjects_search', '/api/time-track/subjects/search', 'nowo_time_track_api_v1_subjects_search', '/api/time-track/v1/subjects/search', 'GET|OPTIONS'],
+        ['nowo_time_track_api_activity_types', '/api/time-track/activity-types', 'nowo_time_track_api_v1_activity_types', '/api/time-track/v1/activity-types', 'GET|OPTIONS'],
         ['nowo_time_track_api_device_code', '/api/time-track/device/code', 'nowo_time_track_api_v1_device_code', '/api/time-track/v1/device/code', 'POST|OPTIONS'],
         ['nowo_time_track_api_device_token', '/api/time-track/device/token', 'nowo_time_track_api_v1_device_token', '/api/time-track/v1/device/token', 'POST|OPTIONS'],
     ];

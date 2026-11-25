@@ -10,6 +10,7 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
+- [Changes in 2.1 (subjects and activity types, spec 256)](#changes-in-21-subjects-and-activity-types-spec-256)
 - [Changes in 2.0](#changes-in-20)
 - [Changes in 1.41 (monitoring privacy decisions D4, D9, D11)](#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)
 - [Changes in 1.26 (activity monitoring, spec 199)](#changes-in-126-activity-monitoring-spec-199)
@@ -162,6 +163,43 @@ signs in again. With `revoke_tokens: false` the token works again as soon as the
 after the token lookup and before the last-used update, `ClientCredentialStateInterface`, the rate limit and the scope
 check. Options:
 [CONFIGURATION](CONFIGURATION.md#client-api-129).
+
+## Changes in 2.1 (subjects and activity types, spec 256)
+
+Contract **v0.4**, additive, on the unversioned and the `/v1` paths. No new client scope: existing desktop and extension
+tokens keep working. With no subject or activity type provider the host behaves as 2.0 (empty `features`, subjects
+refused).
+
+**Shapes.** A subject reference is `{"type": "customer", "id": "42"}` (`type` `^[a-z][a-z0-9_]{0,31}$`, `id` 1–64 bytes,
+compared byte for byte). An activity type key matches `^[a-z0-9][a-z0-9_.-]{0,63}$`. Every entry and timer the API
+returns has:
+
+- `subject`: `{type, id, label, url}` when you may read it; `{type, hidden: true, label: "Subject not visible"}` (no
+  `id`) when you may not; `null` without one. Labels are plain text; `url` follows the task URL rule.
+- `activityType`: `{key, label}` or `null`.
+
+**GET me** `features` gains `subjects` (`[{type, label, allowsTask}]`), `activityTypes` (bool), `requireAllocation`
+(bool) and `requireActivityType` (bool).
+
+| Endpoint | Scope | Change |
+|---|---|---|
+| `POST timer/start` | `timer:write` | `taskId`, `subject`, or both when the type `allowsTask`; neither only when the host allows unallocated time (otherwise `400 invalid_request`); `activityTypeKey?`; `scopeKey?` (time without a task; one of yours, default the current one) |
+| `POST timer/switch` | `timer:write` | the same allocation body for the next timer, checked before anything stops |
+| `POST timer/stop` | `timer:write` | optional `subject` (`null` clears it), `activityTypeKey`; `409 allocation_required` (or `activity_type_required`) with `{timer}` when the host requires an allocation the time lacks: nothing is written, the timer keeps running; stop again with the `endedAt` your dialog showed |
+| `POST timer/allocate` (new) | `timer:write` | `{subject?, activityTypeKey?}` on the running timer (task or not; `subject: null` clears it); `200 {timer}`, `404 no_active_timer`; concurrent changes: last write wins |
+| `POST timer/discard-idle` | `timer:write` | the `reassign` target may be a `subject` (with or without `taskId`) and an `activityTypeKey` |
+| `POST entries` | `entries:write` | `taskId` or `subject` (or both), `activityTypeKey?`, `scopeKey?` for a subject alone; the `Idempotency-Key` body hash covers them |
+| `GET subjects/search?type=&q=&limit=&scopeKey=` (new) | `tasks:read` | `{subjects: [{type, id, label, hint, url}]}`; `limit` 1–50 (default 20), `q` ≤ 100 characters; rate-limited per token (`429 rate_limited` with `Retry-After`); results are a hint, every write checks again |
+| `GET activity-types?scopeKey=` (new) | `tasks:read` | `{scopeKey, activityTypes: [{key, label, group}]}` (active types of one of your scopes) |
+| `GET entries`, `GET timer`, `GET export` | as before | `subject` and `activityType` (above); the CSV appends `subject_type`, `subject_id`, `subject_label`, `activity_type_key`, `activity_type_label` |
+
+**Order of checks and errors.** Malformed values: `400 invalid_request` before the host is asked. With a task, task
+access first (`403 task_forbidden`), then the subject: `403 subject_forbidden` (unknown type, unknown id or no access —
+one answer), `422 allocation_conflict` (a subject next to a task whose type does not allow tasks),
+`422 activity_type_unknown` / `activity_type_inactive` / `activity_type_required`, `409 allocation_required`. A
+`scopeKey` that is not yours on `subjects/search` or `activity-types` is `400 invalid_request`.
+
+**Audit.** A write that sets a subject records `subject_allocated` with the subject type as reason (never the id).
 
 ## Changes in 2.0
 

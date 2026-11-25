@@ -8,6 +8,8 @@ use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
+use Nowo\TimeTrackBundle\Client\ClientAllocationInput;
+use Nowo\TimeTrackBundle\Client\ClientAllocationPresenter;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
@@ -26,6 +28,7 @@ use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
+use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
@@ -38,6 +41,8 @@ use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationRequiredException;
 use Nowo\TimeTrackBundle\Meeting\MeetingContext;
 use Nowo\TimeTrackBundle\Monitoring\MonitoringContext;
 use Nowo\TimeTrackBundle\Port\Internal\ClientUserDaysOffProviderInterface;
@@ -51,6 +56,9 @@ use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Subject\AllocationLabels;
+use Nowo\TimeTrackBundle\Subject\TimeAllocation;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Support\TimeEntryCsv;
@@ -171,6 +179,7 @@ final readonly class TimeTrackClientApiController
      * @param ManualEntryService|null $manualEntries `POST entries` (`me.features.manual_entries`, 1.14; null = off)
      * @param MeetingContext|null $meetings Meetings API (`me.features.meetings`, `me.meetings`, `me.links.calendars`, 1.14; null = off)
      * @param MonitoringContext|null $monitoring Activity monitoring (`me.features.monitoring`, `me.monitoring`, 1.26; null = off)
+     * @param ClientAllocationPresenter|null $allocations Since 2.1.0 (spec 256): subjects and activity types (null = none: every subject refused or masked)
      */
     // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
@@ -199,6 +208,7 @@ final readonly class TimeTrackClientApiController
         /** @var list<string> Since 1.15: `framework.enabled_locales`, what the `privacy` language is chosen among */
         private array $enabledLocales = [],
         private ?MonitoringContext $monitoring = null,
+        private ?ClientAllocationPresenter $allocations = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -346,6 +356,8 @@ final readonly class TimeTrackClientApiController
         // Since 1.26 (contract §24.1, spec 199): true only with a policy for this user (no `monitoring` key otherwise).
         $monitoring             = $this->monitoring?->summary($user);
         $features['monitoring'] = $monitoring !== null;
+        // Since 2.1.0 (contract v0.4, spec 256): subject types, activity types and the allocation requirements.
+        $features += $this->allocations?->features($this->userLocale($user)) ?? ['subjects' => [], 'activityTypes' => false, 'requireAllocation' => false, 'requireActivityType' => false];
 
         $body['features'] = $features;
         $body['limits']   = [
@@ -410,12 +422,16 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->empty(Response::HTTP_NO_CONTENT, $request);
         }
 
-        return $this->responseFactory->json(['timer' => $this->taskPresenter->timer($active, $principal->user, $request)], Response::HTTP_OK, $request);
+        return $this->responseFactory->json(['timer' => $this->timerBody($active, $principal->user, $request)], Response::HTTP_OK, $request);
     }
 
     /**
      * POST timer/start `{taskId, note?, source?, startedAt?}`: starts a timer (403 task_forbidden, 409 timer_running).
      * Since 1.10 an RFC 3339 `startedAt` backdates the start after the server clamps (reported as `startedAtResult`).
+     * Since 2.1.0 (contract v0.4): `taskId`, `subject: {type, id}`, or both when the type allows tasks (neither only with
+     * `entries.allow_without_task` on and `entries.require_allocation` off), `activityTypeKey?`, `scopeKey?` (ignored with
+     * a task); task access is checked first (403 task_forbidden), then the subject (403 subject_forbidden, 422
+     * allocation_conflict / activity_type_unknown / activity_type_inactive).
      */
     #[Route('/api/time-track/timer/start', name: 'nowo_time_track_api_timer_start', methods: ['POST', 'OPTIONS'])]
     public function timerStart(Request $request): Response
@@ -425,11 +441,12 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $payload = $this->payload($request);
-        $taskId  = $this->string($payload, 'taskId');
-        if ($taskId === '') {
-            return $this->responseFactory->error('invalid_request', 'taskId is required.', Response::HTTP_BAD_REQUEST, $request);
+        $payload    = $this->payload($request);
+        $allocation = $this->allocationInput($payload, $request);
+        if ($allocation instanceof Response) {
+            return $allocation;
         }
+        [$allocation, $scopeKey] = $allocation;
 
         $metadata = $this->metadata($payload, $request);
         if ($metadata instanceof Response) {
@@ -446,21 +463,24 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->error('invalid_request', 'startedAt must be an RFC 3339 date-time.', Response::HTTP_BAD_REQUEST, $request);
         }
 
-        if (!$this->taskAccessChecker->canTrack($principal->user, $taskId)) {
+        if ($allocation->taskId !== null && !$this->taskAccessChecker->canTrack($principal->user, $allocation->taskId)) {
             return $this->taskForbidden($principal, $request);
         }
 
         try {
-            $result = $this->timerService->startAt($principal->user, $taskId, $clientType, $metadata, $startedAt, $this->settingsProvider->getSettings()->backdate);
+            $result = $this->timerService->startAt($principal->user, $allocation, $clientType, $metadata, $startedAt, $this->settingsProvider->getSettings()->backdate, scopeKey: $scopeKey);
         } catch (ActiveTimerConflictException) {
             return $this->timerRunning($request);
+        } catch (TimeAllocationException $e) {
+            return $this->allocationRefused($e, $principal, $request);
         } catch (InvalidArgumentException) {
             return $this->taskForbidden($principal, $request);
         } catch (PeriodWriteRefusedException $e) {
             return $this->periodRefused($e, $request);
         }
+        $this->auditSubject($principal, $request, $allocation->subject, $clientType);
 
-        $body = ['timer' => $this->taskPresenter->timer($result['timer'], $principal->user, $request, $result['task'])];
+        $body = ['timer' => $this->timerBody($result['timer'], $principal->user, $request, $result['task'])];
         if ($result['startTime'] instanceof ClampedTime) {
             $body['startedAtResult'] = $result['startTime']->toArray();
         }
@@ -470,7 +490,10 @@ final readonly class TimeTrackClientApiController
 
     /**
      * POST timer/stop `{note?, endedAt?}`: stops the active timer and returns the entry. Since 1.10 an RFC 3339
-     * `endedAt` sets an earlier end after the server clamps (reported as `endedAtResult`).
+     * `endedAt` sets an earlier end after the server clamps (reported as `endedAtResult`). Since 2.1.0 (contract v0.4)
+     * optional `subject` (`null` clears it) and `activityTypeKey`; an interactive stop: with `entries.require_allocation`
+     * a timer with neither task nor subject is refused with `409 allocation_required` and `{timer}` (nothing is written,
+     * the timer keeps running; stop again with the `endedAt` the dialog showed).
      */
     #[Route('/api/time-track/timer/stop', name: 'nowo_time_track_api_timer_stop', methods: ['POST', 'OPTIONS'])]
     public function timerStop(Request $request): Response
@@ -486,12 +509,31 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->error('invalid_request', 'endedAt must be an RFC 3339 date-time.', Response::HTTP_BAD_REQUEST, $request);
         }
 
-        $result = $this->timerService->stopAt($principal->user, $endedAt, $this->settingsProvider->getSettings()->backdate, $this->note($payload));
+        try {
+            $patch = ClientAllocationInput::patch($payload);
+        } catch (InvalidArgumentException $e) {
+            return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        // Audit ZBQ-L3: a change of the subject of a task timer asks the task access again first.
+        $active = $patch->changesSubject ? $this->timerService->getActive($principal->user) : null;
+        if ($active instanceof ActiveTimer && $active->hasTask() && $patch->changesSubjectOf($active->subject()) && !$this->taskAccessChecker->canTrack($principal->user, $active->getTaskId())) {
+            return $this->taskForbidden($principal, $request);
+        }
+
+        try {
+            $result = $this->timerService->stopAt($principal->user, $endedAt, $this->settingsProvider->getSettings()->backdate, $this->note($payload), $patch, true);
+        } catch (TimeAllocationException $e) {
+            return $this->allocationRefused($e, $principal, $request);
+        } catch (TaskNotTrackableException) {
+            return $this->taskForbidden($principal, $request);
+        }
         if ($result === null) {
             return $this->noActiveTimer($request);
         }
+        $this->auditSubject($principal, $request, $patch->changesSubject ? $patch->subject : null, null);
 
-        $body = ['entry' => $result['entry']->toArray()];
+        $body = ['entry' => $this->entryBody($result['entry'], $principal->user, $request)];
         if ($result['endTime'] instanceof ClampedTime) {
             $body['endedAtResult'] = $result['endTime']->toArray();
         }
@@ -503,6 +545,8 @@ final readonly class TimeTrackClientApiController
      * POST timer/switch `{taskId, note?, source?, metadata?}`: stops the running timer (if any, with the note) and starts
      * one on the task. The task is checked first: a refused task leaves the running timer untouched. Since 1.14 the only
      * accepted `metadata` is `{origin: "meeting"}` (*Track the meeting*, Q-B22), kept on the new timer and its entry.
+     * Since 2.1.0 (contract v0.4) the same allocation body as `timer/start` for the next timer, checked before anything
+     * stops.
      */
     #[Route('/api/time-track/timer/switch', name: 'nowo_time_track_api_timer_switch', methods: ['POST', 'OPTIONS'])]
     public function timerSwitch(Request $request): Response
@@ -512,11 +556,12 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $payload = $this->payload($request);
-        $taskId  = $this->string($payload, 'taskId');
-        if ($taskId === '') {
-            return $this->responseFactory->error('invalid_request', 'taskId is required.', Response::HTTP_BAD_REQUEST, $request);
+        $payload    = $this->payload($request);
+        $allocation = $this->allocationInput($payload, $request);
+        if ($allocation instanceof Response) {
+            return $allocation;
         }
+        [$allocation, $scopeKey] = $allocation;
 
         $clientType = $this->source($payload, $principal);
         if (!$clientType instanceof ClientType) {
@@ -529,23 +574,26 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->error('metadata_not_allowed', 'timer/switch accepts only metadata {"origin": "meeting"}.', Response::HTTP_BAD_REQUEST, $request);
         }
 
-        if (!$this->taskAccessChecker->canTrack($principal->user, $taskId)) {
+        if ($allocation->taskId !== null && !$this->taskAccessChecker->canTrack($principal->user, $allocation->taskId)) {
             return $this->taskForbidden($principal, $request);
         }
 
         try {
-            $result = $this->timerService->switchTo($principal->user, $taskId, $clientType, $this->note($payload), $origin === self::MEETING_ORIGIN ? self::MEETING_ORIGIN : []);
+            $result = $this->timerService->switchTo($principal->user, $allocation, $clientType, $this->note($payload), $origin === self::MEETING_ORIGIN ? self::MEETING_ORIGIN : [], $scopeKey);
         } catch (ActiveTimerConflictException) {
             return $this->timerRunning($request);
+        } catch (TimeAllocationException $e) {
+            return $this->allocationRefused($e, $principal, $request);
         } catch (InvalidArgumentException) {
             return $this->taskForbidden($principal, $request);
         } catch (PeriodWriteRefusedException $e) {
             return $this->periodRefused($e, $request);
         }
+        $this->auditSubject($principal, $request, $allocation->subject, $clientType);
 
         return $this->responseFactory->json([
-            'entry' => $result['entry']?->toArray(),
-            'timer' => $this->taskPresenter->timer($result['timer'], $principal->user, $request),
+            'entry' => $result['entry'] instanceof TimeEntry ? $this->entryBody($result['entry'], $principal->user, $request) : null,
+            'timer' => $this->timerBody($result['timer'], $principal->user, $request),
         ], Response::HTTP_CREATED, $request);
     }
 
@@ -556,7 +604,8 @@ final readonly class TimeTrackClientApiController
      * heartbeat). `from` / `to` are converted to the server time zone and must carry an offset between -12:00 and
      * +14:00 (1.9.2). 409 timer_running when a concurrent start took the timer slot before the follow-up timer started
      * (1.9.1). Since 1.10 `reassign` gives the span to `taskId` (checked like `timer/start`: an unknown and a foreign
-     * task both answer the same `403 task_forbidden`) and then continues, switches or stops (`then`).
+     * task both answer the same `403 task_forbidden`) and then continues, switches or stops (`then`). Since 2.1.0
+     * (contract v0.4) the reassign target may be a `subject` (with or without `taskId`) and an `activityTypeKey`.
      */
     #[Route('/api/time-track/timer/discard-idle', name: 'nowo_time_track_api_timer_discard_idle', methods: ['POST', 'OPTIONS'])]
     public function timerDiscardIdle(Request $request): Response
@@ -594,7 +643,7 @@ final readonly class TimeTrackClientApiController
             ['taskId' => $taskId, 'followUp' => $followUp, 'source' => $source] = $invalid;
             $note                                                               = $this->note($payload);
 
-            if (!$this->taskAccessChecker->canTrack($principal->user, $taskId)) {
+            if ($taskId->taskId !== null && !$this->taskAccessChecker->canTrack($principal->user, $taskId->taskId)) {
                 return $this->taskForbidden($principal, $request);
             }
         }
@@ -603,6 +652,8 @@ final readonly class TimeTrackClientApiController
             $result = $this->timerService->resolveIdle($principal->user, $from, $to, $resolution, $taskId, $followUp, $source, $note);
         } catch (ActiveTimerConflictException) {
             return $this->timerRunning($request);
+        } catch (TimeAllocationException $e) {
+            return $this->allocationRefused($e, $principal, $request);
         } catch (TaskNotTrackableException) {
             return $this->taskForbidden($principal, $request);
         } catch (InvalidArgumentException $e) {
@@ -615,10 +666,12 @@ final readonly class TimeTrackClientApiController
             return $this->noActiveTimer($request);
         }
 
+        $this->auditSubject($principal, $request, $taskId?->subject, $source);
+
         return $this->responseFactory->json([
-            'entry'      => $result['entry']?->toArray(),
-            'timer'      => $result['timer'] instanceof ActiveTimer ? $this->taskPresenter->timer($result['timer'], $principal->user, $request) : null,
-            'reassigned' => $result['reassigned']?->toArray(),
+            'entry'      => $result['entry'] instanceof TimeEntry ? $this->entryBody($result['entry'], $principal->user, $request) : null,
+            'timer'      => $result['timer'] instanceof ActiveTimer ? $this->timerBody($result['timer'], $principal->user, $request) : null,
+            'reassigned' => $result['reassigned'] instanceof TimeEntry ? $this->entryBody($result['reassigned'], $principal->user, $request) : null,
         ], Response::HTTP_OK, $request);
     }
 
@@ -643,9 +696,11 @@ final readonly class TimeTrackClientApiController
         $hidden      = $this->timerService->hiddenTaskEntryIds($list);
         $hiddenTitle = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($user);
         $locked      = $this->workingTime?->blockedEntryIds($list) ?? [];
+        // Since 2.1.0 (contract v0.4): subject and activity type, labelled once per page with the token's user as viewer.
+        $labels = $this->allocations?->labelsFor($user, $list) ?? AllocationLabels::none();
 
         return $this->responseFactory->json([
-            'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $hiddenTitle) + ['locked' => isset($locked[$entry->getId()])], $list),
+            'entries' => array_map(fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $hiddenTitle) + ['locked' => isset($locked[$entry->getId()])] + $this->allocationFields($entry, $labels, $request), $list),
             'limit'   => $limit,
             'offset'  => $offset,
         ], Response::HTTP_OK, $request);
@@ -673,15 +728,17 @@ final readonly class TimeTrackClientApiController
         $hidden  = $this->timerService->hiddenTaskEntryIds($entries);
         $masked  = $hidden === [] ? TimeEntry::HIDDEN_TASK_TITLE : $this->hiddenTaskTitle($principal->user);
         $locked  = $this->workingTime?->blockedEntryIds($entries) ?? [];
+        // Since 2.1.0 (contract v0.4): subject and activity type, labelled once per page with the token's user as viewer.
+        $labels = $this->allocations?->labelsFor($principal->user, $entries) ?? AllocationLabels::none();
 
         $response = $this->responseFactory->empty(Response::HTTP_OK, $request);
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->setContent($format === 'csv'
-            ? TimeEntryCsv::render($entries, $hidden, $masked, $locked)
+            ? TimeEntryCsv::render($entries, $hidden, $masked, $locked, $labels)
             : json_encode([
                 'from'    => $period['from']->format(DATE_ATOM),
                 'to'      => $period['to']->format(DATE_ATOM),
-                'entries' => array_map(static fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $masked) + ['locked' => isset($locked[$entry->getId()])], $entries),
+                'entries' => array_map(fn (TimeEntry $entry): array => $entry->toArray(!isset($hidden[$entry->getId()]), $masked) + ['locked' => isset($locked[$entry->getId()])] + $this->allocationFields($entry, $labels, $request), $entries),
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $response->headers->set('Content-Type', $format === 'csv' ? 'text/csv; charset=UTF-8' : 'application/json');
@@ -1013,7 +1070,7 @@ final readonly class TimeTrackClientApiController
      *
      * @param array<string, mixed> $payload
      *
-     * @return array{taskId: string, followUp: IdleFollowUp, source: ClientType}|JsonResponse
+     * @return array{taskId: TimeAllocation, followUp: IdleFollowUp, source: ClientType}|JsonResponse
      */
     private function reassignInput(array $payload, ClientApiPrincipal $principal, Request $request): array|JsonResponse
     {
@@ -1021,8 +1078,16 @@ final readonly class TimeTrackClientApiController
             return $this->responseFactory->error('invalid_request', 'action reassign is not available.', Response::HTTP_BAD_REQUEST, $request);
         }
 
+        // Since 2.1.0: the target is a task, a subject, or both (with an optional activity type).
         $taskId = $this->string($payload, 'taskId');
-        if ($taskId === '') {
+        try {
+            [, $subject]  = ClientAllocationInput::subject($payload);
+            [, $activity] = ClientAllocationInput::activityTypeKey($payload);
+            $target       = $taskId !== '' ? TimeAllocation::task($taskId, $subject, $activity) : ($subject instanceof TimeSubjectRef ? TimeAllocation::subject($subject, $activity) : null);
+        } catch (InvalidArgumentException $e) {
+            return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
+        }
+        if (!$target instanceof TimeAllocation) {
             return $this->responseFactory->error('invalid_request', 'taskId is required to reassign an idle span.', Response::HTTP_BAD_REQUEST, $request);
         }
 
@@ -1037,7 +1102,102 @@ final readonly class TimeTrackClientApiController
             return $this->invalidSource($request);
         }
 
-        return ['taskId' => $taskId, 'followUp' => $followUp, 'source' => $source];
+        return ['taskId' => $target, 'followUp' => $followUp, 'source' => $source];
+    }
+
+    /**
+     * Since 2.1.0 (contract v0.4): the allocation of `timer/start` and `timer/switch` (`taskId`, `subject`,
+     * `activityTypeKey`) and the requested `scopeKey`, or the 400 answer. Neither task nor subject only when time may be
+     * unallocated.
+     *
+     * @param array<string, mixed> $payload
+     *
+     * @return array{0: TimeAllocation, 1: string|null}|JsonResponse
+     */
+    private function allocationInput(array $payload, Request $request): array|JsonResponse
+    {
+        $taskId = $this->string($payload, 'taskId');
+        try {
+            [, $subject]  = ClientAllocationInput::subject($payload);
+            [, $activity] = ClientAllocationInput::activityTypeKey($payload);
+            $scopeKey     = ClientAllocationInput::scopeKey($payload);
+        } catch (InvalidArgumentException $e) {
+            return $this->responseFactory->error('invalid_request', $e->getMessage(), Response::HTTP_BAD_REQUEST, $request);
+        }
+        if ($taskId === '' && !$subject instanceof TimeSubjectRef && !($this->allocations?->allowsUnallocated() ?? false)) {
+            return $this->responseFactory->error('invalid_request', 'taskId is required.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        return [match (true) {
+            $taskId !== ''                     => TimeAllocation::task($taskId, $subject, $activity),
+            $subject instanceof TimeSubjectRef => TimeAllocation::subject($subject, $activity),
+            default                            => TimeAllocation::none($activity),
+        }, $taskId !== '' ? null : $scopeKey];
+    }
+
+    /**
+     * Since 2.1.0: the answer to a refused subject or activity type (`403 subject_forbidden`, `409 allocation_required`
+     * / `activity_type_required` with `{timer}` on a stop, 422 for the values). Refusals of the subject are audited
+     * (throttled) like a refused task.
+     */
+    private function allocationRefused(TimeAllocationException $e, ClientApiPrincipal $principal, Request $request): JsonResponse
+    {
+        if ($e->errorCode === TimeAllocationException::SUBJECT_FORBIDDEN) {
+            $this->auditor->denied('subject_forbidden', $principal->token, $request->getClientIp());
+
+            return $this->responseFactory->error('subject_forbidden', 'You may not log time on this subject.', Response::HTTP_FORBIDDEN, $request);
+        }
+        $body = ['error' => $e->errorCode, 'message' => 'The allocation of this time was refused.'];
+        if ($e instanceof TimeAllocationRequiredException) {
+            $timer         = $this->timerService->getActive($principal->user);
+            $body['timer'] = $timer instanceof ActiveTimer ? $this->timerBody($timer, $principal->user, $request) : null;
+        }
+
+        return $this->responseFactory->json($body, $e->httpStatus(), $request);
+    }
+
+    /**
+     * Since 2.1.0: audits a write that set a subject (`subject_allocated`, reason = the subject type, never its id).
+     */
+    private function auditSubject(ClientApiPrincipal $principal, Request $request, ?TimeSubjectRef $subject, ?ClientType $clientType): void
+    {
+        if ($subject instanceof TimeSubjectRef) {
+            $this->auditor->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $clientType ?? $principal->token->getClientType(), $request->getClientIp(), $subject->type);
+        }
+    }
+
+    /**
+     * The wire shape of a timer: the task details and (since 2.1.0) its subject and activity type.
+     *
+     * @return array<string, mixed>
+     */
+    private function timerBody(ActiveTimer $timer, UserInterface $user, Request $request, ?TaskReference $known = null): array
+    {
+        return $this->taskPresenter->timer($timer, $user, $request, $known) + ($this->allocations?->timer($user, $timer, $request) ?? $this->allocationFields($timer, AllocationLabels::none(), null));
+    }
+
+    /**
+     * The wire shape of one entry the caller just wrote (stop, switch, idle): with its subject and activity type.
+     *
+     * @return array<string, mixed>
+     */
+    private function entryBody(TimeEntry $entry, UserInterface $user, Request $request): array
+    {
+        return $entry->toArray() + ($this->allocations?->single($user, $entry, $request) ?? $this->allocationFields($entry, AllocationLabels::none(), null));
+    }
+
+    /**
+     * Since 2.1.0: `subject` and `activityType` of an entry or a timer with labels already resolved for the page.
+     *
+     * @return array{subject: array<string, mixed>|null, activityType: array{key: string, label: string}|null}
+     */
+    private function allocationFields(TimeEntry|ActiveTimer $row, AllocationLabels $labels, ?Request $request): array
+    {
+        if ($row instanceof TimeEntry && $this->allocations instanceof ClientAllocationPresenter) {
+            return $this->allocations->entry($row, $labels, $request);
+        }
+
+        return ['subject' => $labels->subject($row->getScopeKey(), $row->subject()), 'activityType' => $labels->activityType($row->getScopeKey(), $row->getActivityTypeKey())];
     }
 
     private function clientType(string $value): ClientType

@@ -86,14 +86,20 @@ final readonly class ClientIdempotencyStore
 
     /**
      * Since 1.27.0 (audit QO-L2): marks the pending answer of this request committed (replayed from then on whatever
-     * happens to the entry it names). An answer another request stored meanwhile is left alone.
+     * happens to the entry it names). An answer another request stored meanwhile is left alone. Since 2.1.0 `$body`
+     * replaces the stored body (resolved after the commit, e.g. with labels a host port gives, audit ZBQ-L5).
+     *
+     * @param array<string, mixed>|null $body The final body (null = keep the pending one)
      */
-    public function confirm(string $userId, string $key, string $nonce): void
+    public function confirm(string $userId, string $key, string $nonce, ?array $body = null): void
     {
         $item   = $this->cache->getItem($this->itemKey($userId, $key));
         $stored = $item->isHit() ? $item->get() : null;
         if (is_array($stored) && ($stored['pending'] ?? null) === $nonce) {
             unset($stored['pending']);
+            if ($body !== null) {
+                $stored['body'] = $body;
+            }
             $this->store($userId, $key, $stored);
         }
     }

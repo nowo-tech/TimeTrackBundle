@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Dto\TimeEntryView;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Entry\TimeEntryOperationsInterface;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 
 use function array_is_list;
 use function hash;
@@ -72,7 +73,8 @@ final readonly class TimeEntryRecord
     /**
      * Since 1.40.0: the optimistic-concurrency version of the entry as read: an opaque token (64 hexadecimal characters)
      * that changes whenever its owner, task, board, scope, times, duration, source, billable flag, description or
-     * metadata change. Pass it back to {@see TimeEntryOperationsInterface::correct()}: when the entry changed since it was
+     * metadata change, and since 2.1.0 its subject or activity type. The two 2.1 values are hashed only when set, so the
+     * token of an entry that has neither is byte-identical to 2.0 (no wave of spurious `conflict`s after the upgrade). Pass it back to {@see TimeEntryOperationsInterface::correct()}: when the entry changed since it was
      * read, the correction is refused with `conflict` instead of overwriting the other change. Not a secret and not
      * stored: it is computed from the row (seconds precision, metadata keys in any order).
      */
@@ -80,7 +82,7 @@ final readonly class TimeEntryRecord
     {
         $entry = $this->entry;
 
-        return hash('sha256', json_encode([
+        $values = [
             'v1',
             $entry->id,
             $entry->userId,
@@ -94,7 +96,15 @@ final readonly class TimeEntryRecord
             $this->billable,
             $this->description,
             self::canonical($this->metadata),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        ];
+        if ($entry->subject instanceof TimeSubjectRef) {
+            $values[] = ['subject', $entry->subject->type, $entry->subject->id];
+        }
+        if ($entry->activityTypeKey !== null) {
+            $values[] = ['activity_type', $entry->activityTypeKey];
+        }
+
+        return hash('sha256', json_encode($values, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
     /**

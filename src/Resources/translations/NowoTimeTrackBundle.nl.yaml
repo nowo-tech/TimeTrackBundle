@@ -39,11 +39,15 @@ reports:
   task_not_visible: Taak niet zichtbaar
   no_task: "Geen taak"
   former_person: "Voormalige persoon"
+  subject: "Onderwerp"
 flash:
   timer_started: Timer gestart.
   timer_already_active: Je hebt al een actieve timer.
   timer_stopped: Timer gestopt.
   no_active_timer: Geen actieve timer.
+  allocation_required: "Wijs deze tijd toe aan een taak of een onderwerp voordat je de timer stopt."
+  activity_type_required: "Kies een activiteitstype voordat je de timer stopt."
+  activity_type_refused: "Dat activiteitstype kan niet worden gebruikt. Kies een ander."
 device:
   intro: "Voer de code in die de desktopapp of de browserextensie toont."
   user_code: "Apparaatcode"
@@ -187,3 +191,8 @@ ledger:
     reversal_title: "Deze mutatie terugdraaien"
 client_api:
   leave_absent: "Afwezig"
+subjects:
+  not_visible: "Onderwerp niet zichtbaar"
+stop:
+  activity_type: "Activiteitstype"
+  activity_type_placeholder: "Kies een activiteitstype"

@@ -39,6 +39,7 @@ final class ManageUiTest extends FunctionalTestCase
         self::assertSelectorTextContains('.nowo-ui-flash--success', 'Timer started.');
         self::assertSelectorTextContains('main', 'Running: Implement login API');
         self::assertSelectorExists('[data-testid="time-track-stop"]');
+        self::assertSelectorNotExists('select[name="activity_type"]', 'no activity type choice without entries.require_activity_type');
         self::assertCount(0, $crawler->selectButton('Start'));
 
         // A start form loaded before the timer started: one active timer per user.

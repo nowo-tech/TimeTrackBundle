@@ -17,6 +17,7 @@ use Nowo\TimeTrackBundle\Import\ImportedTimeEntryPerson;
 use Nowo\TimeTrackBundle\Import\ImportedTimeEntryWriter;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
@@ -43,6 +44,10 @@ use const DATE_ATOM;
  * query by task or board ever reaches it), the title snapshot is empty and the user's free text is the `description`.
  * {@see self::getTaskId()} keeps its string type and returns ''; {@see self::hasTask()} and {@see self::taskIdOrNull()}
  * tell the case apart.
+ *
+ * Since 2.1.0 (Beacon spec 256) an entry may carry a subject (`subject_type` + `subject_id`, both or neither: a task and a
+ * subject only for a subject type that allows tasks) and an activity type (`activity_type_key`). Erasure keeps them: they
+ * describe the work, not the person.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'time_track_entries')]
@@ -59,6 +64,9 @@ use const DATE_ATOM;
 #[ORM\Index(name: 'idx_time_track_entries_person_ref', columns: ['person_ref'])]
 // Since 1.25.0: agent time vs people's time over a range (service accounts, channel).
 #[ORM\Index(name: 'idx_time_track_entries_origin', columns: ['service_account', 'channel', 'started_at'])]
+// Since 2.1.0 (Beacon spec 256): subject and activity type totals per tenant.
+#[ORM\Index(name: 'idx_time_track_entries_scope_subject', columns: ['scope_key', 'subject_type', 'subject_id', 'started_at'])]
+#[ORM\Index(name: 'idx_time_track_entries_scope_activity', columns: ['scope_key', 'activity_type_key', 'started_at'])]
 class TimeEntry
 {
     /**
@@ -135,6 +143,18 @@ class TimeEntry
     /** Since 1.25.0: the entry belongs to a service account (agent), per {@see ServiceAccountPolicyInterface}. */
     #[ORM\Column(name: 'service_account', type: 'boolean', options: ['default' => false])]
     private bool $serviceAccount = false;
+
+    /** Since 2.1.0: the type of the subject the time is logged on (null = none; set together with the id). */
+    #[ORM\Column(name: 'subject_type', type: 'string', length: 32, nullable: true)]
+    private ?string $subjectType = null;
+
+    /** Since 2.1.0: the host's id of the subject (null = none; set together with the type). */
+    #[ORM\Column(name: 'subject_id', type: 'string', length: 64, nullable: true)]
+    private ?string $subjectId = null;
+
+    /** Since 2.1.0: the activity type key (null = none). */
+    #[ORM\Column(name: 'activity_type_key', type: 'string', length: 64, nullable: true)]
+    private ?string $activityTypeKey = null;
 
     /**
      * Creates a time entry.
@@ -592,6 +612,46 @@ class TimeEntry
         $this->durationSeconds = $durationSeconds;
         // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
         $this->metadata = $metadata;
+    }
+
+    /**
+     * Since 2.1.0: the subject the time is logged on, or null (also for a pair a host wrote by hand that breaks the
+     * column contract: the `check-allocation` command reports it).
+     */
+    public function subject(): ?TimeSubjectRef
+    {
+        return TimeSubjectRef::tryFromColumns($this->subjectType, $this->subjectId);
+    }
+
+    /**
+     * Since 2.1.0: the activity type key, or null.
+     */
+    public function getActivityTypeKey(): ?string
+    {
+        return $this->activityTypeKey;
+    }
+
+    /**
+     * Since 2.1.0: sets the subject and the activity type of a live entry. No checks here: the write services check
+     * `canLog`, the provider's `allowsTask()`, the activity type, the period lock and the version before.
+     *
+     * @throws LogicException When the entry is imported (read-only) or anonymised
+     *
+     * @internal used by the bundle's services only
+     */
+    public function allocate(?TimeSubjectRef $subject, ?string $activityTypeKey): self
+    {
+        if ($this->isReadOnly() || $this->isAnonymised()) {
+            throw new LogicException('Only a live entry that is not anonymised can be allocated.');
+        }
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->subjectType = $subject?->type;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->subjectId = $subject?->id;
+        // @igor-ignore - Doctrine entity field; instance-scoped, not a shared service.
+        $this->activityTypeKey = $activityTypeKey;
+
+        return $this;
     }
 
     /**

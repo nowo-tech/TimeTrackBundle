@@ -11,6 +11,10 @@
 - [Entries with no user (1.15)](#entries-with-no-user-115)
 - [Read ports and personal data (1.35)](#read-ports-and-personal-data-135)
 - [Entries without a task (1.36, Beacon spec 250)](#entries-without-a-task-136-beacon-spec-250)
+- [Time subjects and activity types (2.1, Beacon spec 256)](#time-subjects-and-activity-types-21-beacon-spec-256)
+  - [Standard Symfony host](#standard-symfony-host)
+  - [DDD / hexagonal host](#ddd--hexagonal-host)
+  - [Rules worth knowing](#rules-worth-knowing)
 - [Entry access by id (1.37)](#entry-access-by-id-137)
 - [Writes by id (1.40)](#writes-by-id-140)
 - [Task time follows a board move (Unreleased)](#task-time-follows-a-board-move-unreleased)
@@ -627,6 +631,107 @@ $manualEntries->create($user, null, $start, $end, TimeEntrySource::Manual, descr
   the time stays).
 - Idle decisions on such a timer: `split` continues it without a task (same description and scope); `reassign` gives
   the span to a task and `continue` resumes without one.
+
+## Time subjects and activity types (2.1, Beacon spec 256)
+
+Time can be logged on a **subject** — a customer (a phone call), the organisation itself under an internal category —
+alone or next to a task ("this task, for customer X"), with an optional **activity type** (`support_call`,
+`internal_meeting`). The subject lives in your application; TimeTrack stores only `subject_type` + `subject_id` (opaque,
+compared byte for byte) and asks your provider who may use and see it. Design and decisions:
+[design/TIME_SUBJECT_ACTIVITY.md](design/TIME_SUBJECT_ACTIVITY.md).
+
+| Allocation | `task_id` | subject | Allowed when | Checked on write |
+|---|---|---|---|---|
+| Task alone | set | — | always | task access (as before) |
+| Task + subject | set | set | the type's provider `allowsTask()` | task access **and** `canLog(subject)` |
+| Subject alone | — | set | any type | `canLog(subject)` |
+| Nothing | — | — | `entries.allow_without_task` and not `entries.require_allocation` | the 1.36 scope check |
+
+### Standard Symfony host
+
+Implement the provider; autoconfiguration registers it (one per type, the build refuses two):
+
+```php
+use Nowo\TimeTrackBundle\Subject\{TimeSubjectContext, TimeSubjectLabel, TimeSubjectLabels, TimeSubjectProviderInterface, TimeSubjectRef, TimeSubjectSearch};
+
+final readonly class CustomerSubjectProvider implements TimeSubjectProviderInterface
+{
+    public function __construct(private CustomerRepository $customers, private CustomerAccess $access) {}
+
+    public static function subjectType(): string { return 'customer'; }
+    public static function allowsTask(): bool { return true; }      // customer time may sit on a task entry
+
+    public function canLog(TimeSubjectContext $context, TimeSubjectRef $subject): bool
+    {
+        return $this->access->canLog($context->actor->id, $context->scopeKey, $subject->id); // deny by default
+    }
+
+    public function describe(TimeSubjectContext $context, array $subjects): TimeSubjectLabels
+    {
+        $labels = [];
+        foreach ($this->customers->readableBy($context->actor->id, $context->scopeKey, array_map(fn (TimeSubjectRef $s) => $s->id, $subjects)) as $customer) {
+            $labels[] = new TimeSubjectLabel(new TimeSubjectRef('customer', $customer->id), $customer->name, 'https://app.example/customers/' . $customer->id, $customer->city);
+        }
+
+        return TimeSubjectLabels::of($labels);                       // left out = not readable (one answer)
+    }
+
+    public function search(TimeSubjectContext $context, TimeSubjectSearch $search): array
+    {
+        return array_map(fn ($c) => new TimeSubjectLabel(new TimeSubjectRef('customer', $c->id), $c->name), $this->customers->search($context->actor->id, $context->scopeKey, $search->query, $search->limit));
+    }
+}
+```
+
+Activity types: implement `ActivityTypeProviderInterface::activityTypesFor(string $scopeKey): ActivityTypeList` (retired
+types with `active: false`) and alias the interface to your service. Then write with allocations:
+
+```php
+use Nowo\TimeTrackBundle\Subject\{TimeAllocation, TimeAllocationPatch, TimeSubjectRef};
+
+$hostTimerApi->startAllocated($actorRef, TimeAllocation::subject(new TimeSubjectRef('customer', '42'), 'support_call'), scopeKey: 'org-1');
+$hostTimerApi->startAllocated($actorRef, TimeAllocation::task('task-7', new TimeSubjectRef('customer', '42')));
+$hostTimerApi->allocate($actorRef, TimeAllocationPatch::keep()->withSubject(new TimeSubjectRef('customer', '42'))); // running timer
+$hostTimerApi->stop($actorRef, allocation: TimeAllocationPatch::keep()->withActivityType('support_call'));
+$operations->createManual($ownerId, new ManualTimeEntryDraft(null, $start, $end, allocation: TimeAllocation::subject($customer)));
+$operations->correct($ownerId, $entryId, $version, TimeEntryCorrection::allocation(TimeAllocationPatch::keep()->withSubject($other)));
+```
+
+Read with the rule-free query port and label for the viewer (one `describe()` per type per page):
+
+```php
+$records = $query->list(new TimeEntryCriteria(scopeKeys: ['org-1'], subjects: [new TimeSubjectRef('customer', '42')]));
+$labels  = $labelResolver->forPage(new TimeSubjectContext($viewerRef, 'org-1'), array_map(fn ($r) => $r->entry, $records));
+// $labels->get($record->entry->subject) === null → show {type, hidden: true} without the id
+$totals  = $totalsQuery->totals(new TimeEntryCriteria(scopeKeys: ['org-1'], startedFrom: $from, startedTo: $to), TimeEntryGrouping::Subject);
+```
+
+### DDD / hexagonal host
+
+The same two interfaces take bundle value objects only (`TimeSubjectContext`, `TimeSubjectRef`, `TimeSubjectSearch`,
+`ActivityTypeList`; the actor is a `TimeTrackUserRef`), so the adapter sits in your infrastructure layer and your domain
+sees no TimeTrack type. Without autoconfiguration tag the provider `nowo_time_track.time_subject_provider`. Keep nothing
+between calls (FrankenPHP worker mode, kernel reset false): cache in your own tag-aware pool if you need to.
+
+### Rules worth knowing
+
+- Deny by default: an unknown type, an unknown id and no access all answer `subject_forbidden`; a provider exception is
+  logged (class only) and read as denied, never a 500.
+- `canLog` is asked for the **owner** of the time (also when you write for another person), in the entry's scope (the
+  task's scope on a task entry); a correction asks it only when the subject changes. Changing the subject of a running
+  task timer checks the task access again first.
+- `require_allocation` is a UX gate: listen to `TimeEntryUnallocatedEvent` for the time system stops store unallocated;
+  `require_activity_type` needs v0.4 clients (UPGRADING "To 2.1.0").
+- `entries.require_allocation: true` refuses **interactive** stops (client API, `HostTimerApi::stop()`, the web UI) and
+  manual entries with neither task nor subject (`TimeAllocationRequiredException`, 409); stops the bundle triggers
+  (start-replacing, switch, idle, user deletion) store the entry unallocated and dispatch `TimeEntryUnallocatedEvent`.
+- Billable default of a new entry: explicit flag, then the activity type's `defaultBillable`, then
+  `TimeEntryBillableDefaultProviderInterface`, then none.
+- Every bundle read surface masks a subject the viewer may not read; erasure keeps the allocation (it describes the
+  work, not the person); the timesheet `entries_hash` does not cover it.
+- Built-in "the tenant itself" provider: `entries.subjects.scope_subject.enabled: true` (type `organisation`, never next
+  to a task, over your timesheet scope port).
+- After a back-fill, run `nowo:time-track:entries:check-allocation` (see UPGRADING "To 2.1.0").
 
 ## Entry access by id (1.37)
 

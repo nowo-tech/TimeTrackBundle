@@ -39,11 +39,15 @@ reports:
   task_not_visible: Tarefa não visível
   no_task: "Sem tarefa"
   former_person: "Antiga pessoa"
+  subject: "Assunto"
 flash:
   timer_started: Temporizador iniciado.
   timer_already_active: Já tem um temporizador ativo.
   timer_stopped: Temporizador parado.
   no_active_timer: Nenhum temporizador ativo.
+  allocation_required: "Atribua este tempo a uma tarefa ou a um assunto antes de parar o temporizador."
+  activity_type_required: "Escolha um tipo de atividade antes de parar o temporizador."
+  activity_type_refused: "Esse tipo de atividade não pode ser usado. Escolha outro."
 device:
   intro: "Introduza o código mostrado pela aplicação de ambiente de trabalho ou pela extensão do navegador."
   user_code: "Código do dispositivo"
@@ -187,3 +191,8 @@ ledger:
     reversal_title: "Anular este movimento"
 client_api:
   leave_absent: "Ausente"
+subjects:
+  not_visible: "Assunto não visível"
+stop:
+  activity_type: "Tipo de atividade"
+  activity_type_placeholder: "Escolha um tipo de atividade"

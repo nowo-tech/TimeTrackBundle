@@ -154,10 +154,10 @@ final class ServiceAccountEntriesTest extends TestCase
         self::assertSame(['mcp', true], [$view->channel, $view->serviceAccount]);
 
         $csv = explode("\n", trim(TimeEntryCsv::render([$entry])));
-        self::assertStringEndsWith(',channel,service_account', $csv[0]);
-        self::assertStringEndsWith(',mcp,yes', $csv[1]);
+        self::assertStringEndsWith(',channel,service_account,subject_type,subject_id,subject_label,activity_type_key,activity_type_label', $csv[0]);
+        self::assertStringEndsWith(',mcp,yes,,,,,', $csv[1]);
         $entry->markOrigin(null, false);
-        self::assertStringEndsWith(',,no', explode("\n", trim(TimeEntryCsv::render([$entry])))[1]);
+        self::assertStringEndsWith(',,no,,,,,', explode("\n", trim(TimeEntryCsv::render([$entry])))[1]);
 
         $this->expectException(InvalidArgumentException::class);
         $entry->markOrigin("mcp\u{200B}", true);

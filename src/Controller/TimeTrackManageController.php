@@ -6,12 +6,18 @@ namespace Nowo\TimeTrackBundle\Controller;
 
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Dto\TaskListQuery;
+use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationRequiredException;
 use Nowo\TimeTrackBundle\Form\TimerActionType;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Security\TimeTrackAccessCheckerInterface;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Subject\AllocationLabeler;
+use Nowo\TimeTrackBundle\Subject\TimeAllocationPatch;
 use Nowo\TimeTrackBundle\Support\QueryPeriodResolver;
 use Nowo\TimeTrackBundle\Ui\TimeTrackPages;
 use Psr\Clock\ClockInterface;
@@ -27,6 +33,8 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 use function array_filter;
+use function array_map;
+use function is_string;
 
 /**
  * Manage UI: timer page (start / stop, CSRF-protected forms) and the reports list.
@@ -45,6 +53,7 @@ final class TimeTrackManageController extends AbstractController
      * @param int $reportsPageSize Entries per reports page
      * @param ClockInterface|null $clock Reference time of the default report period
      * @param TimeTrackPages|null $pages View models of the pages (REQ-UI-003)
+     * @param AllocationLabeler|null $allocations Since 2.1.0: subject and activity type labels of the reports (null = no column)
      */
     public function __construct(
         private readonly TimerService $timerService,
@@ -55,6 +64,7 @@ final class TimeTrackManageController extends AbstractController
         private readonly int $reportsPageSize = self::DEFAULT_REPORTS_PAGE_SIZE,
         private readonly ?ClockInterface $clock = null,
         private readonly ?TimeTrackPages $pages = null,
+        private readonly ?AllocationLabeler $allocations = null,
     ) {
     }
 
@@ -70,14 +80,30 @@ final class TimeTrackManageController extends AbstractController
         $active = $user instanceof UserInterface ? $this->timerService->getActive($user) : null;
         $tasks  = $user instanceof UserInterface ? $this->timerService->listTasks($user, new TaskListQuery(limit: 20)) : [];
 
+        // Since 2.1.0 (audit ZBQ-L4): with an effective entries.require_activity_type the Stop form asks for the type.
+        $activityTypes = $user instanceof UserInterface && $active instanceof ActiveTimer ? $this->stopActivityTypes($user, $active) : [];
+
         if ($request->isMethod('POST') && $user instanceof UserInterface) {
-            $form = $this->createTimerActionForm([]);
+            if ($activityTypes === []) {
+                // A Stop form loaded while the timer had no activity type may post one after the timer stopped or got
+                // a type (no choice now): ignored, as a stale 2.0 Stop form was (the CSRF token is still checked).
+                $request->request->remove('activity_type');
+            }
+            $form = $this->createTimerActionForm([], '', $activityTypes);
             $form->handleRequest($request);
             if (!$form->isSubmitted() || !$form->isValid()) {
+                // Audit ZBQ-L4: a valid token with a key the Stop form does not offer (retired since the page loaded) is
+                // a refused activity type, not a forged form (only the token is a form-level error).
+                if ($form->isSubmitted() && $form->getErrors()->count() === 0) {
+                    $this->addFlash('danger', $this->trans('flash.activity_type_refused'));
+
+                    return $this->redirectToRoute('nowo_time_track_index');
+                }
+
                 throw $this->createAccessDeniedException('Invalid CSRF token.');
             }
 
-            /** @var array{action?: string|null, task_id?: string|null} $data */
+            /** @var array{action?: string|null, task_id?: string|null, activity_type?: string|null} $data */
             $data   = $form->getData();
             $action = (string) ($data['action'] ?? '');
             $taskId = (string) ($data['task_id'] ?? '');
@@ -94,10 +120,20 @@ final class TimeTrackManageController extends AbstractController
             }
 
             if ($action === 'stop') {
-                if ($this->timerService->stop($user) instanceof TimeEntry) {
-                    $this->addFlash('success', $this->trans('flash.timer_stopped'));
-                } else {
-                    $this->addFlash('warning', $this->trans('flash.no_active_timer'));
+                try {
+                    // Since 2.1.0: an interactive stop (refused under entries.require_allocation when the time has
+                    // neither task nor subject: the timer keeps running).
+                    $activity = $data['activity_type'] ?? null;
+                    $patch    = is_string($activity) && $activity !== '' ? TimeAllocationPatch::keep()->withActivityType($activity) : null;
+                    if ($this->timerService->stop($user, allocation: $patch, interactive: true) instanceof TimeEntry) {
+                        $this->addFlash('success', $this->trans('flash.timer_stopped'));
+                    } else {
+                        $this->addFlash('warning', $this->trans('flash.no_active_timer'));
+                    }
+                } catch (TimeAllocationRequiredException $e) {
+                    $this->addFlash('warning', $this->trans('flash.' . $e->errorCode));
+                } catch (TimeAllocationException) {
+                    $this->addFlash('danger', $this->trans('flash.activity_type_refused'));
                 }
             }
 
@@ -110,7 +146,7 @@ final class TimeTrackManageController extends AbstractController
             $startForms[$task->id] = $this->createTimerActionForm(['action' => 'start', 'task_id' => $task->id], 'start_' . $task->id)->createView();
         }
 
-        $stopForm = $this->createTimerActionForm(['action' => 'stop'], 'stop')->createView();
+        $stopForm = $this->createTimerActionForm(['action' => 'stop'], 'stop', $activityTypes)->createView();
         $pages    = $this->pages ?? new TimeTrackPages();
 
         return $this->render($this->templates['index'], [
@@ -143,11 +179,16 @@ final class TimeTrackManageController extends AbstractController
 
         $pages = $this->pages ?? new TimeTrackPages();
         $query = array_filter(['from' => $request->query->getString('from'), 'to' => $request->query->getString('to')], static fn (string $v): bool => $v !== '');
+        // Since 2.1.0 (Beacon spec 256): subjects and activity types, labelled once per page with the viewer as actor; a
+        // subject the viewer may not read shows as hidden. The column only appears while a provider is configured.
+        $allocationColumn = $this->allocations instanceof AllocationLabeler && $this->allocations->isEnabled();
+        $labels           = $allocationColumn ? $this->allocations->label(TimeTrackUserRefs::fromUser($user), array_map(static fn (TimeEntry $entry): array => [$entry->getScopeKey(), $entry->subject(), $entry->getActivityTypeKey()], $entryPage->entries), $request->getLocale()) : null;
 
         return $this->render($this->templates['reports'], [
-            'page'       => $pages->reportsPage($entryPage, $from, $to, $request->attributes->getString('_route') ?: null, $query),
-            'entries'    => $entryPage->entries,
-            'entry_page' => $entryPage,
+            'page'              => $pages->reportsPage($entryPage, $from, $to, $request->attributes->getString('_route') ?: null, $query, $allocationColumn),
+            'allocation_labels' => $labels,
+            'entries'           => $entryPage->entries,
+            'entry_page'        => $entryPage,
             // Since 1.11: imported entries whose task the owner cannot see (entry id => true); the template masks them.
             // Since 1.15 an ownerless entry is judged by what the viewer may track.
             'hidden_task_entry_ids' => $this->timerService->hiddenTaskEntryIds($entryPage->entries, $user),
@@ -160,15 +201,36 @@ final class TimeTrackManageController extends AbstractController
      * Flat-named form (`_token`, `action`, `task_id`) so the posted contract is unchanged (REQ-TWIG-005).
      *
      * @param array{action?: string, task_id?: string} $data
+     * @param array<string, string> $activityTypes Since 2.1.0: label => key of the Stop form's activity type choice
      *
      * @return FormInterface<mixed>
      */
-    private function createTimerActionForm(array $data, string $idSuffix = ''): FormInterface
+    private function createTimerActionForm(array $data, string $idSuffix = '', array $activityTypes = []): FormInterface
     {
         /** @var FormFactoryInterface $factory */
         $factory = $this->container->get('form.factory');
 
-        return $factory->createNamed('', TimerActionType::class, $data, ['id_suffix' => $idSuffix]);
+        return $factory->createNamed('', TimerActionType::class, $data, ['id_suffix' => $idSuffix, 'activity_types' => $activityTypes]);
+    }
+
+    /**
+     * Since 2.1.0 (audit ZBQ-L4): the active activity types (label => key) the Stop form offers, only while an effective
+     * `entries.require_activity_type` would otherwise refuse the stop (the running timer has none).
+     *
+     * @return array<string, string>
+     */
+    private function stopActivityTypes(UserInterface $user, ActiveTimer $timer): array
+    {
+        $guard = $this->timerService->allocationGuard();
+        if (!$guard->requiresActivityType() || $timer->getActivityTypeKey() !== null) {
+            return [];
+        }
+        $choices = [];
+        foreach ($guard->activityTypes()->listFor($this->timerService->scopeKeyOfTimer($user, $timer))->active() as $type) {
+            $choices[$type->label . ' (' . $type->key . ')'] = $type->key;
+        }
+
+        return $choices;
     }
 
     private function trans(string $key): string

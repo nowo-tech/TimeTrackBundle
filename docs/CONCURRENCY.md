@@ -41,6 +41,23 @@ first lock of a unit ([One lock order](HIGH-LOAD.md#one-lock-order)).
 | Client session by ids (`ClientSessionRevokerInterface::revokeSession()`, 1.40.0) | One statement | The `DELETE` by id: of two concurrent calls one revokes, the other answers `NotFound`; idempotent | `TransientStorageFailure`, nothing committed |
 | Retention purge, console commands | Statement-only units in batches | Idempotent batches | Console error: run it again |
 
+**Subjects and activity types (2.1.0, Beacon spec 256).** No new lock: the timer writes keep the order owner → timer →
+entries, and the host providers (`canLog`, `describe`, activity types) are asked **before** the owner's lock, so a slow
+provider never holds the bundle's rows.
+
+| Race | Outcome |
+| --- | --- |
+| Double stop (two devices, task or task + subject) | Only the call that deletes the timer row records the entry (`removeIfPresent`); the loser gets `404 no_active_timer`. With different subjects the winner's allocation is stored; the loser re-reads the entry and may `correct()` it with its version |
+| Stop without allocation vs stop with a subject (`require_allocation`) | The refusal is decided inside the unit on the re-read timer and thrown before the delete commits: the unit rolls back, the timer stays for the other call. Whichever unit locks first wins; neither loses time |
+| Stop vs `timer/allocate` | Both take the owner lock. Allocate first: the stop's re-read timer carries the subject. Stop first: allocate finds no timer (`404`); the client corrects the entry by version |
+| Allocate on a task timer vs switch | Allocate first: the switch's stop records the subject on the old entry. Switch first: the allocation is checked again for the new timer and lands on it (the running one) (`AllocationRaceTest`) |
+| Allocate vs allocate | Serialised by the owner lock; last write wins (a running timer has no version); one `TimerAllocatedEvent` each (`AllocationRaceTest`) |
+| Task access revoked while a task + subject timer runs | The stop records the entry (time is never lost); a write that changes the subject (stop patch, allocate) checks the task access again first (`task_forbidden`) |
+| Correct vs correct on the allocation | `expectedVersion` checked under the row lock; the version covers subject and activity type: the second gets `conflict`, never an overwrite |
+| Correct vs the host back-fill `UPDATE` | The back-fill changes the version: the correction gets `conflict`; the back-fill only touches rows without a subject, so re-running it is safe |
+| Permission revoked / activity type retired between check and write | Accepted window (as for tasks): the write lands; the next write that changes the subject checks again |
+| Lock wait / deadlock | `TransientStorageFailure` / `CONFLICT_001`, nothing committed |
+
 Side effects (timer, entry, timesheet, ledger and import events, a revocation) run after the bundle's unit: after the
 commit when the bundle opened the transaction, before the host's commit when the host opened it.
 

@@ -66,6 +66,15 @@ final readonly class TimeTrackMetadataListener
     ];
 
     /**
+     * Since 2.1.0 (Beacon spec 256, REQ-SEC-006): the allocation columns are access keys too (a filter on customer `ACME`
+     * must never return `acme`'s time), so they compare exactly like the scope key, with every `user_mapping`.
+     */
+    public const ALLOCATION_FIELDS = [
+        TimeEntry::class   => ['subjectType', 'subjectId', 'activityTypeKey'],
+        ActiveTimer::class => ['subjectType', 'subjectId', 'activityTypeKey'],
+    ];
+
+    /**
      * Receives the configured table names and the host user class.
      */
     public function __construct(
@@ -155,21 +164,22 @@ final readonly class TimeTrackMetadataListener
      */
     private function exactScopeColumn(ClassMetadata $metadata, LoadClassMetadataEventArgs $args): void
     {
-        $field = self::SCOPE_FIELDS[$metadata->getName()] ?? null;
-        if ($field === null) {
+        $scopeField = self::SCOPE_FIELDS[$metadata->getName()] ?? null;
+        if ($scopeField === null) {
             return;
         }
+        $fields = [$scopeField, ...(self::ALLOCATION_FIELDS[$metadata->getName()] ?? [])];
         try {
             $options = $this->exactOptions($args);
         } catch (LogicException $exception) {
             if ($this->userMapping === UserMapping::ID) {
                 throw $exception;
             }
-            $this->logger->warning('TimeTrack could not read the database platform: the scope_key column of {entity} keeps its default collation. Set doctrine.dbal.server_version with the full version (e.g. 8.0.32 or 10.11.6-MariaDB) and clear the cache.', ['bundle' => 'time_track', 'entity' => $metadata->getName()]);
+            $this->logger->warning('TimeTrack could not read the database platform: the scope_key and allocation columns of {entity} keep their default collation. Set doctrine.dbal.server_version with the full version (e.g. 8.0.32 or 10.11.6-MariaDB) and clear the cache.', ['bundle' => 'time_track', 'entity' => $metadata->getName()]);
 
             return;
         }
-        if ($options !== []) {
+        foreach ($options === [] ? [] : $fields as $field) {
             $metadata->fieldMappings[$field]->options = $options + ($metadata->fieldMappings[$field]->options ?? []);
         }
     }
