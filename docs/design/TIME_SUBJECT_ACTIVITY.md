@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Design, decisions recorded (Owner 2026-11-23).** Q-TS-1 revised after Beacon's objection; Q-TS-2..22 as recommended. No code yet. |
+| Status | **Implemented in 2.1.0** (decisions recorded Owner 2026-11-23: Q-TS-1 revised after Beacon's objection; Q-TS-2..22 as recommended). Implementation notes in §20. |
 | Target | TimeTrack **2.1.0** (minor after the 2.0.0 ARCH-001 major, PR #145) |
 | Requested by | Beacon, spec 256 (owner-approved D-20261123-16) |
 | Designed against | branch `feat/2.0-arch-001` (2.0: private entity manager only, deprecated ports removed) |
@@ -29,6 +29,7 @@
 17. [Objections to the request as written](#17-objections-to-the-request-as-written)
 18. [Owner decisions (Q-TS, Owner 2026-11-23)](#18-owner-decisions-q-ts-owner-2026-11-23)
 19. [Delivery plan and tests](#19-delivery-plan-and-tests)
+20. [Implementation notes (2.1.0)](#20-implementation-notes-210)
 
 ---
 
@@ -916,3 +917,27 @@ Tests (in addition to the house gates):
 - labels with `<script>`, bidi overrides, `=cmd` in CSV, `javascript:` / `http:` URLs;
 - erasure keeps the three columns and the time; GDPR export shows them;
 - worker mode: two viewers in one kernel, no carry-over.
+
+## 20. Implementation notes (2.1.0)
+
+Choices made where the design left the mechanics open; none changes a decided behaviour.
+
+- **Autoconfiguration:** the tag is added with `registerForAutoconfiguration()` in the extension instead of
+  `#[AutoconfigureTag]` on the interface, so the port imports no Symfony component (REQ-ARCH-001 rule 3). The host
+  experience is the same (implement the interface, done); without autoconfiguration tag
+  `nowo_time_track.time_subject_provider`.
+- **Built-in provider type:** `ScopeTimeSubjectProvider` takes its configured type from the tag's `type` attribute
+  (only for the bundle's own classes; host providers answer through `subjectType()`).
+- **`require_activity_type`:** refusal code `activity_type_required` (422 on manual entries; 409 with `{timer}` on an
+  interactive stop, like `allocation_required`).
+- **Clearing a subject** of time without a task (`timer/allocate` with `subject: null`, a correction) is refused with
+  `allocation_required` when it would leave the time unallocated under `require_allocation` or without
+  `allow_without_task` (the §7.2 correction rule, applied to running timers too).
+- **Subject search and activity types** take an optional `scopeKey` (one of the user's, default the current scope), so a
+  client searches in the tenant the entry will belong to; `POST entries` takes `scopeKey` for a subject alone, like
+  `timer/start`.
+- **Subject type labels** in `GET me` come from the translation `subjects.type.<type>` (domain `NowoTimeTrackBundle`),
+  else the type humanised.
+- **Labels across tenants:** `TimeSubjectLabelResolver::forPage()` labels the entries of the context's tenant; the
+  bundle's own surfaces (a person's entries over several tenants) call `describe()` once per (tenant, type).
+- **Audit:** client API writes that set a subject record the new audit action `subject_allocated` (reason = type).

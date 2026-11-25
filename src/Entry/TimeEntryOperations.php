@@ -24,6 +24,8 @@ use Nowo\TimeTrackBundle\Repository\LockingFindableTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
+use Nowo\TimeTrackBundle\Subject\TimeAllocationPatch;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\EntryOverlap;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\StorageTime;
@@ -99,6 +101,16 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         if (!$entry instanceof TimeEntry || $ownerId === null || $entry->getUserId() !== $ownerId || $entry->isAnonymised() || !$user instanceof UserInterface) {
             throw new TimeEntryCorrectionException(TimeEntryCorrectionException::NOT_FOUND);
         }
+        // Since 2.1.0 (§7.1): a subject or activity type the correction sets is checked before the owner's lock, for the
+        // owner, in the entry's scope; an unchanged subject is not asked again (Q-TS-8).
+        $patch = $correction->allocation ?? TimeAllocationPatch::keep();
+        $guard = $this->manualEntries->allocationGuard();
+        if ($patch->changesSubjectOf($entry->subject()) && $patch->subject instanceof TimeSubjectRef) {
+            $guard->assertSubject($user, $entry->getScopeKey(), $patch->subject, $entry->hasTask());
+        }
+        if ($patch->changesActivityTypeOf($entry->getActivityTypeKey()) && $patch->activityTypeKey !== null) {
+            $guard->activityType($entry->getScopeKey(), $patch->activityTypeKey);
+        }
 
         // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
         $result = $this->entries instanceof UserSerialisedTimeEntryRepositoryInterface
@@ -129,7 +141,7 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
         $user  = $this->ownerUser($owner) ?? throw new ManualEntryException(ManualEntryException::UNKNOWN_USER);
         $entry = $this->manualEntries->create(
             $user,
-            $draft->taskId,
+            $draft->allocation(),
             $draft->startedAt,
             $draft->endedAt,
             TimeEntrySource::Manual,
@@ -184,8 +196,18 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
             throw new TimeEntryCorrectionException(TimeEntryCorrectionException::METADATA_TOO_LARGE);
         }
 
+        // Since 2.1.0: the allocation as the patch leaves it, on the entry as read under the lock.
+        $patch           = $correction->allocation ?? TimeAllocationPatch::keep();
+        $subjectChanged  = $patch->changesSubjectOf($current->subject());
+        $activityChanged = $patch->changesActivityTypeOf($current->getActivityTypeKey());
+        $subject         = $patch->subjectAfter($current->subject());
+        if ($subjectChanged) {
+            $guard = $this->manualEntries->allocationGuard();
+            $guard->assertAllowsTask($subject, $current->hasTask());
+            $guard->assertMayClearSubject($current->hasTask(), $current->subject(), $subject);
+        }
         $fields = [];
-        foreach (['started_at' => $startChanged, 'ended_at' => $end->getTimestamp() !== $current->getEndedAt()->getTimestamp(), 'duration_seconds' => $duration !== $current->getDurationSeconds(), 'metadata' => $metadata !== $oldMetadata] as $field => $changed) {
+        foreach (['started_at' => $startChanged, 'ended_at' => $end->getTimestamp() !== $current->getEndedAt()->getTimestamp(), 'duration_seconds' => $duration !== $current->getDurationSeconds(), 'metadata' => $metadata !== $oldMetadata, 'subject' => $subjectChanged, 'activity_type_key' => $activityChanged] as $field => $changed) {
             if ($changed) {
                 $fields[] = $field;
             }
@@ -205,6 +227,9 @@ final readonly class TimeEntryOperations implements TimeEntryOperationsInterface
             throw new TimeEntryCorrectionException(TimeEntryCorrectionException::OVERLAP);
         }
         $current->applyCorrection($start, $end, $duration, $metadata === [] ? null : $metadata);
+        if ($subjectChanged || $activityChanged) {
+            $current->allocate($subject, $patch->activityTypeAfter($current->getActivityTypeKey()));
+        }
         $this->entries->save($current);
 
         return new TimeEntryCorrectionResult($before, TimeEntryRecord::fromEntry($current), $fields);

@@ -38,6 +38,10 @@ standard Symfony project, and a DDD / hexagonal host can use it opt-in ([USAGE.m
   the storage ([USAGE](docs/USAGE.md#activity-monitoring-ports-126), [CLIENT-API](docs/CLIENT-API.md#changes-in-126-activity-monitoring-spec-199)).
   Since 1.41: never window titles, project aggregates for managers unless billing evidence (every per-person view
   recorded), nothing during breaks or after clock-out ([CLIENT-API](docs/CLIENT-API.md#changes-in-141-monitoring-privacy-decisions-d4-d9-d11)).
+- **Time subjects and activity types (2.1)**: time on a customer or the organisation, alone or next to a task, with an
+  optional activity type; framework-free provider ports (`canLog`, batched `describe`, `search`), masking on every read
+  surface, bounded totals, a read-only back-fill check and client API v0.4
+  ([USAGE](docs/USAGE.md#time-subjects-and-activity-types-21-beacon-spec-256), [UPGRADING](docs/UPGRADING.md#to-210)).
 
 ## Installation
 

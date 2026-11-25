@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 // This file is auto-generated and is for apps only. Bundles SHOULD NOT rely on its content.
 
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
@@ -1368,7 +1366,18 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         max_age_days?: int|Param, // Oldest accepted start, in days before now. // Default: 31
  *     },
  *     entries?: array{
- *         allow_without_task?: bool|Param, // Since 1.36.0: false (default) = every timer and entry needs a task, as before. true = TimerService::startAt() / startReplacing(), HostTimerApi::startWithoutTask() and ManualEntryService::create() accept a null task with an optional free-text description and a tenant scope that must be one of the user's. Such an entry is reached only by its owner and, for anyone else, within their own tenant scopes; never through task or board permissions. The client API (desktop, extension) stays task-only for writes. // Default: false
+ *         allow_without_task?: bool|Param, // Since 1.36.0: false (default) = every timer and entry needs a task (or, since 2.1.0, a subject), as before. true = time with neither task nor subject is accepted, with an optional free-text description and a tenant scope that must be one of the user's. Such an entry is reached only by its owner and, for anyone else, within their own tenant scopes; never through task or board permissions. Since 2.1.0 the client API also accepts it on timer/start when require_allocation is off. // Default: false
+ *         require_allocation?: bool|Param, // Since 2.1.0 (Beacon spec 256): true = an interactive stop (client API timer/stop, HostTimerApi::stop(), the web UI) or a manual entry with neither task nor subject is refused (409 allocation_required, the timer keeps running). Stops the bundle triggers itself (start-replacing, switch, idle resolution, user deletion) are never refused: they store the entry unallocated and dispatch TimeEntryUnallocatedEvent. Default false. // Default: false
+ *         require_activity_type?: bool|Param, // Since 2.1.0: true = an interactive stop or a manual entry without an activity type is refused (activity_type_required). Effective only with an activity type provider (ActivityTypeProviderInterface). Default false. // Default: false
+ *         subjects?: array{ // Since 2.1.0 (Beacon spec 256): time subjects (customers, the organisation, ...). Implement Nowo\TimeTrackBundle\Subject\TimeSubjectProviderInterface once per subject type; autoconfiguration registers it.
+ *             scope_subject?: array{ // The built-in subject "the tenant itself" over the timesheet scope provider (internal time on the organisation). Off by default.
+ *                 enabled?: bool|Param, // Default: false
+ *                 type?: scalar|Param|null, // Subject type of the built-in provider (^[a-z][a-z0-9_]{0,31}$). // Default: "organisation"
+ *             },
+ *             search?: array{
+ *                 max_per_minute?: int|Param, // Client API GET subjects/search requests per token and minute. // Default: 60
+ *             },
+ *         },
  *     },
  *     meetings?: array{
  *         enabled?: bool|Param, // GET me/meetings and the GET me meeting keys (default off). // Default: false
@@ -1548,6 +1557,18 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             monitoring_activity?: array{
  *                 path?: scalar|Param|null, // Default: "/api/time-track/monitoring/activity"
  *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_monitoring_activity"
+ *             },
+ *             timer_allocate?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/timer/allocate"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_timer_allocate"
+ *             },
+ *             subjects_search?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/subjects/search"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_subjects_search"
+ *             },
+ *             activity_types?: array{
+ *                 path?: scalar|Param|null, // Default: "/api/time-track/activity-types"
+ *                 name?: scalar|Param|null, // Default: "nowo_time_track_api_activity_types"
  *             },
  *             ...<string, mixed>
  *         },

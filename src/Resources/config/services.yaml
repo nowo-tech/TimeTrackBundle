@@ -81,6 +81,9 @@ services:
             - '../../Meeting/'
             # Since 1.26: the monitoring services are defined by the extension (value objects and ports excluded too).
             - '../../Monitoring/'
+            # Since 2.1.0 (Beacon spec 256): value objects and ports; the services are defined by the extension.
+            - '../../Subject/'
+            - '../../Command/CheckAllocationCommand.php'
 
     # REQ-SF-004 rule 7: the controllers carry #[Route] attributes but are NOT autoconfigured, so Symfony >= 7.3 does not
     # tag them routing.controller and a host's default `routing.controllers` import does not load the bundle routes; the
@@ -122,6 +125,15 @@ services:
             $idleThresholdSeconds: '%nowo_time_track.clients.idle_threshold_seconds%'
         tags:
             - { name: monolog.logger, channel: time_track }
+            - { name: controller.service_arguments }
+
+    # Since 2.1.0 (Beacon spec 256): subjects and activity types of the client API.
+    Nowo\TimeTrackBundle\Controller\TimeTrackClientAllocationApiController:
+        public: true
+        autoconfigure: false
+        arguments:
+            $searchPerMinute: '%nowo_time_track.entries.subjects.search.max_per_minute%'
+        tags:
             - { name: controller.service_arguments }
 
     Nowo\TimeTrackBundle\Command\PurgeExpiredClientTokensCommand:

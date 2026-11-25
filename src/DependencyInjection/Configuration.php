@@ -593,7 +593,8 @@ final class Configuration implements ConfigurationInterface
     }
 
     /**
-     * Adds the `entries_update` to `monitoring_activity` settings.
+     * Adds the `entries_update` to `monitoring_activity` settings (and since 2.1.0 `timer_allocate`, `subjects_search`,
+     * `activity_types`).
      */
     private function addClientsRoutesEntriesUpdateToMonitoringActivitySections(ArrayNodeDefinition $routes): void
     {
@@ -656,6 +657,28 @@ final class Configuration implements ConfigurationInterface
                     ->children()
                         ->scalarNode('path')->defaultValue('/api/time-track/monitoring/activity')->end()
                         ->scalarNode('name')->defaultValue('nowo_time_track_api_monitoring_activity')->end()
+                    ->end()
+                ->end()
+                // Since 2.1.0 (contract v0.4, Beacon spec 256): subjects and activity types.
+                ->arrayNode('timer_allocate')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('path')->defaultValue('/api/time-track/timer/allocate')->end()
+                        ->scalarNode('name')->defaultValue('nowo_time_track_api_timer_allocate')->end()
+                    ->end()
+                ->end()
+                ->arrayNode('subjects_search')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('path')->defaultValue('/api/time-track/subjects/search')->end()
+                        ->scalarNode('name')->defaultValue('nowo_time_track_api_subjects_search')->end()
+                    ->end()
+                ->end()
+                ->arrayNode('activity_types')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('path')->defaultValue('/api/time-track/activity-types')->end()
+                        ->scalarNode('name')->defaultValue('nowo_time_track_api_activity_types')->end()
                     ->end()
                 ->end()
             ->end();
@@ -1340,7 +1363,8 @@ final class Configuration implements ConfigurationInterface
     }
 
     /**
-     * Since 1.36.0 (Beacon spec 250): `entries`: time entries without a task. Off by default.
+     * Since 1.36.0 (Beacon spec 250): `entries`: time entries without a task. Off by default. Since 2.1.0 (Beacon spec
+     * 256) also the allocation requirements and the subject options.
      */
     private function entriesNode(): ArrayNodeDefinition
     {
@@ -1349,8 +1373,47 @@ final class Configuration implements ConfigurationInterface
             ->addDefaultsIfNotSet()
             ->children()
                 ->booleanNode('allow_without_task')
-                    ->info('Since 1.36.0: false (default) = every timer and entry needs a task, as before. true = TimerService::startAt() / startReplacing(), HostTimerApi::startWithoutTask() and ManualEntryService::create() accept a null task with an optional free-text description and a tenant scope that must be one of the user\'s. Such an entry is reached only by its owner and, for anyone else, within their own tenant scopes; never through task or board permissions. The client API (desktop, extension) stays task-only for writes.')
+                    ->info('Since 1.36.0: false (default) = every timer and entry needs a task (or, since 2.1.0, a subject), as before. true = time with neither task nor subject is accepted, with an optional free-text description and a tenant scope that must be one of the user\'s. Such an entry is reached only by its owner and, for anyone else, within their own tenant scopes; never through task or board permissions. Since 2.1.0 the client API also accepts it on timer/start when require_allocation is off.')
                     ->defaultFalse()
+                ->end()
+                ->booleanNode('require_allocation')
+                    ->info('Since 2.1.0 (Beacon spec 256): true = an interactive stop (client API timer/stop, HostTimerApi::stop(), the web UI) or a manual entry with neither task nor subject is refused (409 allocation_required, the timer keeps running). Stops the bundle triggers itself (start-replacing, switch, idle resolution, user deletion) are never refused: they store the entry unallocated and dispatch TimeEntryUnallocatedEvent. Default false.')
+                    ->defaultFalse()
+                ->end()
+                ->booleanNode('require_activity_type')
+                    ->info('Since 2.1.0: true = an interactive stop or a manual entry without an activity type is refused (activity_type_required). Effective only with an activity type provider (ActivityTypeProviderInterface). Default false.')
+                    ->defaultFalse()
+                ->end()
+                ->arrayNode('subjects')
+                    ->info('Since 2.1.0 (Beacon spec 256): time subjects (customers, the organisation, ...). Implement Nowo\\TimeTrackBundle\\Subject\\TimeSubjectProviderInterface once per subject type; autoconfiguration registers it.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->arrayNode('scope_subject')
+                            ->info('The built-in subject "the tenant itself" over the timesheet scope provider (internal time on the organisation). Off by default.')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->booleanNode('enabled')->defaultFalse()->end()
+                                ->scalarNode('type')
+                                    ->info('Subject type of the built-in provider (^[a-z][a-z0-9_]{0,31}$).')
+                                    ->defaultValue('organisation')
+                                    ->validate()
+                                        ->ifTrue(static fn (mixed $v): bool => !is_string($v) || preg_match('/^[a-z][a-z0-9_]{0,31}$/D', $v) !== 1)
+                                        ->thenInvalid('entries.subjects.scope_subject.type must match ^[a-z][a-z0-9_]{0,31}$.')
+                                    ->end()
+                                ->end()
+                            ->end()
+                        ->end()
+                        ->arrayNode('search')
+                            ->addDefaultsIfNotSet()
+                            ->children()
+                                ->integerNode('max_per_minute')
+                                    ->info('Client API GET subjects/search requests per token and minute.')
+                                    ->defaultValue(60)
+                                    ->min(1)
+                                ->end()
+                            ->end()
+                        ->end()
+                    ->end()
                 ->end()
             ->end();
 

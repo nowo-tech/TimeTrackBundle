@@ -22,7 +22,7 @@ final class TimeEntryCorrectedEvent extends Event
      * @param string $ownerId Id of the entry owner
      * @param TimeEntryRecord $before The entry before the correction
      * @param TimeEntryRecord $after The entry after it
-     * @param list<string> $changedFields The changed columns (`started_at`, `ended_at`, `duration_seconds`, `metadata`)
+     * @param list<string> $changedFields The changed columns (`started_at`, `ended_at`, `duration_seconds`, `metadata`; since 2.1.0 also `subject`, `activity_type_key`)
      * @param DateTimeImmutable $occurredAt When it was corrected
      */
     public function __construct(

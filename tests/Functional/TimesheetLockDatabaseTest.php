@@ -44,6 +44,7 @@ use Nowo\TimeTrackBundle\Repository\DoctrineOrmTimesheetRepository;
 use Nowo\TimeTrackBundle\Service\TeamAccessGuard;
 use Nowo\TimeTrackBundle\Service\TimerService;
 use Nowo\TimeTrackBundle\Tests\Stub\StubTimesheetApproverProvider;
+use Nowo\TimeTrackBundle\Tests\Support\AllocationSchema;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryActiveTimerRepository;
 use Nowo\TimeTrackBundle\Tests\Support\RacingImportedTimeEntryRepository;
 use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
@@ -91,6 +92,8 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         $tool     = new SchemaTool($em);
         $metadata = $em->getMetadataFactory()->getAllMetadata();
 
+        // Since 2.1.0: the 2.1.0 columns and indexes are rolled back first (and left out of the expected 1.12 schema).
+        AllocationSchema::down($conn);
         $this->runSql($name . '-down.sql');
         $expected112 = $tool->getSchemaFromMetadata($metadata);
         foreach (['time_track_timesheet_events', 'time_track_balance_ledger', 'time_track_timesheets'] as $table) {
@@ -98,6 +101,12 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         }
         $entries = $expected112->getTable('time_track_entries');
         $entries->dropIndex('idx_time_track_entries_user_scope_started');
+        $entries->dropIndex('idx_time_track_entries_scope_subject');
+        $entries->dropIndex('idx_time_track_entries_scope_activity');
+        foreach (['subject_type', 'subject_id', 'activity_type_key'] as $column) {
+            $entries->dropColumn($column);
+            $expected112->getTable('time_track_active_timers')->dropColumn($column);
+        }
         $entries->dropColumn('scope_key');
         $schemaManager = $conn->createSchemaManager();
         $diff          = $schemaManager->createComparator()->compareSchemas($schemaManager->introspectSchema(), $expected112);
@@ -108,6 +117,7 @@ final class TimesheetLockDatabaseTest extends FunctionalTestCase
         $conn->executeStatement('CREATE INDEX idx_time_track_timesheets_owner_ref ON time_track_timesheets (owner_ref, period_end)');
         // Since 1.24.1 the scope_key columns compare exactly (UPGRADING "To 1.24.1").
         ScopeKeyCollation::apply($conn);
+        AllocationSchema::up($conn);
         self::assertSame([], $tool->getUpdateSchemaSql($metadata), 'the up script is exactly the 1.13 mapping');
     }
 

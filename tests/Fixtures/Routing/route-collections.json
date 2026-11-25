@@ -880,6 +880,81 @@
                 "condition": ""
             },
             {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
                 "name": "nowo_time_track_api_v1_login",
                 "path": "/api/time-track/v1/login",
                 "host": "",
@@ -1664,6 +1739,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -2539,6 +2689,81 @@
                 "condition": ""
             },
             {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
                 "name": "nowo_time_track_api_device_code",
                 "path": "/api/time-track/device/code",
                 "host": "",
@@ -3373,6 +3598,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -4279,6 +4579,81 @@
                 "condition": ""
             },
             {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/acme/api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/acme/api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/acme/api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
                 "name": "nowo_time_track_api_device_code",
                 "path": "/acme/api/time-track/device/code",
                 "host": "",
@@ -5113,6 +5488,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/acme/api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/acme/api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/acme/api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -6038,6 +6488,81 @@
                 "condition": ""
             },
             {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/tenant//api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/tenant//api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/tenant//api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
                 "name": "nowo_time_track_api_device_code",
                 "path": "/tenant//api/time-track/device/code",
                 "host": "",
@@ -6872,6 +7397,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/tenant//api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/tenant//api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/tenant//api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -7778,6 +8378,81 @@
                 "condition": ""
             },
             {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
                 "name": "nowo_time_track_api_v1_login",
                 "path": "/api/time-track/v1/login",
                 "host": "",
@@ -8562,6 +9237,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -9384,6 +10134,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -10233,6 +11058,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",
@@ -11139,6 +12039,81 @@
                 "condition": ""
             },
             {
+                "name": "nowo_time_track_api_timer_allocate",
+                "path": "/api/time-track/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_subjects_search",
+                "path": "/api/time-track/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_activity_types",
+                "path": "/api/time-track/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
                 "name": "nowo_time_track_api_v1_login",
                 "path": "/edge/api/time-track/v1/login",
                 "host": "",
@@ -11923,6 +12898,81 @@
                 ],
                 "defaults": {
                     "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackMonitoringApiController::activity"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_timer_allocate",
+                "path": "/edge/api/time-track/v1/timer/allocate",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "POST",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::allocate"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_subjects_search",
+                "path": "/edge/api/time-track/v1/subjects/search",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::search"
+                },
+                "requirements": {
+                    "action": "clock-in|break-start|break-end|clock-out",
+                    "periodKey": "current|previous|\\d{4}-W\\d{2}|\\d{4}-\\d{2}",
+                    "id": "[A-Za-z0-9-]{1,36}",
+                    "uploadId": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "screenshotId": "[A-Za-z0-9_-]{1,64}"
+                },
+                "options": {
+                    "compiler_class": "Symfony\\Component\\Routing\\RouteCompiler",
+                    "utf8": true
+                },
+                "condition": ""
+            },
+            {
+                "name": "nowo_time_track_api_v1_activity_types",
+                "path": "/edge/api/time-track/v1/activity-types",
+                "host": "",
+                "schemes": [],
+                "methods": [
+                    "GET",
+                    "OPTIONS"
+                ],
+                "defaults": {
+                    "_controller": "Nowo\\TimeTrackBundle\\Controller\\TimeTrackClientAllocationApiController::activityTypes"
                 },
                 "requirements": {
                     "action": "clock-in|break-start|break-end|clock-out",

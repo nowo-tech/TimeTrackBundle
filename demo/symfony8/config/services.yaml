@@ -8,3 +8,7 @@ services:
         exclude:
             - '../src/Entity/'
             - '../src/Kernel.php'
+
+    # TimeTrack 2.1 (Beacon spec 256): the activity types of the demo tenant (subject providers need no wiring:
+    # autoconfiguration tags every TimeSubjectProviderInterface).
+    Nowo\TimeTrackBundle\Subject\ActivityTypeProviderInterface: '@App\Subject\DemoActivityTypeProvider'

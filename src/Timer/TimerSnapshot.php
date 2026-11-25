@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 
 use function is_string;
 use function preg_match;
@@ -34,6 +35,9 @@ final readonly class TimerSnapshot
         public bool $withoutTask = false,
         public ?string $description = null,
         public ?string $scopeKey = null,
+        // Since 2.1.0 (Beacon spec 256): the subject and the activity type key of the timer.
+        public ?TimeSubjectRef $subject = null,
+        public ?string $activityTypeKey = null,
     ) {
     }
 
@@ -66,6 +70,8 @@ final readonly class TimerSnapshot
             !$timer->hasTask(),
             $timer->getDescription(),
             $timer->getScopeKey(),
+            $timer->subject(),
+            $timer->getActivityTypeKey(),
         );
     }
 }

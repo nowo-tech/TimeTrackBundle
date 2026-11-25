@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Entry;
 
 use DateTimeImmutable;
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Subject\TimeAllocationPatch;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 
 /**
@@ -20,7 +21,10 @@ use Nowo\TimeTrackBundle\Support\NoteSanitizer;
  *
  * Since 1.40.1 (audit ZAN-2) a new start may be at most `$maxAgeDays` days old (null = `manual_entries.max_age_days`),
  * like a manual entry; the age is checked only when the start changes, so an old entry can still get a note or duration
- * fix. Your own correction window, if stricter, stays in your code. Immutable; built per call.
+ * fix. Your own correction window, if stricter, stays in your code.
+ *
+ * Since 2.1.0 (Beacon spec 256) `$allocation` changes the subject and the activity type (tri-state: keep, set, clear;
+ * null = keep). Immutable; built per call.
  */
 final readonly class TimeEntryCorrection
 {
@@ -40,6 +44,7 @@ final readonly class TimeEntryCorrection
      * @param array<string, scalar|null> $metadata Metadata patch: key => new value, null removes the key
      * @param int|null $maxAgeDays Since 1.40.1: oldest allowed new start in days, 0 to {@see EntryMetadataRules::MAX_AGE_DAYS_CAP}
      *                             (null = `manual_entries.max_age_days`)
+     * @param TimeAllocationPatch|null $allocation Since 2.1.0: the subject and activity type change (null = keep both)
      *
      * @throws InvalidArgumentException When the duration is not positive, the allowed age is out of range, or a metadata
      *                                  key or value is not accepted
@@ -50,6 +55,7 @@ final readonly class TimeEntryCorrection
         public ?int $durationSeconds = null,
         public array $metadata = [],
         public ?int $maxAgeDays = null,
+        public ?TimeAllocationPatch $allocation = null,
     ) {
         if ($durationSeconds !== null && $durationSeconds < 1) {
             throw new InvalidArgumentException('A corrected duration must be at least one second.');
@@ -71,6 +77,22 @@ final readonly class TimeEntryCorrection
      */
     public function withNote(?string $note): self
     {
-        return new self($this->startedAt, $this->endedAt, $this->durationSeconds, ['note' => $note] + $this->metadata, $this->maxAgeDays);
+        return new self($this->startedAt, $this->endedAt, $this->durationSeconds, ['note' => $note] + $this->metadata, $this->maxAgeDays, $this->allocation);
+    }
+
+    /**
+     * Since 2.1.0: this correction with an allocation change.
+     */
+    public function withAllocation(TimeAllocationPatch $allocation): self
+    {
+        return new self($this->startedAt, $this->endedAt, $this->durationSeconds, $this->metadata, $this->maxAgeDays, $allocation);
+    }
+
+    /**
+     * Since 2.1.0: a correction of the subject and activity type only.
+     */
+    public static function allocation(TimeAllocationPatch $allocation): self
+    {
+        return new self(allocation: $allocation);
     }
 }

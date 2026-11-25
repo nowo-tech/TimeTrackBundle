@@ -104,4 +104,10 @@ final class TimeTrackEvents
 
     /** Since 1.40.0: {@see TimeEntryCorrectedEvent} — an entry was corrected by id (`TimeEntryOperationsInterface::correct()`; before / after read models). */
     public const TIME_ENTRY_CORRECTED = 'nowo_time_track.time_entry.corrected';
+
+    /** Since 2.1.0: {@see TimerAllocatedEvent} — the subject or activity type of a running timer changed (old / new). */
+    public const TIMER_ALLOCATED = 'nowo_time_track.timer.allocated';
+
+    /** Since 2.1.0: {@see TimeEntryUnallocatedEvent} — a system stop stored an entry with neither task nor subject while `entries.require_allocation` is on. */
+    public const TIME_ENTRY_UNALLOCATED = 'nowo_time_track.time_entry.unallocated';
 }

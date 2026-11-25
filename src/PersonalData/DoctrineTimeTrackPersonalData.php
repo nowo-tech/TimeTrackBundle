@@ -38,7 +38,11 @@ use Nowo\TimeTrackBundle\Query\TimeEntryRecord;
 use Nowo\TimeTrackBundle\Repository\FormerPersonTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+use Nowo\TimeTrackBundle\Subject\AllocationLabeler;
+use Nowo\TimeTrackBundle\Subject\AllocationLabels;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Transaction\TimeTrackTransactionRunner;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -90,6 +94,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         private ?CalendarPersonalDataExporter $calendars = null,
         private ?ClockInterface $clock = null,
         private LoggerInterface $logger = new NullLogger(),
+        // Since 2.1.0 (Beacon spec 256, Q-TS-17): subject and activity type labels, resolved with the data subject as actor.
+        private ?AllocationLabeler $allocations = null,
+        private string $userClass = '',
     ) {
     }
 
@@ -99,10 +106,17 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
     public function export(string $userId): array
     {
         $this->assertUsable($userId);
-        $timer = $this->timers->runningOf($userId);
+        $timer   = $this->timers->runningOf($userId);
+        $records = $this->entryRecords($userId);
+        // Since 2.1.0 (Q-TS-17): ids and keys always; labels with the data subject as actor, masked when not readable.
+        $items = array_map(static fn (TimeEntryRecord $record): array => [$record->entry->scopeKey, $record->entry->subject, $record->entry->activityTypeKey], $records);
+        if ($timer instanceof RunningTimerView) {
+            $items[] = [$timer->timer->scopeKey, $timer->timer->subject, $timer->timer->activityTypeKey];
+        }
+        $labels = $this->allocations?->label(TimeTrackUserRef::ofId($this->userClass, $userId), $items) ?? AllocationLabels::none();
 
         return [
-            'entries'             => $this->entryRows($userId),
+            'entries'             => array_map(fn (TimeEntryRecord $record): array => $this->entryRow($record, $labels), $records),
             'formerPersonEntries' => $this->formerPeople->isAvailable() ? $this->formerPeople->export(TimeEntry::USER_REF_PREFIX . $userId) : [],
             'runningTimer'        => $timer instanceof RunningTimerView ? [
                 'taskId'          => $timer->timer->taskId,
@@ -113,7 +127,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 'clientType'      => $timer->timer->clientType->value,
                 'channel'         => $timer->timer->channel,
                 'note'            => $timer->timer->note,
-            ] + ($timer->timer->withoutTask ? ['withoutTask' => true, 'description' => $timer->timer->description, 'scopeKey' => $timer->timer->scopeKey] : []) : null,
+            ] + ($timer->timer->withoutTask ? ['withoutTask' => true, 'description' => $timer->timer->description, 'scopeKey' => $timer->timer->scopeKey] : []) + $this->allocationRow($timer->timer->scopeKey, $timer->timer->subject, $timer->timer->activityTypeKey, $labels) : null,
             'clientSessions' => array_map(static fn (ClientSessionView $session): array => [
                 'clientType' => $session->clientType->value,
                 'scopes'     => $session->scopes,
@@ -245,28 +259,49 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
     /**
      * Every owned entry of the user, by keyset.
      *
-     * @return list<array<string, mixed>>
+     * @return list<TimeEntryRecord>
      */
-    private function entryRows(string $userId): array
+    private function entryRecords(string $userId): array
     {
         $criteria = TimeEntryCriteria::ofOwner($userId);
-        $rows     = [];
+        $records  = [];
         $after    = '';
         do {
             $page = $this->entries->listAfter($criteria, $after, self::BATCH);
             foreach ($page as $record) {
-                $after  = $record->entry->id;
-                $rows[] = $this->entryRow($record);
+                $after     = $record->entry->id;
+                $records[] = $record;
             }
         } while (count($page) === self::BATCH);
 
-        return $rows;
+        return $records;
+    }
+
+    /**
+     * Since 2.1.0: the subject and activity type keys of an exported row (ids and key always, labels masked when the data
+     * subject may not read them; Q-TS-17). Nothing for a row with neither.
+     *
+     * @return array<string, string|null>
+     */
+    private function allocationRow(?string $scopeKey, ?TimeSubjectRef $subject, ?string $activityTypeKey, AllocationLabels $labels): array
+    {
+        if (!$subject instanceof TimeSubjectRef && $activityTypeKey === null) {
+            return [];
+        }
+
+        return [
+            'subjectType'       => $subject?->type,
+            'subjectId'         => $subject?->id,
+            'subjectLabel'      => $subject instanceof TimeSubjectRef ? ($labels->subjectLabel($scopeKey, $subject)->label ?? $labels->hiddenLabel()) : null,
+            'activityTypeKey'   => $activityTypeKey,
+            'activityTypeLabel' => $activityTypeKey === null ? null : $labels->activityTypeLabel($scopeKey, $activityTypeKey),
+        ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function entryRow(TimeEntryRecord $record): array
+    private function entryRow(TimeEntryRecord $record, AllocationLabels $labels): array
     {
         $entry = $record->entry;
 
@@ -288,7 +323,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
             'channel'         => $entry->channel,
             'serviceAccount'  => $entry->serviceAccount,
             'createdAt'       => $record->createdAt->format(DATE_ATOM),
-        ] + ($entry->withoutTask ? ['withoutTask' => true] : []);
+        ] + ($entry->withoutTask ? ['withoutTask' => true] : []) + $this->allocationRow($entry->scopeKey, $entry->subject, $entry->activityTypeKey, $labels);
     }
 
     /**

@@ -32,6 +32,8 @@ use Nowo\TimeTrackBundle\UserRef\UserMapping;
  * Every table name is **configurable** (`nowo_time_track.table_prefix`), so the declaration builds them from the
  * same prefix the schema is built from; there is not one literal table name here.
  *
+ * - since 2.1.0, the allocation columns of entries and running timers (`subject_type`, `subject_id`,
+ *   `activity_type_key`): a filter on customer `ACME` must never return `acme`'s time.
  * - since 1.38.0, with `user_mapping: id`, the host users table's `id` and the `user_id` of every table that references
  *   it (the schema tool copies the collation of the referenced column to the foreign key).
  *
@@ -116,6 +118,13 @@ final readonly class TimeTrackExactKeyColumns implements ExactKeyColumnsInterfac
         // The tenant scope of every row the bundle scopes: exact in every configuration.
         foreach (['timesheets', 'balance_ledger', 'calendar_connections', 'calendar_rules', 'entries', 'active_timers'] as $key) {
             $columns[] = new ExactKeyColumn($table($key), 'scope_key', self::OWNER, 'tenant scope every read is filtered by', null, true);
+        }
+
+        // Since 2.1.0 (Beacon spec 256): the subject and activity type of entries and running timers are access keys too.
+        foreach (['entries', 'active_timers'] as $key) {
+            $columns[] = new ExactKeyColumn($table($key), 'subject_type', self::OWNER, 'type of the subject time is logged on', null, true);
+            $columns[] = new ExactKeyColumn($table($key), 'subject_id', self::OWNER, 'host id of the subject time is logged on (customer, organisation)', null, true);
+            $columns[] = new ExactKeyColumn($table($key), 'activity_type_key', self::OWNER, 'activity type key of the tenant', null, true);
         }
 
         // The person a row belongs to or was acted on by: an opaque user id only with user_mapping: id.

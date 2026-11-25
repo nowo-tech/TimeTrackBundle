@@ -39,11 +39,14 @@ reports:
   task_not_visible: Attività non visibile
   no_task: "Nessuna attività"
   former_person: "Ex collaboratore"
+  subject: "Soggetto"
 flash:
   timer_started: Timer avviato.
   timer_already_active: Hai già un timer attivo.
   timer_stopped: Timer fermato.
   no_active_timer: Nessun timer attivo.
+  allocation_required: "Assegna questo tempo a un’attività o a un soggetto prima di fermare il timer."
+  activity_type_required: "Scegli un tipo di attività prima di fermare il timer."
 device:
   intro: "Inserisci il codice mostrato dall’app desktop o dall’estensione del browser."
   user_code: "Codice del dispositivo"
@@ -187,3 +190,5 @@ ledger:
     reversal_title: "Storna questo movimento"
 client_api:
   leave_absent: "Assente"
+subjects:
+  not_visible: "Soggetto non visibile"

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (2.1.0)](#added-210)
+  - [Tests (2.1.0)](#tests-210)
 - [[2.0.0] - 2026-11-25](#200---2026-11-25)
   - [Changed](#changed)
   - [Removed](#removed)
@@ -256,6 +258,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+TimeTrack 2.1.0 (minor, Beacon spec 256): time on a **subject** (a customer, the organisation, …) and an optional
+**activity type**. Design: [docs/design/TIME_SUBJECT_ACTIVITY.md](design/TIME_SUBJECT_ACTIVITY.md). With no provider
+configured nothing changes: the new columns stay NULL and every subject or activity type is refused. See
+[UPGRADING](UPGRADING.md#to-210).
+
+### Added (2.1.0)
+
+- **Schema:** `subject_type`, `subject_id`, `activity_type_key` on `time_track_entries` and `time_track_active_timers`
+  (nullable, exact binary collation, declared as exact keys for `nowo:migrations:check-key-collations`), indexes
+  `idx_time_track_entries_scope_subject` and `idx_time_track_entries_scope_activity`. Reference scripts in
+  `docs/sql/2.1.0/{mysql,mariadb,postgresql,sqlite}-{up,down}.sql`; no row is rewritten.
+- **Ports** (`Nowo\TimeTrackBundle\Subject\`, framework-free, value objects only):
+  `TimeSubjectProviderInterface` (one per subject type, autoconfigured: `subjectType()`, `allowsTask()`, `canLog()`,
+  batched `describe()` filtered by read access, bounded `search()`) and `ActivityTypeProviderInterface`
+  (`activityTypesFor(scopeKey)`). Value objects `TimeSubjectRef`, `TimeSubjectContext`, `TimeSubjectLabel`,
+  `TimeSubjectLabels`, `TimeSubjectSearch`, `ActivityType`, `ActivityTypeList`, `TimeAllocation`,
+  `TimeAllocationPatch`. Public `TimeSubjectLabelResolver` (one `describe()` per type per page).
+- **Allocations** (Q-TS-1): task alone, task + subject (types whose provider `allowsTask()`), subject alone, or nothing
+  (`entries.allow_without_task`). Task access stays the gate of a task entry; `canLog(subject)` is checked for the owner
+  whenever a subject is set or changed (unknown type, unknown id and no access give the same `subject_forbidden`).
+- **Write paths:** `TimerService::startAt()` / `startReplacing()` / `switchTo()` / `resolveIdle()` accept a
+  `TimeAllocation` (a task id or null still works); `stop()` / `stopAt()` take an allocation patch and an `interactive`
+  flag; new `TimerService::allocateRunning()`; `HostTimerApi::startAllocated()` and an allocation patch on
+  `HostTimerApi::stop()`; `ManualTimeEntryDraft::$allocation`; `TimeEntryCorrection::$allocation` (changed fields append
+  `subject`, `activity_type_key`).
+- **Options:** `entries.require_allocation` (refuses interactive stops and manual entries with neither task nor subject;
+  system stops store the entry unallocated and dispatch `TimeEntryUnallocatedEvent`), `entries.require_activity_type`,
+  `entries.subjects.scope_subject` (built-in "the tenant itself" provider, off by default),
+  `entries.subjects.search.max_per_minute`.
+- **Reads:** `TimeEntryCriteria` filters `subjects`, `subjectTypes`, `activityTypeKeys`, `allocation`
+  (`AllocationFilter`); new public `TimeEntryTotalsQueryInterface` (bounded grouping by subject, subject type, activity
+  type, owner, task or allocation; one statement; at most 366 days); `TimeEntryView`, `TimerSnapshot`,
+  `TimerEntrySnapshot` carry the subject and activity type; `TimeEntryRecord::version()` covers them (byte-identical
+  token for entries without them).
+- **Client API v0.4:** `GET me` `features.subjects` / `activityTypes` / `requireAllocation` / `requireActivityType`;
+  `subject`, `activityTypeKey`, `scopeKey` on `timer/start`, `timer/switch`, `POST entries`; `subject` /
+  `activityTypeKey` on `timer/stop` (409 `allocation_required` with `{timer}`) and on an idle reassign; new
+  `POST timer/allocate`, `GET subjects/search` (rate-limited) and `GET activity-types`; `subject` and `activityType` on
+  every returned entry and timer (a subject the viewer may not read is `{type, hidden: true, label}` without its id). No
+  new client scope. Audit action `subject_allocated` (reason = subject type).
+- **Events:** `TimerAllocatedEvent` (`nowo_time_track.timer.allocated`), `TimeEntryUnallocatedEvent`
+  (`nowo_time_track.time_entry.unallocated`); `getSubject()` / `getActivityTypeKey()` on the start, stop and created
+  events.
+- **Export and GDPR:** CSV appends `subject_type`, `subject_id`, `subject_label`, `activity_type_key`,
+  `activity_type_label` (earlier columns unchanged); the personal-data export carries ids and keys plus labels resolved
+  with the data subject; erasure keeps the allocation and the time; timesheet totals gain `bySubject` and
+  `byActivityType` (the `entries_hash` is unchanged).
+- **Command:** `nowo:time-track:entries:check-allocation [--scope=] [--fix-report]`, read-only check of the column
+  contract after a host back-fill (non-zero exit on findings; counts allocated entries in locked periods).
+- **Web UI:** a subject / activity type column on the reports page while a provider is configured; the stop button is
+  an interactive stop (flash message under `require_allocation`).
+
+### Tests (2.1.0)
+
+- Value objects, registry, guard, label resolver, compiler pass and configuration; every write path with and without
+  providers; client API v0.4 end to end; totals (one statement per call); GDPR export / erasure; the races of design §13
+  with a second real connection; worker mode with two viewers in one kernel; the reference SQL scripts against the
+  mapping on SQLite, MySQL, MariaDB and PostgreSQL.
 
 ## [2.0.0] - 2026-11-25
 

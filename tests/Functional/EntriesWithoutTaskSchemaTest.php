@@ -16,6 +16,7 @@ use Nowo\TimeTrackBundle\Entity\ActiveTimer;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Tests\Support\AllocationSchema;
 use Nowo\TimeTrackBundle\Tests\Support\ScopeKeyCollation;
 
 use function dirname;
@@ -53,6 +54,8 @@ final class EntriesWithoutTaskSchemaTest extends FunctionalTestCase
         $em->persist(new ActiveTimer($this->user, 'task-2', 'Running', null, ClientType::Web, null, new DateTimeImmutable('2026-01-02 09:00:00')));
         $em->flush();
 
+        // Since 2.1.0: the later migration is rolled back first and applied again last.
+        AllocationSchema::down($conn);
         $this->runSql($this->platformName() . '-down.sql');
         self::assertTrue($conn->createSchemaManager()->introspectTable('time_track_entries')->getColumn('task_id')->getNotnull());
         $timers = $conn->createSchemaManager()->introspectTable('time_track_active_timers');
@@ -62,6 +65,7 @@ final class EntriesWithoutTaskSchemaTest extends FunctionalTestCase
         self::assertSame(['task-1', 'task-2'], [(string) $conn->fetchOne('SELECT task_id FROM time_track_entries'), (string) $conn->fetchOne('SELECT task_id FROM time_track_active_timers')]);
 
         $this->runSql($this->platformName() . '-up.sql');
+        AllocationSchema::up($conn);
         // The exact (binary, NO PAD) collation of the scope_key columns, as UPGRADING 1.24.1 sets it on MySQL / MariaDB.
         ScopeKeyCollation::apply($conn);
         self::assertSame([], (new SchemaTool($em))->getUpdateSchemaSql($em->getMetadataFactory()->getAllMetadata()), 'the up script is exactly the 1.36 mapping');

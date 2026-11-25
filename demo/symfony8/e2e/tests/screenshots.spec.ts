@@ -49,6 +49,9 @@ test.describe('TimeTrack screenshots (demo platform shell)', () => {
     const day = (offset: number): string => new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
     await page.goto(`${REPORTS_PATH}?from=${day(6)}&to=${day(0)}`);
     await expect(page.getByTestId('time-track-reports').locator('tbody tr').first()).toBeVisible();
+    // TimeTrack 2.1: the subject / activity type column of the demo customers and activity types.
+    await expect(page.getByTestId('time-track-subject').filter({ hasText: 'ACME Corporation' }).first()).toBeVisible();
+    await expect(page.getByTestId('time-track-activity-type').first()).toBeVisible();
     await captureDemoFrame(page, 'reports.png');
   });
 

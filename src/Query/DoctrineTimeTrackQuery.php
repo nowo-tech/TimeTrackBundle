@@ -20,6 +20,7 @@ use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Service\TimerService;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
 use Nowo\TimeTrackBundle\Timer\TimerSnapshot;
 use Psr\Clock\ClockInterface;
@@ -27,8 +28,11 @@ use SortDirection;
 
 use function array_filter;
 use function array_map;
+use function array_slice;
 use function array_values;
 use function count;
+use function implode;
+use function in_array;
 use function is_array;
 use function is_bool;
 use function is_scalar;
@@ -36,9 +40,12 @@ use function is_string;
 use function min;
 use function preg_match;
 use function strlen;
+use function strrpos;
+use function substr;
 
 /**
- * Since 1.35.0 (DDD-host checklist B7): the Doctrine implementation of {@see TimeEntryQueryInterface},
+ * Since 1.35.0 (DDD-host checklist B7): the Doctrine implementation of {@see TimeEntryQueryInterface} (and since 2.1.0
+ * {@see TimeEntryTotalsQueryInterface}),
  * {@see RunningTimerQueryInterface} and {@see ClientAccessQueryInterface} on the bundle's entity manager (the private one
  * with `database.private_entity_manager: true`).
  *
@@ -50,16 +57,16 @@ use function strlen;
  *
  * @internal Hosts depend on the interfaces
  */
-final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, RunningTimerQueryInterface, ClientAccessQueryInterface
+final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, TimeEntryTotalsQueryInterface, RunningTimerQueryInterface, ClientAccessQueryInterface
 {
     /** Rows read per round while the rows are checked in PHP. */
     public const BATCH = 500;
 
-    private const ENTRY_FIELDS = ['e.id AS id', 'IDENTITY(e.user) AS userId', 'e.taskId AS taskId', 'e.taskTitleSnapshot AS taskTitle', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.startedAt AS startedAt', 'e.endedAt AS endedAt', 'e.durationSeconds AS seconds', 'e.source AS source', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.channel AS channel', 'e.serviceAccount AS serviceAccount', 'e.description AS description', 'e.billable AS billable', 'e.metadata AS metadata', 'e.createdAt AS createdAt'];
+    private const ENTRY_FIELDS = ['e.id AS id', 'IDENTITY(e.user) AS userId', 'e.taskId AS taskId', 'e.taskTitleSnapshot AS taskTitle', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.startedAt AS startedAt', 'e.endedAt AS endedAt', 'e.durationSeconds AS seconds', 'e.source AS source', 'e.externalSource AS externalSource', 'e.externalId AS externalId', 'e.channel AS channel', 'e.serviceAccount AS serviceAccount', 'e.description AS description', 'e.billable AS billable', 'e.metadata AS metadata', 'e.createdAt AS createdAt', 'e.subjectType AS subjectType', 'e.subjectId AS subjectId', 'e.activityTypeKey AS activityTypeKey'];
 
-    private const KEY_FIELDS = ['e.id AS id', 'IDENTITY(e.user) AS userId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds'];
+    private const KEY_FIELDS = ['e.id AS id', 'IDENTITY(e.user) AS userId', 'e.taskId AS taskId', 'e.boardIdSnapshot AS boardId', 'e.scopeKey AS scopeKey', 'e.durationSeconds AS seconds', 'e.subjectType AS subjectType', 'e.subjectId AS subjectId', 'e.activityTypeKey AS activityTypeKey'];
 
-    private const TIMER_FIELDS = ['t.id AS id', 'IDENTITY(t.user) AS userId', 't.taskId AS taskId', 't.taskTitleSnapshot AS taskTitle', 't.boardIdSnapshot AS boardId', 't.startedAt AS startedAt', 't.lastHeartbeatAt AS lastHeartbeatAt', 't.clientType AS clientType', 't.metadata AS metadata', 't.description AS description', 't.scopeKey AS scopeKey'];
+    private const TIMER_FIELDS = ['t.id AS id', 'IDENTITY(t.user) AS userId', 't.taskId AS taskId', 't.taskTitleSnapshot AS taskTitle', 't.boardIdSnapshot AS boardId', 't.startedAt AS startedAt', 't.lastHeartbeatAt AS lastHeartbeatAt', 't.clientType AS clientType', 't.metadata AS metadata', 't.description AS description', 't.scopeKey AS scopeKey', 't.subjectType AS subjectType', 't.subjectId AS subjectId', 't.activityTypeKey AS activityTypeKey'];
 
     /**
      * @param EntityManagerInterface $entityManager The bundle's entity manager (private or `database.entity_manager`)
@@ -186,6 +193,91 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
     public function totalSeconds(TimeEntryCriteria $criteria): int
     {
         return $this->aggregate($criteria)[1];
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function totals(TimeEntryCriteria $criteria, TimeEntryGrouping $groupBy, int $limit = 200): TimeEntryTotals
+    {
+        $this->assertLimit($limit, self::MAX_GROUPS);
+        if (!$criteria->startedFrom instanceof DateTimeImmutable || !$criteria->startedTo instanceof DateTimeImmutable) {
+            throw new InvalidArgumentException('TimeTrack entry totals need a closed start range (startedFrom and startedTo).');
+        }
+        if ($criteria->startedTo < $criteria->startedFrom || $criteria->startedTo->getTimestamp() - $criteria->startedFrom->getTimestamp() > self::MAX_RANGE_DAYS * 86_400) {
+            throw new InvalidArgumentException('TimeTrack entry totals take a start range of at most ' . self::MAX_RANGE_DAYS . ' days.');
+        }
+        if ($criteria->matchesNothing()) {
+            return new TimeEntryTotals([]);
+        }
+
+        $columns = match ($groupBy) {
+            TimeEntryGrouping::Subject                => ['e.subjectType AS gSubjectType', 'e.subjectId AS gSubjectId'],
+            TimeEntryGrouping::SubjectType            => ['e.subjectType AS gSubjectType'],
+            TimeEntryGrouping::ActivityType           => ['e.activityTypeKey AS gActivity'],
+            TimeEntryGrouping::SubjectAndActivityType => ['e.subjectType AS gSubjectType', 'e.subjectId AS gSubjectId', 'e.activityTypeKey AS gActivity'],
+            TimeEntryGrouping::Owner                  => ['IDENTITY(e.user) AS gOwner'],
+            TimeEntryGrouping::Task                   => ['e.taskId AS gTask'],
+            TimeEntryGrouping::Allocation             => ["CASE WHEN e.taskId IS NOT NULL AND e.subjectType IS NOT NULL THEN 'task_subject' WHEN e.taskId IS NOT NULL THEN 'task' WHEN e.subjectType IS NOT NULL THEN 'subject' ELSE 'none' END AS gAllocation"],
+        };
+        $query = $this->entryQuery($criteria)->select(...[...$columns, 'SUM(e.durationSeconds) AS seconds', 'COUNT(e.id) AS entries']);
+        // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
+        $query->orderBy('seconds', SortDirection::Descending);
+        foreach ($columns as $column) {
+            $alias = substr($column, (int) strrpos($column, ' AS ') + 4);
+            // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
+            $query->addGroupBy($alias)->addOrderBy($alias, SortDirection::Ascending);
+        }
+        // One statement; limit + 1 tells a truncated answer without a second query.
+        /** @var list<array<string, mixed>> $rows */
+        // @igor-ignore - A query builder built for this call (entryQuery()), not a shared service.
+        $rows = $query->setMaxResults($limit + 1)->getQuery()->getArrayResult();
+
+        $merged = [];
+        foreach ($rows as $row) {
+            $key = $this->groupKey($groupBy, $row);
+            // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike group here.
+            if (!$this->groupMatches($criteria, $key)) {
+                continue; // @codeCoverageIgnore
+            }
+            $id          = $key->key();
+            $merged[$id] = new TimeEntryTotal($key, ($merged[$id]->seconds ?? 0) + $this->int($row['seconds']), ($merged[$id]->entries ?? 0) + $this->int($row['entries']));
+        }
+        $totals = array_values($merged);
+
+        return new TimeEntryTotals(array_slice($totals, 0, $limit), count($rows) > $limit);
+    }
+
+    /**
+     * The group key of a totals row.
+     *
+     * @param array<array-key, mixed> $row
+     */
+    private function groupKey(TimeEntryGrouping $groupBy, array $row): TimeEntryGroupKey
+    {
+        return match ($groupBy) {
+            TimeEntryGrouping::Subject                => new TimeEntryGroupKey(subject: TimeSubjectRef::tryFromColumns($row['gSubjectType'], $row['gSubjectId'])),
+            TimeEntryGrouping::SubjectType            => new TimeEntryGroupKey(subjectType: $this->nullableString($row['gSubjectType'])),
+            TimeEntryGrouping::ActivityType           => new TimeEntryGroupKey(activityTypeKey: $this->nullableString($row['gActivity'])),
+            TimeEntryGrouping::SubjectAndActivityType => new TimeEntryGroupKey(subject: TimeSubjectRef::tryFromColumns($row['gSubjectType'], $row['gSubjectId']), activityTypeKey: $this->nullableString($row['gActivity'])),
+            TimeEntryGrouping::Owner                  => new TimeEntryGroupKey(ownerId: $this->owner(['userId' => $row['gOwner']])),
+            TimeEntryGrouping::Task                   => new TimeEntryGroupKey(taskId: $this->nullableString($row['gTask'])),
+            TimeEntryGrouping::Allocation             => new TimeEntryGroupKey(allocation: AllocationFilter::from($this->string($row['gAllocation']))),
+        };
+    }
+
+    /**
+     * Whether a group's key matches the filters on its own columns byte for byte.
+     */
+    private function groupMatches(TimeEntryCriteria $criteria, TimeEntryGroupKey $key): bool
+    {
+        $subjectType = $key->subject->type ?? $key->subjectType;
+
+        return ($key->ownerId === null || $criteria->ownerIds === null || in_array($key->ownerId, $criteria->ownerIds, true))
+            && ($key->taskId === null || $criteria->taskIds === null || in_array($key->taskId, $criteria->taskIds, true))
+            && ($subjectType === null || $criteria->subjectTypes === null || in_array($subjectType, $criteria->subjectTypes, true))
+            && ($key->activityTypeKey === null || $criteria->activityTypeKeys === null || in_array($key->activityTypeKey, $criteria->activityTypeKeys, true))
+            && (!$key->subject instanceof TimeSubjectRef || $criteria->subjects === null || $criteria->hasSubject($key->subject));
     }
 
     /**
@@ -405,7 +497,40 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             $query->andWhere('e.id NOT IN (:excluded)')->setParameter('excluded', $criteria->excludeEntryIds);
         }
 
-        return $query;
+        return $this->allocationFilters($query, $criteria);
+    }
+
+    /**
+     * Since 2.1.0 (Beacon spec 256): the subject, subject type, activity type and allocation filters (the rows are checked
+     * again in PHP). A subject filter is written per type: `subject_type = ? AND subject_id IN (…)`, OR-ed.
+     */
+    private function allocationFilters(QueryBuilder $query, TimeEntryCriteria $criteria): QueryBuilder
+    {
+        $byType = $criteria->subjectIdsByType();
+        if ($byType !== null) {
+            $or = [];
+            $i  = 0;
+            foreach ($byType as $type => $ids) {
+                $or[] = '(e.subjectType = :subjectType' . $i . ' AND e.subjectId IN (:subjectIds' . $i . '))';
+                $query->setParameter('subjectType' . $i, (string) $type)->setParameter('subjectIds' . $i, $ids);
+                ++$i;
+            }
+            $query->andWhere(implode(' OR ', $or));
+        }
+        if ($criteria->subjectTypes !== null) {
+            $query->andWhere('e.subjectType IN (:subjectTypes)')->setParameter('subjectTypes', $criteria->subjectTypes);
+        }
+        if ($criteria->activityTypeKeys !== null) {
+            $query->andWhere('e.activityTypeKey IN (:activityTypeKeys)')->setParameter('activityTypeKeys', $criteria->activityTypeKeys);
+        }
+
+        return match ($criteria->allocation) {
+            AllocationFilter::Any            => $query,
+            AllocationFilter::TaskOnly       => $query->andWhere('e.taskId IS NOT NULL')->andWhere('e.subjectType IS NULL'),
+            AllocationFilter::TaskAndSubject => $query->andWhere('e.taskId IS NOT NULL')->andWhere('e.subjectType IS NOT NULL'),
+            AllocationFilter::SubjectOnly    => $query->andWhere('e.taskId IS NULL')->andWhere('e.subjectType IS NOT NULL'),
+            AllocationFilter::Unallocated    => $query->andWhere('e.taskId IS NULL')->andWhere('e.subjectType IS NULL'),
+        };
     }
 
     /**
@@ -413,7 +538,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
      */
     private function matches(TimeEntryCriteria $criteria, array $row): bool
     {
-        return $criteria->matchesExactly($this->string($row['id']), $this->owner($row), $this->nullableString($row['scopeKey']), $this->string($row['taskId']), $this->nullableString($row['boardId']));
+        return $criteria->matchesExactly($this->string($row['id']), $this->owner($row), $this->nullableString($row['scopeKey']), $this->string($row['taskId']), $this->nullableString($row['boardId']), TimeSubjectRef::tryFromColumns($row['subjectType'], $row['subjectId']), $this->nullableString($row['activityTypeKey']));
     }
 
     /**
@@ -445,6 +570,9 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 $this->bool($row['serviceAccount']),
                 // Since 1.36.0: a NULL task id is an entry without a task.
                 $row['taskId'] === null,
+                // Since 2.1.0: the subject and activity type (a pair that breaks the column contract reads as none).
+                TimeSubjectRef::tryFromColumns($row['subjectType'], $row['subjectId']),
+                $this->nullableString($row['activityTypeKey']),
             ),
             is_string($note) && $note !== '' ? $note : null,
             $this->nullableString($row['description']),
@@ -477,6 +605,8 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 $row['taskId'] === null,
                 $this->nullableString($row['description']),
                 $this->nullableString($row['scopeKey']),
+                TimeSubjectRef::tryFromColumns($row['subjectType'], $row['subjectId']),
+                $this->nullableString($row['activityTypeKey']),
             ),
             (string) $this->owner($row),
             $this->date($row['lastHeartbeatAt']),

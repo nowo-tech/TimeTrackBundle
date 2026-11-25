@@ -96,7 +96,7 @@ final class ClientApiV110Test extends TestCase
         $token      = $this->token($stack);
 
         $start = $this->body($controller->timerStart($this->request('POST', $token, ['taskId' => 'task-1'])));
-        self::assertSame(['id', 'taskId', 'taskTitle', 'boardId', 'startedAt', 'lastHeartbeatAt', 'clientType', 'metadata', 'boardTitle', 'projectId', 'projectTitle', 'url', 'estimateSeconds', 'loggedSeconds', 'loggedSecondsScope', 'remainingSeconds'], array_keys($start['timer']));
+        self::assertSame(['id', 'taskId', 'taskTitle', 'boardId', 'startedAt', 'lastHeartbeatAt', 'clientType', 'metadata', 'boardTitle', 'projectId', 'projectTitle', 'url', 'estimateSeconds', 'loggedSeconds', 'loggedSecondsScope', 'remainingSeconds', 'subject', 'activityType'], array_keys($start['timer']));
         self::assertSame('Website', $start['timer']['projectTitle']);
         self::assertArrayNotHasKey('startedAtResult', $start);
 
@@ -107,7 +107,7 @@ final class ClientApiV110Test extends TestCase
         $this->providerThrows = true;
         $response             = $controller->timer($this->request('GET', $token));
         self::assertSame(200, $response->getStatusCode());
-        self::assertSame(['boardTitle' => null, 'projectId' => null, 'projectTitle' => null, 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'loggedSecondsScope' => null, 'remainingSeconds' => null], array_slice($this->body($response)['timer'], 8));
+        self::assertSame(['boardTitle' => null, 'projectId' => null, 'projectTitle' => null, 'url' => null, 'estimateSeconds' => null, 'loggedSeconds' => null, 'loggedSecondsScope' => null, 'remainingSeconds' => null, 'subject' => null, 'activityType' => null], array_slice($this->body($response)['timer'], 8));
         self::assertSame('Task one', $this->body($response)['timer']['taskTitle'], 'the snapshot title stays');
     }
 
@@ -422,7 +422,7 @@ final class ClientApiV110Test extends TestCase
         $stack = $this->stack(settings: new ConfigClientApiSettingsProvider([], clockSkewSeconds: 30, idleCheckEnabled: false, idleCheckThresholdMinutes: 99, idleCheckAnswerTimeoutMinutes: 0));
         $me    = $this->body($stack->apiController()->me($this->request('GET', $this->token($stack))));
 
-        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => false, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'meetings' => false, 'monitoring' => false], $me['features']);
+        self::assertSame(['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => false, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'meetings' => false, 'monitoring' => false, 'subjects' => [], 'activityTypes' => false, 'requireAllocation' => false, 'requireActivityType' => false], $me['features']);
         self::assertSame(['backdate' => ['max_seconds' => 86400, 'clock_skew_seconds' => 30], 'idle_check' => ['threshold_minutes' => 60, 'answer_timeout_minutes' => 1, 'user_can_disable' => false]], $me['limits']);
     }
 

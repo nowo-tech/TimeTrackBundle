@@ -2,7 +2,7 @@
 
 **Baseline spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-24 (2.0.0: removed 1.x files dropped, the Port/Internal shapes and RemovedPortsPass mapped; 1.41.0 monitoring files mapped; 2026-11-23 1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
+**Last audited**: 2026-11-25 (2.1.0: new files in [`005-time-subject-activity`](../005-time-subject-activity/code-inventory.md)); 2026-11-24 (2.0.0: removed 1.x files dropped, the Port/Internal shapes and RemovedPortsPass mapped; 1.41.0 monitoring files mapped; 2026-11-23 1.40.0 writes by id mapped; 2026-11-22 v1.37.0 files mapped; 2026-11-20 v1.31.0; full `src/` recount; units added since 1.2 mapped to semantic requirement IDs; 1.29 and 1.30 units added)
 
 ## PHP classes (`src/**/*.php`)
 

@@ -24,6 +24,8 @@ use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Enum\WriteKind;
 use Nowo\TimeTrackBundle\Event\IdleResolvedEvent;
 use Nowo\TimeTrackBundle\Event\TimeEntryListQueryEvent;
+use Nowo\TimeTrackBundle\Event\TimeEntryUnallocatedEvent;
+use Nowo\TimeTrackBundle\Event\TimerAllocatedEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartedWithoutTaskEvent;
 use Nowo\TimeTrackBundle\Event\TimerStartEvent;
 use Nowo\TimeTrackBundle\Event\TimerStopEvent;
@@ -33,6 +35,8 @@ use Nowo\TimeTrackBundle\Exception\ActiveTimerConflictException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodSubmittedException;
 use Nowo\TimeTrackBundle\Exception\TaskNotTrackableException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationRequiredException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Integration\ServiceAccountPolicyInterface;
 use Nowo\TimeTrackBundle\Integration\TimeEntryBillableDefaultProviderInterface;
@@ -52,10 +56,17 @@ use Nowo\TimeTrackBundle\Repository\TasklessScopedTimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\TimeEntryListing;
 use Nowo\TimeTrackBundle\Repository\TimeEntryRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\UserSerialisedTimeEntryRepositoryInterface;
+use Nowo\TimeTrackBundle\Subject\ActivityType;
+use Nowo\TimeTrackBundle\Subject\ActivityTypeList;
+use Nowo\TimeTrackBundle\Subject\AllocationGuard;
+use Nowo\TimeTrackBundle\Subject\TimeAllocation;
+use Nowo\TimeTrackBundle\Subject\TimeAllocationPatch;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\NoteSanitizer;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\Timer\HostTimerApi;
 use Nowo\TimeTrackBundle\Timer\TimerChannel;
+use Nowo\TimeTrackBundle\Timer\TimerSnapshot;
 use Nowo\TimeTrackBundle\Timesheet\PeriodLockGuard;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 use Psr\Clock\ClockInterface;
@@ -74,6 +85,7 @@ use function array_slice;
 use function array_values;
 use function count;
 use function date_default_timezone_get;
+use function in_array;
 use function is_string;
 use function max;
 use function mb_strlen;
@@ -101,6 +113,16 @@ use function usort;
  * its owner and, for anyone else, through the existing per-user rules within the same tenant
  * ({@see self::listEntriesPage()}, {@see TeamAccessGuard}). With the option off a null task is refused like an unknown
  * task, and everything else behaves as in 1.35.
+ *
+ * Since 2.1.0 (Beacon spec 256): every write path takes a {@see TimeAllocation} where it took a task id (a task id or
+ * null still works): a task, a task and a subject (a type that allows tasks), a subject alone, or nothing, plus an
+ * optional activity type. The subject and the activity type are checked by {@see AllocationGuard} before the owner's
+ * lock (task access stays the gate of a task entry; `canLog` is asked in addition when the subject is set or changed).
+ * A subject entry needs no `entries.allow_without_task`: its tenant is one of the owner's scopes, chosen like the scope of
+ * an entry without a task. With `entries.require_allocation` an interactive stop ({@see self::stopAt()} with
+ * `interactive: true`) of a timer with neither task nor subject is refused inside the unit of work
+ * ({@see TimeAllocationRequiredException}); stops the bundle triggers itself are never refused and raise
+ * {@see TimeEntryUnallocatedEvent} instead.
  */
 final readonly class TimerService
 {
@@ -121,6 +143,8 @@ final readonly class TimerService
     private ClockInterface $clock;
 
     private LoggerInterface $logger;
+
+    private AllocationGuard $allocations;
 
     /**
      * @param TaskProviderInterface $taskProvider Trackable tasks of a user
@@ -148,7 +172,10 @@ final readonly class TimerService
         private ?ServiceAccountPolicyInterface $serviceAccounts = null,
         // Since 1.36.0: `entries.allow_without_task` (false = a null task is refused, the 1.35 behaviour).
         private bool $allowWithoutTask = false,
+        // Since 2.1.0: subject and activity type checks (null = no provider, no requirement: the 2.0 behaviour).
+        ?AllocationGuard $allocationGuard = null,
     ) {
+        $this->allocations    = $allocationGuard ?? AllocationGuard::off();
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -170,8 +197,9 @@ final readonly class TimerService
      * Starts a timer on a task the user may track.
      *
      * @param UserInterface $user Timer owner
-     * @param string|null $taskId Task id resolved through the task provider; since 1.36.0 null = a timer without a task
-     *                            (`entries.allow_without_task`)
+     * @param string|TimeAllocation|null $taskId Task id resolved through the task provider; since 1.36.0 null = a timer
+     *                                           without a task (`entries.allow_without_task`); since 2.1.0 a
+     *                                           {@see TimeAllocation} (task, task and subject, subject, none)
      * @param ClientType $clientType Client that starts the timer (web, extension, desktop)
      * @param array<string, mixed> $metadata Client metadata stored with the timer
      * @param string|null $description Since 1.36.0: free text of a timer without a task (ignored with a task)
@@ -179,10 +207,11 @@ final readonly class TimerService
      *
      * @throws ActiveTimerConflictException When the user already has a running timer
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user (or, without a task, the option is off or the scope is not the user's)
+     * @throws TimeAllocationException When the subject or the activity type is refused (since 2.1.0)
      *
      * @return ActiveTimer The new running timer
      */
-    public function start(UserInterface $user, ?string $taskId, ClientType $clientType, array $metadata = [], ?string $description = null, ?string $scopeKey = null): ActiveTimer
+    public function start(UserInterface $user, TimeAllocation|string|null $taskId, ClientType $clientType, array $metadata = [], ?string $description = null, ?string $scopeKey = null): ActiveTimer
     {
         return $this->startAt($user, $taskId, $clientType, $metadata, description: $description, scopeKey: $scopeKey)['timer'];
     }
@@ -193,7 +222,8 @@ final readonly class TimerService
      * user's latest entry (`overlap`) and not older than the backdate limit (`max_backdate`).
      *
      * @param UserInterface $user Timer owner
-     * @param string|null $taskId Task id resolved through the task provider; since 1.36.0 null = a timer without a task
+     * @param string|TimeAllocation|null $taskId Task id resolved through the task provider; since 1.36.0 null = a timer
+     *                                           without a task; since 2.1.0 a {@see TimeAllocation}
      * @param ClientType $clientType Client that starts the timer
      * @param array<string, mixed> $metadata Client metadata stored with the timer
      * @param DateTimeImmutable|null $requestedStart Client-supplied start (null = now, 1.9 behaviour)
@@ -202,30 +232,48 @@ final readonly class TimerService
      * @param string|null $scopeKey Since 1.36.0: tenant scope of a timer without a task (one of the user's, `===`; null = the current one; ignored with a task)
      *
      * @throws ActiveTimerConflictException When the user already has a running timer
-     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user (or, without a task, the option is off or the scope is not the user's)
+     * @throws TaskNotTrackableException When the task is unknown or not trackable by the user (or, without a task nor subject, the option is off or the scope is not the user's)
+     * @throws TimeAllocationException When the subject or the activity type is refused, or a subject timer's scope is not the user's (since 2.1.0)
      * @throws PeriodLockedException When the (applied) start is in a locked period (since 1.13)
      * @throws PeriodSubmittedException When the (applied) start is in a submitted period (since 1.13)
      *
-     * @return ($taskId is null ? array{timer: ActiveTimer, task: null, startTime: ClampedTime|null} : array{timer: ActiveTimer, task: TaskReference, startTime: ClampedTime|null}) The timer, its task (since 1.36.0 null without one) and the clamp result (null without a requested start)
+     * @return ($taskId is string ? array{timer: ActiveTimer, task: TaskReference, startTime: ClampedTime|null} : array{timer: ActiveTimer, task: TaskReference|null, startTime: ClampedTime|null}) The timer, its task (since 1.36.0 null without one) and the clamp result (null without a requested start)
      */
-    public function startAt(UserInterface $user, ?string $taskId, ClientType $clientType, array $metadata = [], ?DateTimeImmutable $requestedStart = null, ?BackdateLimits $limits = null, ?string $description = null, ?string $scopeKey = null): array
+    public function startAt(UserInterface $user, TimeAllocation|string|null $taskId, ClientType $clientType, array $metadata = [], ?DateTimeImmutable $requestedStart = null, ?BackdateLimits $limits = null, ?string $description = null, ?string $scopeKey = null): array
+    {
+        return $this->startAllocatedAt($user, self::allocationOf($taskId), $clientType, $metadata, $requestedStart, $limits, $description, $scopeKey);
+    }
+
+    /**
+     * {@see self::startAt()} with an allocation; `$checked` = the subject and activity type were checked by the caller
+     * already (a switch checks them before it stops the running timer).
+     *
+     * @param array<string, mixed> $metadata
+     *
+     * @return array{timer: ActiveTimer, task: TaskReference|null, startTime: ClampedTime|null}
+     */
+    private function startAllocatedAt(UserInterface $user, TimeAllocation $allocation, ClientType $clientType, array $metadata = [], ?DateTimeImmutable $requestedStart = null, ?BackdateLimits $limits = null, ?string $description = null, ?string $scopeKey = null, bool $checked = false): array
     {
         $existing = $this->getActive($user);
         if ($existing instanceof ActiveTimer) {
             throw ActiveTimerConflictException::alreadyRunning($existing->getTaskId());
         }
-        if ($taskId === null) {
-            return $this->startWithoutTaskAt($user, $clientType, $metadata, $requestedStart, $limits, $description, $scopeKey);
+        if ($allocation->taskId === null) {
+            return $this->startWithoutTaskAt($user, $clientType, $metadata, $requestedStart, $limits, $description, $scopeKey, $allocation, $checked);
         }
 
-        $task      = $this->resolveTrackable($user, $taskId);
+        $task  = $this->resolveTrackable($user, $allocation->taskId);
+        $scope = $this->scopeKeyFor($user, $task->id, $task->boardId);
+        if (!$checked) {
+            $this->allocations->checkNew($user, $scope, $allocation, false);
+        }
         $metadata  = $this->startMetadata($metadata);
         $now       = $this->clock->now();
         $startTime = $requestedStart instanceof DateTimeImmutable ? $this->clampStart($user, $requestedStart, $limits ?? new BackdateLimits(), $now) : null;
         $startedAt = $startTime instanceof ClampedTime ? $startTime->applied : $now;
-        $this->periodLockGuard?->assertWritable($user, $this->scopeKeyFor($user, $task->id, $task->boardId), $startedAt, WriteKind::TimerStart);
+        $this->periodLockGuard?->assertWritable($user, $scope, $startedAt, WriteKind::TimerStart);
 
-        $timer = new ActiveTimer(
+        $timer = (new ActiveTimer(
             $this->userReferences->reference($user),
             $task->id,
             $task->title,
@@ -233,12 +281,12 @@ final readonly class TimerService
             $clientType,
             $metadata,
             $startedAt,
-        );
+        ))->allocate($allocation->subject, $allocation->activityTypeKey);
 
         $this->insertTimer($user, $timer, 'timer_start', $clientType);
 
-        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType, $startTime), TimeTrackEvents::TIMER_START);
-        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime]);
+        $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType, $startTime, $timer->subject(), $timer->getActivityTypeKey()), TimeTrackEvents::TIMER_START);
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime] + $this->allocationContext($timer->subject(), $timer->getActivityTypeKey()));
         if ($startTime instanceof ClampedTime && $startTime->clamped) {
             $this->logger->info('TimeTrack timer start clamped.', $this->context('timer_start_clamped', $clientType) + ['reason' => $startTime->reason]);
         }
@@ -249,31 +297,108 @@ final readonly class TimerService
     /**
      * Since 1.36.0: {@see self::startAt()} without a task. The same checks, clamping, lock order and concurrency guard as
      * a task timer (one running timer per user: {@see self::insertTimer()}); the scope is the requested one when it is
-     * one of the user's, else the current one; {@see TimerStartedWithoutTaskEvent} instead of TIMER_START.
+     * one of the user's, else the current one; {@see TimerStartedWithoutTaskEvent} instead of TIMER_START. Since 2.1.0
+     * also a timer on a subject alone (no `entries.allow_without_task` needed).
      *
      * @param array<string, mixed> $metadata
      *
      * @return array{timer: ActiveTimer, task: null, startTime: ClampedTime|null}
      */
-    private function startWithoutTaskAt(UserInterface $user, ClientType $clientType, array $metadata, ?DateTimeImmutable $requestedStart, ?BackdateLimits $limits, ?string $description, ?string $scopeKey): array
+    private function startWithoutTaskAt(UserInterface $user, ClientType $clientType, array $metadata, ?DateTimeImmutable $requestedStart, ?BackdateLimits $limits, ?string $description, ?string $scopeKey, TimeAllocation $allocation, bool $checked): array
     {
-        $scopeKey  = $this->scopeKeyWithoutTask($user, $scopeKey);
+        $scopeKey = $this->scopeKeyOfTaskless($user, $scopeKey, $allocation->subject);
+        if (!$checked) {
+            $this->allocations->checkNew($user, $scopeKey, $allocation, false);
+        }
         $metadata  = $this->startMetadata($metadata);
         $now       = $this->clock->now();
         $startTime = $requestedStart instanceof DateTimeImmutable ? $this->clampStart($user, $requestedStart, $limits ?? new BackdateLimits(), $now) : null;
         $startedAt = $startTime instanceof ClampedTime ? $startTime->applied : $now;
         $this->periodLockGuard?->assertWritable($user, $scopeKey, $startedAt, WriteKind::TimerStart);
 
-        $timer = ActiveTimer::withoutTask($this->userReferences->reference($user), $clientType, self::cleanDescription($description), $scopeKey, $metadata, $startedAt);
+        $timer = ActiveTimer::withoutTask($this->userReferences->reference($user), $clientType, self::cleanDescription($description), $scopeKey, $metadata, $startedAt)
+            ->allocate($allocation->subject, $allocation->activityTypeKey);
         $this->insertTimer($user, $timer, 'timer_start', $clientType);
 
         $this->dispatchStartedWithoutTask($user, $timer, $startTime);
-        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime, 'without_task' => true]);
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['backdated' => $startTime instanceof ClampedTime, 'without_task' => true] + $this->allocationContext($timer->subject(), $timer->getActivityTypeKey()));
         if ($startTime instanceof ClampedTime && $startTime->clamped) {
             $this->logger->info('TimeTrack timer start clamped.', $this->context('timer_start_clamped', $clientType) + ['reason' => $startTime->reason]);
         }
 
         return ['timer' => $timer, 'task' => null, 'startTime' => $startTime];
+    }
+
+    /**
+     * Since 2.1.0: the allocation of a 2.0 task argument (a task id, null for none) or the allocation itself.
+     */
+    public static function allocationOf(TimeAllocation|string|null $taskId): TimeAllocation
+    {
+        return $taskId instanceof TimeAllocation ? $taskId : TimeAllocation::ofTask($taskId);
+    }
+
+    /**
+     * Since 2.1.0: the tenant scope of new time without a task: a subject entry's is chosen like the scope of an entry
+     * without a task but needs no `entries.allow_without_task` (it is allocated); a requested scope that is not one of the
+     * user's answers `subject_forbidden`.
+     *
+     * @throws TaskNotTrackableException Without a subject: the option is off, or the scope is not the user's
+     * @throws TimeAllocationException With a subject: the scope is not one of the user's
+     */
+    public function scopeKeyOfTaskless(UserInterface $user, ?string $requested, ?TimeSubjectRef $subject): ?string
+    {
+        if (!$subject instanceof TimeSubjectRef) {
+            return $this->scopeKeyWithoutTask($user, $requested);
+        }
+
+        return $this->userScope($user, $requested);
+    }
+
+    /**
+     * Since 2.1.0: one of the user's tenant scopes (the requested one, compared byte for byte, else the current one; null
+     * without a scope provider), for subject time and the client API's subject search and activity types.
+     *
+     * @throws TimeAllocationException `subject_forbidden` when the requested scope is not one of the user's, or the
+     *                                 user has none under a scope provider
+     */
+    public function userScope(UserInterface $user, ?string $requested): ?string
+    {
+        try {
+            return ScopeKeys::forEntryWithoutTask($this->scopeProvider, $user, $requested, $this->logger);
+        } catch (InvalidArgumentException) {
+            throw new TimeAllocationException(TimeAllocationException::SUBJECT_FORBIDDEN);
+        }
+    }
+
+    /**
+     * Since 2.1.0: the tenant scope a running timer's entry will belong to (the task's, asked again; or the scope a timer
+     * without a task was started in): the scope its subject is checked and labelled in.
+     *
+     * @internal
+     */
+    public function scopeKeyOfTimer(UserInterface $user, ActiveTimer $timer): ?string
+    {
+        return $this->timerScopeKey($user, $timer);
+    }
+
+    /**
+     * Since 2.1.0: the subject and activity type checks of the write paths.
+     *
+     * @internal
+     */
+    public function allocationGuard(): AllocationGuard
+    {
+        return $this->allocations;
+    }
+
+    /**
+     * REQ-OBS-001: the subject type and whether an activity type is set; never the subject id.
+     *
+     * @return array<string, bool|string>
+     */
+    private function allocationContext(?TimeSubjectRef $subject, ?string $activityTypeKey): array
+    {
+        return ($subject instanceof TimeSubjectRef ? ['subject_type' => $subject->type] : []) + ($activityTypeKey !== null ? ['activity_type' => true] : []);
     }
 
     /**
@@ -322,7 +447,7 @@ final readonly class TimerService
 
     private function dispatchStartedWithoutTask(UserInterface $user, ActiveTimer $timer, ?ClampedTime $startTime = null): void
     {
-        $this->eventDispatcher->dispatch(new TimerStartedWithoutTaskEvent(UserIdResolver::getId($user), $timer->getId(), $timer->getScopeKey(), $timer->getClientType(), $timer->getStartedAt(), $startTime), TimeTrackEvents::TIMER_START_WITHOUT_TASK);
+        $this->eventDispatcher->dispatch(new TimerStartedWithoutTaskEvent(UserIdResolver::getId($user), $timer->getId(), $timer->getScopeKey(), $timer->getClientType(), $timer->getStartedAt(), $startTime, $timer->subject(), $timer->getActivityTypeKey()), TimeTrackEvents::TIMER_START_WITHOUT_TASK);
     }
 
     /**
@@ -332,30 +457,62 @@ final readonly class TimerService
      * @param DateTimeImmutable|null $endedAt End of the entry (default: now). Since 1.26 an end before now is reported as
      *                                        `TimerStopEvent::getEndTime()` (requested = applied = `$endedAt`)
      * @param string|null $note Note of the user stored in the entry metadata (`note`)
+     * @param TimeAllocationPatch|null $allocation Since 2.1.0: sets, changes or clears the subject (next to the task only
+     *                                             for a type that allows tasks) and the activity type of the entry; the
+     *                                             task is never changed at stop
+     * @param bool $interactive Since 2.1.0: a stop the person asked for (web UI, `HostTimerApi::stop()`): refused under
+     *                          `entries.require_allocation` / `require_activity_type` when the time misses it. false (the
+     *                          default, as in 2.0) is a stop the system triggers: never refused
+     *
+     * @throws TimeAllocationException When the patch's subject or activity type is refused (since 2.1.0; nothing is written)
+     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation (since 2.1.0; the timer keeps running)
      *
      * @return TimeEntry|null The recorded entry, or null when no timer was running (or a concurrent stop recorded it)
      */
-    public function stop(UserInterface $user, ?DateTimeImmutable $endedAt = null, ?string $note = null): ?TimeEntry
+    public function stop(UserInterface $user, ?DateTimeImmutable $endedAt = null, ?string $note = null, ?TimeAllocationPatch $allocation = null, bool $interactive = false): ?TimeEntry
     {
         $now = $this->clock->now();
         // Since 1.26 (audit PM delta D2-L2): an explicit end before now is reported on TimerStopEvent::getEndTime(), as a
         // backdated `timer/stop` is, so the time given up ([end, now)) can be told apart.
         $endTime = $endedAt instanceof DateTimeImmutable && $endedAt->getTimestamp() < $now->getTimestamp() ? new ClampedTime($endedAt, $endedAt) : null;
-
-        return $this->stopTimer($user, $endedAt ?? $now, $note, $endTime);
-    }
-
-    /**
-     * Stops the running timer at `$endedAt` without reporting a backdated end (the idle resolution reports its own span).
-     */
-    private function stopTimer(UserInterface $user, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null): ?TimeEntry
-    {
-        $timer = $this->getActive($user);
+        $timer   = $this->getActive($user);
         if (!$timer instanceof ActiveTimer) {
             return null;
         }
 
-        return $this->closeTimer($user, $timer, $endedAt, $note, $endTime);
+        return $this->closeTimer($user, $timer, $endedAt ?? $now, $note, $endTime, stop: $this->stopAllocation($user, $timer, $allocation ?? TimeAllocationPatch::keep(), $interactive));
+    }
+
+    /**
+     * Since 2.1.0: the checks of a stop's allocation patch, asked before the owner's lock on the timer as loaded (the
+     * subject in the timer's scope, the activity type in that scope), and the scope's activity types for the entry's
+     * billable default.
+     *
+     * @throws TimeAllocationException When the patch's subject or activity type is refused
+     *
+     * @return array{patch: TimeAllocationPatch, interactive: bool, types: ActivityTypeList|null}
+     */
+    private function stopAllocation(UserInterface $user, ActiveTimer $timer, TimeAllocationPatch $patch, bool $interactive): array
+    {
+        $scope   = false;
+        $subject = $patch->subjectAfter($timer->subject());
+        if ($patch->changesSubjectOf($timer->subject()) && $subject instanceof TimeSubjectRef) {
+            $scope = $this->timerScopeKey($user, $timer);
+            $this->allocations->assertSubject($user, $scope, $subject, $timer->hasTask());
+        }
+        $types = null;
+        $key   = $patch->activityTypeAfter($timer->getActivityTypeKey());
+        // A key the patch sets is checked even without a provider (refused as unknown: no unchecked key is stored).
+        $changes = $key !== null && $patch->changesActivityTypeOf($timer->getActivityTypeKey());
+        if ($key !== null && ($changes || $this->allocations->activityTypes()->isEnabled())) {
+            $scope = $scope === false ? $this->timerScopeKey($user, $timer) : $scope;
+            $types = $this->allocations->activityTypes()->listFor($scope);
+            if ($changes) {
+                $this->allocations->activityType($scope, $key, $types);
+            }
+        }
+
+        return ['patch' => $patch, 'interactive' => $interactive, 'types' => $types];
     }
 
     /**
@@ -389,19 +546,26 @@ final readonly class TimerService
      * @param DateTimeImmutable|null $requestedEnd Client-supplied end (null = now, 1.9 behaviour)
      * @param BackdateLimits|null $limits Backdate limits (null = the defaults)
      * @param string|null $note Note of the user stored in the entry metadata (`note`)
+     * @param TimeAllocationPatch|null $allocation Since 2.1.0: the allocation set at stop (see {@see self::stop()})
+     * @param bool $interactive Since 2.1.0: a stop the person asked for (the client API): refused under
+     *                          `entries.require_allocation` / `require_activity_type` when the time misses it
+     *
+     * @throws TimeAllocationException When the patch's subject or activity type is refused (since 2.1.0; nothing is written)
+     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation (since 2.1.0; the timer keeps running)
      *
      * @return array{entry: TimeEntry, endTime: ClampedTime|null}|null The entry and the clamp result, or null when no timer was running
      */
-    public function stopAt(UserInterface $user, ?DateTimeImmutable $requestedEnd = null, ?BackdateLimits $limits = null, ?string $note = null): ?array
+    public function stopAt(UserInterface $user, ?DateTimeImmutable $requestedEnd = null, ?BackdateLimits $limits = null, ?string $note = null, ?TimeAllocationPatch $allocation = null, bool $interactive = false): ?array
     {
         $timer = $this->getActive($user);
         if (!$timer instanceof ActiveTimer) {
             return null;
         }
 
+        $stop    = $this->stopAllocation($user, $timer, $allocation ?? TimeAllocationPatch::keep(), $interactive);
         $now     = $this->clock->now();
         $endTime = $requestedEnd instanceof DateTimeImmutable ? $this->clampEnd($timer, $requestedEnd, $limits ?? new BackdateLimits(), $now) : null;
-        $entry   = $this->closeTimer($user, $timer, $endTime instanceof ClampedTime ? $endTime->applied : $now, $note, $endTime);
+        $entry   = $this->closeTimer($user, $timer, $endTime instanceof ClampedTime ? $endTime->applied : $now, $note, $endTime, stop: $stop);
         if (!$entry instanceof TimeEntry) {
             return null;
         }
@@ -418,27 +582,38 @@ final readonly class TimerService
      * before the running timer is stopped, so a refused task leaves the running timer untouched.
      *
      * @param UserInterface $user Timer owner
-     * @param string $taskId Task to track next
+     * @param string|TimeAllocation $taskId Task to track next; since 2.1.0 a {@see TimeAllocation} (task, task and subject,
+     *                                      subject, or none with `entries.allow_without_task`)
      * @param ClientType $clientType Client that switches
      * @param string|null $note Note stored in the entry of the stopped timer
      * @param array<string, mixed> $metadata Metadata of the new timer (since 1.14: `{origin: "meeting"}` from the client API)
+     * @param string|null $scopeKey Since 2.1.0: tenant scope of a next timer without a task (one of the user's; null = the current one)
      *
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     * @throws TimeAllocationException When the subject or the activity type is refused (since 2.1.0; the running timer is left untouched)
      * @throws ActiveTimerConflictException When a concurrent start won the race
      * @throws PeriodLockedException When the current period is locked (since 1.13; the running timer is left untouched)
      * @throws PeriodSubmittedException When the current period is submitted (since 1.13)
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer} The entry of the stopped timer and the new timer
      */
-    public function switchTo(UserInterface $user, string $taskId, ClientType $clientType, ?string $note = null, array $metadata = []): array
+    public function switchTo(UserInterface $user, TimeAllocation|string $taskId, ClientType $clientType, ?string $note = null, array $metadata = [], ?string $scopeKey = null): array
     {
-        $task = $this->resolveTrackable($user, $taskId);
+        $allocation = self::allocationOf($taskId);
+        if ($allocation->taskId !== null) {
+            $task  = $this->resolveTrackable($user, $allocation->taskId);
+            $scope = $this->scopeKeyFor($user, $task->id, $task->boardId);
+        } else {
+            $scope = $this->scopeKeyOfTaskless($user, $scopeKey, $allocation->subject);
+        }
+        // Since 2.1.0: the next timer's subject and activity type are checked before the running timer stops.
+        $this->allocations->checkNew($user, $scope, $allocation, false);
         // Since 1.13: refused before the running timer stops, so a locked period leaves it untouched.
-        $this->periodLockGuard?->assertWritable($user, $this->scopeKeyFor($user, $task->id, $task->boardId), $this->clock->now(), WriteKind::TimerStart);
+        $this->periodLockGuard?->assertWritable($user, $scope, $this->clock->now(), WriteKind::TimerStart);
 
         $entry = $this->stop($user, null, $note);
 
-        return ['entry' => $entry, 'timer' => $this->start($user, $taskId, $clientType, $metadata)];
+        return ['entry' => $entry, 'timer' => $this->startAllocatedAt($user, $allocation, $clientType, $metadata, scopeKey: $scope, checked: true)['timer']];
     }
 
     /**
@@ -458,7 +633,7 @@ final readonly class TimerService
      * TIMER_START. The one-running-timer guarantee is the same.
      *
      * @param UserInterface $user Timer owner
-     * @param string|null $taskId Task to track (since 1.36.0 null = no task)
+     * @param string|TimeAllocation|null $taskId Task to track (since 1.36.0 null = no task; since 2.1.0 a {@see TimeAllocation})
      * @param ClientType $clientType Client of the new timer (source of its entry)
      * @param string $channel Channel label ({@see TimerChannel}), stored on the entry
      * @param array<string, mixed> $metadata Metadata of the new timer (`note`; reserved keys are dropped)
@@ -467,6 +642,7 @@ final readonly class TimerService
      * @param string|null $scopeKey Since 1.36.0: tenant scope of a timer without a task (one of the user's; null = the current one)
      *
      * @throws TaskNotTrackableException When the task is unknown or not trackable by the user
+     * @throws TimeAllocationException When the subject or the activity type is refused (since 2.1.0; nothing is stopped)
      * @throws PeriodLockedException When the current period is locked
      * @throws PeriodSubmittedException When the current period is submitted
      * @throws InvalidArgumentException When the channel is not a valid label
@@ -475,14 +651,17 @@ final readonly class TimerService
      *                                      (they are written: a refused start leaves the running timer untouched for a
      *                                      task, period-lock or channel refusal, not for an exhausted conflict)
      *
-     * @return ($taskId is null ? array{timer: ActiveTimer, task: null, stopped: list<TimeEntry>} : array{timer: ActiveTimer, task: TaskReference, stopped: list<TimeEntry>}) The new timer, its task (null without one) and the entries of the timers it stopped (oldest first)
+     * @return array{timer: ActiveTimer, task: TaskReference|null, stopped: list<TimeEntry>} The new timer, its task (null without one) and the entries of the timers it stopped (oldest first)
      */
-    public function startReplacing(UserInterface $user, ?string $taskId, ClientType $clientType, string $channel, array $metadata = [], ?string $stopNote = null, ?string $description = null, ?string $scopeKey = null): array
+    public function startReplacing(UserInterface $user, TimeAllocation|string|null $taskId, ClientType $clientType, string $channel, array $metadata = [], ?string $stopNote = null, ?string $description = null, ?string $scopeKey = null): array
     {
+        $allocation  = self::allocationOf($taskId);
         $channel     = TimerChannel::assertValid($channel);
-        $task        = $taskId === null ? null : $this->resolveTrackable($user, $taskId);
-        $scopeKey    = $task instanceof TaskReference ? $this->scopeKeyFor($user, $task->id, $task->boardId) : $this->scopeKeyWithoutTask($user, $scopeKey);
+        $task        = $allocation->taskId === null ? null : $this->resolveTrackable($user, $allocation->taskId);
+        $scopeKey    = $task instanceof TaskReference ? $this->scopeKeyFor($user, $task->id, $task->boardId) : $this->scopeKeyOfTaskless($user, $scopeKey, $allocation->subject);
         $description = $task instanceof TaskReference ? null : self::cleanDescription($description);
+        // Since 2.1.0: the subject and activity type, before anything is stopped.
+        $this->allocations->checkNew($user, $scopeKey, $allocation, false);
         $this->periodLockGuard?->assertWritable($user, $scopeKey, $this->clock->now(), WriteKind::TimerStart);
         $metadata                    = $this->startMetadata($metadata);
         $metadata[self::CHANNEL_KEY] = $channel;
@@ -502,13 +681,14 @@ final readonly class TimerService
 
             try {
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-                $timer = $this->serialised($user, function () use ($user, $task, $clientType, $metadata, $description, $scopeKey): ?ActiveTimer {
+                $timer = $this->serialised($user, function () use ($user, $task, $clientType, $metadata, $description, $scopeKey, $allocation): ?ActiveTimer {
                     if ($this->getActive($user) instanceof ActiveTimer) {
                         return null; // Another start of this account got in first: stop that one on the next attempt.
                     }
                     $timer = $task instanceof TaskReference
                         ? new ActiveTimer($this->userReferences->reference($user), $task->id, $task->title, $task->boardId, $clientType, $metadata, $this->clock->now())
                         : ActiveTimer::withoutTask($this->userReferences->reference($user), $clientType, $description, $scopeKey, $metadata, $this->clock->now());
+                    $timer->allocate($allocation->subject, $allocation->activityTypeKey);
                     $this->activeTimerRepository->save($timer);
 
                     return $timer;
@@ -531,11 +711,11 @@ final readonly class TimerService
         }
 
         if ($task instanceof TaskReference) {
-            $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
+            $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType, null, $timer->subject(), $timer->getActivityTypeKey()), TimeTrackEvents::TIMER_START);
         } else {
             $this->dispatchStartedWithoutTask($user, $timer);
         }
-        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['channel' => $channel, 'replaced' => $stopped !== []] + ($task instanceof TaskReference ? [] : ['without_task' => true]));
+        $this->logger->info('TimeTrack timer started.', $this->context('timer_start', $clientType) + ['channel' => $channel, 'replaced' => $stopped !== []] + ($task instanceof TaskReference ? [] : ['without_task' => true]) + $this->allocationContext($timer->subject(), $timer->getActivityTypeKey()));
 
         return ['timer' => $timer, 'task' => $task, 'stopped' => $stopped];
     }
@@ -553,13 +733,16 @@ final readonly class TimerService
      * @param DateTimeImmutable $from Idle start (not before the timer start)
      * @param DateTimeImmutable $to Idle end (after `from`, not in the future)
      * @param IdleResolution $resolution The user's decision
-     * @param string|null $targetTaskId Task the span goes to (`reassign` only; required there)
+     * @param string|TimeAllocation|null $targetTaskId Task the span goes to (`reassign` only; required there); since
+     *                                                 2.1.0 a {@see TimeAllocation} with a task or a subject (a subject
+     *                                                 alone lands in the running timer's scope)
      * @param IdleFollowUp $followUp What runs after the span (`reassign` only)
      * @param ClientType|null $clientType Client of the decision and source of the reassigned entry (null = the timer's client)
      * @param string|null $note `keep`: added to the running timer's note (1.10.1, see {@see ActiveTimer::appendNote()}); `reassign`: stored on the reassigned entry
      *
      * @throws ActiveTimerConflictException When a concurrent start took the timer slot before the follow-up timer started
      * @throws TaskNotTrackableException When the reassign target is unknown or not trackable by the user
+     * @throws TimeAllocationException When the target's subject or activity type is refused (since 2.1.0)
      * @throws InvalidArgumentException When the span is not inside the running timer, or the target is the timer's task
      * @throws PeriodLockedException When the idle span starts in a locked period (discard, split, reassign; since 1.13)
      * @throws PeriodSubmittedException When the idle span starts in a submitted period (since 1.13)
@@ -571,21 +754,23 @@ final readonly class TimerService
         DateTimeImmutable $from,
         DateTimeImmutable $to,
         IdleResolution $resolution,
-        ?string $targetTaskId = null,
+        TimeAllocation|string|null $targetTaskId = null,
         IdleFollowUp $followUp = IdleFollowUp::Continue,
         ?ClientType $clientType = null,
         ?string $note = null,
     ): ?array {
         // Whole seconds in the server zone (EF-M1, EF-I5): what is compared is what is stored.
-        $from   = $this->toSecond($from);
-        $to     = $this->toSecond($to);
-        $target = null;
+        $from       = $this->toSecond($from);
+        $to         = $this->toSecond($to);
+        $target     = null;
+        $allocation = null;
         if ($resolution === IdleResolution::Reassign) {
-            if ($targetTaskId === null || $targetTaskId === '') {
+            $allocation = $targetTaskId === '' ? null : ($targetTaskId === null ? null : self::allocationOf($targetTaskId));
+            if (!$allocation instanceof TimeAllocation || !$allocation->isAllocated()) {
                 throw new InvalidArgumentException('taskId is required to reassign an idle span.');
             }
 
-            $target = $this->resolveTrackable($user, $targetTaskId);
+            $target = $allocation->taskId === null ? null : $this->resolveTrackable($user, $allocation->taskId);
         }
 
         $timer = $this->getActive($user);
@@ -593,8 +778,14 @@ final readonly class TimerService
             return null;
         }
 
-        if ($target instanceof TaskReference && $target->id === $timer->getTaskId()) {
+        if ($allocation instanceof TimeAllocation && $allocation->taskId === $timer->taskIdOrNull() && TimeSubjectRef::same($allocation->subject, $timer->subject())) {
             throw new InvalidArgumentException('The idle span is already on this task: use keep or split.');
+        }
+        // Since 2.1.0: a target subject alone lands in the running timer's scope; the target is checked before any write.
+        $targetScope = null;
+        if ($allocation instanceof TimeAllocation) {
+            $targetScope = $target instanceof TaskReference ? $this->scopeKeyFor($user, $target->id, $target->boardId) : $this->timerScopeKey($user, $timer);
+            $this->allocations->checkNew($user, $targetScope, $allocation, false);
         }
 
         if ($from < $timer->getStartedAt() || $to <= $from || $to > $this->clock->now()) {
@@ -606,8 +797,8 @@ final readonly class TimerService
 
         if ($resolution !== IdleResolution::Keep && $this->periodLockGuard instanceof PeriodLockGuard) {
             $this->periodLockGuard->assertWritable($user, $this->timerScopeKey($user, $timer), $from, WriteKind::IdleResolve);
-            if ($target instanceof TaskReference) {
-                $this->periodLockGuard->assertWritable($user, $this->scopeKeyFor($user, $target->id, $target->boardId), $from, WriteKind::IdleResolve);
+            if ($allocation instanceof TimeAllocation) {
+                $this->periodLockGuard->assertWritable($user, $targetScope, $from, WriteKind::IdleResolve);
             }
         }
 
@@ -626,11 +817,11 @@ final readonly class TimerService
             return ['entry' => null, 'timer' => $timer, 'reassigned' => null];
         }
 
-        if ($target instanceof TaskReference) {
-            return $this->reassignIdle($user, $timer, $from, $to, $target, $followUp, $clientType, $note);
+        if ($allocation instanceof TimeAllocation) {
+            return $this->reassignIdle($user, $timer, $from, $to, $target, $allocation, $targetScope, $followUp, $clientType, $note);
         }
 
-        $entry = $this->stopTimer($user, $from);
+        $entry = $this->closeTimer($user, $timer, $from);
         if (!$entry instanceof TimeEntry) {
             return null; // A concurrent call stopped the timer first (1.9.1, CL-05).
         }
@@ -735,6 +926,93 @@ final readonly class TimerService
         };
 
         return $this->serialised($user, static fn (): ?ActiveTimer => $timers->runner()->run($beat));
+    }
+
+    /**
+     * Since 2.1.0 (Beacon spec 256, Q-TS-19): sets, changes or clears the subject and the activity type of the running
+     * timer (client API `timer/allocate`), task timer or not. A subject that is set or changed is checked first (a
+     * subject next to a task needs a type that allows tasks, then `canLog` in the timer's scope), an activity type that
+     * is set must exist and be active in that scope; all before the owner's lock. The change itself runs under the
+     * owner's write lock on the timer that runs **then**: when a switch replaced the timer in between, the checks run
+     * again for the new one (it is the running one). Clearing the subject of a timer without a task is refused when it
+     * would leave the time unallocated under `entries.require_allocation` or without `entries.allow_without_task`.
+     * Concurrent allocations: the last one wins (a running timer has no version). Dispatches {@see TimerAllocatedEvent}
+     * after the commit when something changed.
+     *
+     * @throws TimeAllocationException When the subject or activity type is refused, or the change would leave the time unallocated
+     * @throws ActiveTimerConflictException When the running timer was replaced on every attempt
+     *
+     * @return ActiveTimer|null The running timer as it is now, or null when none runs
+     */
+    public function allocateRunning(UserInterface $user, TimeAllocationPatch $patch): ?ActiveTimer
+    {
+        for ($attempt = 1;; ++$attempt) {
+            $timer = $this->getActive($user);
+            if (!$timer instanceof ActiveTimer || $patch->isKeep()) {
+                return $timer;
+            }
+            $this->stopAllocation($user, $timer, $patch, false);
+            $timers  = $this->activeTimerRepository;
+            $timerId = $timer->getId();
+            // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
+            $apply  = fn (): array|false|null => $this->applyAllocation($user, $timerId, $patch);
+            $result = $this->serialised($user, static fn (): mixed => $timers instanceof DoctrineOrmActiveTimerRepository ? $timers->runner()->run($apply) : $apply());
+            if ($result !== false) {
+                break;
+            }
+            if ($attempt >= self::REPLACE_ATTEMPTS) {
+                throw ActiveTimerConflictException::concurrentStart();
+            }
+        }
+        if ($result === null) {
+            return null;
+        }
+
+        /* @var array{0: ActiveTimer, 1: TimeSubjectRef|null, 2: string|null} $result */
+        [$current, $previousSubject, $previousKey] = $result;
+        if (!TimeSubjectRef::same($previousSubject, $current->subject()) || $previousKey !== $current->getActivityTypeKey()) {
+            $this->eventDispatcher->dispatch(new TimerAllocatedEvent(UserIdResolver::getId($user), $current->getId(), $current->taskIdOrNull(), $current->getScopeKey(), $previousSubject, $previousKey, $current->subject(), $current->getActivityTypeKey()), TimeTrackEvents::TIMER_ALLOCATED);
+            $this->logger->info('TimeTrack running timer allocated.', $this->context('timer_allocate', $current->getClientType()) + $this->allocationContext($current->subject(), $current->getActivityTypeKey()));
+        }
+
+        return $current;
+    }
+
+    /**
+     * The change of {@see self::allocateRunning()} under the owner's lock: false when another timer runs now (check it
+     * again), null when none runs, else the timer and its allocation before the change.
+     *
+     * @throws TimeAllocationException When the subject cannot sit next to the timer's task, or the time would be left unallocated
+     *
+     * @return array{0: ActiveTimer, 1: TimeSubjectRef|null, 2: string|null}|false|null
+     */
+    private function applyAllocation(UserInterface $user, string $timerId, TimeAllocationPatch $patch): array|false|null
+    {
+        $found = $this->getActive($user);
+        if (!$found instanceof ActiveTimer) {
+            return null;
+        }
+        if ($found->getId() !== $timerId) {
+            return false;
+        }
+        $timers  = $this->activeTimerRepository;
+        $current = $timers instanceof DoctrineOrmActiveTimerRepository ? $timers->lockById($timerId) : $found;
+        if (!$current instanceof ActiveTimer) {
+            // Only a delete between the read and the row lock, under the owner's lock.
+            return null; // @codeCoverageIgnore
+        }
+        $previousSubject = $current->subject();
+        $previousKey     = $current->getActivityTypeKey();
+        $subject         = $patch->subjectAfter($previousSubject);
+        if ($patch->changesSubjectOf($previousSubject)) {
+            $this->allocations->assertAllowsTask($subject, $current->hasTask());
+            $this->allocations->assertMayClearSubject($current->hasTask(), $previousSubject, $subject);
+        }
+        // @igor-ignore - $current is a Doctrine entity loaded for this request, not a shared service.
+        $current->allocate($subject, $patch->activityTypeAfter($previousKey));
+        $timers->save($current);
+
+        return [$current, $previousSubject, $previousKey];
     }
 
     /**
@@ -1040,16 +1318,38 @@ final readonly class TimerService
      *
      * @param list<TimeEntry> $extraEntries Entries recorded together with the timer's own entry (idle reassign)
      * @param array<string, mixed> $extraMetadata Added to the metadata of the timer's own entry (since 1.15)
+     * @param array{patch: TimeAllocationPatch, interactive: bool, types: ActivityTypeList|null}|null $stop Since 2.1.0: the checked allocation patch of a stop and whether it is interactive (null = a system stop that keeps the timer's allocation)
+     *
+     * @throws TimeAllocationRequiredException When an interactive stop misses an allocation (nothing is written)
      *
      * @return TimeEntry|null The timer's entry, or null when a concurrent call removed the timer first
      */
-    private function closeTimer(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null, array $extraEntries = [], bool $recordOwnEntry = true, array $extraMetadata = []): ?TimeEntry
+    private function closeTimer(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $endedAt, ?string $note = null, ?ClampedTime $endTime = null, array $extraEntries = [], bool $recordOwnEntry = true, array $extraMetadata = [], ?array $stop = null): ?TimeEntry
     {
         // Asked before the timer is locked: the policy is a host port and may read its own data.
         $serviceAccount = $this->isServiceAccount($user);
+        $patch          = $stop['patch'] ?? TimeAllocationPatch::keep();
+        $types          = $stop['types'] ?? null;
+        $interactive    = $stop['interactive'] ?? false;
+        if ($types === null && $timer->getActivityTypeKey() !== null && $this->allocations->activityTypes()->isEnabled()) {
+            // Since 2.1.0: the scope's activity types, read before the lock, give the entry its billable default (Q-TS-9).
+            $types = $this->allocations->activityTypes()->listFor($this->timerScopeKey($user, $timer));
+        }
+        $allocations = $this->allocations;
         // Since 1.27.0 (Beacon spec 239): the entry is built from the timer as read under the delete's lock, so a task
         // move (FR-008) or a note committed after the caller loaded the timer is what the entry records.
-        $build = function (ActiveTimer $current) use ($user, $endedAt, $note, $extraEntries, $recordOwnEntry, $extraMetadata, $serviceAccount): array {
+        $build = function (ActiveTimer $current) use ($user, $endedAt, $note, $extraEntries, $recordOwnEntry, $extraMetadata, $serviceAccount, $patch, $types, $interactive, $allocations): array {
+            // Since 2.1.0 (Beacon spec 256): the allocation is the re-read timer's with the stop's patch; an interactive
+            // stop that misses a required allocation throws here, before the delete commits, so the timer keeps running.
+            $subject  = $patch->subjectAfter($current->subject());
+            $activity = $patch->activityTypeAfter($current->getActivityTypeKey());
+            if ($patch->changesSubjectOf($current->subject())) {
+                $allocations->assertAllowsTask($subject, $current->hasTask());
+            }
+            $missing = $interactive ? $allocations->missingRequirement($current->hasTask(), $subject, $activity) : null;
+            if ($missing !== null) {
+                throw new TimeAllocationRequiredException(TimerSnapshot::fromTimer($current), $missing);
+            }
             $duration = max(0, $endedAt->getTimestamp() - $current->getStartedAt()->getTimestamp());
             $entry    = new TimeEntry(
                 $this->userReferences->reference($user),
@@ -1066,7 +1366,8 @@ final readonly class TimerService
             $entry->assignScopeKey($this->timerScopeKey($user, $current));
             // Since 1.36.0: an entry without a task keeps the timer's free text.
             $entry->describe($current->hasTask() ? null : $current->getDescription());
-            $this->applyBillableDefault($entry);
+            $entry->allocate($subject, $activity);
+            $this->applyBillableDefault($entry, $activity === null ? null : $types?->find($activity));
             $entry->markOrigin($this->channelOf($current), $serviceAccount);
             foreach ($extraEntries as $extra) {
                 $extra->markOrigin($extra->channel(), $serviceAccount);
@@ -1107,6 +1408,10 @@ final readonly class TimerService
             $this->activeTimerRepository->remove($timer);
         }
 
+        if ($this->allocations->requiresAllocation() && !$entry->hasTask() && !$entry->subject() instanceof TimeSubjectRef && in_array($entry, $entries, true)) {
+            // Since 2.1.0 (Q-TS-2): only a stop the system triggered gets here unallocated (an interactive one was refused).
+            $this->eventDispatcher->dispatch(new TimeEntryUnallocatedEvent($entry->getId(), UserIdResolver::getId($user), $entry->getScopeKey(), $entry->closedBy()), TimeTrackEvents::TIME_ENTRY_UNALLOCATED);
+        }
         foreach ($entries as $recorded) {
             $this->eventDispatcher->dispatch(new TimerStopEvent($user, $recorded, $recorded === $entry ? $endTime : null), TimeTrackEvents::TIMER_STOP);
             $locked = $this->periodLockGuard?->lockingTimesheet($user, $recorded->getScopeKey(), $recorded->getStartedAt());
@@ -1278,10 +1583,11 @@ final readonly class TimerService
     /**
      * Since 1.21: the host default `billable` of a new entry ({@see TimeEntryBillableDefaultProviderInterface}).
      */
-    private function applyBillableDefault(TimeEntry $entry): void
+    private function applyBillableDefault(TimeEntry $entry, ?ActivityType $activityType = null): void
     {
-        // Since 1.36.0: the host default is per task; an entry without a task has none (the flag stays unset).
-        $entry->markBillable($entry->hasTask() ? $this->billableDefaults?->defaultFor($entry->getScopeKey() ?? '', $entry->getTaskId()) : null);
+        // Since 1.36.0: the host default is per task; an entry without a task has none (the flag stays unset). Since 2.1.0
+        // the activity type's default comes first (Q-TS-9: explicit, activity type, host provider, none).
+        $entry->markBillable(AllocationGuard::billableDefault($activityType, fn (): ?bool => $entry->hasTask() ? $this->billableDefaults?->defaultFor($entry->getScopeKey() ?? '', $entry->getTaskId()) : null));
     }
 
     /**
@@ -1354,13 +1660,13 @@ final readonly class TimerService
      *
      * @return array{entry: TimeEntry|null, timer: ActiveTimer|null, reassigned: TimeEntry}|null
      */
-    private function reassignIdle(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $from, DateTimeImmutable $to, TaskReference $target, IdleFollowUp $followUp, ClientType $clientType, ?string $note): ?array
+    private function reassignIdle(UserInterface $user, ActiveTimer $timer, DateTimeImmutable $from, DateTimeImmutable $to, ?TaskReference $target, TimeAllocation $allocation, ?string $targetScope, IdleFollowUp $followUp, ClientType $clientType, ?string $note): ?array
     {
         $reassigned = new TimeEntry(
             $this->userReferences->reference($user),
-            $target->id,
-            $target->title,
-            $target->boardId,
+            $target?->id,
+            $target->title ?? '',
+            $target?->boardId,
             $from,
             $to,
             max(0, $to->getTimestamp() - $from->getTimestamp()),
@@ -1368,9 +1674,10 @@ final readonly class TimerService
             $note !== null ? ['note' => $note] : null,
             $this->clock->now(),
         );
-        $reassigned->assignScopeKey($this->scopeKeyFor($user, $target->id, $target->boardId));
+        $reassigned->assignScopeKey($targetScope);
+        $reassigned->allocate($allocation->subject, $allocation->activityTypeKey);
         $reassigned->markOrigin($this->channelOf($timer), false); // the service-account mark is set by closeTimer()
-        $this->applyBillableDefault($reassigned);
+        $this->applyBillableDefault($reassigned, $allocation->activityTypeKey === null ? null : $this->allocations->activityTypes()->listFor($targetScope)->find($allocation->activityTypeKey));
         $hasOwnEntry = $from > $timer->getStartedAt();
 
         $entry = $this->closeTimer($user, $timer, $from, null, null, [$reassigned], $hasOwnEntry);
@@ -1380,37 +1687,44 @@ final readonly class TimerService
 
         $next = match ($followUp) {
             IdleFollowUp::Continue => $this->continueTimer($user, $timer, $timer->getClientType(), $this->withoutNote($timer->getMetadata()), $to, 'timer_idle_reassign'),
-            IdleFollowUp::Switch   => $this->continueTimer($user, $target, $clientType, null, $to, 'timer_idle_reassign'),
+            IdleFollowUp::Switch   => $this->continueTimer($user, $target ?? $allocation, $clientType, null, $to, 'timer_idle_reassign', $allocation, $targetScope),
             IdleFollowUp::Stop     => null,
         };
 
         $this->logger->info('TimeTrack idle span reassigned.', $this->context('timer_idle_reassign', $clientType) + ['then' => $followUp->value]);
-        $this->dispatchIdleResolved($user, IdleResolution::Reassign, $from, $to, $clientType, $target->id, $followUp, $note);
+        $this->dispatchIdleResolved($user, IdleResolution::Reassign, $from, $to, $clientType, $target?->id, $followUp, $note);
 
         return ['entry' => $hasOwnEntry ? $entry : null, 'timer' => $next, 'reassigned' => $reassigned];
     }
 
     /**
-     * Starts the follow-up timer of an idle decision at `$startedAt`: on the target task, or on what the stopped timer
-     * tracked (since 1.36.0 a timer without a task continues without one, with its free text and scope).
+     * Starts the timer that follows an idle decision: the same allocation as the stopped timer (split, continue), or the
+     * reassign target (switch). Since 1.36.0 a timer without a task continues without one, with its free text and scope;
+     * since 2.1.0 the subject and activity type go with it.
      *
      * @param array<string, mixed>|null $metadata
      *
      * @throws ActiveTimerConflictException When a concurrent start took the timer slot first (the recorded entries stay)
      */
-    private function continueTimer(UserInterface $user, TaskReference|ActiveTimer $from, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action): ActiveTimer
+    private function continueTimer(UserInterface $user, TaskReference|ActiveTimer|TimeAllocation $from, ClientType $clientType, ?array $metadata, DateTimeImmutable $startedAt, string $action, ?TimeAllocation $allocation = null, ?string $scopeKey = null): ActiveTimer
     {
         $owner = $this->userReferences->reference($user);
         $next  = match (true) {
-            $from instanceof TaskReference => new ActiveTimer($owner, $from->id, $from->title, $from->boardId, $clientType, $metadata, $startedAt),
-            $from->hasTask()               => new ActiveTimer($owner, $from->getTaskId(), $from->getTaskTitleSnapshot(), $from->getBoardIdSnapshot(), $clientType, $metadata, $startedAt),
-            default                        => ActiveTimer::withoutTask($owner, $clientType, $from->getDescription(), $from->getScopeKey(), $metadata, $startedAt),
+            $from instanceof TaskReference  => new ActiveTimer($owner, $from->id, $from->title, $from->boardId, $clientType, $metadata, $startedAt),
+            $from instanceof TimeAllocation => ActiveTimer::withoutTask($owner, $clientType, null, $scopeKey, $metadata, $startedAt),
+            $from->hasTask()                => new ActiveTimer($owner, $from->getTaskId(), $from->getTaskTitleSnapshot(), $from->getBoardIdSnapshot(), $clientType, $metadata, $startedAt),
+            default                         => ActiveTimer::withoutTask($owner, $clientType, $from->getDescription(), $from->getScopeKey(), $metadata, $startedAt),
         };
+        if ($from instanceof ActiveTimer) {
+            $next->allocate($from->subject(), $from->getActivityTypeKey());
+        } elseif ($allocation instanceof TimeAllocation) {
+            $next->allocate($allocation->subject, $allocation->activityTypeKey);
+        }
         // A concurrent start won between the stop and the continuation (1.9.1): the entries stay, its timer runs.
         $this->insertTimer($user, $next, $action, $clientType);
         if ($next->hasTask()) {
             $task = $from instanceof TaskReference ? $from : new TaskReference($next->getTaskId(), $next->getTaskTitleSnapshot(), $next->getBoardIdSnapshot());
-            $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType), TimeTrackEvents::TIMER_START);
+            $this->eventDispatcher->dispatch(new TimerStartEvent($user, $task, $clientType, null, $next->subject(), $next->getActivityTypeKey()), TimeTrackEvents::TIMER_START);
         } else {
             $this->dispatchStartedWithoutTask($user, $next);
         }

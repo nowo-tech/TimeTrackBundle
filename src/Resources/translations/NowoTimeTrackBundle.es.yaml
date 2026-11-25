@@ -39,11 +39,14 @@ reports:
   task_not_visible: Tarea no visible
   no_task: "Sin tarea"
   former_person: "Persona antigua"
+  subject: "Asunto"
 flash:
   timer_started: Temporizador iniciado.
   timer_already_active: Ya tienes un temporizador activo.
   timer_stopped: Temporizador detenido.
   no_active_timer: No hay ningún temporizador activo.
+  allocation_required: "Asigna este tiempo a una tarea o a un asunto antes de parar el temporizador."
+  activity_type_required: "Elige un tipo de actividad antes de parar el temporizador."
 device:
   intro: "Introduce el código que muestra la app de escritorio o la extensión del navegador."
   user_code: "Código del dispositivo"
@@ -187,3 +190,5 @@ ledger:
     reversal_title: "Anular este movimiento"
 client_api:
   leave_absent: "Ausente"
+subjects:
+  not_visible: "Asunto no visible"

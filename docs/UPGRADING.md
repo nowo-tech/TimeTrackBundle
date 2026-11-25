@@ -2,6 +2,12 @@
 
 ## Table of contents
 
+- [To 2.1.0](#to-210)
+  - [Schema](#schema)
+  - [Column contract](#column-contract)
+  - [Register providers](#register-providers)
+  - [Back-fill existing entries](#back-fill-existing-entries)
+  - [Clients and hosts](#clients-and-hosts)
 - [To 2.0.0](#to-200)
   - [Before you upgrade](#before-you-upgrade)
   - [What changes](#what-changes)
@@ -116,6 +122,165 @@
 - [To 1.3.0](#to-130)
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
+
+## To 2.1.0
+
+From **2.0.0** (a minor: no code change needed). TimeTrack 2.1.0 adds time **subjects** and **activity types** (Beacon
+spec 256, design [docs/design/TIME_SUBJECT_ACTIVITY.md](design/TIME_SUBJECT_ACTIVITY.md)). Until you register a
+provider nothing changes: the new columns stay NULL, `GET me` reports empty features and a request that names a subject
+is refused like an unknown type.
+
+### Schema
+
+Apply the reference scripts of `docs/sql/2.1.0` (default table prefix; adapt it if you changed `table_prefix`). They
+add three nullable columns to the entries and running timers and two indexes; no row is rewritten.
+
+MySQL 8.4 (`mysql-up.sql`):
+
+```sql
+-- TimeTrackBundle 2.1.0, MySQL 8.4 (on MySQL before 8.0.17 replace utf8mb4_0900_bin with utf8mb4_bin), default table prefix. Subject and activity type (Beacon spec 256): three nullable exact-key columns on entries and running timers, and two tenant-leading indexes. No row is rewritten. Each statement is one atomic change.
+ALTER TABLE time_track_entries ADD subject_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin DEFAULT NULL, ADD subject_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin DEFAULT NULL, ADD activity_type_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin DEFAULT NULL, ALGORITHM=INSTANT;
+ALTER TABLE time_track_active_timers ADD subject_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin DEFAULT NULL, ADD subject_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin DEFAULT NULL, ADD activity_type_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin DEFAULT NULL, ALGORITHM=INSTANT;
+CREATE INDEX idx_time_track_entries_scope_subject ON time_track_entries (scope_key, subject_type, subject_id, started_at) ALGORITHM=INPLACE LOCK=NONE;
+CREATE INDEX idx_time_track_entries_scope_activity ON time_track_entries (scope_key, activity_type_key, started_at) ALGORITHM=INPLACE LOCK=NONE;
+```
+
+MariaDB 10.6+ / 11.4 (`mariadb-up.sql`, never the folding default `utf8mb4_uca1400_ai_ci`):
+
+```sql
+-- TimeTrackBundle 2.1.0, MariaDB 10.6+ / 11.4 (never the folding default utf8mb4_uca1400_ai_ci), default table prefix. Subject and activity type (Beacon spec 256): three nullable exact-key columns on entries and running timers, and two tenant-leading indexes. No row is rewritten. Each statement is one atomic change.
+ALTER TABLE time_track_entries ADD subject_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin DEFAULT NULL, ADD subject_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin DEFAULT NULL, ADD activity_type_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin DEFAULT NULL, ALGORITHM=INSTANT;
+ALTER TABLE time_track_active_timers ADD subject_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin DEFAULT NULL, ADD subject_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin DEFAULT NULL, ADD activity_type_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_nopad_bin DEFAULT NULL, ALGORITHM=INSTANT;
+CREATE INDEX idx_time_track_entries_scope_subject ON time_track_entries (scope_key, subject_type, subject_id, started_at) ALGORITHM=INPLACE LOCK=NONE;
+CREATE INDEX idx_time_track_entries_scope_activity ON time_track_entries (scope_key, activity_type_key, started_at) ALGORITHM=INPLACE LOCK=NONE;
+```
+
+PostgreSQL 16 (`postgresql-up.sql`, the indexes are built `CONCURRENTLY` outside the transaction; a Doctrine Migrations
+host that wants one transaction drops `CONCURRENTLY`):
+
+```sql
+-- TimeTrackBundle 2.1.0, PostgreSQL 16 (default table prefix). Subject and activity type (Beacon spec 256). Adding a nullable column without a default is metadata-only; the default deterministic collation compares exactly. The indexes are built CONCURRENTLY, outside the transaction (a Doctrine Migrations host that wants one transaction drops CONCURRENTLY and accepts the write lock of the build). Run with psql.
+\set ON_ERROR_STOP on
+BEGIN;
+ALTER TABLE time_track_entries ADD subject_type VARCHAR(32) DEFAULT NULL;
+ALTER TABLE time_track_entries ADD subject_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_entries ADD activity_type_key VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD subject_type VARCHAR(32) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD subject_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD activity_type_key VARCHAR(64) DEFAULT NULL;
+COMMIT;
+CREATE INDEX CONCURRENTLY idx_time_track_entries_scope_subject ON time_track_entries (scope_key, subject_type, subject_id, started_at);
+CREATE INDEX CONCURRENTLY idx_time_track_entries_scope_activity ON time_track_entries (scope_key, activity_type_key, started_at);
+```
+
+SQLite 3.35+ (`sqlite-up.sql`):
+
+```sql
+-- TimeTrackBundle 2.1.0, SQLite 3.35+ (default table prefix). Subject and activity type (Beacon spec 256): ADD COLUMN of a nullable column needs no table rebuild; one column per statement. SQLite compares = with BINARY by default, which is exact. Run with the sqlite3 CLI.
+.bail on
+BEGIN;
+ALTER TABLE time_track_entries ADD COLUMN subject_type VARCHAR(32) DEFAULT NULL;
+ALTER TABLE time_track_entries ADD COLUMN subject_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_entries ADD COLUMN activity_type_key VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD COLUMN subject_type VARCHAR(32) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD COLUMN subject_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE time_track_active_timers ADD COLUMN activity_type_key VARCHAR(64) DEFAULT NULL;
+CREATE INDEX idx_time_track_entries_scope_subject ON time_track_entries (scope_key, subject_type, subject_id, started_at);
+CREATE INDEX idx_time_track_entries_scope_activity ON time_track_entries (scope_key, activity_type_key, started_at);
+COMMIT;
+```
+
+Rollback to 2.0 (`*-down.sql`) drops the allocation of every entry, never its time: export it first if you may come
+back. MySQL:
+
+```sql
+-- TimeTrackBundle 2.1.0 rollback to 2.0, MySQL 8.4 (on MySQL before 8.0.17 replace utf8mb4_0900_bin with utf8mb4_bin). Drops the allocation of every entry (never its time): export it first if you may come back.
+DROP INDEX idx_time_track_entries_scope_activity ON time_track_entries;
+DROP INDEX idx_time_track_entries_scope_subject ON time_track_entries;
+ALTER TABLE time_track_active_timers DROP subject_type, DROP subject_id, DROP activity_type_key;
+ALTER TABLE time_track_entries DROP subject_type, DROP subject_id, DROP activity_type_key;
+```
+
+The three columns are exact keys (REQ-SEC-006): `nowo:migrations:check-key-collations` checks them; with the bundle's
+schema tool or the scripts above they already have the binary NO PAD collation on MySQL / MariaDB.
+
+### Column contract
+
+| Column | Tables | Type | Rule |
+|---|---|---|---|
+| `subject_type` | `time_track_entries`, `time_track_active_timers` | `VARCHAR(32)` NULL | `^[a-z][a-z0-9_]{0,31}$`; NULL iff `subject_id` is NULL |
+| `subject_id` | both | `VARCHAR(64)` NULL | 1–64 bytes, no edge blank, no control / format / invisible character; NULL iff `subject_type` is NULL; next to a `task_id` only for a type whose provider `allowsTask()` |
+| `activity_type_key` | both | `VARCHAR(64)` NULL | `^[a-z0-9][a-z0-9_.-]{0,63}$`; a key of the row's scope |
+
+No CHECK constraint and no foreign key: the bundle enforces the contract on every write, and
+`nowo:time-track:entries:check-allocation` reports rows written by hand that break it.
+
+### Register providers
+
+Implement `Nowo\TimeTrackBundle\Subject\TimeSubjectProviderInterface` once per subject type; autoconfiguration tags it
+(`nowo_time_track.time_subject_provider`; without autoconfiguration add that tag). Two providers for one type fail the
+build. For activity types, alias `Nowo\TimeTrackBundle\Subject\ActivityTypeProviderInterface` to your service. Both take
+bundle value objects only, so a DDD host keeps the adapter in its infrastructure layer. Deny by default: an unknown id
+and an id the actor may not use get the same answer; keep nothing between calls (worker mode).
+
+```yaml
+nowo_time_track:
+  entries:
+    require_allocation: true      # interactive stops / manual entries need a task or a subject
+    require_activity_type: false
+    subjects:
+      scope_subject: { enabled: false, type: organisation }   # built-in "the tenant itself"
+      search: { max_per_minute: 60 }
+```
+
+`require_allocation: true` with `allow_without_task: true` and no subject provider fails the build (a timer without a
+task could never be allocated).
+
+### Back-fill existing entries
+
+The mapping of existing time to subjects is your data (Q-TS-22): write it in your own DBAL migration, constrained by the
+column contract, and only on rows without a subject so it is idempotent. MySQL / MariaDB:
+
+```sql
+-- Task-less entries that were customer calls; crm_call_log maps entry ids to customers.
+UPDATE time_track_entries e
+  JOIN crm_call_log m ON m.time_entry_id = e.id
+   SET e.subject_type = 'customer', e.subject_id = m.customer_id, e.activity_type_key = 'support_call'
+ WHERE e.task_id IS NULL AND e.subject_type IS NULL AND e.anonymised_at IS NULL;
+
+-- Customer time on tasks ('customer' must be a type whose provider allowsTask()).
+UPDATE time_track_entries e
+  JOIN host_task_customer m ON m.task_id = e.task_id
+   SET e.subject_type = 'customer', e.subject_id = m.customer_id
+ WHERE e.task_id IS NOT NULL AND e.subject_type IS NULL AND e.anonymised_at IS NULL;
+```
+
+PostgreSQL and SQLite 3.33+ use `UPDATE … FROM`:
+
+```sql
+UPDATE time_track_entries AS e
+   SET subject_type = 'customer', subject_id = m.customer_id
+  FROM host_task_customer AS m
+ WHERE m.task_id = e.task_id AND e.task_id IS NOT NULL AND e.subject_type IS NULL AND e.anonymised_at IS NULL;
+```
+
+On a large table run it per tenant (`AND e.scope_key = ?`) or in id ranges. Then run
+`bin/console nowo:time-track:entries:check-allocation [--scope=…] [--fix-report]` (read-only; non-zero exit on
+findings; it also counts the back-filled entries that sit in locked or submitted periods — allowed, Q-TS-15, the
+timesheet hash does not cover the allocation). The version token of a back-filled entry changes, so an edit form opened
+before the migration gets `conflict` instead of overwriting.
+
+### Clients and hosts
+
+- Client API v0.4 is additive ([CLIENT-API](CLIENT-API.md#changes-in-21-subjects-and-activity-types-spec-256)): every
+  returned entry and timer gains `subject` and `activityType` (null when none); no new client scope, existing tokens
+  keep working.
+- CSV export: five columns are appended at the end; the earlier ones keep their order.
+- `TimeEntryQueryInterface` applies no access rule (unchanged): label subjects you show with
+  `TimeSubjectLabelResolver` and show the ones it does not label as hidden.
+- Correction results list `subject` and `activity_type_key` after the four 2.0 fields.
+- `TimerService::startAt()` returns `task: null` for a timer without a task, as before; its `$taskId` argument also
+  takes a `TimeAllocation`.
 
 ## To 2.0.0
 

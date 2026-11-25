@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Nowo\TimeTrackBundle\Controller;
 
 use DateTimeImmutable;
+use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Calendar\CalendarConnectionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSettings;
 use Nowo\TimeTrackBundle\Calendar\CalendarSuggestionService;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncResult;
 use Nowo\TimeTrackBundle\Calendar\CalendarSyncService;
+use Nowo\TimeTrackBundle\Client\ClientAllocationInput;
+use Nowo\TimeTrackBundle\Client\ClientAllocationPresenter;
+use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
@@ -17,6 +21,7 @@ use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
 use Nowo\TimeTrackBundle\Entity\CalendarConnection;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
+use Nowo\TimeTrackBundle\Enum\ClientApiAuditAction;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Exception\BillableChangeRefusedException;
@@ -24,9 +29,13 @@ use Nowo\TimeTrackBundle\Exception\IdempotentReplayException;
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodLockedException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
 use Nowo\TimeTrackBundle\Service\ManualEntryService;
 use Nowo\TimeTrackBundle\Service\TimeEntryBillableService;
+use Nowo\TimeTrackBundle\Subject\AllocationLabels;
+use Nowo\TimeTrackBundle\Subject\TimeAllocation;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Support\CanonicalJson;
 use Nowo\TimeTrackBundle\Support\Rfc3339;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
@@ -101,6 +110,10 @@ final readonly class TimeTrackCalendarApiController
         // Since 1.21: `PATCH entries/{id}` (`billable`).
         private TimeEntryBillableService $billable,
         ?ClockInterface $clock = null,
+        // Since 2.1.0 (contract v0.4): the subject and activity type of the returned entries (null = masked).
+        private ?ClientAllocationPresenter $allocations = null,
+        // Since 2.1.0 (§9): `subject_allocated` (the subject type, never the id) and `subject_forbidden` denials.
+        private ?ClientApiAuditor $auditor = null,
     ) {
         $this->clock = $clock ?? new NativeClock();
     }
@@ -315,7 +328,11 @@ final readonly class TimeTrackCalendarApiController
     /**
      * POST entries `{taskId, startedAt, endedAt, source: manual|calendar, note?, billable?}` with `Idempotency-Key`: 201
      * entry; 409 `period_locked` / `period_submitted` / `overlap`; 422 for the times; 403 `task_forbidden`. Since 1.21 an
-     * absent or null `billable` takes the host default.
+     * absent or null `billable` takes the host default. Since 2.1.0 (contract v0.4) `taskId` or `subject: {type, id}` (or
+     * both when the type allows tasks), `activityTypeKey?` and, for a subject alone, `scopeKey?` (one of the user's; the
+     * current one by default); the body hash of the `Idempotency-Key` covers them. 403 `subject_forbidden`, 422
+     * `allocation_conflict` / `activity_type_unknown` / `activity_type_inactive` / `activity_type_required`, 409
+     * `allocation_required` (never reached with a task or a subject).
      */
     #[Route('/api/time-track/entries', name: 'nowo_time_track_api_entries_create', methods: ['POST'])]
     public function createEntry(Request $request): Response
@@ -351,17 +368,27 @@ final readonly class TimeTrackCalendarApiController
             return $this->responseFactory->json($replay['body'], $replay['status'], $request);
         }
         $taskId = $payload['taskId'] ?? null;
+        try {
+            // Since 2.1.0: the subject, activity type and scope of the entry (malformed values: 400 before any provider).
+            [, $subject]  = ClientAllocationInput::subject($payload);
+            [, $activity] = ClientAllocationInput::activityTypeKey($payload);
+            $scopeKey     = ClientAllocationInput::scopeKey($payload);
+        } catch (InvalidArgumentException) {
+            return $this->responseFactory->error('invalid_request', 'subject must be {"type", "id"}, activityTypeKey a key and scopeKey one of your scope keys.', Response::HTTP_BAD_REQUEST, $request);
+        }
         $start  = Rfc3339::parse($payload['startedAt'] ?? null);
         $end    = Rfc3339::parse($payload['endedAt'] ?? null);
         $source = TimeEntrySource::tryFrom(is_string($payload['source'] ?? null) ? $payload['source'] : '');
         $note   = $payload['note'] ?? null;
         // Since 1.21: an optional `billable` (true / false; null or absent = the host default).
         $billable = $payload['billable'] ?? null;
-        if (!is_string($taskId) || $taskId === '' || strlen($taskId) > 36 || !$start instanceof DateTimeImmutable || !$end instanceof DateTimeImmutable
+        $hasTask  = !$subject instanceof TimeSubjectRef || $taskId !== null;
+        if (($hasTask && (!is_string($taskId) || $taskId === '' || strlen($taskId) > 36)) || !$start instanceof DateTimeImmutable || !$end instanceof DateTimeImmutable
             || !in_array($source, [TimeEntrySource::Manual, TimeEntrySource::Calendar], true) || ($note !== null && !is_string($note)) || ($billable !== null && !is_bool($billable))) {
             return $this->responseFactory->error('invalid_request', 'taskId, startedAt and endedAt (RFC 3339) and source (manual or calendar) are required.', Response::HTTP_BAD_REQUEST, $request);
         }
-        $retry = $this->rateLimiter->hit('entries_create', $principal->token->getTokenHash(), self::ENTRIES_PER_HOUR, 3600);
+        $allocation = $hasTask ? TimeAllocation::task((string) $taskId, $subject, $activity) : TimeAllocation::subject($subject, $activity);
+        $retry      = $this->rateLimiter->hit('entries_create', $principal->token->getTokenHash(), self::ENTRIES_PER_HOUR, 3600);
         if ($retry > 0) {
             return $this->tooManyRequests($request, $retry);
         }
@@ -377,7 +404,7 @@ final readonly class TimeTrackCalendarApiController
             // key). Under the lock a stored 201 is replayed only when its entry is committed (a failed commit is
             // treated as never stored), and a failed request drops the answer it stored.
             // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-            $entry = $this->entries->create($principal->user, $taskId, $start, $end, $source, $note, ['origin' => $source->value], null, function () use ($userId, $idempotencyKey, $bodyHash): void {
+            $entry = $this->entries->create($principal->user, $allocation, $start, $end, $source, $note, ['origin' => $source->value], null, function () use ($userId, $idempotencyKey, $bodyHash): void {
                 $again = $this->idempotency->find($userId, $idempotencyKey, $bodyHash);
                 if ($again === false) {
                     throw new IdempotentReplayException(Response::HTTP_UNPROCESSABLE_ENTITY, ['error' => 'idempotency_mismatch', 'message' => 'This Idempotency-Key was used with another request.']);
@@ -386,14 +413,17 @@ final readonly class TimeTrackCalendarApiController
                     throw new IdempotentReplayException($again['status'], $again['body']);
                 }
                 // @igor-ignore - Request-scoped closure passed to a per-request call; nothing is stored on the service.
-            }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash, $nonce, &$stored): void {
+            }, function (TimeEntry $entry) use ($userId, $idempotencyKey, $bodyHash, $nonce, $principal, $request, &$stored): void {
                 // Audit QO-L2: pending until the commit; confirmed right after it (then replayed unconditionally).
-                $this->idempotency->savePending($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $entry->toArray() + ['locked' => false]], $nonce);
+                $this->idempotency->savePending($userId, $idempotencyKey, $bodyHash, Response::HTTP_CREATED, ['entry' => $this->entryBody($principal, $entry, $request)], $nonce);
                 $stored = true;
-            }, $billable);
+            }, $billable, scopeKey: $scopeKey);
             $this->idempotency->confirm($userId, $idempotencyKey, $nonce);
+            if ($subject instanceof TimeSubjectRef) {
+                $this->auditor?->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $subject->type);
+            }
 
-            return $this->responseFactory->json(['entry' => $entry->toArray() + ['locked' => false]], Response::HTTP_CREATED, $request);
+            return $this->responseFactory->json(['entry' => $this->entryBody($principal, $entry, $request)], Response::HTTP_CREATED, $request);
         } catch (IdempotentReplayException $replay) {
             return $this->responseFactory->json($replay->body, $replay->status, $request);
         } catch (ManualEntryException $e) {
@@ -402,6 +432,13 @@ final readonly class TimeTrackCalendarApiController
             }
             $status = $e->httpStatus();
             $body   = ['error' => $e->errorCode, 'message' => 'The entry was refused.'];
+        } catch (TimeAllocationException $e) {
+            // Since 2.1.0: unknown type, unknown id and no access share one answer (no oracle).
+            if ($e->errorCode === TimeAllocationException::SUBJECT_FORBIDDEN) {
+                $this->auditor?->denied('subject_forbidden', $principal->token, $request->getClientIp());
+            }
+            $status = $e->httpStatus();
+            $body   = ['error' => $e->errorCode, 'message' => $e->errorCode === TimeAllocationException::SUBJECT_FORBIDDEN ? 'You may not log time on this subject.' : 'The allocation of this entry was refused.'];
         } catch (PeriodWriteRefusedException $e) {
             $status = Response::HTTP_CONFLICT;
             $body   = ['error' => $e->errorCode(), 'message' => 'The period is locked or submitted.'];
@@ -489,7 +526,17 @@ final readonly class TimeTrackCalendarApiController
             return $this->responseFactory->json(['error' => $e->errorCode(), 'message' => 'The period is locked or submitted.'] + $extra, Response::HTTP_CONFLICT, $request);
         }
 
-        return $this->responseFactory->json(['entry' => $entry->toArray() + ['locked' => false]], Response::HTTP_OK, $request);
+        return $this->responseFactory->json(['entry' => $this->entryBody($principal, $entry, $request)], Response::HTTP_OK, $request);
+    }
+
+    /**
+     * Since 2.1.0: the wire shape of a written entry, with its subject and activity type (the token's user as viewer).
+     *
+     * @return array<string, mixed>
+     */
+    private function entryBody(ClientApiPrincipal $principal, TimeEntry $entry, Request $request): array
+    {
+        return $entry->toArray() + ['locked' => false] + ($this->allocations?->single($principal->user, $entry, $request) ?? ['subject' => AllocationLabels::none()->subject($entry->getScopeKey(), $entry->subject()), 'activityType' => AllocationLabels::none()->activityType($entry->getScopeKey(), $entry->getActivityTypeKey())]);
     }
 
     /**

@@ -55,4 +55,7 @@ enum ClientApiAuditAction: string
      * ({@see ClientTokenRevoker::revokeAllForUser()}), reason `all`.
      */
     case SessionRevoked = 'session_revoked';
+
+    /** Since 2.1.0 (Beacon spec 256): a client API write set or changed a subject; the reason is the subject type (never its id). */
+    case SubjectAllocated = 'subject_allocated';
 }

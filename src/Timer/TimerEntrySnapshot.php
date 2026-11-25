@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\Timer;
 use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Entity\TimeEntry;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 
 /**
  * Since 1.25.0: framework-free snapshot of the entry a stopped timer recorded, as {@see HostTimerApi} returns it (start,
@@ -34,6 +35,9 @@ final readonly class TimerEntrySnapshot
         public bool $withoutTask = false,
         public ?string $description = null,
         public ?string $scopeKey = null,
+        // Since 2.1.0 (Beacon spec 256): the subject and the activity type key of the entry.
+        public ?TimeSubjectRef $subject = null,
+        public ?string $activityTypeKey = null,
     ) {
     }
 
@@ -65,6 +69,8 @@ final readonly class TimerEntrySnapshot
             !$entry->hasTask(),
             $entry->getDescription(),
             $entry->getScopeKey(),
+            $entry->subject(),
+            $entry->getActivityTypeKey(),
         );
     }
 }

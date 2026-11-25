@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Entry;
 
 use Nowo\TimeTrackBundle\Exception\ManualEntryException;
 use Nowo\TimeTrackBundle\Exception\PeriodWriteRefusedException;
+use Nowo\TimeTrackBundle\Exception\TimeAllocationException;
 use Nowo\TimeTrackBundle\Exception\TimeEntryCorrectionException;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryRecord;
@@ -59,6 +60,15 @@ interface TimeEntryOperationsInterface
      * 32 keys / 16 KB (`metadata_too_large`). A correction
      * that changes nothing writes nothing and dispatches nothing ({@see TimeEntryCorrectionResult::$changed} false).
      *
+     * Since 2.1.0 (Beacon spec 256) the correction may also change the subject and the activity type
+     * ({@see TimeEntryCorrection::$allocation}). `canLog` is asked for the **owner** only when the subject changes (a
+     * times-only fix of an entry on a subject the owner lost access to stays possible, Q-TS-8); a subject next to a task
+     * needs a type that allows tasks (`allocation_conflict`); an activity type that is set must exist and be active in the
+     * entry's scope; clearing the subject of an entry without a task is refused when it would leave it unallocated under
+     * `entries.require_allocation` or without `entries.allow_without_task`. The task itself is never changed here (moving
+     * task time stays `TaskTimeMover`). The changed fields then also list `subject` and `activity_type_key`, after the
+     * first four.
+     *
      * @param int|string|TimeTrackUserRef $owner The entry owner (see the class comment)
      * @param string $entryId The entry id (exact)
      * @param string $expectedVersion The version of the entry as you read it ({@see TimeEntryRecord::version()})
@@ -67,6 +77,8 @@ interface TimeEntryOperationsInterface
      *                                      one answer), `read_only`, `conflict`, `invalid_range`, `entry_too_long`,
      *                                      `entry_in_future`, `entry_too_old`, `invalid_duration`, `metadata_too_large`,
      *                                      `overlap`
+     * @throws TimeAllocationException Since 2.1.0: `subject_forbidden`, `allocation_conflict`, `activity_type_unknown`,
+     *                                 `activity_type_inactive`, `allocation_required`
      * @throws PeriodWriteRefusedException When the old or the new start is in a locked or submitted period
      * @throws TransientStorageFailure When the storage failed transiently (deadlock, lock wait timeout): nothing was
      *                                 committed, retry
@@ -82,10 +94,15 @@ interface TimeEntryOperationsInterface
      * refused entry leaves that row, as a first timer start would). Since 1.40.1 the draft validates its allowed age and
      * metadata when it is built ({@see ManualTimeEntryDraft}).
      *
+     * Since 2.1.0 the draft's {@see ManualTimeEntryDraft::$allocation} may name a subject (with or next to the task) and
+     * an activity type, checked for the owner (Q-TS-7); a manual entry is interactive, so `entries.require_allocation` and
+     * `entries.require_activity_type` refuse one that misses them.
+     *
      * @param int|string|TimeTrackUserRef $owner The owner (see the class comment)
      *
      * @throws ManualEntryException `unknown_user`, or a refusal of the entry (`invalid_range`, `entry_too_long`,
      *                              `entry_in_future`, `entry_too_old`, `not_trackable`, `overlap`, `billable_forbidden`)
+     * @throws TimeAllocationException Since 2.1.0: the subject or activity type is refused, or a required one is missing
      * @throws PeriodWriteRefusedException When the period is locked or submitted
      * @throws TransientStorageFailure When the storage failed transiently: nothing was committed, retry
      */

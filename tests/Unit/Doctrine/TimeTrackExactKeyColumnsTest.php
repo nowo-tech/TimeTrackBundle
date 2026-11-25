@@ -28,6 +28,7 @@ use function array_unique;
 use function array_values;
 use function basename;
 use function glob;
+use function in_array;
 use function preg_replace;
 use function sort;
 use function str_starts_with;
@@ -50,6 +51,12 @@ final class TimeTrackExactKeyColumnsTest extends TestCase
             'time_track_calendar_rules.scope_key',
             'time_track_entries.scope_key',
             'time_track_active_timers.scope_key',
+            'time_track_entries.subject_type',
+            'time_track_entries.subject_id',
+            'time_track_entries.activity_type_key',
+            'time_track_active_timers.subject_type',
+            'time_track_active_timers.subject_id',
+            'time_track_active_timers.activity_type_key',
             'time_track_timesheets.owner_ref',
             'time_track_timesheets.submitted_by_ref',
             'time_track_timesheets.decided_by_ref',
@@ -115,7 +122,8 @@ final class TimeTrackExactKeyColumnsTest extends TestCase
         // Default configuration: the scope keys exist and are exact; the reference columns are the DDL of a mode
         // that is off, so they are reported as skipped with that setting instead of as failures.
         foreach ((new TimeTrackExactKeyColumns())->exactKeyColumns() as $column) {
-            $scope = $column->column === 'scope_key';
+            // Since 2.1.0 the allocation columns are exact in every configuration, like the scope keys.
+            $scope = in_array($column->column, ['scope_key', 'subject_type', 'subject_id', 'activity_type_key'], true);
             self::assertSame($scope, $column->active, $column->describe());
             self::assertSame($scope ? null : TimeTrackExactKeyColumns::REF_CONDITION, $column->condition, $column->describe());
         }

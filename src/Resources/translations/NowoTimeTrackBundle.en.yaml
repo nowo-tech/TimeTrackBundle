@@ -39,11 +39,14 @@ reports:
   task_not_visible: Task not visible
   no_task: "No task"
   former_person: "Former person"
+  subject: "Subject"
 flash:
   timer_started: Timer started.
   timer_already_active: You already have an active timer.
   timer_stopped: Timer stopped.
   no_active_timer: No active timer.
+  allocation_required: "Allocate this time to a task or a subject before you stop the timer."
+  activity_type_required: "Choose an activity type before you stop the timer."
 device:
   intro: "Enter the code shown by the desktop app or the browser extension."
   user_code: "Device code"
@@ -187,3 +190,5 @@ ledger:
     reversal_title: "Reverse this movement"
 client_api:
   leave_absent: "Absent"
+subjects:
+  not_visible: "Subject not visible"

@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Routing;
 
 use LogicException;
 use Nowo\TimeTrackBundle\Controller\TimeTrackCalendarApiController;
+use Nowo\TimeTrackBundle\Controller\TimeTrackClientAllocationApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackClientDeviceController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackDeviceVerificationController;
@@ -97,6 +98,10 @@ final class TimeTrackRouteLoader extends Loader
         'monitoring_screenshot_discarded' => TimeTrackMonitoringApiController::class . '::screenshotDiscarded',
         'monitoring_screenshot_delete'    => TimeTrackMonitoringApiController::class . '::screenshotDelete',
         'monitoring_activity'             => TimeTrackMonitoringApiController::class . '::activity',
+        // Since 2.1.0 (contract v0.4, Beacon spec 256): subjects and activity types.
+        'timer_allocate'  => TimeTrackClientAllocationApiController::class . '::allocate',
+        'subjects_search' => TimeTrackClientAllocationApiController::class . '::search',
+        'activity_types'  => TimeTrackClientAllocationApiController::class . '::activityTypes',
     ];
 
     /** Device flow routes of the client API (client_api.device_flow.enabled), after the other client routes. */
@@ -130,6 +135,7 @@ final class TimeTrackRouteLoader extends Loader
         TimeTrackMeetingsApiController::class,
         TimeTrackMonitoringApiController::class,
         TimeTrackClientDeviceController::class,
+        TimeTrackClientAllocationApiController::class,
     ];
 
     private readonly ControllerAttributeRouteLoader $attributeLoader;

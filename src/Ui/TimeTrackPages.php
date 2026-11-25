@@ -114,15 +114,18 @@ final readonly class TimeTrackPages
      * @param DateTimeImmutable $to Period end
      * @param string|null $route Route of the pagination links (the current route)
      * @param array<string, mixed> $query Query kept across pages (`from`, `to`)
+     * @param bool $allocationColumn Since 2.1.0: the subject / activity type column (a provider is configured)
      *
      * @return ListPage The page view model
      */
-    public function reportsPage(TimeEntryPage $entries, DateTimeImmutable $from, DateTimeImmutable $to, ?string $route, array $query = []): ListPage
+    public function reportsPage(TimeEntryPage $entries, DateTimeImmutable $from, DateTimeImmutable $to, ?string $route, array $query = [], bool $allocationColumn = false): ListPage
     {
         return new ListPage(
             new PageHeader(self::label('page.reports'), self::label('reports.period', ['%from%' => $from->format('Y-m-d'), '%to%' => $to->format('Y-m-d')])),
             [
                 new Column('taskTitleSnapshot', self::label('reports.task'), required: true),
+                // Since 2.1.0 (Beacon spec 256): subject and activity type, only while a provider is configured.
+                ...($allocationColumn ? [new Column('subject', self::label('reports.subject'), priority: 2)] : []),
                 new Column('startedAt', self::label('reports.started')),
                 new Column('durationSeconds', self::label('reports.duration'), align: 'end'),
                 new Column('source', self::label('reports.source'), priority: 2),

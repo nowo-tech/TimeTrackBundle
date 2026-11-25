@@ -38,7 +38,7 @@ final class LeaveDisabledClientApiTest extends FunctionalTestCase
                 ['date' => $today->format('Y-m-d'), 'kind' => 'holiday', 'label' => 'Inmaculada Concepción'],
                 ['date' => $today->modify('+2 days')->format('Y-m-d'), 'kind' => 'vacation', 'label' => null],
             ],
-            'features'  => ['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'meetings' => false, 'monitoring' => false],
+            'features'  => ['task_details' => true, 'start_backdate' => true, 'stop_backdate' => true, 'idle_reassign' => true, 'idle_keep_note' => true, 'idle_check' => true, 'workday' => false, 'timesheets' => false, 'balance' => false, 'calendar_suggestions' => false, 'manual_entries' => false, 'task_effort' => true, 'meetings' => false, 'monitoring' => false, 'subjects' => [], 'activityTypes' => false, 'requireAllocation' => false, 'requireActivityType' => false],
             'limits'    => ['backdate' => ['max_seconds' => 86400, 'clock_skew_seconds' => 120], 'idle_check' => ['threshold_minutes' => 10, 'answer_timeout_minutes' => 5, 'user_can_disable' => false]],
             'timesheet' => null,
             'meetings'  => null,

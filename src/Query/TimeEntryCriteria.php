@@ -9,6 +9,8 @@ use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Enum\TimeEntrySource;
 use Nowo\TimeTrackBundle\Retention\FormerPersonTimeEntries;
+use Nowo\TimeTrackBundle\Subject\ActivityType;
+use Nowo\TimeTrackBundle\Subject\TimeSubjectRef;
 use Nowo\TimeTrackBundle\Timesheet\ScopeKeys;
 
 use function array_values;
@@ -24,6 +26,11 @@ use function strlen;
  *
  * Only entries that still have an owner are listed (an anonymised entry, a former person's entry or the entry of a
  * deleted user has none): those are read through {@see FormerPersonTimeEntries}.
+ *
+ * Since 2.1.0 (Beacon spec 256) it also filters by subject, subject type, activity type and allocation
+ * ({@see AllocationFilter}). A subject filter alone is not a key (a customer id is not a tenant). A `subjects` filter
+ * matches task + subject entries and subject-alone entries alike ("all time for customer X" includes the customer's task
+ * time that carries the subject). Labels are not here: label pages with `TimeSubjectLabelResolver`.
  *
  * Immutable, framework-free and built per call (FrankenPHP worker mode, kernel reset false).
  */
@@ -53,6 +60,18 @@ final readonly class TimeEntryCriteria
     /** @var list<string> */
     public array $excludeEntryIds;
 
+    /** @var list<TimeSubjectRef>|null Since 2.1.0 */
+    public ?array $subjects;
+
+    /** @var list<string>|null Since 2.1.0 */
+    public ?array $subjectTypes;
+
+    /** @var list<string>|null Since 2.1.0 */
+    public ?array $activityTypeKeys;
+
+    /** @var array<string, true> {@see TimeSubjectRef::key()} of every subject filtered by */
+    private array $subjectKeys;
+
     /**
      * @param list<string>|null $ownerIds Owner user ids (the `user_id` column, as `TimeTrackUserRef::$id`); null = any owner
      * @param list<string>|null $scopeKeys Tenant scope keys; null = any scope (an entry with no scope matches only null)
@@ -65,6 +84,10 @@ final readonly class TimeEntryCriteria
      * @param list<TimeEntrySource>|null $sources Sources; null = every source, imported entries included
      * @param bool|null $serviceAccount true = only service accounts' (agents') entries, false = only people's, null = both
      * @param list<string> $excludeEntryIds Entry ids left out (e.g. the entry being corrected in an overlap check)
+     * @param list<TimeSubjectRef>|null $subjects Since 2.1.0: subjects (task + subject and subject-alone entries); null = any
+     * @param list<string>|null $subjectTypes Since 2.1.0: subject types; null = any (an entry without a subject matches only null)
+     * @param list<string>|null $activityTypeKeys Since 2.1.0: activity type keys; null = any
+     * @param AllocationFilter $allocation Since 2.1.0: task / subject presence (default: any)
      *
      * @throws InvalidArgumentException When no key is given, a list is too long, a value is not usable, or only one end
      *                                  of the overlap range is given
@@ -81,6 +104,10 @@ final readonly class TimeEntryCriteria
         ?array $sources = null,
         public ?bool $serviceAccount = null,
         array $excludeEntryIds = [],
+        ?array $subjects = null,
+        ?array $subjectTypes = null,
+        ?array $activityTypeKeys = null,
+        public AllocationFilter $allocation = AllocationFilter::Any,
     ) {
         if ($ownerIds === null && $scopeKeys === null && $taskIds === null && $boardIds === null) {
             throw new InvalidArgumentException('A TimeTrack entry query needs a key: owner ids, scope keys, task ids or board ids.');
@@ -103,6 +130,23 @@ final readonly class TimeEntryCriteria
             $sources = array_values($sources);
         }
         $this->sources = $sources;
+        if ($subjects !== null) {
+            $this->assertCount($subjects, 'subject');
+            foreach ($subjects as $subject) {
+                if (!$subject instanceof TimeSubjectRef) {
+                    throw new InvalidArgumentException('A TimeTrack entry query subject must be a TimeSubjectRef.');
+                }
+            }
+            $subjects = array_values($subjects);
+        }
+        $this->subjects = $subjects;
+        $subjectKeys    = [];
+        foreach ($subjects ?? [] as $subject) {
+            $subjectKeys[$subject->key()] = true;
+        }
+        $this->subjectKeys      = $subjectKeys;
+        $this->subjectTypes     = $this->strings($subjectTypes, 'subject type', TimeSubjectRef::isType(...));
+        $this->activityTypeKeys = $this->strings($activityTypeKeys, 'activity type key', ActivityType::isKey(...));
     }
 
     /**
@@ -118,20 +162,60 @@ final readonly class TimeEntryCriteria
      */
     public function matchesNothing(): bool
     {
-        return $this->ownerIds === [] || $this->scopeKeys === [] || $this->taskIds === [] || $this->boardIds === [] || $this->sources === [];
+        return $this->ownerIds === [] || $this->scopeKeys === [] || $this->taskIds === [] || $this->boardIds === [] || $this->sources === []
+            || $this->subjects === [] || $this->subjectTypes === [] || $this->activityTypeKeys === [];
     }
 
     /**
      * Whether a row the database returned matches every string filter byte for byte (a MySQL collation may fold case).
+     * Since 2.1.0 also the subject and activity type of the row (pass them when the row has them).
      */
-    public function matchesExactly(string $entryId, ?string $ownerId, ?string $scopeKey, string $taskId, ?string $boardId): bool
+    public function matchesExactly(string $entryId, ?string $ownerId, ?string $scopeKey, string $taskId, ?string $boardId, ?TimeSubjectRef $subject = null, ?string $activityTypeKey = null): bool
     {
         return $ownerId !== null
             && $this->isIn($ownerId, $this->ownerIds)
             && ($this->scopeKeys === null || ScopeKeys::isOneOf($scopeKey, $this->scopeKeys))
             && $this->isIn($taskId, $this->taskIds)
             && ($this->boardIds === null || ($boardId !== null && $this->isIn($boardId, $this->boardIds)))
-            && !$this->isIn($entryId, $this->excludeEntryIds, false);
+            && !$this->isIn($entryId, $this->excludeEntryIds, false)
+            && $this->matchesAllocation($taskId !== '', $subject, $activityTypeKey);
+    }
+
+    /**
+     * Since 2.1.0: whether a row's subject, activity type and allocation match the 2.1 filters byte for byte.
+     */
+    public function matchesAllocation(bool $hasTask, ?TimeSubjectRef $subject, ?string $activityTypeKey): bool
+    {
+        return $this->allocation->matches($hasTask, $subject instanceof TimeSubjectRef)
+            && ($this->subjectTypes === null || ($subject instanceof TimeSubjectRef && $this->isIn($subject->type, $this->subjectTypes)))
+            && ($this->activityTypeKeys === null || ($activityTypeKey !== null && $this->isIn($activityTypeKey, $this->activityTypeKeys)))
+            && ($this->subjects === null || ($subject instanceof TimeSubjectRef && $this->hasSubject($subject)));
+    }
+
+    /**
+     * Since 2.1.0: the subject filter grouped by type (`subject_type = ? AND subject_id IN (…)` per type), or null.
+     *
+     * @return array<string, list<string>>|null
+     */
+    public function subjectIdsByType(): ?array
+    {
+        if ($this->subjects === null) {
+            return null;
+        }
+        $byType = [];
+        foreach ($this->subjects as $subject) {
+            $byType[$subject->type][] = $subject->id;
+        }
+
+        return $byType;
+    }
+
+    /**
+     * Since 2.1.0: whether the subject is one of the subjects filtered by (byte for byte).
+     */
+    public function hasSubject(TimeSubjectRef $subject): bool
+    {
+        return isset($this->subjectKeys[$subject->key()]);
     }
 
     /**
