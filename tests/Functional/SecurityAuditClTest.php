@@ -72,6 +72,13 @@ final class SecurityAuditClTest extends FunctionalTestCase
     /** CL-02: device/code stops creating rows after max_pending_per_prefix (20) requests from one /64. */
     public function testDeviceCodesCappedPerPrefix(): void
     {
+        // The per-prefix cap counts in a fixed window of code_ttl (600 s) aligned to the epoch: with the real clock the
+        // 21st request answered 200 whenever the loop crossed a window boundary (the known 200-vs-429 flake). A frozen
+        // clock keeps the 21 requests inside one window.
+        $cache = self::getContainer()->get('cache.time_track_test');
+        self::assertInstanceOf(CacheItemPoolInterface::class, $cache);
+        self::getContainer()->set(ClientApiRateLimiter::class, new ClientApiRateLimiter($cache, new MockClock('2026-11-25 10:00:05 UTC')));
+
         for ($i = 1; $i <= 20; ++$i) {
             $this->api('POST', '/api/time-track/device/code', ['clientType' => 'desktop'], null, ['REMOTE_ADDR' => '2001:db8:1:2::' . dechex($i)]);
             self::assertResponseStatusCodeSame(200, 'request ' . $i);
