@@ -34,6 +34,16 @@ final readonly class ClientIdempotencyStore
     }
 
     /**
+     * Since 2.2.0 (audit ZBV-L3): the body hash bound to the tenant context the request named (unchanged without a
+     * context), so the same key and body sent under another context is a mismatch, never a replay of the other
+     * context's answer.
+     */
+    public static function contextHash(string $bodyHash, ?string $contextKey): string
+    {
+        return $contextKey === null ? $bodyHash : hash('sha256', $bodyHash . "\0context\0" . $contextKey);
+    }
+
+    /**
      * The stored answer of the key (`{status, body}`), `false` when the key was used with another body, null when new.
      * Since 1.27.0 an answer stored by {@see self::savePending()} and not confirmed yet also carries `pending` (the
      * nonce of the request that stored it).

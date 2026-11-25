@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Nowo\TimeTrackBundle\Port\Internal;
 
+use LogicException;
 use Nowo\TimeTrackBundle\Client\ClientCredentialMinterInterface;
 use Nowo\TimeTrackBundle\Client\ClientTokenRevoker;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
@@ -30,4 +32,11 @@ interface ClientCredentialIssuerInterface
      * @param list<ClientScope> $scopes Scopes the user approved
      */
     public function issueForDevice(UserInterface $user, ClientType $clientType, string $clientName, array $scopes): string;
+
+    /**
+     * Since 2.2.0: creates the credential of an approved request of any scope family and returns its id.
+     *
+     * @throws LogicException When the host minter does not know scope families and the family is not `time`
+     */
+    public function issueForFamily(UserInterface $user, DeviceCredentialRequest $request): string;
 }

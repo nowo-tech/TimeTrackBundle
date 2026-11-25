@@ -7,7 +7,7 @@ namespace Nowo\TimeTrackBundle\Controller;
 use InvalidArgumentException;
 use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientResponseFactory;
-use Nowo\TimeTrackBundle\Enum\ClientScope;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
 use Nowo\TimeTrackBundle\Routing\TimeTrackRouteLoader;
@@ -25,7 +25,11 @@ use function str_contains;
 
 /**
  * Device flow endpoints of the client API (contract v0.2 §2): `POST device/code` and `POST device/token`. Stateless,
- * no Bearer, limited per IP (`client_api.rate_limit.device_per_ip`).
+ * limited per IP (`client_api.rate_limit.device_per_ip`).
+ *
+ * Since 2.2.0 (contract v0.5, Beacon Desktop BD-2) `device/code` takes an optional `family` (a registered scope family,
+ * default `time`); its scopes must all belong to one family (`400 invalid_scope` otherwise), and an optional Bearer token
+ * the device already holds joins the new token to that device. `device/token` answers the token's `scopeFamily` too.
  */
 #[Route(requirements: TimeTrackRouteLoader::REQUIREMENTS)]
 final readonly class TimeTrackClientDeviceController
@@ -41,11 +45,14 @@ final readonly class TimeTrackClientDeviceController
         private UrlGeneratorInterface $urlGenerator,
         private ?string $verificationUri = null,
         private ?string $verificationRoute = null,
+        private DeviceScopeFamilyRegistry $families = new DeviceScopeFamilyRegistry(),
     ) {
     }
 
     /**
-     * POST device/code `{clientType: desktop|extension, clientName, scopes?}`: starts a device authorization.
+     * POST device/code `{clientType: desktop|extension, clientName, scopes?, family?}`: starts a device authorization.
+     * Since 2.2.0 an `Authorization: Bearer <token>` header (optional) names a token the device already holds: the new
+     * token joins that device (`401 invalid_token` when that token is not valid).
      */
     #[Route('/api/time-track/device/code', name: 'nowo_time_track_api_device_code', methods: ['POST', 'OPTIONS'])]
     public function code(Request $request): Response
@@ -63,18 +70,25 @@ final readonly class TimeTrackClientDeviceController
             return $this->responseFactory->error('invalid_request', 'clientType must be desktop or extension.', Response::HTTP_BAD_REQUEST, $request);
         }
 
-        $scopes = $payload['scopes'] ?? null;
         try {
-            if ($scopes !== null && !is_array($scopes)) {
-                throw new InvalidArgumentException('scopes must be a list.');
-            }
-            $scopes = ClientScope::fromRequested($scopes);
+            $scopes = $this->families->resolve($payload['family'] ?? null, $payload['scopes'] ?? null);
         } catch (InvalidArgumentException) {
-            return $this->responseFactory->error('invalid_scope', 'scopes must be a non-empty list of known scopes (or omitted for the default scopes).', Response::HTTP_BAD_REQUEST, $request);
+            return $this->responseFactory->error('invalid_scope', 'scopes must be a non-empty list of known scopes of one scope family (or omitted for the default time scopes); family must be a registered scope family.', Response::HTTP_BAD_REQUEST, $request);
+        }
+
+        $link   = null;
+        $linked = ClientApiGuard::bearerToken($request);
+        if ($linked !== null) {
+            $link = $this->guard->deviceLinkOf($linked, $request->getClientIp());
+            if ($link === null) {
+                return $this->responseFactory->error('invalid_token', 'The token of this device is invalid, expired or revoked: sign in again.', Response::HTTP_UNAUTHORIZED, $request, [
+                    'WWW-Authenticate' => 'Bearer error="invalid_token"',
+                ]);
+            }
         }
 
         try {
-            $grant = $this->deviceService->start($clientType, is_string($payload['clientName'] ?? null) ? $payload['clientName'] : '', $scopes, $request->getClientIp());
+            $grant = $this->deviceService->startFamily($clientType, is_string($payload['clientName'] ?? null) ? $payload['clientName'] : '', $scopes, $request->getClientIp(), $link['deviceKey'] ?? null, $link['ownerId'] ?? null);
         } catch (DeviceFlowCapacityExceededException $exception) {
             return $this->responseFactory->error('rate_limited', 'Too many pending device requests. Try again later.', Response::HTTP_TOO_MANY_REQUESTS, $request, [
                 'Retry-After' => (string) $exception->retryAfter,
@@ -84,6 +98,7 @@ final readonly class TimeTrackClientDeviceController
         $uri = $this->verificationUri();
 
         return $this->responseFactory->json($grant->toArray() + [
+            'scopeFamily'             => $scopes->family,
             'verificationUri'         => $uri,
             'verificationUriComplete' => $uri . (str_contains($uri, '?') ? '&' : '?') . 'code=' . rawurlencode($grant->userCode),
         ], Response::HTTP_OK, $request);

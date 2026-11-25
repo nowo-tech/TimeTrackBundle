@@ -56,6 +56,9 @@ device:
   invalid_code: "Código inválido ou expirado."
   too_many_attempts: "Demasiadas tentativas. Tente mais tarde."
   confirm_intro: "%client% pede acesso ao seu registo de tempo. Aprove apenas se o iniciou no seu próprio dispositivo."
+  confirm_intro_family: "%client% pede acesso a: %family%. Esta aprovação cobre apenas %family%. Aprove apenas se a iniciou no seu próprio dispositivo."
+  family: "Acesso a"
+  family_time: "Registo de tempo"
   approve: "Aprovar"
   deny: "Recusar"
   request: "Pedido"
@@ -73,6 +76,8 @@ device:
   denied_status: "Recusado"
   expired: "Este pedido expirou ou já foi decidido. Recomece a partir do dispositivo."
   expired_status: "Expirado"
+  link_mismatch: "Este pedido veio de um dispositivo com sessão iniciada noutra conta, por isso foi recusado. Nada foi ligado. Se não o esperava, alguém pode estar a tentar obter acesso através de si."
+  link_mismatch_status: "Recusado"
 downloads:
   title: "Aplicações de registo de tempo"
   get: "Transferir"

@@ -23,9 +23,11 @@ use Nowo\TimeTrackBundle\Tests\Stub\LeaveDaysOffProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableCalendarOAuthAppProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableProfileProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\PsrOnlyClock;
+use Nowo\TimeTrackBundle\Tests\Stub\RecordingFamilyCredentialMinter;
 use Nowo\TimeTrackBundle\Tests\Stub\RecordingTaskAccessChecker;
 use Nowo\TimeTrackBundle\Tests\Stub\StubBillableDefaultProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubCalendarCredentialProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubClientContextPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\StubLeaveProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMeetingProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\StubMonitoringEvidenceStore;
@@ -186,6 +188,9 @@ final class FunctionalKernel extends Kernel implements CompilerPassInterface
         $container->services()->set(StubCalendarCredentialProvider::class)->public();
         $container->services()->set(MutableProfileProvider::class)->public();
         $container->services()->set(StubMeetingProvider::class)->public();
+        // Since 2.2.0: the context policy and the family-aware credential minter of the scope family tests.
+        $container->services()->set(StubClientContextPolicy::class)->public();
+        $container->services()->set(RecordingFamilyCredentialMinter::class)->public();
         // Since 1.26: the host's monitoring policy and evidence store (used where a test sets client_api.monitoring).
         $container->services()->set(StubMonitoringPolicySource::class)->public();
         $container->services()->set(StubMonitoringEvidenceStore::class)->public();

@@ -24,6 +24,9 @@ use Throwable;
  * record with the action, the client type and the reason only (REQ-OBS-001: no user, no IP, no token in logs).
  * Refused requests are throttled to one event per credential (or user, or IP prefix) and reason per
  * `client_api.audit.denial_interval_seconds`, so a misbehaving client cannot flood the host audit store.
+ *
+ * Since 2.2.0 every record carries the scope family of the token or device request (`scopeFamily` of the event and the
+ * `family` log field), and the denial throttle is kept per family.
  */
 final readonly class ClientApiAuditor
 {
@@ -52,10 +55,11 @@ final readonly class ClientApiAuditor
      *
      * @param object|null $user Acting user (its id is resolved; null when unknown)
      * @param string|null $clientIp Full client IP (only its /24 or /64 prefix leaves this method)
+     * @param string|null $scopeFamily Since 2.2.0: scope family of the token or device request (null when unknown)
      */
-    public function record(ClientApiAuditAction $action, ?object $user, ?string $credentialId, ?ClientType $clientType, ?string $clientIp, ?string $reason = null): void
+    public function record(ClientApiAuditAction $action, ?object $user, ?string $credentialId, ?ClientType $clientType, ?string $clientIp, ?string $reason = null, ?string $scopeFamily = null): void
     {
-        $this->recordForUserId($action, $user !== null ? $this->userId($user) : null, $credentialId, $clientType, $clientIp, $reason);
+        $this->recordForUserId($action, $user !== null ? $this->userId($user) : null, $credentialId, $clientType, $clientIp, $reason, $scopeFamily);
     }
 
     /**
@@ -63,8 +67,9 @@ final readonly class ClientApiAuditor
      *
      * @param string|null $userId Id of the user the action concerns (null when unknown)
      * @param string|null $clientIp Full client IP (only its /24 or /64 prefix leaves this method)
+     * @param string|null $scopeFamily Since 2.2.0: scope family of the token or device request (null when unknown)
      */
-    public function recordForUserId(ClientApiAuditAction $action, ?string $userId, ?string $credentialId, ?ClientType $clientType, ?string $clientIp, ?string $reason = null): void
+    public function recordForUserId(ClientApiAuditAction $action, ?string $userId, ?string $credentialId, ?ClientType $clientType, ?string $clientIp, ?string $reason = null, ?string $scopeFamily = null): void
     {
         $event = new ClientApiEvent(
             $action,
@@ -74,24 +79,27 @@ final readonly class ClientApiAuditor
             IpPrefix::of($clientIp),
             $reason,
             $this->clock->now(),
+            $scopeFamily,
         );
 
         $this->eventDispatcher?->dispatch($event, TimeTrackEvents::CLIENT_API);
-        $this->logger->info('TimeTrack client API audit.', ['bundle' => 'time_track', 'action' => 'client_api_' . $action->value, 'client' => $clientType?->value, 'reason' => $reason]);
+        $this->logger->info('TimeTrack client API audit.', ['bundle' => 'time_track', 'action' => 'client_api_' . $action->value, 'client' => $clientType?->value, 'reason' => $reason, 'family' => $scopeFamily]);
     }
 
     /**
      * Records a refused request (401 / 403 / 429), throttled per credential (or user, or IP prefix) and reason.
      *
      * @param ClientToken|null $token Resolved token, when the refusal came after token resolution
+     * @param string|null $scopeFamily Since 2.2.0: the family of the API that refused (null = the token's family, or unknown); the event names the token's family when there is a token
      */
-    public function denied(string $reason, ?ClientToken $token, ?string $clientIp): void
+    public function denied(string $reason, ?ClientToken $token, ?string $clientIp, ?string $scopeFamily = null): void
     {
-        $key = $token instanceof ClientToken
+        $family = $token?->getScopeFamily() ?? $scopeFamily;
+        $key    = $token instanceof ClientToken
             ? 'token:' . ($token->getCredentialId() ?? 'user:' . $this->userId($token->getUser()))
             : 'ip:' . (IpPrefix::of($clientIp) ?? 'none');
 
-        if ($this->rateLimiter instanceof ClientApiRateLimiter && $this->rateLimiter->hit('audit', $key . '|' . $reason, 1, $this->denialIntervalSeconds) > 0) {
+        if ($this->rateLimiter instanceof ClientApiRateLimiter && $this->rateLimiter->hit('audit', $key . '|' . $reason . '|' . ($family ?? ''), 1, $this->denialIntervalSeconds) > 0) {
             return;
         }
 
@@ -102,6 +110,7 @@ final readonly class ClientApiAuditor
             $token?->getClientType(),
             $clientIp,
             $reason,
+            $family,
         );
     }
 
@@ -117,7 +126,7 @@ final readonly class ClientApiAuditor
             return;
         }
 
-        $this->record(ClientApiAuditAction::MonitoringRefused, $token->getUser(), $token->getCredentialId(), $token->getClientType(), $clientIp, $reason);
+        $this->record(ClientApiAuditAction::MonitoringRefused, $token->getUser(), $token->getCredentialId(), $token->getClientType(), $clientIp, $reason, $token->getScopeFamily());
     }
 
     private function userId(object $user): ?string

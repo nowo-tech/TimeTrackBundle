@@ -34,8 +34,10 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
+use Nowo\TimeTrackBundle\Client\ClientContextResolver;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientFamilyTokenAuthenticator;
 use Nowo\TimeTrackBundle\Client\ClientIdempotencyStore;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
@@ -46,7 +48,11 @@ use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientDistributionProvider;
 use Nowo\TimeTrackBundle\Client\ConfigClientMinSupportedVersionProvider;
+use Nowo\TimeTrackBundle\Client\ConfigDeviceScopeFamilyProvider;
+use Nowo\TimeTrackBundle\Client\CurrentClientContext;
 use Nowo\TimeTrackBundle\Client\DefaultClientAuthenticator;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyProviderInterface;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\Client\NullClientUserProfileProvider;
 use Nowo\TimeTrackBundle\Client\OpaqueClientCredentialIssuer;
@@ -65,6 +71,7 @@ use Nowo\TimeTrackBundle\Controller\TimeTrackMonitoringApiController;
 use Nowo\TimeTrackBundle\Controller\TimeTrackWorkingTimeApiController;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ClientUserCheckerPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\PrivateEntityManagerPass;
+use Nowo\TimeTrackBundle\DependencyInjection\Compiler\ScopeFamilyMinterPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeSubjectProvidersPass;
 use Nowo\TimeTrackBundle\DependencyInjection\Compiler\TimeTrackPortsPass;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
@@ -115,6 +122,7 @@ use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
 use Nowo\TimeTrackBundle\Port\Internal\WorkedTimeSourceInterface;
 use Nowo\TimeTrackBundle\Port\Internal\WorkingCalendarProviderInterface;
 use Nowo\TimeTrackBundle\Query\ClientAccessQueryInterface;
+use Nowo\TimeTrackBundle\Query\ConnectedClientDevicesQueryInterface;
 use Nowo\TimeTrackBundle\Query\DoctrineTimeTrackQuery;
 use Nowo\TimeTrackBundle\Query\RunningTimerQueryInterface;
 use Nowo\TimeTrackBundle\Query\TimeEntryQueryInterface;
@@ -198,6 +206,7 @@ use Psr\Clock\ClockInterface;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Argument\IteratorArgument;
+use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
@@ -225,6 +234,9 @@ use function sprintf;
  */
 final class TimeTrackExtension extends Extension implements PrependExtensionInterface
 {
+    /** Since 2.2.0: the tag of the {@see DeviceScopeFamilyProviderInterface} services (autoconfigured). */
+    public const SCOPE_FAMILY_PROVIDER_TAG = 'nowo_time_track.device_scope_family_provider';
+
     /** Since 1.23.0: the source manager of the private entity manager. */
     public const PRIVATE_ENTITY_MANAGER_SOURCE_PARAMETER = 'nowo_time_track.private_entity_manager.source';
 
@@ -369,8 +381,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$lockGuard'     => new Reference(PeriodLockGuard::class, ContainerInterface::NULL_ON_INVALID_REFERENCE),
             ])
             ->addTag('console.command'));
-        // Since 2.1.0: the bounded totals port (Beacon spec 256) on the same service.
-        foreach ([TimeEntryQueryInterface::class, TimeEntryTotalsQueryInterface::class, RunningTimerQueryInterface::class, ClientAccessQueryInterface::class] as $port) {
+        // Since 2.1.0: the bounded totals port (Beacon spec 256) on the same service; since 2.2.0 the connected devices port.
+        foreach ([TimeEntryQueryInterface::class, TimeEntryTotalsQueryInterface::class, RunningTimerQueryInterface::class, ClientAccessQueryInterface::class, ConnectedClientDevicesQueryInterface::class] as $port) {
             $container->setAlias($port, DoctrineTimeTrackQuery::class)->setPublic(true);
         }
         $container->setDefinition(DoctrineTimeTrackPersonalData::class, (new Definition(DoctrineTimeTrackPersonalData::class))
@@ -1465,7 +1477,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool|null, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}} $api */
+        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool|null, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int, scope_families: array<string, array{label: string, scopes: array<string, string>}>}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}, context: array{policy: string|null, header: string, required: bool}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
@@ -1552,6 +1564,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
 
+        $container->setParameter(ScopeFamilyMinterPass::ISSUER_PARAMETER, $api['credential_issuer']);
+        $this->registerScopeFamilies($container, $api['device_flow']['scope_families'], $api['context'], $loggerRef);
+
         $container->setDefinition(DeviceAuthorizationService::class, (new Definition(DeviceAuthorizationService::class))
             ->setAutowired(true)
             ->setPublic(true)
@@ -1564,6 +1579,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$maxPending'          => $device['max_pending'],
                 '$clock'               => $clockRef,
                 '$accountChecker'      => new Reference(ClientAccountChecker::class),
+                '$families'            => new Reference(DeviceScopeFamilyRegistry::class),
             ]));
 
         $container->setDefinition(ClientTaskPresenter::class, (new Definition(ClientTaskPresenter::class))
@@ -1589,12 +1605,66 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$taskPresenter', new Reference(ClientTaskPresenter::class))
             ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class))
             ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class))
-            ->setArgument('$translator', new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+            ->setArgument('$translator', new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE))
+            ->setArgument('$contexts', new Reference(ClientContextResolver::class));
         $container->getDefinition(TimeTrackClientDeviceController::class)
             ->setArgument('$verificationUri', $device['verification_uri'])
-            ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null);
+            ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null)
+            ->setArgument('$families', new Reference(DeviceScopeFamilyRegistry::class));
         $container->getDefinition(TimeTrackDeviceVerificationController::class)
             ->setArgument('$allowUnauthenticated', $security['allow_unauthenticated']);
+    }
+
+    /**
+     * Since 2.2.0 (Beacon Desktop BD-2): the device-flow scope families (registry over every tagged
+     * {@see DeviceScopeFamilyProviderInterface}, plus the configured families), the tenant context check of
+     * `client_api.context` and the public authenticator other bundles' client APIs use with family tokens.
+     *
+     * @param array<string, array{label: string, scopes: array<string, string>}> $families
+     * @param array{policy: string|null, header: string, required: bool} $context
+     */
+    private function registerScopeFamilies(ContainerBuilder $container, array $families, array $context, Reference $loggerRef): void
+    {
+        $container->registerForAutoconfiguration(DeviceScopeFamilyProviderInterface::class)->addTag(self::SCOPE_FAMILY_PROVIDER_TAG);
+        $container->setDefinition(ConfigDeviceScopeFamilyProvider::class, (new Definition(ConfigDeviceScopeFamilyProvider::class))
+            ->setAutowired(false)
+            ->setAutoconfigured(false)
+            ->setArgument('$families', $families)
+            ->addTag(self::SCOPE_FAMILY_PROVIDER_TAG));
+        $container->setDefinition(DeviceScopeFamilyRegistry::class, (new Definition(DeviceScopeFamilyRegistry::class))
+            ->setAutowired(false)
+            ->setPublic(true)
+            ->setArgument('$providers', new TaggedIteratorArgument(self::SCOPE_FAMILY_PROVIDER_TAG)));
+
+        $policy = $context['policy'];
+        $container->setDefinition(ClientContextResolver::class, (new Definition(ClientContextResolver::class))
+            ->setAutowired(false)
+            ->setArguments([
+                '$policy'   => is_string($policy) && $policy !== '' ? new Reference($policy) : null,
+                '$header'   => $context['header'],
+                '$required' => $context['required'],
+                '$logger'   => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->setParameter('nowo_time_track.client_api.context.header', $context['header']);
+        // Since 2.2.0 (audit ZBV-I1): read by ScopeFamilyMinterPass.
+        $container->setParameter('nowo_time_track.client_api.device_flow.scope_families', $families);
+        $container->getDefinition(ClientResponseFactory::class)->setArgument('$contextHeader', is_string($policy) && $policy !== '' ? $context['header'] : null);
+        $container->getDefinition(ClientApiGuard::class)->setArgument('$contexts', new Reference(ClientContextResolver::class));
+        $container->setDefinition(CurrentClientContext::class, (new Definition(CurrentClientContext::class))
+            ->setAutowired(false)
+            ->setPublic(true)
+            ->setArgument('$requestStack', new Reference('request_stack')));
+        $container->setDefinition(ClientFamilyTokenAuthenticator::class, (new Definition(ClientFamilyTokenAuthenticator::class))
+            ->setAutowired(false)
+            ->setPublic(true)
+            ->setArguments([
+                '$guard'       => new Reference(ClientApiGuard::class),
+                '$families'    => new Reference(DeviceScopeFamilyRegistry::class),
+                '$authService' => new Reference(ClientAuthService::class),
+                '$auditor'     => new Reference(ClientApiAuditor::class),
+                '$contexts'    => new Reference(ClientContextResolver::class),
+            ]));
     }
 
     /**

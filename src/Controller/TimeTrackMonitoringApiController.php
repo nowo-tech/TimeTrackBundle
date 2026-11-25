@@ -246,7 +246,7 @@ final readonly class TimeTrackMonitoringApiController
         }
         $payload  = $this->payload($request);
         $userId   = UserIdResolver::getId($principal->user);
-        $bodyHash = hash('sha256', 'monitoring_acknowledge' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash = ClientIdempotencyStore::contextHash(hash('sha256', 'monitoring_acknowledge' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
         $replay   = $this->idempotency->find($userId, 'monitoring_acknowledge:' . $key, $bodyHash);
         if ($replay === false) {
             return $this->idempotencyMismatch($request);
@@ -277,7 +277,7 @@ final readonly class TimeTrackMonitoringApiController
                 $this->auditor->monitoringRefused('notice_mismatch', $principal->token, $request->getClientIp());
             } else {
                 $this->context->acknowledge($principal->user, new MonitoringAcknowledgement($version, $this->clock->now(), $principal->token->getClientType()->value, strtolower($sha)));
-                $this->auditor->record(ClientApiAuditAction::MonitoringAcknowledged, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), 'v' . $version);
+                $this->auditor->record(ClientApiAuditAction::MonitoringAcknowledged, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), 'v' . $version, $principal->token->getScopeFamily());
                 $status = Response::HTTP_NO_CONTENT;
                 $body   = [];
             }
@@ -307,7 +307,7 @@ final readonly class TimeTrackMonitoringApiController
         }
         $userId          = UserIdResolver::getId($principal->user);
         $idempotencyHash = hash('sha256', $key);
-        $bodyHash        = hash('sha256', 'monitoring_intent' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash        = ClientIdempotencyStore::contextHash(hash('sha256', 'monitoring_intent' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
 
         try {
             $intents  = $this->intents();
@@ -486,7 +486,7 @@ final readonly class TimeTrackMonitoringApiController
             $id     = $this->store($principal, $intent, $path);
             $stored = true;
             $this->markStoredQuietly($intent->getId(), $id);
-            $this->auditor->record(ClientApiAuditAction::MonitoringUploaded, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp());
+            $this->auditor->record(ClientApiAuditAction::MonitoringUploaded, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), null, $principal->token->getScopeFamily());
 
             return $this->responseFactory->json(['id' => $id], Response::HTTP_CREATED, $request);
         } catch (MonitoringEvidenceRejectedException) {
@@ -700,7 +700,7 @@ final readonly class TimeTrackMonitoringApiController
         }
         $payload  = $this->payload($request);
         $userId   = UserIdResolver::getId($principal->user);
-        $bodyHash = hash('sha256', 'monitoring_activity' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash = ClientIdempotencyStore::contextHash(hash('sha256', 'monitoring_activity' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
         $replay   = $this->idempotency->find($userId, 'monitoring_activity:' . $key, $bodyHash);
         if ($replay === false) {
             return $this->idempotencyMismatch($request);

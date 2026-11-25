@@ -9,6 +9,7 @@ use Doctrine\ORM\AbstractQuery;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\QueryBuilder;
 use InvalidArgumentException;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Doctrine\DoctrineUserReferenceResolver;
 use Nowo\TimeTrackBundle\Doctrine\OwnerIdColumn;
 use Nowo\TimeTrackBundle\Dto\TimeEntryView;
@@ -29,6 +30,7 @@ use Psr\Clock\ClockInterface;
 use SortDirection;
 
 use function array_filter;
+use function array_keys;
 use function array_map;
 use function array_slice;
 use function array_values;
@@ -61,7 +63,7 @@ use function usort;
  *
  * @internal Hosts depend on the interfaces
  */
-final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, TimeEntryTotalsQueryInterface, RunningTimerQueryInterface, ClientAccessQueryInterface
+final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, TimeEntryTotalsQueryInterface, RunningTimerQueryInterface, ClientAccessQueryInterface, ConnectedClientDevicesQueryInterface
 {
     /** Rows read per round while the rows are checked in PHP. */
     public const BATCH = 500;
@@ -356,7 +358,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             return [];
         }
         $query = $this->entityManager->createQueryBuilder()
-            ->select('c.id AS id', 'IDENTITY(c.user) AS userId', 'c.clientType AS clientType', 'c.credentialId AS credentialId', 'c.scopes AS scopes', 'c.createdAt AS createdAt', 'c.lastUsedAt AS lastUsedAt', 'c.expiresAt AS expiresAt')
+            ->select('c.id AS id', 'IDENTITY(c.user) AS userId', 'c.clientType AS clientType', 'c.credentialId AS credentialId', 'c.scopes AS scopes', 'c.createdAt AS createdAt', 'c.lastUsedAt AS lastUsedAt', 'c.expiresAt AS expiresAt', 'c.scopeFamily AS scopeFamily', 'c.deviceKey AS deviceKey', 'c.clientName AS clientName')
             ->from(ClientToken::class, 'c')
             ->where('IDENTITY(c.user) = :owner')
             ->setParameter('owner', $ownerId)
@@ -372,16 +374,19 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             if ($this->owner($row) !== $ownerId) {
                 continue; // @codeCoverageIgnore
             }
-            $scopes  = is_array($row['scopes']) ? ClientScope::normalize($row['scopes']) : ClientScope::defaults();
+            $family  = $this->string($row['scopeFamily']);
             $views[] = new ClientSessionView(
                 $this->string($row['id']),
                 $ownerId,
                 $this->clientType($row['clientType']),
                 $this->nullableString($row['credentialId']),
-                array_map(static fn (ClientScope $scope): string => $scope->value, $scopes),
+                $this->scopeValues($family, $row['scopes'], true),
                 $this->date($row['createdAt']),
                 $this->nullableDate($row['lastUsedAt']),
                 $this->date($row['expiresAt']),
+                $family,
+                $this->nullableString($row['deviceKey']),
+                $this->nullableString($row['clientName']),
             );
         }
 
@@ -397,7 +402,7 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
             return [];
         }
         $rows = $this->entityManager->createQueryBuilder()
-            ->select('d.id AS id', 'IDENTITY(d.user) AS userId', 'd.clientType AS clientType', 'd.clientName AS clientName', 'd.status AS status', 'd.scopes AS scopes', 'd.ipPrefix AS ipPrefix', 'd.createdAt AS createdAt', 'd.expiresAt AS expiresAt', 'd.lastPolledAt AS lastPolledAt')
+            ->select('d.id AS id', 'IDENTITY(d.user) AS userId', 'd.clientType AS clientType', 'd.clientName AS clientName', 'd.status AS status', 'd.scopes AS scopes', 'd.ipPrefix AS ipPrefix', 'd.createdAt AS createdAt', 'd.expiresAt AS expiresAt', 'd.lastPolledAt AS lastPolledAt', 'd.scopeFamily AS scopeFamily')
             ->from(DeviceAuthorization::class, 'd')
             ->where('IDENTITY(d.user) = :owner')
             ->setParameter('owner', $ownerId)
@@ -413,21 +418,85 @@ final readonly class DoctrineTimeTrackQuery implements TimeEntryQueryInterface, 
                 continue; // @codeCoverageIgnore
             }
             $status  = $row['status'];
+            $family  = $this->string($row['scopeFamily']);
             $views[] = new DeviceSignInView(
                 $this->string($row['id']),
                 $ownerId,
                 $this->clientType($row['clientType']),
                 $this->string($row['clientName']),
                 $status instanceof DeviceAuthorizationStatus ? $status : DeviceAuthorizationStatus::from($this->string($status)),
-                array_map(static fn (ClientScope $scope): string => $scope->value, ClientScope::normalize(is_array($row['scopes']) ? $row['scopes'] : [])),
+                $this->scopeValues($family, $row['scopes'], false),
                 $this->nullableString($row['ipPrefix']),
                 $this->date($row['createdAt']),
                 $this->date($row['expiresAt']),
                 $this->nullableDate($row['lastPolledAt']),
+                $family,
             );
         }
 
         return $views;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * Since 2.2.0: built from {@see self::sessionsOf()} (unexpired sessions) in PHP; a session without a device key is a
+     * device of its own.
+     */
+    public function devicesOf(string $ownerId): array
+    {
+        /** @var array<string, list<ClientSessionView>> $groups */
+        $groups = [];
+        foreach ($this->sessionsOf($ownerId) as $session) {
+            $groups[$session->deviceKey ?? $session->id][] = $session;
+        }
+
+        $devices = [];
+        foreach ($groups as $deviceKey => $sessions) {
+            $families    = [];
+            $clientName  = null;
+            $connectedAt = $sessions[0]->createdAt;
+            $lastUsedAt  = null;
+            foreach ($sessions as $session) {
+                $families[$session->scopeFamily] = true;
+                $clientName ??= $session->clientName;
+                $connectedAt = $session->createdAt < $connectedAt ? $session->createdAt : $connectedAt;
+                if ($session->lastUsedAt !== null && ($lastUsedAt === null || $session->lastUsedAt > $lastUsedAt)) {
+                    $lastUsedAt = $session->lastUsedAt;
+                }
+            }
+            $keys = array_keys($families);
+            usort($keys, static fn (string $a, string $b): int => [$a !== DeviceScopeFamily::TIME, $a] <=> [$b !== DeviceScopeFamily::TIME, $b]);
+            $devices[] = new ConnectedDeviceView((string) $deviceKey, $sessions[0]->clientType, $clientName, $keys, $sessions, $connectedAt, $lastUsedAt);
+        }
+        usort($devices, static fn (ConnectedDeviceView $a, ConnectedDeviceView $b): int => [$b->lastUsedAt ?? $b->connectedAt, $a->deviceKey] <=> [$a->lastUsedAt ?? $a->connectedAt, $b->deviceKey]);
+
+        return $devices;
+    }
+
+    /**
+     * Since 2.2.0: the scope values of a stored row of a family (`time`: the known time scopes; another family: its
+     * well-formed values).
+     *
+     * @param bool $nullMeansDefaults Whether a null list means the default time scopes (a token issued before 1.9)
+     *
+     * @return list<string>
+     */
+    private function scopeValues(string $family, mixed $scopes, bool $nullMeansDefaults): array
+    {
+        if ($family === DeviceScopeFamily::TIME) {
+            $known = is_array($scopes) ? ClientScope::normalize($scopes) : ($nullMeansDefaults ? ClientScope::defaults() : []);
+
+            return array_map(static fn (ClientScope $scope): string => $scope->value, $known);
+        }
+        $values = [];
+        foreach (is_array($scopes) ? $scopes : [] as $scope) {
+            if (is_string($scope) && preg_match(DeviceScopeFamily::SCOPE_PATTERN, $scope) === 1) {
+                $values[] = $scope;
+            }
+        }
+
+        return $values;
     }
 
     /**

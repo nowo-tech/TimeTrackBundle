@@ -90,7 +90,7 @@ final class ClientApiCoreTest extends TestCase
         self::assertCount(4, $events);
         self::assertNull($events[0]->userId);
         self::assertNull($events[1]->userId);
-        self::assertSame(['action' => 'request_denied', 'userId' => 'u-1', 'credentialId' => 'cred-1', 'clientType' => 'extension', 'ipPrefix' => '10.0.0.0/24', 'reason' => 'task_forbidden', 'occurredAt' => '2026-11-02T10:00:00+00:00'], $events[2]->toArray());
+        self::assertSame(['action' => 'request_denied', 'userId' => 'u-1', 'credentialId' => 'cred-1', 'clientType' => 'extension', 'ipPrefix' => '10.0.0.0/24', 'reason' => 'task_forbidden', 'occurredAt' => '2026-11-02T10:00:00+00:00', 'scopeFamily' => 'time'], $events[2]->toArray());
 
         (new ClientApiAuditor())->record(ClientApiAuditAction::TokenRevoked, null, null, null, null);
     }

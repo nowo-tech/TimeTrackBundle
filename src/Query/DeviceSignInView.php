@@ -25,6 +25,7 @@ final readonly class DeviceSignInView
      * @param DateTimeImmutable $createdAt Request time
      * @param DateTimeImmutable $expiresAt Expiry of the request
      * @param DateTimeImmutable|null $lastPolledAt Last poll of the device
+     * @param string $scopeFamily Since 2.2.0: the requested scope family
      */
     public function __construct(
         public string $id,
@@ -37,6 +38,7 @@ final readonly class DeviceSignInView
         public DateTimeImmutable $createdAt,
         public DateTimeImmutable $expiresAt,
         public ?DateTimeImmutable $lastPolledAt,
+        public string $scopeFamily = 'time',
     ) {
     }
 }

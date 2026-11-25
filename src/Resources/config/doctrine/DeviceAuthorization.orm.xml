@@ -15,6 +15,13 @@
         <field name="credentialId" type="string" column="credential_id" length="191" nullable="true"/>
         <field name="lastPolledAt" type="datetime_immutable" column="last_polled_at" nullable="true"/>
         <field name="scopes" type="json" column="scopes"/>
+        <field name="scopeFamily" type="string" column="scope_family" length="32">
+            <options>
+                <option name="default">time</option>
+            </options>
+        </field>
+        <field name="deviceKey" type="string" column="device_key" length="36" nullable="true"/>
+        <field name="linkOwnerId" type="string" column="link_owner_id" length="191" nullable="true"/>
         <field name="deviceCodeHash" type="string" column="device_code_hash" length="64" unique="true"/>
         <field name="userCodeHash" type="string" column="user_code_hash" length="64"/>
         <field name="clientType" type="string" column="client_type" length="16" enum-type="Nowo\TimeTrackBundle\Enum\ClientType"/>

@@ -9,6 +9,10 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
+use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
+use Nowo\TimeTrackBundle\Client\DeviceScopeRequest;
 use Nowo\TimeTrackBundle\Dto\DeviceCodeGrant;
 use Nowo\TimeTrackBundle\Dto\DevicePollResult;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -17,15 +21,18 @@ use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Enum\DeviceAuthorizationStatus;
 use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationNotPendingException;
+use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationRefusedException;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
 use Nowo\TimeTrackBundle\Exception\DeviceFlowCapacityExceededException;
 use Nowo\TimeTrackBundle\Integration\PassThroughUserReferenceResolver;
 use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
 use Nowo\TimeTrackBundle\Port\Internal\UserReferenceResolverInterface;
+use Nowo\TimeTrackBundle\Port\TimeTrackUserRefs;
 use Nowo\TimeTrackBundle\Repository\DeviceAuthorizationRepositoryInterface;
 use Nowo\TimeTrackBundle\Repository\DoctrineOrmDeviceAuthorizationRepository;
 use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
+use Nowo\TimeTrackBundle\ValueObject\Uuid;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -55,6 +62,9 @@ use function trim;
  * - Approval asks the host for a credential ({@see ClientCredentialIssuerInterface}), so the device shows in the host's
  *   credential list and is revoked like the others.
  * - CSRF: forms that approve or deny use {@see self::csrfTokenId()} (bound to the action and the request id).
+ * - Since 2.2.0 (Beacon Desktop BD-2) a request names one scope family ({@see DeviceScopeFamily}; `time` by default) and
+ *   carries a device key: new, or the key of a token the device already holds (the app chains "Connect chat" after its
+ *   time sign-in, Q-BD-6), so the host can list one row per device with one revocable badge per family (Q-BD-19).
  */
 final readonly class DeviceAuthorizationService
 {
@@ -80,6 +90,7 @@ final readonly class DeviceAuthorizationService
      * @param int $maxPendingPerPrefix Requests created per client IPv4 /24 or IPv6 /64 within the code TTL (0 = off)
      * @param int $maxPending Unexpired requests in total (0 = off)
      * @param ClientAccountChecker|null $accountChecker Since 1.29: refuses the exchange of a refused account (`access_denied`)
+     * @param DeviceScopeFamilyRegistry $families Since 2.2.0: the registered families, re-checked at approval and exchange (audit ZBV-L1)
      */
     public function __construct(
         private DeviceAuthorizationRepositoryInterface $repository,
@@ -96,6 +107,7 @@ final readonly class DeviceAuthorizationService
         private int $maxPending = 10000,
         ?UserReferenceResolverInterface $userReferences = null,
         private ?ClientAccountChecker $accountChecker = null,
+        private DeviceScopeFamilyRegistry $families = new DeviceScopeFamilyRegistry(),
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -113,6 +125,20 @@ final readonly class DeviceAuthorizationService
      */
     public function start(ClientType $clientType, string $clientName, ?array $scopes = null, ?string $clientIp = null): DeviceCodeGrant
     {
+        return $this->startFamily($clientType, $clientName, new DeviceScopeRequest(DeviceScopeFamily::TIME, ClientScope::values(ClientScope::normalize($scopes))), $clientIp);
+    }
+
+    /**
+     * Since 2.2.0: creates a pending request for one scope family ({@see self::start()} for the `time` family).
+     *
+     * @param DeviceScopeRequest $scopes Family and scopes, parsed by {@see DeviceScopeFamilyRegistry::resolve()}
+     * @param string|null $deviceKey Device key of a token the device proved it holds (null = a new device key)
+     * @param string|null $linkOwnerId User id of that token: only this user may approve the request (audit ZBV-M1)
+     *
+     * @throws DeviceFlowCapacityExceededException When a cap is reached
+     */
+    public function startFamily(ClientType $clientType, string $clientName, DeviceScopeRequest $scopes, ?string $clientIp = null, ?string $deviceKey = null, ?string $linkOwnerId = null): DeviceCodeGrant
+    {
         $ttl      = max(60, $this->codeTtlSeconds);
         $ipPrefix = IpPrefix::of($clientIp);
         $this->checkCapacity($ipPrefix, $ttl);
@@ -126,11 +152,14 @@ final readonly class DeviceAuthorizationService
             self::hash($userCode),
             $clientType,
             $this->cleanClientName($clientName, $clientType),
-            ClientScope::normalize($scopes),
+            $scopes->scopes,
             // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
             $now->add(new DateInterval('PT' . $ttl . 'S')),
             $now,
             $ipPrefix,
+            $scopes->family,
+            $deviceKey ?? Uuid::generate()->toString(),
+            $deviceKey !== null ? $linkOwnerId : null,
         ));
 
         return new DeviceCodeGrant($deviceCode, self::formatUserCode($userCode), $ttl, max(1, $this->intervalSeconds));
@@ -173,21 +202,73 @@ final readonly class DeviceAuthorizationService
      * id, so a credential stayed issued with no device ever receiving it.
      *
      * @throws DeviceAuthorizationNotPendingException When the request was decided, exchanged or expired meanwhile (nothing issued)
+     * @throws DeviceAuthorizationRefusedException Since 2.2.0: the device linked another user's token, or the family is no longer registered (request denied, nothing issued)
      *
      * @return string The credential id the host issued
      */
     public function approve(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): string
     {
         // @igor-ignore - the closure runs once inside this call, it is not stored.
-        [$current, $credentialId] = $this->decide($authorization, function (DeviceAuthorization $current) use ($user): string {
-            $credentialId = $this->credentialIssuer->issueForDevice($user, $current->getClientType(), $current->getClientName(), $current->getScopes());
-            $current->approve($this->userReferences->reference($user), $credentialId);
+        [$current, $outcome] = $this->decide($authorization, function (DeviceAuthorization $current) use ($user): array {
+            // Since 2.2.0 (audit ZBV-M1, ZBV-L1): refused under the lock — and the request denied, nothing minted —
+            // when the device linked another user's token, or the family or one of its scopes is no longer registered.
+            $refusal = match (true) {
+                $current->getLinkOwnerId() !== null && $current->getLinkOwnerId() !== UserIdResolver::getId($user) => DeviceAuthorizationRefusedException::LINK_MISMATCH,
+                !$this->isFamilyAvailable($current)                                                                => DeviceAuthorizationRefusedException::FAMILY_UNAVAILABLE,
+                default                                                                                            => null,
+            };
+            if ($refusal !== null) {
+                $current->deny($this->userReferences->reference($user));
 
-            return $credentialId;
+                return ['refused' => $refusal];
+            }
+            // Since 2.2.0: the family-aware issuer gets the family, its scopes and the device key (a request created
+            // before 2.2 gets a new device key now).
+            $deviceKey    = $current->getDeviceKey() ?? Uuid::generate()->toString();
+            $credentialId = $this->credentialIssuer->issueForFamily($user, new DeviceCredentialRequest(
+                TimeTrackUserRefs::fromUser($user),
+                $current->getClientType(),
+                $current->getClientName(),
+                $current->getScopeFamily(),
+                $current->getScopeValues(),
+                $deviceKey,
+            ));
+            $current->approve($this->userReferences->reference($user), $credentialId, $deviceKey);
+
+            return ['credential' => $credentialId];
         });
-        $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $current->getClientType(), $clientIp);
+        if (isset($outcome['refused'])) {
+            $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp, $outcome['refused'], $current->getScopeFamily());
+
+            throw new DeviceAuthorizationRefusedException($outcome['refused']);
+        }
+        $credentialId = (string) $outcome['credential'];
+        $this->auditor->record(ClientApiAuditAction::DeviceApproved, $user, $credentialId, $current->getClientType(), $clientIp, null, $current->getScopeFamily());
 
         return $credentialId;
+    }
+
+    /**
+     * Since 2.2.0 (audit ZBV-L1): whether the request's scope family and every one of its scopes are still registered
+     * (always true for `time`). A request that fails it is never approved or exchanged, and the default page does not
+     * show it.
+     */
+    public function isFamilyAvailable(DeviceAuthorization $authorization): bool
+    {
+        if ($authorization->getScopeFamily() === DeviceScopeFamily::TIME) {
+            return true;
+        }
+        $family = $this->families->get($authorization->getScopeFamily());
+        if (!$family instanceof DeviceScopeFamily) {
+            return false;
+        }
+        foreach ($authorization->getScopeValues() as $scope) {
+            if (!$family->has($scope)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -203,7 +284,7 @@ final readonly class DeviceAuthorizationService
 
             return null;
         });
-        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp);
+        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp, null, $current->getScopeFamily());
     }
 
     /**
@@ -355,14 +436,26 @@ final readonly class DeviceAuthorizationService
         if ($user instanceof UserInterface && $this->accountChecker instanceof ClientAccountChecker && !$this->accountChecker->isUserActive($user)) {
             return $this->consumeDenied($authorization);
         }
+        // Since 2.2.0 (audit ZBV-L1): a family unregistered after the approval gets no token.
+        if (!$this->isFamilyAvailable($authorization)) {
+            return $this->consumeDenied($authorization);
+        }
         if (!$user instanceof UserInterface || !$this->repository->markConsumed($authorization)) {
             return DevicePollResult::error(DevicePollResult::EXPIRED);
         }
 
-        $token = $this->authService->issueToken($user, $authorization->getClientType(), $authorization->getCredentialId(), $authorization->getScopes());
+        $token = $this->authService->issueFamilyToken(
+            $user,
+            $authorization->getClientType(),
+            $authorization->getCredentialId(),
+            $authorization->getScopeFamily(),
+            $authorization->getScopeValues(),
+            $authorization->getDeviceKey(),
+            $authorization->getClientName(),
+        );
         // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
         $this->repository->remove($authorization);
-        $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $authorization->getCredentialId(), $authorization->getClientType(), $clientIp);
+        $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $authorization->getCredentialId(), $authorization->getClientType(), $clientIp, null, $authorization->getScopeFamily());
 
         return DevicePollResult::issued($token);
     }

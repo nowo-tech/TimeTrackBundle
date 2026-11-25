@@ -56,6 +56,9 @@ device:
   invalid_code: "Codice non valido o scaduto."
   too_many_attempts: "Troppi tentativi. Riprova più tardi."
   confirm_intro: "%client% chiede accesso al tuo monitoraggio del tempo. Approva solo se l’hai avviato tu sul tuo dispositivo."
+  confirm_intro_family: "%client% chiede l’accesso a: %family%. Questa approvazione copre solo %family%. Approva solo se l’hai avviata tu sul tuo dispositivo."
+  family: "Accesso a"
+  family_time: "Registrazione del tempo"
   approve: "Approva"
   deny: "Rifiuta"
   request: "Richiesta"
@@ -73,6 +76,8 @@ device:
   denied_status: "Rifiutato"
   expired: "Questa richiesta è scaduta o è già stata decisa. Ricomincia dal dispositivo."
   expired_status: "Scaduto"
+  link_mismatch: "Questa richiesta veniva da un dispositivo collegato a un altro account, quindi è stata rifiutata. Non è stato collegato nulla. Se non te l’aspettavi, qualcuno potrebbe cercare di ottenere l’accesso tramite te."
+  link_mismatch_status: "Rifiutata"
 downloads:
   title: "App di monitoraggio del tempo"
   get: "Scarica"

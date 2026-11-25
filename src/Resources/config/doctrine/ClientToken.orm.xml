@@ -15,6 +15,13 @@
         <field name="createdAt" type="datetime_immutable" column="created_at"/>
         <field name="lastUsedAt" type="datetime_immutable" column="last_used_at" nullable="true"/>
         <field name="scopes" type="json" column="scopes" nullable="true"/>
+        <field name="scopeFamily" type="string" column="scope_family" length="32">
+            <options>
+                <option name="default">time</option>
+            </options>
+        </field>
+        <field name="deviceKey" type="string" column="device_key" length="36" nullable="true"/>
+        <field name="clientName" type="string" column="client_name" length="100" nullable="true"/>
         <field name="tokenHash" type="string" column="token_hash" length="64" unique="true"/>
         <field name="expiresAt" type="datetime_immutable" column="expires_at"/>
         <field name="clientType" type="string" column="client_type" length="16" enum-type="Nowo\TimeTrackBundle\Enum\ClientType"/>

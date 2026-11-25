@@ -158,6 +158,7 @@ services:
         arguments:
             $layoutTemplate: '%nowo_time_track.web_ui.layout_template%'
             $twig: '@?twig'
+            $families: '@?Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry'
 
     # REQ-OBS-001: services that log use the `time_track` Monolog channel when MonologBundle is installed (the tag is
     # ignored otherwise and the default `logger`, or none, is injected).

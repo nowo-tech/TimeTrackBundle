@@ -56,6 +56,9 @@ device:
   invalid_code: "Invalid or expired code."
   too_many_attempts: "Too many attempts. Try again later."
   confirm_intro: "%client% asks for access to your time tracking. Approve only if you started this on your own device."
+  confirm_intro_family: "%client% asks for access to: %family%. This approval covers %family% only. Approve only if you started this on your own device."
+  family: "Access to"
+  family_time: "Time tracking"
   approve: "Approve"
   deny: "Deny"
   request: "Request"
@@ -73,6 +76,8 @@ device:
   denied_status: "Denied"
   expired: "This request expired or was already decided. Start again from the device."
   expired_status: "Expired"
+  link_mismatch: "This request came from a device signed in to another account, so it was refused. Nothing was connected. If you did not expect it, someone may be trying to get access through you."
+  link_mismatch_status: "Refused"
 downloads:
   title: "Time tracking apps"
   get: "Download"

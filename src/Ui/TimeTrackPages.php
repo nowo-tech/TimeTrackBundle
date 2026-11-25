@@ -6,6 +6,8 @@ namespace Nowo\TimeTrackBundle\Ui;
 
 use DateTimeImmutable;
 use LogicException;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\Dto\TaskReference;
 use Nowo\TimeTrackBundle\Dto\TimeEntryPage;
 use Nowo\TimeTrackBundle\Entity\ActiveTimer;
@@ -62,6 +64,7 @@ final readonly class TimeTrackPages
     public function __construct(
         private ?string $layoutTemplate = null,
         private ?Environment $twig = null,
+        private ?DeviceScopeFamilyRegistry $families = null,
     ) {
     }
 
@@ -169,7 +172,10 @@ final readonly class TimeTrackPages
         return new ShowPage(
             new PageHeader(
                 self::label('page.device'),
-                self::label('device.confirm_intro', ['%client%' => $authorization->getClientName()]),
+                // Since 2.2.0 (Beacon Desktop BD-2): one family per approval, named in the intro.
+                $authorization->getScopeFamily() === DeviceScopeFamily::TIME
+                    ? self::label('device.confirm_intro', ['%client%' => $authorization->getClientName()])
+                    : self::label('device.confirm_intro_family', ['%client%' => $authorization->getClientName(), '%family%' => $this->families?->labelOf($authorization->getScopeFamily()) ?? $authorization->getScopeFamily()]),
                 [
                     new Action(kind: 'custom', label: self::label('device.approve'), method: 'POST', variant: 'primary', attributes: ['data-testid' => 'time-track-device-approve'], form: $approveForm),
                     new Action(kind: 'custom', label: self::label('device.deny'), method: 'POST', variant: 'secondary', attributes: ['data-testid' => 'time-track-device-deny'], form: $denyForm),
@@ -178,7 +184,8 @@ final readonly class TimeTrackPages
             [new DetailSection(self::label('device.request'), [
                 new DetailItem(self::label('device.client_name'), $authorization->getClientName()),
                 new DetailItem(self::label('device.client_type'), self::label('reports.source_' . $authorization->getClientType()->value)),
-                new DetailItem(self::label('device.scopes'), implode(', ', ClientScope::values($authorization->getScopes()))),
+                new DetailItem(self::label('device.family'), $this->familyLabel($authorization->getScopeFamily())),
+                new DetailItem(self::label('device.scopes'), implode(', ', $this->scopeLabels($authorization))),
                 // Since 1.26 (audit PM-L9): the most sensitive scope is spelled out.
                 ...(in_array(ClientScope::MonitoringWrite, $authorization->getScopes(), true) ? [new DetailItem(self::label('device.scope_monitoring_write'), self::label('device.scope_monitoring_write_help'))] : []),
                 new DetailItem(self::label('device.requested_at'), $authorization->getCreatedAt()->format('Y-m-d H:i')),
@@ -189,6 +196,35 @@ final readonly class TimeTrackPages
             layout: $this->layout(),
             attributes: ['data-testid' => 'time-track-device-confirm'],
         );
+    }
+
+    /**
+     * Since 2.2.0: label of a scope family (the bundle's own family translated; another family's registered label, or
+     * its key when no registry is given).
+     */
+    private function familyLabel(string $family): Label|string
+    {
+        if ($family === DeviceScopeFamily::TIME) {
+            return self::label('device.family_time');
+        }
+
+        return $this->families instanceof DeviceScopeFamilyRegistry ? $this->families->labelOf($family) : $family;
+    }
+
+    /**
+     * Since 2.2.0: the requested scopes as shown (time scopes by value, a host family's scopes by their label).
+     *
+     * @return list<string>
+     */
+    private function scopeLabels(DeviceAuthorization $authorization): array
+    {
+        $family = $authorization->getScopeFamily() === DeviceScopeFamily::TIME ? null : $this->families?->get($authorization->getScopeFamily());
+        $labels = [];
+        foreach ($authorization->getScopeValues() as $scope) {
+            $labels[] = $family instanceof DeviceScopeFamily ? $family->labelOf($scope) : $scope;
+        }
+
+        return $labels;
     }
 
     /**

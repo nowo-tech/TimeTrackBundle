@@ -56,6 +56,9 @@ device:
   invalid_code: "Code invalide ou expiré."
   too_many_attempts: "Trop de tentatives. Réessayez plus tard."
   confirm_intro: "%client% demande l’accès à votre suivi du temps. N’approuvez que si vous l’avez lancé vous-même sur votre appareil."
+  confirm_intro_family: "%client% demande l’accès à : %family%. Cette approbation ne couvre que %family%. N’approuvez que si vous l’avez lancée vous-même sur votre propre appareil."
+  family: "Accès à"
+  family_time: "Suivi du temps"
   approve: "Approuver"
   deny: "Refuser"
   request: "Demande"
@@ -73,6 +76,8 @@ device:
   denied_status: "Refusé"
   expired: "Cette demande a expiré ou a déjà été traitée. Recommencez depuis l’appareil."
   expired_status: "Expiré"
+  link_mismatch: "Cette demande venait d’un appareil connecté à un autre compte : elle a été refusée. Rien n’a été connecté. Si vous ne l’attendiez pas, quelqu’un essaie peut-être d’obtenir un accès par votre intermédiaire."
+  link_mismatch_status: "Refusée"
 downloads:
   title: "Applications de suivi du temps"
   get: "Télécharger"

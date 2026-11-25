@@ -6,6 +6,7 @@ namespace Nowo\TimeTrackBundle\Controller;
 
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
 use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationNotPendingException;
+use Nowo\TimeTrackBundle\Exception\DeviceAuthorizationRefusedException;
 use Nowo\TimeTrackBundle\Exception\DeviceCodeAttemptsExceededException;
 use Nowo\TimeTrackBundle\Form\DeviceDecisionType;
 use Nowo\TimeTrackBundle\Form\DeviceUserCodeType;
@@ -88,6 +89,10 @@ final class TimeTrackDeviceVerificationController extends AbstractController
                 $form->get('user_code')->addError(new FormError($this->trans('device.too_many_attempts')));
             }
 
+            // Since 2.2.0 (audit ZBV-L1): a request whose scope family is no longer registered is never shown.
+            if ($authorization instanceof DeviceAuthorization && !$this->deviceService->isFamilyAvailable($authorization)) {
+                return $this->result('device.expired', 'warning');
+            }
             if ($authorization instanceof DeviceAuthorization) {
                 return $this->confirm($authorization);
             }
@@ -125,6 +130,9 @@ final class TimeTrackDeviceVerificationController extends AbstractController
         } catch (DeviceAuthorizationNotPendingException) {
             // Since 1.27.0: decided, exchanged or expired by another request meanwhile (a double submit, another tab).
             return $this->result('device.expired', 'warning');
+        } catch (DeviceAuthorizationRefusedException $refused) {
+            // Since 2.2.0 (audit ZBV-M1, ZBV-L1): refused and denied under the lock, nothing issued.
+            return $refused->reason === DeviceAuthorizationRefusedException::LINK_MISMATCH ? $this->result('device.link_mismatch', 'warning') : $this->result('device.expired', 'warning');
         }
 
         return $this->result('device.denied', 'info');

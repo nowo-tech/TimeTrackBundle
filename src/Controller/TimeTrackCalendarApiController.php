@@ -358,7 +358,7 @@ final readonly class TimeTrackCalendarApiController
         }
         $payload  = $this->payload($request);
         $userId   = UserIdResolver::getId($principal->user);
-        $bodyHash = hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload));
+        $bodyHash = ClientIdempotencyStore::contextHash(hash('sha256', 'entries' . "\0" . CanonicalJson::encode($payload)), $principal->contextKey);
         $replay   = $this->idempotency->find($userId, 'entries:' . $key, $bodyHash);
         if ($replay === false) {
             return $this->responseFactory->error('idempotency_mismatch', 'This Idempotency-Key was used with another request.', Response::HTTP_UNPROCESSABLE_ENTITY, $request);
@@ -423,7 +423,7 @@ final readonly class TimeTrackCalendarApiController
             $body = ['entry' => $this->entryBody($principal, $entry, $request)];
             $this->idempotency->confirm($userId, $idempotencyKey, $nonce, $body);
             if ($subject instanceof TimeSubjectRef) {
-                $this->auditor?->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $subject->type);
+                $this->auditor?->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $principal->token->getClientType(), $request->getClientIp(), $subject->type, $principal->token->getScopeFamily());
             }
 
             return $this->responseFactory->json($body, Response::HTTP_CREATED, $request);

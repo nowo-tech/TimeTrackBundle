@@ -56,6 +56,9 @@ device:
   invalid_code: "Ungültiger oder abgelaufener Code."
   too_many_attempts: "Zu viele Versuche. Versuche es später erneut."
   confirm_intro: "%client% bittet um Zugriff auf deine Zeiterfassung. Genehmige nur, wenn du dies selbst auf deinem Gerät gestartet hast."
+  confirm_intro_family: "%client% bittet um Zugriff auf: %family%. Diese Freigabe gilt nur für %family%. Gib sie nur frei, wenn du sie selbst auf deinem eigenen Gerät gestartet hast."
+  family: "Zugriff auf"
+  family_time: "Zeiterfassung"
   approve: "Genehmigen"
   deny: "Ablehnen"
   request: "Anfrage"
@@ -73,6 +76,8 @@ device:
   denied_status: "Abgelehnt"
   expired: "Diese Anfrage ist abgelaufen oder wurde bereits entschieden. Starte erneut am Gerät."
   expired_status: "Abgelaufen"
+  link_mismatch: "Diese Anfrage kam von einem Gerät, das mit einem anderen Konto angemeldet ist, und wurde abgelehnt. Es wurde nichts verbunden. Wenn du sie nicht erwartet hast, versucht vielleicht jemand, über dich Zugriff zu bekommen."
+  link_mismatch_status: "Abgelehnt"
 downloads:
   title: "Zeiterfassungs-Apps"
   get: "Herunterladen"

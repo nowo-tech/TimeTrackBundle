@@ -15,6 +15,7 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\ClientContextResolver;
 use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientMinSupportedVersionProviderInterface;
@@ -24,6 +25,7 @@ use Nowo\TimeTrackBundle\Client\ClientTaskPresenter;
 use Nowo\TimeTrackBundle\Client\ClientWorkingHoursNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientWorkingTimeContext;
 use Nowo\TimeTrackBundle\Client\ConfigClientApiSettingsProvider;
+use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Client\IdleCheckSettingsResolver;
 use Nowo\TimeTrackBundle\DependencyInjection\Configuration;
 use Nowo\TimeTrackBundle\Dto\ClampedTime;
@@ -180,6 +182,7 @@ final readonly class TimeTrackClientApiController
      * @param MeetingContext|null $meetings Meetings API (`me.features.meetings`, `me.meetings`, `me.links.calendars`, 1.14; null = off)
      * @param MonitoringContext|null $monitoring Activity monitoring (`me.features.monitoring`, `me.monitoring`, 1.26; null = off)
      * @param ClientAllocationPresenter|null $allocations Since 2.1.0 (spec 256): subjects and activity types (null = none: every subject refused or masked)
+     * @param ClientContextResolver|null $contexts Since 2.2.0: `me.contexts` / `me.context` with a context policy (null = no keys)
      */
     // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
@@ -209,6 +212,7 @@ final readonly class TimeTrackClientApiController
         private array $enabledLocales = [],
         private ?MonitoringContext $monitoring = null,
         private ?ClientAllocationPresenter $allocations = null,
+        private ?ClientContextResolver $contexts = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -257,7 +261,7 @@ final readonly class TimeTrackClientApiController
         $user = $result->requireUser();
         // Since 1.26 (Beacon Q5): a password never grants monitoring:write.
         $token = $this->authService->issueToken($user, $clientType, $result->getCredentialId(), ClientScope::grantableByPassword($result->getScopes()));
-        $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $result->getCredentialId(), $clientType, $clientIp);
+        $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $result->getCredentialId(), $clientType, $clientIp, null, $token['scopeFamily']);
 
         return $this->responseFactory->json($token, Response::HTTP_OK, $request);
     }
@@ -273,10 +277,11 @@ final readonly class TimeTrackClientApiController
             return $limited;
         }
 
-        $plain   = ClientApiGuard::bearerToken($request);
-        $revoked = $plain !== null ? $this->authService->logout($plain) : null;
+        $plain = ClientApiGuard::bearerToken($request);
+        // Since 2.2.0: the time API revokes time tokens only (a token of another family is revoked through its own API).
+        $revoked = $plain !== null ? $this->authService->logout($plain, DeviceScopeFamily::TIME) : null;
         if ($revoked instanceof ClientToken) {
-            $this->auditor->record(ClientApiAuditAction::TokenRevoked, $revoked->getUser(), $revoked->getCredentialId(), $revoked->getClientType(), $request->getClientIp());
+            $this->auditor->record(ClientApiAuditAction::TokenRevoked, $revoked->getUser(), $revoked->getCredentialId(), $revoked->getClientType(), $request->getClientIp(), null, $revoked->getScopeFamily());
         }
 
         return $this->responseFactory->empty(Response::HTTP_NO_CONTENT, $request);
@@ -290,7 +295,8 @@ final readonly class TimeTrackClientApiController
      * `daysOff` (holidays / vacations today → +60 days, or null); since 1.12 `workingHours` is normalised to the `slots`
      * shape ({@see ClientWorkingHoursNormalizer}), and (1.15) `privacy` when the profile provider implements
      * {@see ClientUserPrivacyProviderInterface} (no key otherwise), and (1.22, spec 204) `features.leave` and
-     * `links.leave` and `leave` days in `daysOff` only with a `client_api.leave_provider` (no keys otherwise).
+     * `links.leave` and `leave` days in `daysOff` only with a `client_api.leave_provider` (no keys otherwise), and (2.2.0)
+     * `contexts` and `context` only with a `client_api.context.policy` (no keys otherwise).
      */
     #[Route('/api/time-track/me', name: 'nowo_time_track_api_me', methods: ['GET', 'OPTIONS'])]
     public function me(Request $request): Response
@@ -379,6 +385,12 @@ final readonly class TimeTrackClientApiController
         if ($reportsLeave) {
             // Since 1.22 (spec 204): the host's Leave page, only while the workday API is on for the user (audit NG-4).
             $body['links']['leave'] = $features['workday'] ? $this->workingTime?->leaveLink() : null;
+        }
+        // Since 2.2.0 (contract v0.5, Q-BD-7): with a context policy, the contexts the user may name and the one this request named.
+        $contexts = $this->contexts?->contextsOf($user, DeviceScopeFamily::TIME);
+        if ($contexts !== null) {
+            $body['contexts'] = $contexts;
+            $body['context']  = $principal->contextKey;
         }
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
@@ -1162,7 +1174,7 @@ final readonly class TimeTrackClientApiController
     private function auditSubject(ClientApiPrincipal $principal, Request $request, ?TimeSubjectRef $subject, ?ClientType $clientType): void
     {
         if ($subject instanceof TimeSubjectRef) {
-            $this->auditor->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $clientType ?? $principal->token->getClientType(), $request->getClientIp(), $subject->type);
+            $this->auditor->record(ClientApiAuditAction::SubjectAllocated, $principal->user, $principal->token->getCredentialId(), $clientType ?? $principal->token->getClientType(), $request->getClientIp(), $subject->type, $principal->token->getScopeFamily());
         }
     }
 

@@ -94,7 +94,7 @@ final class InMemoryClientTokenRepository implements ClientTokenRepositoryInterf
             return null;
         }
 
-        return new ClientSessionRecord($token->getId(), (string) UserIdResolver::idOf($token->getUser()), $token->getCredentialId(), $token->getClientType());
+        return new ClientSessionRecord($token->getId(), (string) UserIdResolver::idOf($token->getUser()), $token->getCredentialId(), $token->getClientType(), $token->getScopeFamily());
     }
 
     public function removeSessionById(string $sessionId): int

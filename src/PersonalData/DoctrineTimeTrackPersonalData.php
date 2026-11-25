@@ -134,6 +134,9 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 'createdAt'  => $session->createdAt->format(DATE_ATOM),
                 'lastUsedAt' => $session->lastUsedAt?->format(DATE_ATOM),
                 'expiresAt'  => $session->expiresAt->format(DATE_ATOM),
+                // Since 2.2.0: the scope family and the name the device gave.
+                'scopeFamily' => $session->scopeFamily,
+                'clientName'  => $session->clientName,
             ], $this->clientAccess->sessionsOf($userId, true)),
             'deviceSignIns' => array_map(static fn (DeviceSignInView $device): array => [
                 'clientType'   => $device->clientType->value,
@@ -144,6 +147,7 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 'createdAt'    => $device->createdAt->format(DATE_ATOM),
                 'expiresAt'    => $device->expiresAt->format(DATE_ATOM),
                 'lastPolledAt' => $device->lastPolledAt?->format(DATE_ATOM),
+                'scopeFamily'  => $device->scopeFamily,
             ], $this->clientAccess->deviceSignInsOf($userId)),
             'monitoringAcknowledgements' => $this->ownedRows(MonitoringAcknowledgementRecord::class, $userId, ['policyVersion', 'clientType', 'noticeSha256', 'acknowledgedAt']),
             'monitoringUploads'          => $this->ownedRows(MonitoringUploadIntent::class, $userId, ['entryId', 'slot', 'takenAt', 'status', 'policyVersion', 'blurred', 'mime', 'bytes', 'width', 'height', 'screenshotId', 'createdAt']),
