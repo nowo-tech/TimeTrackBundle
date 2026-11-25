@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[2.2.0] - 2026-11-25](#220---2026-11-25)
   - [Added (2.2.0)](#added-220)
   - [Security (2.2.0, audit ZBV, unreleased code)](#security-220-audit-zbv-unreleased-code)
   - [Changed (2.2.0)](#changed-220)
@@ -265,6 +266,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+## [2.2.0] - 2026-11-25
 
 TimeTrack 2.2.0 (minor, Beacon Desktop phase BD-2): device-flow **scope families**, so the desktop app can hold a
 separate, separately revocable token for another bundle's client API (Beacon: ChatKit's chat API) next to its time
@@ -2792,7 +2795,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.41.0...v2.0.0
 [1.41.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v1.40.1...v1.41.0
