@@ -13,6 +13,7 @@ use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\Client\DeviceScopeRequest;
+use Nowo\TimeTrackBundle\Client\OrphanedCredentialRevokerInterface;
 use Nowo\TimeTrackBundle\Dto\DeviceCodeGrant;
 use Nowo\TimeTrackBundle\Dto\DevicePollResult;
 use Nowo\TimeTrackBundle\Entity\DeviceAuthorization;
@@ -34,8 +35,11 @@ use Nowo\TimeTrackBundle\Support\IpPrefix;
 use Nowo\TimeTrackBundle\Support\UserIdResolver;
 use Nowo\TimeTrackBundle\ValueObject\Uuid;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Throwable;
 
 use function base64_encode;
 use function hash;
@@ -108,6 +112,7 @@ final readonly class DeviceAuthorizationService
         ?UserReferenceResolverInterface $userReferences = null,
         private ?ClientAccountChecker $accountChecker = null,
         private DeviceScopeFamilyRegistry $families = new DeviceScopeFamilyRegistry(),
+        private LoggerInterface $logger = new NullLogger(),
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -429,16 +434,44 @@ final readonly class DeviceAuthorizationService
         return DevicePollResult::error(DevicePollResult::DENIED);
     }
 
+    /**
+     * Since 2.2.1 (audit ZBV-v-I2): refuses the exchange of an approved request (the request is removed first), audits it
+     * as `device_denied` with the credential minted at approval and the reason, then asks the minter, best effort, to
+     * revoke that credential ({@see OrphanedCredentialRevokerInterface}). A failing revoke is logged; the device is denied.
+     */
+    private function refuseExchange(DeviceAuthorization $authorization, ?object $user, ?string $clientIp, string $reason): DevicePollResult
+    {
+        $denied       = $this->consumeDenied($authorization);
+        $credentialId = $authorization->getCredentialId();
+        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, $credentialId, $authorization->getClientType(), $clientIp, $reason, $authorization->getScopeFamily());
+        if ($credentialId === null || !$this->credentialIssuer instanceof OrphanedCredentialRevokerInterface) {
+            return $denied;
+        }
+        try {
+            $this->credentialIssuer->revokeOrphanedCredential($credentialId, $authorization->getScopeFamily());
+        } catch (Throwable $exception) {
+            $this->logger->warning('TimeTrack could not revoke the credential of a refused device exchange; revoke it in the host.', [
+                'bundle'    => 'time_track',
+                'action'    => 'device_credential_orphaned',
+                'reason'    => $reason,
+                'family'    => $authorization->getScopeFamily(),
+                'exception' => $exception::class,
+            ]);
+        }
+
+        return $denied;
+    }
+
     private function exchange(DeviceAuthorization $authorization, ?string $clientIp): DevicePollResult
     {
         $user = $authorization->getUser();
         // Since 1.29 (audit SO-L1): an account disabled, locked or expired after the approval gets no token.
         if ($user instanceof UserInterface && $this->accountChecker instanceof ClientAccountChecker && !$this->accountChecker->isUserActive($user)) {
-            return $this->consumeDenied($authorization);
+            return $this->refuseExchange($authorization, $user, $clientIp, 'account_inactive');
         }
         // Since 2.2.0 (audit ZBV-L1): a family unregistered after the approval gets no token.
         if (!$this->isFamilyAvailable($authorization)) {
-            return $this->consumeDenied($authorization);
+            return $this->refuseExchange($authorization, $user, $clientIp, DeviceAuthorizationRefusedException::FAMILY_UNAVAILABLE);
         }
         if (!$user instanceof UserInterface || !$this->repository->markConsumed($authorization)) {
             return DevicePollResult::error(DevicePollResult::EXPIRED);

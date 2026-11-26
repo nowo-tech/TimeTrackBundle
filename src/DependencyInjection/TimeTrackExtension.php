@@ -1580,7 +1580,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$clock'               => $clockRef,
                 '$accountChecker'      => new Reference(ClientAccountChecker::class),
                 '$families'            => new Reference(DeviceScopeFamilyRegistry::class),
-            ]));
+                '$logger'              => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
 
         $container->setDefinition(ClientTaskPresenter::class, (new Definition(ClientTaskPresenter::class))
             ->setArguments([

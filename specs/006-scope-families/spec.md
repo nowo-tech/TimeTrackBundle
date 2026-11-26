@@ -55,7 +55,7 @@ refused at the next request; nothing is written to the user's web context. Tests
 - **FR-FAM-003**: `device/code` `family` + one family per request + device-key link through a valid Bearer token.
 - **FR-FAM-004**: Tokens and device requests store family, device key (and client name); time API refuses other
   families; family-aware `logout`.
-- **FR-FAM-005**: `ClientFamilyCredentialMinterInterface` and the family-aware internal issuer.
+- **FR-FAM-005**: `ClientFamilyCredentialMinterInterface` and the family-aware internal issuer; since 2.2.1 the optional `OrphanedCredentialRevokerInterface` (revoke of a credential whose exchange was refused after the approval, audit ZBV-v-I2).
 - **FR-FAM-006**: `ClientFamilyTokenAuthenticator` for other bundles' APIs (same checks, family, scope, context, revoke).
 - **FR-FAM-007**: Tenant context: `ClientContextPolicyInterface`, `ClientContextResolver`, `CurrentClientContext`,
   configurable header, `me.contexts` / `me.context`, CORS.

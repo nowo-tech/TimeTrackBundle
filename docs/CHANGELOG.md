@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (2.2.1)](#added-221)
+  - [Fixed (2.2.1)](#fixed-221)
+  - [Known issues (2.2.1)](#known-issues-221)
 - [[2.2.0] - 2026-11-25](#220---2026-11-25)
   - [Added (2.2.0)](#added-220)
   - [Security (2.2.0, audit ZBV, unreleased code)](#security-220-audit-zbv-unreleased-code)
@@ -266,6 +269,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+Follow-ups of the ZBV verification audit (Info findings, no GHSA).
+
+### Added (2.2.1)
+
+- **`OrphanedCredentialRevokerInterface` (audit ZBV-v-I2).** A credential is minted when the user approves a device
+  request; when the token exchange is then refused (the account was disabled, or the scope family unregistered, after
+  the approval) no token ever uses it. The refusal is now audited as `device_denied` with the credential id and the
+  reason (`account_inactive` or `scope_family_unavailable`), and when the configured `client_api.credential_issuer`
+  also implements the new optional `Nowo\TimeTrackBundle\Client\OrphanedCredentialRevokerInterface`, the bundle asks
+  it to revoke that credential, best effort, after the refusal is saved (a failure is logged on the `time_track`
+  channel, without the credential id, and the device still gets `access_denied`). Opt-in and additive: existing
+  minters, `ClientCredentialMinterInterface` and `ClientFamilyCredentialMinterInterface` are unchanged.
+
+### Fixed (2.2.1)
+
+- **Erasure of linked device requests (audit ZBV-v-I1).** `TimeTrackPersonalDataInterface::erase()` also deletes the
+  device sign-in requests a device started with the erased user's token (`link_owner_id`), not only the ones the user
+  approved. Matched byte for byte (`===` after the SQL, locked `FOR UPDATE` in id order) in the same transaction; they
+  count in `TimeTrackErasureResult::$deviceSignIns`.
+- **Export of linked device requests (audit ZCC-I1, art. 15).** `export()` has a new section `linkedDeviceSignIns`:
+  the requests a device started with the user's token that the user does not own (client type and name, status,
+  family, IP prefix, dates; never a code hash or device key), so the export matches what the erasure deletes.
+
+### Known issues (2.2.1)
+
+- Audits ZCC-I2 to ZCC-I4 (contention only, fail closed; follow-ups for 2.3, see [CONCURRENCY](CONCURRENCY.md#residual-risks)):
+  no index on `link_owner_id` yet (InnoDB next-key locks during an erasure), a refused exchange polled twice audits
+  and revokes twice, and a linked request inserted during an erasure on PostgreSQL survives until its TTL.
 
 ## [2.2.0] - 2026-11-25
 

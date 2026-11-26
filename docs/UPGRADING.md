@@ -2,6 +2,7 @@
 
 ## Table of contents
 
+- [To 2.2.1](#to-221)
 - [To 2.2.0](#to-220)
   - [Schema](#schema)
   - [Nothing to do for time clients](#nothing-to-do-for-time-clients)
@@ -126,6 +127,37 @@
 - [To 1.3.0](#to-130)
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
+
+## To 2.2.1
+
+From **2.2.0** (a patch: no schema change, nothing required).
+
+- **Erasure.** `erase()` now also deletes the pending device requests linked to the erased user's token
+  (`link_owner_id`, audit ZBV-v-I1); `TimeTrackErasureResult::$deviceSignIns` counts them. `export()` has a new
+  section `linkedDeviceSignIns` (audit ZCC-I1): if your export renderer lists the sections it knows, add it.
+- **Orphaned credentials (optional, audit ZBV-v-I2).** When a device exchange is refused after the approval (account
+  disabled, scope family unregistered), the credential your minter created at approval is never used. The bundle now
+  audits it (`device_denied`, `credentialId` set, reason `account_inactive` or `scope_family_unavailable`). To have it
+  revoked automatically, let your minter also implement `OrphanedCredentialRevokerInterface`:
+
+```php
+use Nowo\TimeTrackBundle\Client\ClientFamilyCredentialMinterInterface;
+use Nowo\TimeTrackBundle\Client\OrphanedCredentialRevokerInterface;
+
+final class AppCredentialMinter implements ClientFamilyCredentialMinterInterface, OrphanedCredentialRevokerInterface
+{
+    // mintForDevice() / mintForFamily() as before ...
+
+    public function revokeOrphanedCredential(string $credentialId, string $scopeFamily): void
+    {
+        // Idempotent, stateless; must not throw for an unknown or already revoked id.
+        $this->credentials->revoke($credentialId);
+    }
+}
+```
+
+  Without it, revoke such credentials from the `device_denied` audit events (non-null `credentialId`) or leave them:
+  no token is ever issued for them.
 
 ## To 2.2.0
 
