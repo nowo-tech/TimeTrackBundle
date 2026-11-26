@@ -19,7 +19,7 @@ interface TimeTrackPersonalDataInterface
     /**
      * The user's TimeTrack data as JSON-ready sections (dates as RFC 3339 strings, never a token hash, device code or
      * calendar credential): `entries` (owned, every one, read in batches), `formerPersonEntries` (entries left under the
-     * user's former reference), `runningTimer`, `clientSessions`, `deviceSignIns`, `monitoringAcknowledgements`,
+     * user's former reference), `runningTimer`, `clientSessions`, `deviceSignIns`, `linkedDeviceSignIns` (2.2.1), `monitoringAcknowledgements`,
      * `monitoringUploads`, `timesheets`, `balanceLedgerLines` (the user's balance movements: kind, seconds, reason),
      * `timesheetEvents` (the audit trail of the user's own timesheets, comments included) and, when calendars are enabled,
      * `calendarConnections`, `calendarRules` and `calendarSuggestions`. Cells hold the stored text: a host writing a CSV

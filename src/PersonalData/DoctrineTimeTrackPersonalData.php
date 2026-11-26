@@ -149,6 +149,8 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 'lastPolledAt' => $device->lastPolledAt?->format(DATE_ATOM),
                 'scopeFamily'  => $device->scopeFamily,
             ], $this->clientAccess->deviceSignInsOf($userId)),
+            // Since 2.2.1 (audit ZCC-I1): requests linked to the user's token that the user does not own.
+            'linkedDeviceSignIns'        => $this->linkedDeviceSignIns($userId),
             'monitoringAcknowledgements' => $this->ownedRows(MonitoringAcknowledgementRecord::class, $userId, ['policyVersion', 'clientType', 'noticeSha256', 'acknowledgedAt']),
             'monitoringUploads'          => $this->ownedRows(MonitoringUploadIntent::class, $userId, ['entryId', 'slot', 'takenAt', 'status', 'policyVersion', 'blurred', 'mime', 'bytes', 'width', 'height', 'screenshotId', 'createdAt']),
             'timesheets'                 => $this->ownedRows(Timesheet::class, $userId, ['id', 'scopeKey', 'periodKind', 'periodStart', 'periodEnd', 'timezone', 'status', 'lockedAt', 'lockReason', 'submittedAt', 'decidedAt', 'decisionComment', 'totals', 'createdAt', 'updatedAt']),
@@ -431,11 +433,29 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function deleteLinkedDeviceRequests(string $userId): int
     {
-        $ids   = [];
+        return $this->deleteByIds(DeviceAuthorization::class, array_column($this->linkedDeviceRows($userId, [], true), 'id'));
+    }
+
+    /**
+     * Since 2.2.1 (audits ZBV-v-I1, ZCC-I1): the device sign-in requests whose `link_owner_id` is exactly the user, by
+     * keyset in id order, matched again in PHP (`===`, the column may fold case). Each row holds `id`, `ownerId` and the
+     * requested fields.
+     *
+     * @param list<string> $fields
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function linkedDeviceRows(string $userId, array $fields, bool $forUpdate = false): array
+    {
+        $select = ['d.id AS id', 'd.linkOwnerId AS linkOwnerId', 'IDENTITY(d.user) AS ownerId'];
+        foreach ($fields as $field) {
+            $select[] = 'd.' . $field . ' AS ' . $field;
+        }
+        $rows  = [];
         $after = '';
         do {
-            $rows = $this->entityManager->createQueryBuilder()
-                ->select('d.id AS id', 'd.linkOwnerId AS linkOwnerId')
+            $query = $this->entityManager->createQueryBuilder()
+                ->select(...$select)
                 ->from(DeviceAuthorization::class, 'd')
                 ->where('d.linkOwnerId = :owner')
                 ->andWhere('d.id > :after')
@@ -443,20 +463,43 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
                 ->setParameter('after', $after)
                 ->orderBy('d.id', SortDirection::Ascending)
                 ->setMaxResults(OwnedRows::BATCH)
-                ->getQuery()
-                ->setLockMode(LockMode::PESSIMISTIC_WRITE)
-                ->getArrayResult();
-            foreach ($rows as $row) {
+                ->getQuery();
+            $batch = ($forUpdate ? $query->setLockMode(LockMode::PESSIMISTIC_WRITE) : $query)->getArrayResult();
+            foreach ($batch as $row) {
                 $after = is_scalar($row['id']) ? (string) $row['id'] : $after;
                 // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
                 if ($row['linkOwnerId'] !== $userId) {
                     continue; // @codeCoverageIgnore
                 }
-                $ids[] = $after;
+                $rows[] = ['id' => $after] + $row;
             }
-        } while (count($rows) === OwnedRows::BATCH);
+        } while (count($batch) === OwnedRows::BATCH);
 
-        return $this->deleteByIds(DeviceAuthorization::class, $ids);
+        return $rows;
+    }
+
+    /**
+     * Since 2.2.1 (audit ZCC-I1, art. 15): the requests a device started with the user's token that the user does not
+     * own (pending, or decided by someone else); the owned ones are in `deviceSignIns`. No device key, no code hash.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function linkedDeviceSignIns(string $userId): array
+    {
+        $fields = ['clientType', 'clientName', 'status', 'scopeFamily', 'ipPrefix', 'createdAt', 'expiresAt'];
+        $out    = [];
+        foreach ($this->linkedDeviceRows($userId, $fields) as $row) {
+            if (is_scalar($row['ownerId']) && (string) $row['ownerId'] === $userId) {
+                continue; // already exported as an owned sign-in
+            }
+            $item = [];
+            foreach ($fields as $field) {
+                $item[$field] = $this->exported($row[$field] ?? null);
+            }
+            $out[] = $item;
+        }
+
+        return $out;
     }
 
     /**

@@ -188,5 +188,18 @@ to `TransactionRunnerInterface`.
   clear or reset your manager and retry your whole transaction.
 - **`CONFLICT_002` is conservative** for task moves: it is given whenever an earlier batch moved rows, even when
   running the move again is harmless (it is idempotent).
+- **Linked device requests in the erasure (2.2.1, audits ZCC-I2 to ZCC-I4; follow-ups for 2.3).**
+  - `link_owner_id` has no index yet (a schema change, so not in a patch). On InnoDB the erasure's
+    `WHERE link_owner_id = ? … FOR UPDATE` walks the primary key and next-key-locks the scanned rows of
+    `time_track_device_codes` until your erasure transaction commits; approvals, polls and new `device/code` requests
+    wait meanwhile (or end in 409 `CONFLICT_001`). The table is small (expired rows are purged, `max_pending` bounds
+    it). PostgreSQL locks only the matched rows. 2.3 adds the index.
+  - Two concurrent polls of one approved request whose exchange is refused both remove it, both audit `device_denied`
+    and both call `revokeOrphanedCredential()` (idempotent by contract). The revoke runs after the flush: under an
+    outer transaction of yours that later rolls back, the credential is revoked while the request survives, and a
+    later exchange is refused by the credential state check (fail closed).
+  - On PostgreSQL a `device/code` call that presented the user's token before the erasure deleted it can insert a
+    linked request after the erasure's read; it lives until its TTL and nobody can approve it (fail closed). Block or
+    sign out the account before you erase it, as for the running timer.
 - **Topology.** Galera / Percona XtraDB Cluster reports a certification failure as a deadlock (1213): transient, 409.
   PgBouncer in transaction pooling is fine (no session lock).

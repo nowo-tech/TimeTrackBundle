@@ -50,6 +50,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 use function array_keys;
 use function array_map;
+use function array_slice;
 use function bin2hex;
 use function gc_collect_cycles;
 use function is_object;
@@ -262,7 +263,7 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         $this->timers()->start($ana, 'task-2', ClientType::Web);
 
         $export = $this->personalData()->export($this->idOf($ana));
-        self::assertSame(['entries', 'formerPersonEntries', 'runningTimer', 'clientSessions', 'deviceSignIns', 'monitoringAcknowledgements', 'monitoringUploads', 'timesheets', 'balanceLedgerLines', 'timesheetEvents', 'calendarConnections', 'calendarRules', 'calendarSuggestions'], array_keys($export));
+        self::assertSame(['entries', 'formerPersonEntries', 'runningTimer', 'clientSessions', 'deviceSignIns', 'linkedDeviceSignIns', 'monitoringAcknowledgements', 'monitoringUploads', 'timesheets', 'balanceLedgerLines', 'timesheetEvents', 'calendarConnections', 'calendarRules', 'calendarSuggestions'], array_keys($export));
         self::assertIsArray($export['entries']);
         self::assertCount(1, $export['entries']);
         self::assertSame(['Standup', 3600], [$export['entries'][0]['note'], $export['entries'][0]['durationSeconds']]);
@@ -346,12 +347,27 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         foreach (['ana-1' => $this->idOf($ana), 'ana-2' => $this->idOf($ana), 'bob-1' => $this->idOf($bob)] as $tag => $linkOwner) {
             $this->persist(new DeviceAuthorization('device-link-' . $tag, 'user-link-' . $tag, ClientType::Desktop, 'Laptop', ['chat:read'], $now->modify('+10 minutes'), $now, null, 'chat', 'device-' . $tag, $linkOwner));
         }
+        // A linked request ana approved herself is owned: exported as a sign-in, not as a linked one.
+        $approved = new DeviceAuthorization('device-link-ana-3', 'user-link-ana-3', ClientType::Desktop, 'Laptop', ['chat:read'], $now->modify('+10 minutes'), $now, null, 'chat', 'device-ana-3', $this->idOf($ana));
+        $approved->approve($this->owner($ana), 'cred-ana-3', 'device-ana-3');
+        $this->persist($approved);
         $loaded = $this->bundleManager()->getRepository(DeviceAuthorization::class)->findOneBy(['deviceCodeHash' => 'device-link-ana-1']);
         self::assertNotNull($loaded);
 
+        // Since 2.2.1 (audit ZCC-I1, art. 15): the linked requests ana does not own are exported too.
+        $export = $this->personalData()->export($this->idOf($ana));
+        self::assertIsArray($export['linkedDeviceSignIns']);
+        self::assertCount(2, $export['linkedDeviceSignIns']);
+        self::assertSame(['clientType' => 'desktop', 'clientName' => 'Laptop', 'status' => 'pending', 'scopeFamily' => 'chat', 'ipPrefix' => null], array_slice($export['linkedDeviceSignIns'][0], 0, 5));
+        self::assertIsArray($export['deviceSignIns']);
+        self::assertCount(1, $export['deviceSignIns']);
+        $bobs = $this->personalData()->export($this->idOf($bob))['linkedDeviceSignIns'];
+        self::assertIsArray($bobs);
+        self::assertCount(1, $bobs, 'only bob\'s own linked request');
+
         $result = $this->personalData()->erase($this->idOf($ana));
 
-        self::assertSame(2, $result->deviceSignIns);
+        self::assertSame(3, $result->deviceSignIns);
         self::assertFalse($this->bundleManager()->contains($loaded), 'a loaded copy is detached');
         $connection = $this->bundleManager()->getConnection();
         self::assertSame(['device-link-bob-1'], array_map(strval(...), $connection->fetchFirstColumn('SELECT device_code_hash FROM time_track_device_codes ORDER BY device_code_hash')), 'another user\'s request stays');

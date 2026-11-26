@@ -2,7 +2,7 @@
 
 **Spec**: [`spec.md`](spec.md)  
 **Package**: `nowo-tech/time-track-bundle`  
-**Last audited**: 2026-11-27 (2.2.0, released)
+**Last audited**: 2026-11-27 (2.2.1: + `Client/OrphanedCredentialRevokerInterface.php`; 2.2.0, released)
 
 ## New PHP classes (`src/**/*.php`)
 
@@ -15,6 +15,7 @@
 | `Client/ConfigDeviceScopeFamilyProvider.php` | Families from configuration | FR-FAM-002 |
 | `Client/DeviceScopeFamilyRegistry.php` | Registry and request parser | FR-FAM-002, FR-FAM-003 |
 | `Client/ClientFamilyCredentialMinterInterface.php` | Family-aware minter port | FR-FAM-005 |
+| `Client/OrphanedCredentialRevokerInterface.php` | Optional orphaned-credential revoke (audit ZBV-v-I2, 2.2.1) | FR-FAM-005 |
 | `Client/ClientFamilyTokenAuthenticator.php` | Authenticator for other bundles' APIs | FR-FAM-006 |
 | `Client/ClientFamilyAuthentication.php` | Authenticator answer | FR-FAM-006 |
 | `Client/ClientFamilyPrincipal.php` | Family principal VO | FR-FAM-006 |

@@ -133,7 +133,8 @@
 From **2.2.0** (a patch: no schema change, nothing required).
 
 - **Erasure.** `erase()` now also deletes the pending device requests linked to the erased user's token
-  (`link_owner_id`, audit ZBV-v-I1); `TimeTrackErasureResult::$deviceSignIns` counts them.
+  (`link_owner_id`, audit ZBV-v-I1); `TimeTrackErasureResult::$deviceSignIns` counts them. `export()` has a new
+  section `linkedDeviceSignIns` (audit ZCC-I1): if your export renderer lists the sections it knows, add it.
 - **Orphaned credentials (optional, audit ZBV-v-I2).** When a device exchange is refused after the approval (account
   disabled, scope family unregistered), the credential your minter created at approval is never used. The bundle now
   audits it (`device_denied`, `credentialId` set, reason `account_inactive` or `scope_family_unavailable`). To have it

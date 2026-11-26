@@ -569,7 +569,7 @@ $result   = $personalData->erase($userId, TimeEntryErasure::FreeText); // keep t
 ```
 
 - **Export** sections: `entries` (every owned entry), `formerPersonEntries` (entries left under the user's former
-  reference `user:<id>`), `runningTimer`, `clientSessions`, `deviceSignIns`, `monitoringAcknowledgements`,
+  reference `user:<id>`), `runningTimer`, `clientSessions`, `deviceSignIns`, `linkedDeviceSignIns` (2.2.1), `monitoringAcknowledgements`,
   `monitoringUploads`, `timesheets`, `balanceLedgerLines` (balance movements: kind, seconds, reason),
   `timesheetEvents` (the audit trail of the user's own timesheets, comments included), `calendarConnections`,
   `calendarRules`, `calendarSuggestions`. Dates are RFC 3339 strings; no token hash, device code or calendar credential.
@@ -688,9 +688,9 @@ receives a `DeviceCredentialRequest` (user, client type and name, family, scopes
 
 Since 2.2.1 (audit ZBV-v-I2) the minter may also implement `OrphanedCredentialRevokerInterface`: when the token
 exchange is refused after the approval (account disabled, family unregistered), the bundle calls
-`revokeOrphanedCredential($credentialId, $scopeFamily)` after saving the refusal, best effort (a failure is logged and
+`revokeOrphanedCredential($credentialId, $scopeFamily)` after the refusal is flushed, best effort (a failure is logged and
 the device still gets `access_denied`). It must be idempotent and must not throw for an unknown id. Either way the
-refusal is audited as `device_denied` with the credential id.
+refusal is audited as `device_denied` with the credential id (twice when two polls race, audit ZCC-I3).
 
 ### Two approvals chained by the app (Q-BD-6)
 
