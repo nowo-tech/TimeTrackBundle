@@ -336,6 +336,28 @@ abstract class HostReadPortsTestCase extends FunctionalTestCase
         self::assertSame([0, 0, 0, 0, 0, 0, 1], [$again->clientSessions, $again->deviceSignIns, $again->monitoringUploads, $again->monitoringAcknowledgements, $again->entriesAnonymised, $again->entriesCleared, $again->calendarConnectionsKept], 'idempotent');
     }
 
+    /**
+     * Since 2.2.1 (audit ZBV-v-I1): a pending request a device started with the user's token (`link_owner_id`) goes too.
+     */
+    public function testErasureDeletesThePendingRequestsLinkedToTheUser(): void
+    {
+        [$ana, $bob] = [$this->person('ana'), $this->person('bob')];
+        $now         = new DateTimeImmutable();
+        foreach (['ana-1' => $this->idOf($ana), 'ana-2' => $this->idOf($ana), 'bob-1' => $this->idOf($bob)] as $tag => $linkOwner) {
+            $this->persist(new DeviceAuthorization('device-link-' . $tag, 'user-link-' . $tag, ClientType::Desktop, 'Laptop', ['chat:read'], $now->modify('+10 minutes'), $now, null, 'chat', 'device-' . $tag, $linkOwner));
+        }
+        $loaded = $this->bundleManager()->getRepository(DeviceAuthorization::class)->findOneBy(['deviceCodeHash' => 'device-link-ana-1']);
+        self::assertNotNull($loaded);
+
+        $result = $this->personalData()->erase($this->idOf($ana));
+
+        self::assertSame(2, $result->deviceSignIns);
+        self::assertFalse($this->bundleManager()->contains($loaded), 'a loaded copy is detached');
+        $connection = $this->bundleManager()->getConnection();
+        self::assertSame(['device-link-bob-1'], array_map(strval(...), $connection->fetchFirstColumn('SELECT device_code_hash FROM time_track_device_codes ORDER BY device_code_hash')), 'another user\'s request stays');
+        self::assertSame(0, $this->personalData()->erase($this->idOf($ana))->deviceSignIns, 'idempotent');
+    }
+
     public function testErasureOfTheFreeTextKeepsTheOwnerAndTheHours(): void
     {
         $ana = $this->person('ana');

@@ -210,7 +210,8 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
 
         return new TimeTrackErasureResult(
             $this->deleteOwned(ClientToken::class, $userId),
-            $this->deleteOwned(DeviceAuthorization::class, $userId),
+            // Since 2.2.1 (audit ZBV-v-I1): also the requests a device started with the user's token (`link_owner_id`).
+            $this->deleteOwned(DeviceAuthorization::class, $userId) + $this->deleteLinkedDeviceRequests($userId),
             $this->deleteOwned(MonitoringUploadIntent::class, $userId),
             // Owner decision 3 (confirmed 2026-11-21): delete the monitoring acknowledgements, as Beacon does.
             // Alternative: keep them as evidence of the notice (count 0 here; export() still lists them).
@@ -400,7 +401,17 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
      */
     private function deleteOwned(string $class, string $userId): int
     {
-        $ids        = OwnedRows::ids($this->entityManager, $class, $userId, true);
+        return $this->deleteByIds($class, OwnedRows::ids($this->entityManager, $class, $userId, true));
+    }
+
+    /**
+     * Deletes these rows by primary key and detaches any loaded copy.
+     *
+     * @param class-string $class
+     * @param list<string> $ids
+     */
+    private function deleteByIds(string $class, array $ids): int
+    {
         $deleted    = OwnedRows::delete($this->entityManager, $class, $ids);
         $unitOfWork = $this->entityManager->getUnitOfWork();
         foreach ($ids as $id) {
@@ -411,6 +422,41 @@ final readonly class DoctrineTimeTrackPersonalData implements TimeTrackPersonalD
         }
 
         return $deleted;
+    }
+
+    /**
+     * Since 2.2.1 (audit ZBV-v-I1): deletes the device sign-in requests whose `link_owner_id` is exactly the user (the
+     * ones a device started with the user's token and nobody approved yet; approved ones are owned and already gone).
+     * Locked `FOR UPDATE` in id order, matched again in PHP (`===`, the column may fold case), deleted by primary key.
+     */
+    private function deleteLinkedDeviceRequests(string $userId): int
+    {
+        $ids   = [];
+        $after = '';
+        do {
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('d.id AS id', 'd.linkOwnerId AS linkOwnerId')
+                ->from(DeviceAuthorization::class, 'd')
+                ->where('d.linkOwnerId = :owner')
+                ->andWhere('d.id > :after')
+                ->setParameter('owner', $userId)
+                ->setParameter('after', $after)
+                ->orderBy('d.id', SortDirection::Ascending)
+                ->setMaxResults(OwnedRows::BATCH)
+                ->getQuery()
+                ->setLockMode(LockMode::PESSIMISTIC_WRITE)
+                ->getArrayResult();
+            foreach ($rows as $row) {
+                $after = is_scalar($row['id']) ? (string) $row['id'] : $after;
+                // Only a case-folding collation (MySQL / MariaDB suites) returns a look-alike row here.
+                if ($row['linkOwnerId'] !== $userId) {
+                    continue; // @codeCoverageIgnore
+                }
+                $ids[] = $after;
+            }
+        } while (count($rows) === OwnedRows::BATCH);
+
+        return $this->deleteByIds(DeviceAuthorization::class, $ids);
     }
 
     /**

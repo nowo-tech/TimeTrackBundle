@@ -9,6 +9,7 @@ use Nowo\TimeTrackBundle\Client\ClientCredentialMinterInterface;
 use Nowo\TimeTrackBundle\Client\ClientFamilyCredentialMinterInterface;
 use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
+use Nowo\TimeTrackBundle\Client\OrphanedCredentialRevokerInterface;
 use Nowo\TimeTrackBundle\Enum\ClientScope;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Port\Internal\ClientCredentialIssuerInterface;
@@ -22,7 +23,7 @@ use function sprintf;
  *
  * @internal
  */
-final readonly class ClientCredentialMinterGate implements ClientCredentialIssuerInterface
+final readonly class ClientCredentialMinterGate implements ClientCredentialIssuerInterface, OrphanedCredentialRevokerInterface
 {
     /**
      * Wraps the host minter.
@@ -55,5 +56,16 @@ final readonly class ClientCredentialMinterGate implements ClientCredentialIssue
         }
 
         return $this->minter->mintForDevice($request->user, $request->clientType, $request->clientName, ClientScope::normalize($request->scopes));
+    }
+
+    /**
+     * Since 2.2.1 (audit ZBV-v-I2): forwards to the minter when it implements {@see OrphanedCredentialRevokerInterface};
+     * nothing otherwise (the host revokes the credential itself).
+     */
+    public function revokeOrphanedCredential(string $credentialId, string $scopeFamily): void
+    {
+        if ($this->minter instanceof OrphanedCredentialRevokerInterface) {
+            $this->minter->revokeOrphanedCredential($credentialId, $scopeFamily);
+        }
     }
 }

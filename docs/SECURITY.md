@@ -131,6 +131,10 @@ Since 2.2.0 (Beacon Desktop BD-2, Beacon constraints R3, R4, R7):
 - **Credential minting.** A credential minter that does not know families can never mint a non-`time` credential (the
   approval fails and nothing is issued); the default opaque issuer mints `time` credentials only, and the build fails
   when a family other than `time` is registered without a `ClientFamilyCredentialMinterInterface` (audit ZBV-I1).
+  Since 2.2.1 (audit ZBV-v-I2), an exchange refused after the approval (account disabled, family unregistered) is
+  audited as `device_denied` with the credential id, and a minter implementing `OrphanedCredentialRevokerInterface` is
+  asked to revoke that credential, best effort, after the refusal is saved. Erasure also deletes the requests linked
+  to the erased user's token (`link_owner_id`, audit ZBV-v-I1).
 - **Tenant context.** The context header is checked by the host `ClientContextPolicyInterface` on **every** request
   (no cache): unknown, revoked and non-existent contexts all answer the same `403 context_forbidden`; a malformed value
   (over 128 characters, non-visible ASCII) never reaches the policy; a policy exception fails closed (logged with the
