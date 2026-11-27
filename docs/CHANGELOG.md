@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [[Unreleased]](#unreleased)
   - [Added (2.3.0)](#added-230)
+  - [Security (2.3.0)](#security-230)
   - [Tests (2.3.0)](#tests-230)
 - [[2.2.1] - 2026-11-26](#221---2026-11-26)
   - [Added (2.2.1)](#added-221)
@@ -297,6 +298,13 @@ Teams calls). See [UPGRADING.md](UPGRADING.md#to-230).
   refresh token, for the host's own Graph call (e.g. `POST /me/onlineMeetings`). Sends nothing for an ungranted scope.
 - `CalendarSyncException::CONSENT_REQUIRED` (`consent_required`) and `SCOPE_NOT_GRANTED` (`scope_not_granted`), only
   from the extra-scope calls; every other call maps errors exactly as before.
+
+### Security (2.3.0)
+
+- **Dev lock only:** `composer.lock` resolves Symfony 7.4.24 (was 7.4.22 / 7.4.23), clearing the 2026-11-25 Symfony
+  advisories (framework-bundle, http-client, http-kernel, routing, security-core, security-http, serializer,
+  doctrine-bridge) reported by `composer audit`. The bundle's constraints are unchanged; hosts update Symfony in their
+  own lock.
 
 ### Tests (2.3.0)
 

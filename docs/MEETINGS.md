@@ -222,6 +222,11 @@ $meetingTokens = $microsoft->accessTokenForScope($stored->refreshToken, 'OnlineM
   calendar scopes plus the allow-listed extra scopes found there; if Entra ID answers that consent is missing (the
   person removed the permission at myapps.microsoft.com), it retries once with the calendar scopes alone and the new
   tokens' granted scopes no longer list the extra scope.
+- **How a missing consent is detected**: an HTTP error answer with `error: invalid_grant` **and** either
+  `suberror: consent_required` or `65001` in `error_codes` (Entra ID's AADSTS65001 shape). Only `refresh()` with
+  granted extra scopes and `accessTokenForScope()` look for it; any other `invalid_grant` stays `token_expired`, and the
+  2.2 calls never return `consent_required`. This shape is covered by unit tests, not yet verified against a live
+  tenant.
 - `accessTokenForScope()` sends nothing and throws `CalendarSyncException` `scope_not_granted` when the stored grant
   lacks the scope; `consent_required` when Entra ID says it was removed (keep the calendar connection, offer step 1);
   `token_expired` when the whole grant is gone. A scope outside the allow-list throws `InvalidArgumentException`
