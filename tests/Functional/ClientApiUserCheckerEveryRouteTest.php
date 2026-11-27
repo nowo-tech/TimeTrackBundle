@@ -62,7 +62,7 @@ final class ClientApiUserCheckerEveryRouteTest extends FunctionalTestCase
                 }
             }
         }
-        self::assertSame(104, $refused, '26 Bearer routes x 2 paths x 2 phases (since 2.1.0: timer/allocate, subjects/search, activity-types)');
+        self::assertSame(108, $refused, '27 Bearer routes x 2 paths x 2 phases (since 2.1.0: timer/allocate, subjects/search, activity-types; since 2.4.0: me/capabilities)');
     }
 
     public function testADisabledAccountGetsNoTokenAtLogin(): void

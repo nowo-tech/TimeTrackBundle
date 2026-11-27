@@ -78,6 +78,8 @@ device:
   expired_status: "Verlopen"
   link_mismatch: "Dit verzoek kwam van een apparaat dat met een ander account is aangemeld en is daarom geweigerd. Er is niets gekoppeld. Verwachtte je het niet, dan probeert iemand misschien via jou toegang te krijgen."
   link_mismatch_status: "Geweigerd"
+  not_granted: "Je account kan dit deel van de app niet gebruiken, dus het verzoek is niet goedgekeurd. Er is niets gekoppeld. Vraag een beheerder als je denkt dat je toegang zou moeten hebben."
+  not_granted_status: "Niet beschikbaar"
 downloads:
   title: "Tijdregistratie-apps"
   get: "Downloaden"

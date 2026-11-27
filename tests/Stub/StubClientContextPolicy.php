@@ -22,6 +22,9 @@ final class StubClientContextPolicy implements ClientContextPolicyInterface
 
     public bool $fail = false;
 
+    /** Since 2.4.0: a family for which only `personal` is accepted (per-family policies, audit ZDB-v-2). */
+    public ?string $personalOnlyFamily = null;
+
     /** @var list<array{string, string, string}> identifier, requested, family */
     public array $asked = [];
 
@@ -30,6 +33,10 @@ final class StubClientContextPolicy implements ClientContextPolicyInterface
         $this->asked[] = [$user->identifier, $requested, $scopeFamily];
         if ($this->fail) {
             throw new RuntimeException('policy down');
+        }
+
+        if ($scopeFamily === $this->personalOnlyFamily && $requested !== 'personal') {
+            return null;
         }
 
         return match (true) {
@@ -54,8 +61,9 @@ final class StubClientContextPolicy implements ClientContextPolicyInterface
 
     public function reset(): void
     {
-        $this->members = ['person@example.com'];
-        $this->fail    = false;
-        $this->asked   = [];
+        $this->members            = ['person@example.com'];
+        $this->fail               = false;
+        $this->personalOnlyFamily = null;
+        $this->asked              = [];
     }
 }

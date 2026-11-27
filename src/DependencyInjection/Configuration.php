@@ -602,7 +602,7 @@ final class Configuration implements ConfigurationInterface
 
     /**
      * Adds the `entries_update` to `monitoring_activity` settings (and since 2.1.0 `timer_allocate`, `subjects_search`,
-     * `activity_types`).
+     * `activity_types`, and since 2.4.0 `me_capabilities`).
      */
     private function addClientsRoutesEntriesUpdateToMonitoringActivitySections(ArrayNodeDefinition $routes): void
     {
@@ -687,6 +687,14 @@ final class Configuration implements ConfigurationInterface
                     ->children()
                         ->scalarNode('path')->defaultValue('/api/time-track/activity-types')->end()
                         ->scalarNode('name')->defaultValue('nowo_time_track_api_activity_types')->end()
+                    ->end()
+                ->end()
+                // Since 2.4.0 (Beacon spec 262 block B): the modules the token's person may use (any family token).
+                ->arrayNode('me_capabilities')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('path')->defaultValue('/api/time-track/me/capabilities')->end()
+                        ->scalarNode('name')->defaultValue('nowo_time_track_api_me_capabilities')->end()
                     ->end()
                 ->end()
             ->end();
@@ -1067,6 +1075,24 @@ final class Configuration implements ConfigurationInterface
         $this->addClientApiRateLimitToMonitoringSections($clientApi);
         $this->addClientApiDeviceFlowSection($clientApi);
         $this->addClientApiContextSection($clientApi);
+        $this->addClientApiCapabilitiesSection($clientApi);
+    }
+
+    /**
+     * Since 2.4.0: adds the `capabilities` section (Beacon spec 262 block B: the client modules a person may use).
+     */
+    private function addClientApiCapabilitiesSection(ArrayNodeDefinition $clientApi): void
+    {
+        $clientApi
+            ->children()
+                ->arrayNode('capabilities')
+                    ->info('Since 2.4.0: the client modules (scope families) a person may use, from a host ClientCapabilitiesProviderInterface asked before granting a family (device flow, password login), on every client API request of a family token (403 module_forbidden) and by GET me/capabilities. Off without a provider: every registered family is granted and usable (2.3 behaviour).')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('provider')->info('Service id implementing ClientCapabilitiesProviderInterface (null = off).')->defaultNull()->end()
+                    ->end()
+                ->end()
+            ->end();
     }
 
     /**

@@ -294,9 +294,9 @@ final class TimeTrackRouteLoaderTest extends TestCase
         ksort($attributes);
         ksort($routes);
 
-        self::assertCount(40, $routes);
+        self::assertCount(41, $routes);
         self::assertSame($attributes, $routes);
-        self::assertCount(37, $versioned);
+        self::assertCount(38, $versioned);
         foreach ($versioned as $path) {
             self::assertStringStartsWith('/api/time-track/v1/', $path);
         }

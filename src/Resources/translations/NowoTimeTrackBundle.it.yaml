@@ -78,6 +78,8 @@ device:
   expired_status: "Scaduto"
   link_mismatch: "Questa richiesta veniva da un dispositivo collegato a un altro account, quindi è stata rifiutata. Non è stato collegato nulla. Se non te l’aspettavi, qualcuno potrebbe cercare di ottenere l’accesso tramite te."
   link_mismatch_status: "Rifiutata"
+  not_granted: "Il tuo account non può usare questa parte dell’app, quindi la richiesta non è stata approvata. Non è stato collegato nulla. Chiedi a un amministratore se pensi di dover avere accesso."
+  not_granted_status: "Non disponibile"
 downloads:
   title: "App di monitoraggio del tempo"
   get: "Scarica"

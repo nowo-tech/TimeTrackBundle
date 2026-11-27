@@ -78,6 +78,8 @@ device:
   expired_status: "Caducado"
   link_mismatch: "Esta solicitud venía de un dispositivo con la sesión de otra cuenta, así que se ha rechazado. No se ha conectado nada. Si no la esperabas, puede que alguien intente conseguir acceso a través de ti."
   link_mismatch_status: "Rechazada"
+  not_granted: "Tu cuenta no puede usar esta parte de la aplicación, así que la solicitud no se ha aprobado. No se ha conectado nada. Pregunta a un administrador si crees que deberías tener acceso."
+  not_granted_status: "No disponible"
 downloads:
   title: "Apps de registro de tiempo"
   get: "Descargar"

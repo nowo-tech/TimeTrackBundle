@@ -93,6 +93,11 @@ final class TimeTrackDeviceVerificationController extends AbstractController
             if ($authorization instanceof DeviceAuthorization && !$this->deviceService->isFamilyAvailable($authorization)) {
                 return $this->result('device.expired', 'warning');
             }
+            // Since 2.4.0 (Beacon spec 262): a family the host does not let this user use is never shown; the request is
+            // denied at once, so the device stops polling (`access_denied`) instead of waiting for the expiry.
+            if ($authorization instanceof DeviceAuthorization && !$this->deviceService->isGrantableTo($authorization, $user)) {
+                return $this->notGranted($authorization, $user, $request);
+            }
             if ($authorization instanceof DeviceAuthorization) {
                 return $this->confirm($authorization);
             }
@@ -132,10 +137,21 @@ final class TimeTrackDeviceVerificationController extends AbstractController
             return $this->result('device.expired', 'warning');
         } catch (DeviceAuthorizationRefusedException $refused) {
             // Since 2.2.0 (audit ZBV-M1, ZBV-L1): refused and denied under the lock, nothing issued.
-            return $refused->reason === DeviceAuthorizationRefusedException::LINK_MISMATCH ? $this->result('device.link_mismatch', 'warning') : $this->result('device.expired', 'warning');
+            return match ($refused->reason) {
+                DeviceAuthorizationRefusedException::LINK_MISMATCH      => $this->result('device.link_mismatch', 'warning'),
+                DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED => $this->result('device.not_granted', 'warning'),
+                default                                                 => $this->result('device.expired', 'warning'),
+            };
         }
 
         return $this->result('device.denied', 'info');
+    }
+
+    private function notGranted(DeviceAuthorization $authorization, UserInterface $user, Request $request): Response
+    {
+        $this->deviceService->denyNotGranted($authorization, $user, $request->getClientIp());
+
+        return $this->result('device.not_granted', 'warning');
     }
 
     private function confirm(DeviceAuthorization $authorization): Response

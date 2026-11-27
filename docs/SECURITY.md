@@ -6,6 +6,7 @@
 - [Attack surface](#attack-surface)
 - [Threat model](#threat-model)
 - [Client API](#client-api)
+- [Client capabilities (2.4)](#client-capabilities-24)
 - [Scope families and tenant context (2.2)](#scope-families-and-tenant-context-22)
 - [Reports](#reports)
 - [Imported entries (1.11)](#imported-entries-111)
@@ -100,6 +101,25 @@ Operations: purge expired tokens and device requests with `php bin/console nowo:
   and the leave warnings log the reason only (no user id, date, label or exception message). `GET workday` answers
   carry `Cache-Control: no-store, private` and `Vary: Authorization`. The bundle's reminder suppression fails open when
   the provider throws: the host register must suppress reminders on leave days itself (FR-025).
+
+## Client capabilities (2.4)
+
+Since 2.4.0 (Beacon spec 262 block B), with `client_api.capabilities.provider`:
+
+- **Grant only what the person may use.** The device flow asks the provider before granting a family (the approval
+  page, `DeviceAuthorizationService::approve()` under the request lock, and again at the exchange); a refused family is
+  never shown, never minted and the request is denied (`device_denied`, reason `scope_family_not_granted`). `POST login`
+  grants `time` only to a person who may use it (`403 module_forbidden`, audited as `request_denied`).
+- **Checked on every request.** Every client API request of a family token (time routes, `ClientFamilyTokenAuthenticator`)
+  asks the provider last, with the request's context: refused answers `403 module_forbidden` (audited). The token is not
+  revoked, so a temporary loss does not sign the device out; to cut a device off for good, revoke its session.
+- **Fail closed.** A provider exception counts as "may not use" (logged without personal data). The provider must be
+  read-only and keep no per-request state (FrankenPHP worker mode).
+- **No oracle.** `module_forbidden` names only the token's own family. `GET me/capabilities` answers about the token's
+  own person only; it skips the module check (so a device can learn it lost a module) but keeps every other check.
+- **What stays the host's job.** Per-scope rules inside a module (read-only members, per-conversation or per-board
+  access) are enforced by the host and the owning bundle on every call; a family API with its own guard must answer a
+  lost permission as `403 module_forbidden`, not `401`.
 
 ## Scope families and tenant context (2.2)
 

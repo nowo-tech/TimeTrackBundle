@@ -16,6 +16,11 @@ namespace Nowo\TimeTrackBundle\Client;
  * | `context_forbidden`  | 403    | the context header names a context the user may not use (or none)      |
  * | `context_required`   | 400    | no context header while `client_api.context.required` is on            |
  * | `rate_limited`       | 429    | per-IP or per-token limit (`retryAfter` seconds)                        |
+ * | `module_forbidden`   | 403    | since 2.4.0: the person may not use the family's module now (host       |
+ * |                      |        | {@see ClientCapabilitiesProviderInterface}); `requiredScope` = family    |
+ *
+ * Since 2.4.0 answer `module_forbidden` as `403 {"error": "module_forbidden", "message": …, "module": "<family>"}`
+ * ({@see self::body()}): the client refreshes `GET me/capabilities` and keeps its token.
  */
 final readonly class ClientFamilyAuthentication
 {
@@ -60,12 +65,13 @@ final readonly class ClientFamilyAuthentication
     public function status(): int
     {
         return match ($this->error) {
-            null                             => 200,
-            'rate_limited'                   => 429,
-            'insufficient_scope'             => 403,
-            ClientContextResolver::FORBIDDEN => 403,
-            ClientContextResolver::REQUIRED  => 400,
-            default                          => 401,
+            null                                         => 200,
+            'rate_limited'                               => 429,
+            'insufficient_scope'                         => 403,
+            ClientContextResolver::FORBIDDEN             => 403,
+            ClientContextResolver::REQUIRED              => 400,
+            ClientCapabilitiesResolver::MODULE_FORBIDDEN => 403,
+            default                                      => 401,
         };
     }
 
@@ -82,5 +88,15 @@ final readonly class ClientFamilyAuthentication
             'rate_limited'       => ['Retry-After' => (string) $this->retryAfter],
             default              => [],
         };
+    }
+
+    /**
+     * Since 2.4.0: the extra body keys of the refusal, after `error` and `message` (`module` of a `module_forbidden`).
+     *
+     * @return array<string, string>
+     */
+    public function body(): array
+    {
+        return $this->error === ClientCapabilitiesResolver::MODULE_FORBIDDEN ? ['module' => (string) $this->requiredScope] : [];
     }
 }

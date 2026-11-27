@@ -9,6 +9,8 @@ use DateTimeImmutable;
 use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientApiAuditor;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesResolver;
 use Nowo\TimeTrackBundle\Client\DeviceCredentialRequest;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
@@ -95,6 +97,7 @@ final readonly class DeviceAuthorizationService
      * @param int $maxPending Unexpired requests in total (0 = off)
      * @param ClientAccountChecker|null $accountChecker Since 1.29: refuses the exchange of a refused account (`access_denied`)
      * @param DeviceScopeFamilyRegistry $families Since 2.2.0: the registered families, re-checked at approval and exchange (audit ZBV-L1)
+     * @param ClientCapabilitiesResolver|null $capabilities Since 2.4.0: whether the user may be granted the family, asked at approval and exchange (null = always)
      */
     public function __construct(
         private DeviceAuthorizationRepositoryInterface $repository,
@@ -113,6 +116,7 @@ final readonly class DeviceAuthorizationService
         private ?ClientAccountChecker $accountChecker = null,
         private DeviceScopeFamilyRegistry $families = new DeviceScopeFamilyRegistry(),
         private LoggerInterface $logger = new NullLogger(),
+        private ?ClientCapabilitiesResolver $capabilities = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->userReferences = $userReferences ?? new PassThroughUserReferenceResolver();
@@ -220,6 +224,7 @@ final readonly class DeviceAuthorizationService
             $refusal = match (true) {
                 $current->getLinkOwnerId() !== null && $current->getLinkOwnerId() !== UserIdResolver::getId($user) => DeviceAuthorizationRefusedException::LINK_MISMATCH,
                 !$this->isFamilyAvailable($current)                                                                => DeviceAuthorizationRefusedException::FAMILY_UNAVAILABLE,
+                !$this->isGrantableTo($current, $user)                                                             => DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED,
                 default                                                                                            => null,
             };
             if ($refusal !== null) {
@@ -277,11 +282,40 @@ final readonly class DeviceAuthorizationService
     }
 
     /**
+     * Since 2.4.0 (Beacon spec 262 block B): whether the host lets the user use the request's scope family
+     * ({@see ClientCapabilitiesProviderInterface}, asked with {@see ClientCapabilitiesProviderInterface::ANY_CONTEXT}; always true without a provider). A request
+     * that fails it is never approved or exchanged, and the default page does not show it: host approval pages should
+     * check it before showing a request (the approval refuses it anyway).
+     */
+    public function isGrantableTo(DeviceAuthorization $authorization, object $user): bool
+    {
+        return !$this->capabilities instanceof ClientCapabilitiesResolver || $this->capabilities->canGrant($user, $authorization->getScopeFamily());
+    }
+
+    /**
+     * Since 2.4.0: denies a request whose family the user may not be granted ({@see self::isGrantableTo()}), audited with
+     * the reason {@see DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED}, so the device stops polling
+     * (`access_denied`). A request decided or expired meanwhile is left as it is (returns false).
+     */
+    public function denyNotGranted(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): bool
+    {
+        try {
+            $this->deny($authorization, $user, $clientIp, DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED);
+        } catch (DeviceAuthorizationNotPendingException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Denies a pending request. Since 1.27.0 under the request's lock, like {@see self::approve()}.
+     *
+     * @param string|null $reason Since 2.4.0: audit reason (e.g. {@see DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED}; null = the user's choice)
      *
      * @throws DeviceAuthorizationNotPendingException When the request was decided, exchanged or expired meanwhile (nothing changed)
      */
-    public function deny(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null): void
+    public function deny(DeviceAuthorization $authorization, UserInterface $user, ?string $clientIp = null, ?string $reason = null): void
     {
         // @igor-ignore - the closure runs once inside this call, it is not stored.
         [$current] = $this->decide($authorization, function (DeviceAuthorization $current) use ($user): null {
@@ -289,7 +323,7 @@ final readonly class DeviceAuthorizationService
 
             return null;
         });
-        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp, null, $current->getScopeFamily());
+        $this->auditor->record(ClientApiAuditAction::DeviceDenied, $user, null, $current->getClientType(), $clientIp, $reason, $current->getScopeFamily());
     }
 
     /**
@@ -472,6 +506,10 @@ final readonly class DeviceAuthorizationService
         // Since 2.2.0 (audit ZBV-L1): a family unregistered after the approval gets no token.
         if (!$this->isFamilyAvailable($authorization)) {
             return $this->refuseExchange($authorization, $user, $clientIp, DeviceAuthorizationRefusedException::FAMILY_UNAVAILABLE);
+        }
+        // Since 2.4.0 (Beacon spec 262): a module the user lost after the approval gets no token.
+        if ($user instanceof UserInterface && !$this->isGrantableTo($authorization, $user)) {
+            return $this->refuseExchange($authorization, $user, $clientIp, DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED);
         }
         if (!$user instanceof UserInterface || !$this->repository->markConsumed($authorization)) {
             return DevicePollResult::error(DevicePollResult::EXPIRED);

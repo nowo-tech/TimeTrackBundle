@@ -71,6 +71,7 @@ final class ClientApiV1AliasTest extends FunctionalTestCase
         ['nowo_time_track_api_timer_allocate', '/api/time-track/timer/allocate', 'nowo_time_track_api_v1_timer_allocate', '/api/time-track/v1/timer/allocate', 'POST|OPTIONS'],
         ['nowo_time_track_api_subjects_search', '/api/time-track/subjects/search', 'nowo_time_track_api_v1_subjects_search', '/api/time-track/v1/subjects/search', 'GET|OPTIONS'],
         ['nowo_time_track_api_activity_types', '/api/time-track/activity-types', 'nowo_time_track_api_v1_activity_types', '/api/time-track/v1/activity-types', 'GET|OPTIONS'],
+        ['nowo_time_track_api_me_capabilities', '/api/time-track/me/capabilities', 'nowo_time_track_api_v1_me_capabilities', '/api/time-track/v1/me/capabilities', 'GET|OPTIONS'],
         ['nowo_time_track_api_device_code', '/api/time-track/device/code', 'nowo_time_track_api_v1_device_code', '/api/time-track/v1/device/code', 'POST|OPTIONS'],
         ['nowo_time_track_api_device_token', '/api/time-track/device/token', 'nowo_time_track_api_v1_device_token', '/api/time-track/v1/device/token', 'POST|OPTIONS'],
     ];

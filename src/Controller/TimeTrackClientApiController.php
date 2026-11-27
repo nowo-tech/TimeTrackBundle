@@ -15,6 +15,8 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiPrincipal;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesResolver;
 use Nowo\TimeTrackBundle\Client\ClientContextResolver;
 use Nowo\TimeTrackBundle\Client\ClientDaysOffNormalizer;
 use Nowo\TimeTrackBundle\Client\ClientLoginRateLimiter;
@@ -183,6 +185,7 @@ final readonly class TimeTrackClientApiController
      * @param MonitoringContext|null $monitoring Activity monitoring (`me.features.monitoring`, `me.monitoring`, 1.26; null = off)
      * @param ClientAllocationPresenter|null $allocations Since 2.1.0 (spec 256): subjects and activity types (null = none: every subject refused or masked)
      * @param ClientContextResolver|null $contexts Since 2.2.0: `me.contexts` / `me.context` with a context policy (null = no keys)
+     * @param ClientCapabilitiesResolver|null $capabilities Since 2.4.0: `GET me/capabilities` and the module check of `login` (null = every registered family usable)
      */
     // @phpstan-ignore constructor.unusedParameter, constructor.unusedParameter
     public function __construct(
@@ -213,6 +216,7 @@ final readonly class TimeTrackClientApiController
         private ?MonitoringContext $monitoring = null,
         private ?ClientAllocationPresenter $allocations = null,
         private ?ClientContextResolver $contexts = null,
+        private ?ClientCapabilitiesResolver $capabilities = null,
     ) {
         $this->clock             = $clock ?? new NativeClock();
         $this->logger            = $logger ?? new NullLogger();
@@ -259,6 +263,12 @@ final readonly class TimeTrackClientApiController
 
         $this->loginRateLimiter->reset($clientIp, $username);
         $user = $result->requireUser();
+        // Since 2.4.0 (Beacon spec 262): a password login grants the time family only to a person who may use it.
+        if (!$this->authService->mayGrantTime($user)) {
+            $this->auditor->record(ClientApiAuditAction::RequestDenied, $user, $result->getCredentialId(), $clientType, $clientIp, ClientCapabilitiesResolver::MODULE_FORBIDDEN, DeviceScopeFamily::TIME);
+
+            return $this->guard->moduleForbidden($request, DeviceScopeFamily::TIME, 'You may not use time tracking. No token was issued.');
+        }
         // Since 1.26 (Beacon Q5): a password never grants monitoring:write.
         $token = $this->authService->issueToken($user, $clientType, $result->getCredentialId(), ClientScope::grantableByPassword($result->getScopes()));
         $this->auditor->record(ClientApiAuditAction::TokenIssued, $user, $result->getCredentialId(), $clientType, $clientIp, null, $token['scopeFamily']);
@@ -394,6 +404,41 @@ final readonly class TimeTrackClientApiController
         }
 
         return $this->responseFactory->json($body, Response::HTTP_OK, $request);
+    }
+
+    /**
+     * Since 2.4.0 (Beacon spec 262 block B): GET me/capabilities — the modules (scope families) the token's person may use
+     * now, in the context the request names, from the host {@see ClientCapabilitiesProviderInterface}. Takes a token of
+     * **any** registered family and skips the module check (a device whose module was revoked still learns what it may
+     * use); every other check of the client API applies (`401 invalid_token`, `403 context_forbidden`, `429`).
+     *
+     * `200 {"userId", "scopeFamily", "scopes", "context", "modules": {"time": bool, "chat": bool, "tasks": bool, …},
+     * "grantableScopes": {"<family>": [scope, …]}}`, `Cache-Control: no-store, private`.
+     */
+    #[Route('/api/time-track/me/capabilities', name: 'nowo_time_track_api_me_capabilities', methods: ['GET', 'OPTIONS'])]
+    public function capabilities(Request $request): Response
+    {
+        if ($request->isMethod('OPTIONS')) {
+            return $this->responseFactory->empty(Response::HTTP_NO_CONTENT, $request);
+        }
+        $principal = $this->guard->authenticateAnyFamily($request);
+        if ($principal instanceof Response) {
+            return $principal;
+        }
+
+        $capabilities = ($this->capabilities ?? new ClientCapabilitiesResolver())->capabilitiesOf($principal->user, $principal->token->getScopeFamily(), $principal->contextKey);
+        $response     = $this->responseFactory->json([
+            'userId'          => UserIdResolver::getId($principal->user),
+            'scopeFamily'     => $principal->token->getScopeFamily(),
+            'scopes'          => $principal->token->getScopeValues(),
+            'context'         => $capabilities['context'],
+            'modules'         => $capabilities['modules'],
+            'grantableScopes' => (object) $capabilities['grantableScopes'],
+        ], Response::HTTP_OK, $request);
+        // @igor-ignore - Request-scoped value or I/O delegate (response, clock value, repository call); no worker state.
+        $response->headers->set('Cache-Control', 'no-store, private');
+
+        return $response;
     }
 
     /**
