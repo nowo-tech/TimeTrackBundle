@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[2.3.0] - 2026-11-27](#230---2026-11-27)
   - [Added (2.3.0)](#added-230)
   - [Security (2.3.0)](#security-230)
   - [Tests (2.3.0)](#tests-230)
@@ -273,6 +274,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+## [2.3.0] - 2026-11-27
 
 Planned as **2.3.0** (minor, no BC break): extra Microsoft scopes on the calendar connection (Beacon spec 260 T001,
 Teams calls). See [UPGRADING.md](UPGRADING.md#to-230).
@@ -2870,7 +2873,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.0.0...v2.1.0
