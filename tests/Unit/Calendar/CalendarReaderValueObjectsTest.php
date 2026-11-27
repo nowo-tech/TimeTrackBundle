@@ -70,7 +70,12 @@ final class CalendarReaderValueObjectsTest extends TestCase
 
         self::assertSame('access-REDACTED-TEST', $tokens->credential()->reveal());
         self::assertSame(['access-REDACTED-TEST', 'refresh-REDACTED-TEST'], [$tokens->accessToken(), $tokens->refreshToken()]);
-        self::assertSame(['accessToken' => '[redacted]', 'refreshToken' => '[redacted]', 'expiresAt' => null], $tokens->__debugInfo());
+        self::assertSame(['accessToken' => '[redacted]', 'refreshToken' => '[redacted]', 'expiresAt' => null, 'grantedScopes' => null], $tokens->__debugInfo());
+        self::assertNull($tokens->grantedScopes());
+        self::assertNull($tokens->credential()->grantedScopes);
+        $scoped = new CalendarTokens('access-REDACTED-TEST', null, null, ['Calendars.Read', 'OnlineMeetings.ReadWrite']);
+        self::assertSame(['Calendars.Read', 'OnlineMeetings.ReadWrite'], $scoped->grantedScopes());
+        self::assertSame(['Calendars.Read', 'OnlineMeetings.ReadWrite'], $scoped->credential()->grantedScopes, 'through the credential port');
         $this->assertNotSerializable($tokens);
     }
 

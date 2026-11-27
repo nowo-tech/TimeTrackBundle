@@ -12,6 +12,7 @@ upcoming meetings, from **your** meeting read model. Contract: `timetrack-next` 
 - [Reading the calendars in your sync](#reading-the-calendars-in-your-sync)
   - [Scopes](#scopes)
   - [OAuth helpers](#oauth-helpers)
+  - [Extra Microsoft scopes (2.3)](#extra-microsoft-scopes-23)
 - [Your privacy duties](#your-privacy-duties)
 - [Clients](#clients)
 
@@ -126,7 +127,8 @@ if (!$batch->complete) {
 - **Escape before display** (audit LZ-I8): title, description and location are raw provider text (a Google
   description may hold HTML), and join links are raw candidates. The bundle never renders them.
 - Errors are `CalendarSyncException` codes (`token_expired`, `rate_limited`, `forbidden`, `provider_error`,
-  `invalid_response`, `too_large`, `no_http_client`; since 1.20 `not_configured` from the OAuth helpers), never
+  `invalid_response`, `too_large`, `no_http_client`; since 1.20 `not_configured` from the OAuth helpers; since 2.3
+  `consent_required` and `scope_not_granted` from the extra-scope calls), never
   provider messages. A bad calendar id (empty, > 512 bytes,
   control characters) throws `InvalidArgumentException`.
 - `CalendarMeetingView`, `CalendarAttendee` and `CalendarMeetingBatch` keep ids and personal data behind methods:
@@ -180,6 +182,53 @@ $oauth->revoke($token);                                         // best effort, 
   `json_encode()`, casts, `var_export()`, `var_dump()` / `print_r()`, VarDumper, Serializer and log formatters see
   `[redacted]`, and serialization
   throws. Store the strings, not the objects.
+
+### Extra Microsoft scopes (2.3)
+
+Since 2.3 (Beacon spec 260 T001) a host that calls Graph itself (for example `POST /me/onlineMeetings` for a Teams
+call) can ask for more delegated scopes on the **same** Microsoft connection. Allow-list them in
+`calendar.microsoft_extra_scopes` ([CONFIGURATION.md](CONFIGURATION.md#calendar-suggestions-114)); the default `[]`
+keeps every request exactly as in 2.2.
+
+```php
+/** @var MicrosoftCalendarOAuthClient $microsoft */
+// 1. Incremental consent at first use: calendar scope + the extra one; a person already connected
+//    is asked only for the new permission. PKCE and state as above.
+$url = $microsoft->authorizationUrl($redirectUri, $state, $pkce->challenge, ['OnlineMeetings.ReadWrite']);
+
+// 2. Callback: pass the same extra scopes, store the granted scopes beside the tokens.
+$tokens = $microsoft->exchangeCode($code, $verifier, $redirectUri, ['OnlineMeetings.ReadWrite']);
+$store->save($tokens->accessToken(), $tokens->refreshToken(), $tokens->grantedScopes()); // list<string>|null
+
+// 3. "Connected but no meeting permission yet"?
+$microsoft->isGranted($stored->grantedScopes, 'OnlineMeetings.ReadWrite');               // false → offer step 1
+
+// 4. Refresh: pass the stored granted scopes; only granted ones are asked for. Store the new tokens AND scopes.
+$tokens = $microsoft->refresh($stored->refreshToken, $stored->grantedScopes);
+
+// 5. A token for the host's Graph call (stays host-side); Entra ID rotates the refresh token: store it.
+$meetingTokens = $microsoft->accessTokenForScope($stored->refreshToken, 'OnlineMeetings.ReadWrite', $stored->grantedScopes);
+```
+
+- `CalendarTokens::grantedScopes()` is the token answer's `scope` split on spaces, as Entra ID spells it (usually
+  with the `https://graph.microsoft.com/` prefix); when the answer has no `scope`, the requested scopes (RFC 6749
+  §5.1); null when unknown. Compare with `isGranted()` / `grantedExtraScopes()` (prefix and case ignored), not by
+  hand. Scopes are not secrets; `__debugInfo()` shows them, the tokens stay redacted.
+- `CalendarCredential` takes the granted scopes as an optional second argument (`$credential->grantedScopes`), so a
+  `CalendarCredentialSourceInterface::credentialOf()` can hand them through the credential port; the bundle's readers
+  ignore them.
+- **Refresh never asks for an unconsented scope**: Entra ID refuses it (AADSTS65001) and the calendar sync would
+  break. `refresh($token)` without granted scopes is the 2.2 call (calendar scopes only). With them it asks for the
+  calendar scopes plus the allow-listed extra scopes found there; if Entra ID answers that consent is missing (the
+  person removed the permission at myapps.microsoft.com), it retries once with the calendar scopes alone and the new
+  tokens' granted scopes no longer list the extra scope.
+- `accessTokenForScope()` sends nothing and throws `CalendarSyncException` `scope_not_granted` when the stored grant
+  lacks the scope; `consent_required` when Entra ID says it was removed (keep the calendar connection, offer step 1);
+  `token_expired` when the whole grant is gone. A scope outside the allow-list throws `InvalidArgumentException`
+  (message without the scope).
+- Requested extra scopes outside the allow-list throw `InvalidArgumentException` before any call; duplicates and case
+  variants are sent once, in the allow-list spelling.
+- Tokens are never logged; the services keep no per-request state (FrankenPHP worker mode safe).
 
 With the readers and the helpers, a host keeps only its token store (`CalendarCredentialSourceInterface`), its
 meeting normalizer (attendee matching, minimal fields) and a test stub; its copied parsing can go.

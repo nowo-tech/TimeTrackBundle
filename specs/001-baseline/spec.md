@@ -170,7 +170,7 @@ As an integrator with TaskBoardBundle, I wire `TaskProviderInterface` and `TeamC
 ### Calendar integration (1.14+, spec 004)
 
 - **FR-CAL-001**: Calendar connections (`CalendarConnection`, `CalendarRule`, `CalendarSuggestion` entities, status / mode / provider / match-kind enums, `CalendarConnectionService`, `CalendarSettings`, `CalendarWorkingHours`, `CalendarRefHasher`, `CalendarFields`).
-- **FR-CAL-002**: OAuth and provider access: `CalendarOAuthApp*`, `CalendarOAuthState`, `CalendarPkce`, `CalendarTokenEndpoint`, `CalendarTokens`, `CalendarCredential*`, `CalendarHttpClient`, Google and Microsoft event sources and OAuth clients (secrets wrapped in `SensitiveValue`).
+- **FR-CAL-002**: OAuth and provider access: `CalendarOAuthApp*`, `CalendarOAuthState`, `CalendarPkce`, `CalendarTokenEndpoint`, `CalendarTokens`, `CalendarCredential*`, `CalendarHttpClient`, Google and Microsoft event sources and OAuth clients (secrets wrapped in `SensitiveValue`); since 2.3 extra Microsoft scopes with incremental consent and granted scopes ([007](../007-microsoft-extra-scopes/spec.md)).
 - **FR-CAL-003**: `CalendarSyncService` (server-mode sync), `CalendarSuggestionService` (list, accept, dismiss), `CalendarEventMatcher`, `CalendarRuleService`, `CalendarMatch`, `CalendarMeetingBatch` / views.
 - **FR-CAL-004**: `TimeTrackCalendarApiController` and the `nowo:time-track:calendar-sync` command (`CalendarSyncCommand`).
 - **FR-CAL-005**: Events `CalendarConnectionChangedEvent`, `CalendarSuggestionDecidedEvent`, `CalendarSyncFinishedEvent`; `CalendarSyncException`, `CalendarException`.

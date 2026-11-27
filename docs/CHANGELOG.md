@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (2.3.0)](#added-230)
+  - [Tests (2.3.0)](#tests-230)
 - [[2.2.1] - 2026-11-26](#221---2026-11-26)
   - [Added (2.2.1)](#added-221)
   - [Fixed (2.2.1)](#fixed-221)
@@ -270,6 +272,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+Planned as **2.3.0** (minor, no BC break): extra Microsoft scopes on the calendar connection (Beacon spec 260 T001,
+Teams calls). See [UPGRADING.md](UPGRADING.md#to-230).
+
+### Added (2.3.0)
+
+- **`calendar.microsoft_extra_scopes`** (default `[]`: every request is the 2.2 one). Allow-list of extra delegated
+  Graph scopes (e.g. `OnlineMeetings.ReadWrite`) the Microsoft OAuth helper may request; Graph scope names only (no
+  prefix, no OpenID scope, no `.default`), at most 10, distinct, not the calendar scope (refused at compile time).
+- **Incremental consent.** `MicrosoftCalendarOAuthClient::authorizationUrl()` and `exchangeCode()` take an optional
+  list of extra scopes (a subset of the allow-list; anything else throws `InvalidArgumentException` before any call)
+  asked for on top of the calendar scope, so a person already connected is asked only for the new permission. New
+  `extraScopes()`, `scopesWith()`. PKCE and state are unchanged.
+- **Granted scopes.** `CalendarTokens::grantedScopes()` (`list<string>|null`): the token answer's `scope`, else the
+  requested one (RFC 6749 §5.1), null when unknown; malformed tokens dropped, at most 64. `CalendarCredential` takes
+  them as an optional second argument (`$grantedScopes`) so the host can hand them through the credential port.
+  `MicrosoftCalendarOAuthClient::grantedExtraScopes()` / `isGranted()` compare them (Graph prefix and case ignored).
+- **Refresh asks only for granted scopes.** `MicrosoftCalendarOAuthClient::refresh()` takes the stored granted scopes
+  (optional; without them it is the 2.2 call) and asks for the calendar scopes plus the allow-listed extra scopes found
+  there, never an unconsented one (AADSTS65001 would break the calendar sync). When Entra ID answers that consent is
+  missing, it retries once with the calendar scopes alone.
+- **`MicrosoftCalendarOAuthClient::accessTokenForScope()`**: an access token for one granted extra scope from the
+  refresh token, for the host's own Graph call (e.g. `POST /me/onlineMeetings`). Sends nothing for an ungranted scope.
+- `CalendarSyncException::CONSENT_REQUIRED` (`consent_required`) and `SCOPE_NOT_GRANTED` (`scope_not_granted`), only
+  from the extra-scope calls; every other call maps errors exactly as before.
+
+### Tests (2.3.0)
+
+- `MicrosoftExtraScopesTest` (allow-list, incremental consent, granted-scope parsing, refresh with and without granted
+  scopes, consent fallback, scoped access token), configuration and value-object cases.
 
 ## [2.2.1] - 2026-11-26
 

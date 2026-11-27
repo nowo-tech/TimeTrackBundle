@@ -14,6 +14,9 @@ use Symfony\Component\Clock\NativeClock;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
+use function array_slice;
+use function array_unique;
+use function array_values;
 use function ctype_digit;
 use function http_build_query;
 use function in_array;
@@ -24,6 +27,7 @@ use function json_decode;
 use function max;
 use function parse_url;
 use function preg_match;
+use function preg_split;
 use function sprintf;
 use function str_contains;
 use function str_starts_with;
@@ -35,6 +39,7 @@ use const PHP_QUERY_RFC3986;
 use const PHP_URL_HOST;
 use const PHP_URL_SCHEME;
 use const PHP_URL_USER;
+use const PREG_SPLIT_NO_EMPTY;
 
 /**
  * Since 1.19: the HTTP part shared by the OAuth clients: `POST` form requests to constant URLs, 10 s, no redirects,
@@ -54,6 +59,12 @@ final readonly class CalendarTokenEndpoint
     /** Seconds taken off `expires_in`, so a token is refreshed before it expires. */
     public const EXPIRY_MARGIN_SECONDS = 60;
 
+    /** Since 2.3: most granted scopes kept from a token answer. */
+    public const MAX_GRANTED_SCOPES = 64;
+
+    /** Since 2.3: one granted scope (a scope token of RFC 6749 §3.3, at most 256 characters). */
+    public const GRANTED_SCOPE_PATTERN = '/^[\x21\x23-\x5B\x5D-\x7E]{1,256}$/D';
+
     private ClockInterface $clock;
 
     /**
@@ -68,13 +79,16 @@ final readonly class CalendarTokenEndpoint
     }
 
     /**
-     * Tokens from a token endpoint.
+     * Tokens from a token endpoint. Since 2.3 the granted scopes are read from the answer's `scope` (RFC 6749 §5.1:
+     * when it is missing, the requested `scope` was granted; null when neither is known).
      *
      * @param array<string, string> $form
+     * @param bool $consentAware Since 2.3: a missing consent (Entra ID `consent_required` / AADSTS65001) is
+     *                           `consent_required` instead of `token_expired`
      *
      * @throws CalendarSyncException
      */
-    public function tokens(string $url, #[SensitiveParameter] array $form): CalendarTokens
+    public function tokens(string $url, #[SensitiveParameter] array $form, bool $consentAware = false): CalendarTokens
     {
         [$status, $body] = $this->post($url, $form);
         if (strlen($body) > self::MAX_RESPONSE_BYTES) {
@@ -87,7 +101,12 @@ final readonly class CalendarTokenEndpoint
         }
         if ($status !== 200) {
             // `invalid_grant`: the code or the refresh token was revoked, expired or used — connect again.
-            throw new CalendarSyncException(is_array($data) && ($data['error'] ?? null) === 'invalid_grant' ? CalendarSyncException::TOKEN_EXPIRED : CalendarSyncException::PROVIDER_ERROR);
+            $invalidGrant = is_array($data) && ($data['error'] ?? null) === 'invalid_grant';
+            if ($invalidGrant && $consentAware && $this->isConsentRequired($data)) {
+                throw new CalendarSyncException(CalendarSyncException::CONSENT_REQUIRED);
+            }
+
+            throw new CalendarSyncException($invalidGrant ? CalendarSyncException::TOKEN_EXPIRED : CalendarSyncException::PROVIDER_ERROR);
         }
         $access = is_array($data) ? ($data['access_token'] ?? null) : null;
         if (!is_string($access) || $access === '') {
@@ -103,7 +122,30 @@ final readonly class CalendarTokenEndpoint
             $access,
             is_string($refresh) && $refresh !== '' ? $refresh : null,
             is_int($expiresIn) ? DateTimeImmutable::createFromInterface($this->clock->now())->add(new DateInterval(sprintf('PT%dS', max(0, $expiresIn - self::EXPIRY_MARGIN_SECONDS)))) : null,
+            self::grantedScopes($data['scope'] ?? null, $form['scope'] ?? null),
         );
+    }
+
+    /**
+     * Since 2.3: the granted scopes of an answer (its `scope`, else the requested one), split on spaces, without
+     * duplicates or malformed tokens, at most {@see self::MAX_GRANTED_SCOPES}; null when unknown.
+     *
+     * @return list<string>|null
+     */
+    public static function grantedScopes(mixed $answered, mixed $requested): ?array
+    {
+        $scope = is_string($answered) ? $answered : (is_string($requested) ? $requested : null);
+        if ($scope === null) {
+            return null;
+        }
+        $scopes = [];
+        foreach (preg_split('/[ \t]+/', $scope, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $token) {
+            if (preg_match(self::GRANTED_SCOPE_PATTERN, $token) === 1) {
+                $scopes[] = $token;
+            }
+        }
+
+        return array_slice(array_values(array_unique($scopes)), 0, self::MAX_GRANTED_SCOPES);
     }
 
     /**
@@ -157,6 +199,21 @@ final readonly class CalendarTokenEndpoint
         }
 
         return $scheme === 'https' || ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '[::1]'], true));
+    }
+
+    /**
+     * Entra ID's missing-consent answer: `suberror: consent_required` or error code 65001.
+     *
+     * @param array<mixed> $data
+     */
+    private function isConsentRequired(array $data): bool
+    {
+        if (($data['suberror'] ?? null) === 'consent_required') {
+            return true;
+        }
+        $codes = $data['error_codes'] ?? null;
+
+        return is_array($codes) && in_array(65001, $codes, true);
     }
 
     /**
