@@ -77,7 +77,7 @@ final class ClientCapabilitiesClientApiTest extends FunctionalTestCase
             'userId'          => (string) $this->user->getId(),
             'scopeFamily'     => 'time',
             'scopes'          => ['timer:read', 'timer:write', 'tasks:read', 'entries:read'],
-            'context'         => null,
+            'context'         => 'personal',
             'modules'         => ['time' => true, 'chat' => true, 'tasks' => false],
             'grantableScopes' => [
                 'time' => ['timer:read', 'timer:write', 'tasks:read', 'entries:read', 'workday:read', 'workday:write', 'balance:read', 'timesheet:read', 'timesheet:write', 'entries:write', 'suggestions:read', 'suggestions:write', 'meetings:read', 'monitoring:write'],
@@ -163,17 +163,53 @@ final class ClientCapabilitiesClientApiTest extends FunctionalTestCase
         self::assertResponseStatusCodeSame(403);
     }
 
+    /**
+     * Audit ZDB-L1: a request without a context header runs in the host's default context (the policy's first), never in
+     * "any context"; grant-time calls get ANY_CONTEXT ('').
+     */
+    public function testARequestWithoutAHeaderIsCheckedInTheDefaultContext(): void
+    {
+        // Time allowed in org:acme, refused in the remembered default ("personal").
+        $this->provider()->deniedInContext = 'personal';
+        $time                              = $this->login();
+        self::assertContains(['person@example.com', 'time', ''], $this->provider()->asked, 'the login asks with ANY_CONTEXT');
+
+        $body = $this->api('GET', '/api/time-track/v1/timer', null, $time);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('module_forbidden', $body['error'] ?? null);
+        self::assertContains(['person@example.com', 'time', 'personal'], $this->provider()->asked);
+        $this->api('GET', '/api/time-track/v1/timer', null, $time, ['HTTP_X_BEACON_CONTEXT' => 'org:acme']);
+        self::assertResponseIsSuccessful();
+
+        // me/capabilities without a header reports the default context, consistent with the requests.
+        $body = $this->api('GET', '/api/time-track/v1/me/capabilities', null, $time);
+        self::assertSame('personal', $body['context'] ?? null);
+        self::assertSame(['time' => false, 'chat' => false, 'tasks' => false], $body['modules'] ?? null);
+        $body = $this->api('GET', '/api/time-track/v1/me/capabilities', null, $time, ['HTTP_X_BEACON_CONTEXT' => 'org:acme']);
+        self::assertSame('org:acme', $body['context'] ?? null);
+        self::assertSame(['time' => true, 'chat' => true, 'tasks' => false], $body['modules'] ?? null);
+
+        // A policy that lists no context: no default, refused without asking the provider (fail closed).
+        $policy = self::getContainer()->get(StubClientContextPolicy::class);
+        self::assertInstanceOf(StubClientContextPolicy::class, $policy);
+        $policy->fail            = true;
+        $this->provider()->asked = [];
+        $this->api('GET', '/api/time-track/v1/timer', null, $time);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('module_forbidden', $this->json()['error'] ?? null);
+        self::assertSame([], $this->provider()->asked);
+    }
+
     public function testAPasswordLoginGrantsTimeOnlyToAPersonWhoMayUseIt(): void
     {
         $this->provider()->allowed = ['chat'];
         $body                      = $this->api('POST', '/api/time-track/v1/login', ['username' => 'person@example.com', 'password' => 'secret', 'clientType' => 'desktop']);
         self::assertResponseStatusCodeSame(403);
-        self::assertSame('module_forbidden', $body['error'] ?? null);
-        self::assertSame('time', $body['module'] ?? null);
+        self::assertSame(['error' => 'module_forbidden', 'message' => 'You may not use time tracking. No token was issued.', 'module' => 'time'], $body);
         $denied = array_values(array_filter($this->events, static fn (ClientApiEvent $e): bool => $e->action === ClientApiAuditAction::RequestDenied));
         self::assertSame('module_forbidden', $denied[0]->reason ?? null);
         self::assertNotContains(ClientApiAuditAction::TokenIssued, array_map(static fn (ClientApiEvent $e): ClientApiAuditAction => $e->action, $this->events));
-        self::assertContains(['person@example.com', 'time', null], $this->provider()->asked);
+        self::assertContains(['person@example.com', 'time', ''], $this->provider()->asked);
 
         // A wrong password still answers 401 (the provider is not asked first).
         $this->api('POST', '/api/time-track/v1/login', ['username' => 'person@example.com', 'password' => 'nope']);
@@ -197,7 +233,7 @@ final class ClientCapabilitiesClientApiTest extends FunctionalTestCase
         self::assertSame('access_denied', $token['error'] ?? null);
         $denied = array_values(array_filter($this->events, static fn (ClientApiEvent $e): bool => $e->action === ClientApiAuditAction::DeviceDenied));
         self::assertSame(['scope_family_not_granted', 'tasks'], [$denied[0]->reason ?? null, $denied[0]->scopeFamily ?? null]);
-        self::assertContains(['person@example.com', 'tasks', null], $this->provider()->asked);
+        self::assertContains(['person@example.com', 'tasks', ''], $this->provider()->asked);
     }
 
     public function testThePermissionIsCheckedAgainAtApprovalAndAtTheExchange(): void

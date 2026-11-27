@@ -10,6 +10,7 @@
 
 ## Table of contents
 
+- [Re-audit 2.4 (client capabilities, Beacon spec 262)](#re-audit-24-client-capabilities-beacon-spec-262)
 - [Re-audit 2.2 (device-flow scope families, Beacon Desktop BD-2)](#re-audit-22-device-flow-scope-families-beacon-desktop-bd-2)
 - [Re-audit 1.37 (entry access by id)](#re-audit-137-entry-access-by-id)
 - [Re-audit 1.36 (entries without a task, Beacon spec 250)](#re-audit-136-entries-without-a-task-beacon-spec-250)
@@ -29,6 +30,18 @@
 - [Findings](#findings)
 - [Usage recommendations in worker mode](#usage-recommendations-in-worker-mode)
 - [Re-audit triggers](#re-audit-triggers)
+
+## Re-audit 2.4 (client capabilities, Beacon spec 262)
+
+- `ClientCapabilitiesResolver` is `final readonly` with only collaborators (the host provider, the family registry, the
+  context resolver, the logger): the provider is asked on every request (and once per family on `GET me/capabilities`),
+  the default context is read from the context policy on every request that names none, and nothing about a request,
+  user, token, family or context is kept in the service, a static or a memo (audit ZDB-L2).
+- `ClientApiGuard`, `ClientAuthService` and `DeviceAuthorizationService` only gained a reference to it; the answer is
+  computed per call. The host `ClientCapabilitiesProviderInterface` must be stateless too (documented on the port): a
+  revoked permission is refused at the very next request.
+- Tests: `ClientCapabilitiesClientApiTest` runs the grant, revoke and restore sequence on one kernel without reboot
+  (`disableReboot()`), and the answer follows the provider on each request.
 
 ## Re-audit 2.2 (device-flow scope families, Beacon Desktop BD-2)
 

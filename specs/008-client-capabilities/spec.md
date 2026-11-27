@@ -56,6 +56,11 @@ removed after pairing could only be enforced by the host revoking the credential
 - **FR-CAP-006**: Per-request module check in `ClientApiGuard` (time routes and `ClientFamilyTokenAuthenticator`): `403
   module_forbidden` + `module`, audited, token kept; `ClientFamilyAuthentication::status()` / `body()`.
 - **FR-CAP-007**: Documented 401 / 403 semantics for clients (module revoked vs signed out).
+- **FR-CAP-008** (audit ZDB): the provider's `$context` is `ANY_CONTEXT` (`''`) at grant time (approval, exchange,
+  `POST login`, `ClientAuthService::login()`), the request's effective context at request time (header, else the
+  context policy's default; none resolvable = refused without asking) and `null` without a context policy;
+  `ClientAuthService::login()` / `mayGrantTime()` apply the grant check; the login refusal names no token; worker and
+  concurrency docs list the resolver and the re-checks.
 
 ## Success criteria
 

@@ -209,7 +209,7 @@ final readonly class ClientApiGuard
         }
 
         // Since 2.4.0 (Beacon spec 262): the person may still use the module, in this context (the token stays valid).
-        if ($moduleCheck && $this->capabilities->isEnforced() && !$this->capabilities->canUse($user, $scopeFamily, $contextKey)) {
+        if ($moduleCheck && $this->capabilities->isEnforced() && !$this->capabilities->canUseInRequest($user, $scopeFamily, $contextKey)) {
             $this->auditor->denied(ClientCapabilitiesResolver::MODULE_FORBIDDEN, $token, $clientIp);
 
             return ClientTokenCheck::refused(ClientCapabilitiesResolver::MODULE_FORBIDDEN, 0, $scopeFamily, $token);
@@ -314,9 +314,9 @@ final readonly class ClientApiGuard
      * Since 2.4.0: the answer to a request of a module (scope family) the person may no longer use: `403
      * module_forbidden` with the family as `module` (refresh `GET me/capabilities`, keep the token).
      */
-    public function moduleForbidden(Request $request, string $scopeFamily): JsonResponse
+    public function moduleForbidden(Request $request, string $scopeFamily, string $message = 'You may not use this module now. Refresh the capabilities; the token is still valid.'): JsonResponse
     {
-        return $this->responseFactory->error(ClientCapabilitiesResolver::MODULE_FORBIDDEN, 'You may not use this module now. Refresh the capabilities; the token is still valid.', Response::HTTP_FORBIDDEN, $request, [], ['module' => $scopeFamily]);
+        return $this->responseFactory->error(ClientCapabilitiesResolver::MODULE_FORBIDDEN, $message, Response::HTTP_FORBIDDEN, $request, [], ['module' => $scopeFamily]);
     }
 
     private function tooManyRequests(Request $request, int $retryAfter, ?ClientToken $token): JsonResponse

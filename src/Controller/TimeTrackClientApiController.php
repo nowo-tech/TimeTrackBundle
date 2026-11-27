@@ -264,10 +264,10 @@ final readonly class TimeTrackClientApiController
         $this->loginRateLimiter->reset($clientIp, $username);
         $user = $result->requireUser();
         // Since 2.4.0 (Beacon spec 262): a password login grants the time family only to a person who may use it.
-        if ($this->capabilities?->isEnforced() === true && !$this->capabilities->canUse($user, DeviceScopeFamily::TIME, null)) {
+        if (!$this->authService->mayGrantTime($user)) {
             $this->auditor->record(ClientApiAuditAction::RequestDenied, $user, $result->getCredentialId(), $clientType, $clientIp, ClientCapabilitiesResolver::MODULE_FORBIDDEN, DeviceScopeFamily::TIME);
 
-            return $this->guard->moduleForbidden($request, DeviceScopeFamily::TIME);
+            return $this->guard->moduleForbidden($request, DeviceScopeFamily::TIME, 'You may not use time tracking. No token was issued.');
         }
         // Since 1.26 (Beacon Q5): a password never grants monitoring:write.
         $token = $this->authService->issueToken($user, $clientType, $result->getCredentialId(), ClientScope::grantableByPassword($result->getScopes()));
@@ -426,12 +426,12 @@ final readonly class TimeTrackClientApiController
             return $principal;
         }
 
-        $capabilities = ($this->capabilities ?? new ClientCapabilitiesResolver())->capabilitiesOf($principal->user, $principal->contextKey);
+        $capabilities = ($this->capabilities ?? new ClientCapabilitiesResolver())->capabilitiesOf($principal->user, $principal->token->getScopeFamily(), $principal->contextKey);
         $response     = $this->responseFactory->json([
             'userId'          => UserIdResolver::getId($principal->user),
             'scopeFamily'     => $principal->token->getScopeFamily(),
             'scopes'          => $principal->token->getScopeValues(),
-            'context'         => $principal->contextKey,
+            'context'         => $capabilities['context'],
             'modules'         => $capabilities['modules'],
             'grantableScopes' => (object) $capabilities['grantableScopes'],
         ], Response::HTTP_OK, $request);

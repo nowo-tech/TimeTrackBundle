@@ -775,8 +775,9 @@ final readonly class WebPermissionCapabilities implements ClientCapabilitiesProv
 }
 ```
 
-`$context` is the context the request named (null in the device flow and at `POST login`: answer "in at least one
-context"). Clients read `GET me/capabilities`; a lost module answers `403 module_forbidden` on every request of its
+`$context` is `ClientCapabilitiesProviderInterface::ANY_CONTEXT` (`''`) in the device flow and at logins (answer "in at
+least one context"), the context a request runs in (the header's, or your policy's default when there is none), or
+`null` without a context policy. Clients read `GET me/capabilities`; a lost module answers `403 module_forbidden` on every request of its
 tokens. Host approval pages call `DeviceAuthorizationService::isGrantableTo()` before showing a request. See
 [CLIENT-API.md](CLIENT-API.md#changes-in-24-capabilities-beacon-spec-262).
 

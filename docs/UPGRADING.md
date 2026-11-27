@@ -144,10 +144,17 @@ From **2.3.x** (a minor: no schema change, nothing required).
     request and show "not available" otherwise (the approval refuses it anyway with
     `DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED`; deny it with
     `denyNotGranted($request, $user, $ip)` so the device stops polling);
-  - a family API that does **not** authenticate through `ClientFamilyTokenAuthenticator` (its own guard) must answer a
-    lost permission as `403 {"error": "module_forbidden", "module": "<family>"}`, never `401`: a `401` signs the
-    device out;
-  - the scope checks inside each module on every call stay yours (and the owning bundle's).
+  - `canUse()` gets `ClientCapabilitiesProviderInterface::ANY_CONTEXT` (`''`) at grant time (device approval and
+    exchange, logins): answer "in at least one context". On a request it gets the context the request runs in (the
+    header's, or your policy's default when there is no header) or `null` without a context policy: answer for that
+    context only;
+  - **host adapters of family APIs** (Beacon's ChatKit and TaskBoard principal adapters, audit ZDB-I3): when you map a
+    `ClientFamilyAuthentication` refusal yourself, use its `status()` (403 for `module_forbidden`), `headers()` and
+    `body()` (adds `module`) — answer `{"error": $auth->error, "message": …} + $auth->body()`. Never map an unknown
+    code to `401`: a `401` signs the device out. A family API with its own guard must answer a lost permission as
+    `403 {"error": "module_forbidden", "module": "<family>"}` the same way;
+  - the scope checks inside each module on every call stay yours (and the owning bundle's);
+  - `ClientAuthService::login()` (if you call it) now returns null for a person who may not use time tracking.
 - **Clients** (Beacon Desktop 0.12): read `GET me/capabilities` after pairing, on start, on resume and after any `403`;
   hide a module whose `modules.<family>` is false; treat `403 module_forbidden` as "module revoked" (refresh the
   capabilities, keep the token) and only `401 invalid_token` as "signed out". See

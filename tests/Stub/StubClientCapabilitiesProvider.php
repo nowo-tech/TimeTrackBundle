@@ -34,7 +34,7 @@ final class StubClientCapabilitiesProvider implements ClientCapabilitiesProvider
             throw new RuntimeException('provider down');
         }
 
-        return in_array($scopeFamily, $this->allowed, true) && ($context === null || $context !== $this->deniedInContext);
+        return in_array($scopeFamily, $this->allowed, true) && ($this->deniedInContext === null || $context !== $this->deniedInContext);
     }
 
     public function reset(): void

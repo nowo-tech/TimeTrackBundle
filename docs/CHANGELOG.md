@@ -288,10 +288,15 @@ Planned as **2.4.0** (minor, no BC break, no schema change): client modules from
   `canUse(TimeTrackUserRef $user, string $scopeFamily, ?string $context): bool` — whether the person may use a module
   (one module = one device-flow scope family: `time`, and host families such as `chat`, `tasks`) now, from the same
   checks as the web. Read-only, cheap, deny by default for unknown families; an exception counts as false (logged).
+  `$context` is `ClientCapabilitiesProviderInterface::ANY_CONTEXT` (`''`) at grant time (device approval and exchange,
+  logins: "at least one context"), and on a request the context it runs in — the header's, or the context policy's
+  default (first of `contextsOf()`) when there is none, refused without asking when the policy lists none — or `null`
+  without a context policy (audit ZDB-L1).
 - **`GET /api/time-track/v1/me/capabilities`** (and the unversioned alias `/api/time-track/me/capabilities`, route key
   `me_capabilities`, `clients.routes.me_capabilities`): a token of **any** registered family; answers `userId`,
   `scopeFamily` and `scopes` of the calling token, `context`, `modules` (`time`, `chat`, `tasks` always present, plus any
-  other registered family) and `grantableScopes` (family => scope values, usable families only).
+  other registered family) and `grantableScopes` (family => scope values, usable families only). `context` is the
+  context the modules were evaluated in (the header's, or the policy's default).
   `Cache-Control: no-store, private`. No module check on this route, so a device whose module was revoked still learns
   what it may use. JSON Schema: [`docs/schemas/capabilities.v1.json`](schemas/capabilities.v1.json).
 - **Grants follow the provider.** The device flow asks it before granting a family: the default approval page shows
@@ -305,6 +310,9 @@ Planned as **2.4.0** (minor, no BC break, no schema change): client modules from
   request (time routes and `ClientFamilyTokenAuthenticator`) of a family the person may no longer use, after the token,
   scope and context checks; audited as `request_denied` with reason `module_forbidden`. The token is **not** revoked: the
   module works again when the permission comes back. `ClientFamilyAuthentication::body()` gives the extra `module` key.
+- `ClientAuthService::login()` asks the provider too (null for a person who may not use time tracking) and the new
+  `ClientAuthService::mayGrantTime()` is the check `POST login` uses (audit ZDB-I2); the login refusal says that no
+  token was issued (ZDB-I1).
 - `DeviceAuthorizationService::deny()` takes an optional audit `$reason`. Translations `device.not_granted` (7 locales).
 
 Without a provider nothing changes: every registered family is granted and usable, as in 2.3, and `me/capabilities`

@@ -41,11 +41,13 @@ final readonly class ClientCapabilitiesResolver
     /**
      * @param ClientCapabilitiesProviderInterface|null $provider `client_api.capabilities.provider` (null = nothing enforced)
      * @param DeviceScopeFamilyRegistry $families The registered families
+     * @param ClientContextResolver|null $contexts The context policy, for the default context of a request that names none (null = no policy)
      */
     public function __construct(
         private ?ClientCapabilitiesProviderInterface $provider = null,
         private DeviceScopeFamilyRegistry $families = new DeviceScopeFamilyRegistry(),
         ?LoggerInterface $logger = null,
+        private ?ClientContextResolver $contexts = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -67,11 +69,56 @@ final readonly class ClientCapabilitiesResolver
     }
 
     /**
-     * Whether the person may use the module now: always true without a provider; with one, the provider's answer (false
-     * on an exception, logged).
+     * Grant time (device approval, exchange, password login): whether the person may use the module in at least one
+     * context — the provider is asked with {@see ClientCapabilitiesProviderInterface::ANY_CONTEXT}.
+     */
+    public function canGrant(object $user, string $scopeFamily): bool
+    {
+        return $this->canUse($user, $scopeFamily, ClientCapabilitiesProviderInterface::ANY_CONTEXT);
+    }
+
+    /**
+     * Request time: whether the person may use the module in the request's **effective** context
+     * ({@see self::effectiveContext()}). With a context policy and no context it can resolve, the answer is false (fail
+     * closed). Always true without a provider.
+     *
+     * @param string|null $contextKey The context the request named (null = none)
+     */
+    public function canUseInRequest(object $user, string $scopeFamily, ?string $contextKey): bool
+    {
+        if (!$this->isEnforced()) {
+            return true;
+        }
+        $context = $this->effectiveContext($user, $scopeFamily, $contextKey);
+        if ($context === null && $this->contexts?->isEnabled() === true) {
+            return false;
+        }
+
+        return $this->canUse($user, $scopeFamily, $context);
+    }
+
+    /**
+     * The context a request runs in: the one it named; without one, the context the host serves a request that names
+     * none in — the policy's default (the first of {@see ClientContextPolicyInterface::contextsOf()}); null without a
+     * context policy, or when the policy lists none (or fails).
+     *
+     * @param string|null $contextKey The context the request named (null = none)
+     */
+    public function effectiveContext(object $user, string $scopeFamily, ?string $contextKey): ?string
+    {
+        if ($contextKey !== null || $this->contexts?->isEnabled() !== true) {
+            return $contextKey;
+        }
+
+        return $this->contexts->contextsOf($user, $scopeFamily)[0]['key'] ?? null;
+    }
+
+    /**
+     * The provider's answer as is (false on an exception, logged); always true without a provider. Prefer
+     * {@see self::canGrant()} and {@see self::canUseInRequest()}, which pass the right context.
      *
      * @param object $user The person (security user, or a framework-free reference)
-     * @param string|null $context Canonical context key (null = none named)
+     * @param string|null $context Context key, {@see ClientCapabilitiesProviderInterface::ANY_CONTEXT}, or null (no context policy)
      */
     public function canUse(object $user, string $scopeFamily, ?string $context): bool
     {
@@ -89,16 +136,18 @@ final readonly class ClientCapabilitiesResolver
     }
 
     /**
-     * The modules of the person in the context: `modules` (family key => usable; {@see self::MODULES} always present,
-     * false while not registered) and `grantableScopes` (the scope values of each usable family, which a device may ask
-     * for in the device flow).
+     * The modules of the person in the request's context, each asked as on a request of that family
+     * ({@see self::canUseInRequest()}): `context` (the effective context of the token's family, {@see self::effectiveContext()}),
+     * `modules` (family key => usable; {@see self::MODULES} always present, false while not registered) and
+     * `grantableScopes` (the scope values of each usable family, which a device may ask for in the device flow).
      *
      * @param object $user The person
-     * @param string|null $context Canonical context key (null = none named)
+     * @param string $tokenFamily The family of the calling token
+     * @param string|null $contextKey The context the request named (null = none)
      *
-     * @return array{modules: array<string, bool>, grantableScopes: array<string, list<string>>}
+     * @return array{context: string|null, modules: array<string, bool>, grantableScopes: array<string, list<string>>}
      */
-    public function capabilitiesOf(object $user, ?string $context): array
+    public function capabilitiesOf(object $user, string $tokenFamily, ?string $contextKey): array
     {
         $modules = [];
         foreach (self::MODULES as $module) {
@@ -106,12 +155,12 @@ final readonly class ClientCapabilitiesResolver
         }
         $grantable = [];
         foreach ($this->families->all() as $key => $family) {
-            $modules[$key] = $this->canUse($user, $key, $context);
+            $modules[$key] = $this->canUseInRequest($user, $key, $contextKey);
             if ($modules[$key]) {
                 $grantable[$key] = $family->scopeValues();
             }
         }
 
-        return ['modules' => $modules, 'grantableScopes' => $grantable];
+        return ['context' => $this->effectiveContext($user, $tokenFamily, $contextKey), 'modules' => $modules, 'grantableScopes' => $grantable];
     }
 }

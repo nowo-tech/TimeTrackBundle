@@ -10,6 +10,8 @@ use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Client\ClientAccountChecker;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesProviderInterface;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesResolver;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Doctrine\ManagedEntityRefresher;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
@@ -67,6 +69,7 @@ final readonly class ClientAuthService
         ?LoggerInterface $logger = null,
         ?UserReferenceResolverInterface $userReferences = null,
         private ?ClientAccountChecker $accountChecker = null,
+        private ?ClientCapabilitiesResolver $capabilities = null,
     ) {
         $this->clock          = $clock ?? new NativeClock();
         $this->logger         = $logger ?? new NullLogger();
@@ -80,15 +83,30 @@ final readonly class ClientAuthService
      * @param string $password Plain password (never logged)
      * @param ClientType $clientType Client asking for the token
      *
-     * @return array{token: string, expiresAt: string, scopes: list<string>, scopeFamily: string}|null The plain token, its expiry and scopes (since 2.2.0 and its scope family, `time`), or null on bad credentials
+     * Since 2.4.0 (audit ZDB-I2) the host's capabilities provider is asked too, as by `POST login`: a person who may not
+     * use time tracking gets no token (null, like bad credentials; `POST login` answers `403 module_forbidden` instead).
+     *
+     * @return array{token: string, expiresAt: string, scopes: list<string>, scopeFamily: string}|null The plain token, its expiry and scopes (since 2.2.0 and its scope family, `time`), or null on bad credentials (since 2.4.0 also when the person may not use time tracking)
      */
     public function login(string $username, string $password, ClientType $clientType): ?array
     {
         $result = $this->authenticate($username, $password, $clientType);
+        if ($result instanceof ClientAuthResult && !$this->mayGrantTime($result->requireUser())) {
+            return null;
+        }
 
         return $result instanceof ClientAuthResult
             ? $this->issueToken($result->requireUser(), $clientType, $result->getCredentialId(), ClientScope::grantableByPassword($result->getScopes()))
             : null;
+    }
+
+    /**
+     * Since 2.4.0 (Beacon spec 262): whether a password login may grant the `time` family to the user (the host's
+     * capabilities provider, asked with {@see ClientCapabilitiesProviderInterface::ANY_CONTEXT}; true without one).
+     */
+    public function mayGrantTime(UserInterface $user): bool
+    {
+        return $this->capabilities?->isEnforced() !== true || $this->capabilities->canGrant($user, DeviceScopeFamily::TIME);
     }
 
     /**

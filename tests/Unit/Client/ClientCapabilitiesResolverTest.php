@@ -6,10 +6,12 @@ namespace Nowo\TimeTrackBundle\Tests\Unit\Client;
 
 use Nowo\TimeTrackBundle\Client\ClientCapabilitiesProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientCapabilitiesResolver;
+use Nowo\TimeTrackBundle\Client\ClientContextResolver;
 use Nowo\TimeTrackBundle\Client\ClientFamilyAuthentication;
 use Nowo\TimeTrackBundle\Client\ConfigDeviceScopeFamilyProvider;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
 use Nowo\TimeTrackBundle\Tests\Stub\StubClientCapabilitiesProvider;
+use Nowo\TimeTrackBundle\Tests\Stub\StubClientContextPolicy;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
 use PHPUnit\Framework\TestCase;
@@ -31,9 +33,12 @@ final class ClientCapabilitiesResolverTest extends TestCase
         self::assertTrue($resolver->isRegistered('time'));
         self::assertFalse($resolver->isRegistered('chat'));
         self::assertSame([
+            'context'         => null,
             'modules'         => ['time' => true, 'chat' => false, 'tasks' => false],
             'grantableScopes' => ['time' => DeviceScopeFamilyRegistry::timeFamily()->scopeValues()],
-        ], $resolver->capabilitiesOf(new TestUser('1', 'a'), null));
+        ], $resolver->capabilitiesOf(new TestUser('1', 'a'), 'time', null));
+        self::assertTrue($resolver->canGrant(new TestUser('1', 'a'), 'chat'));
+        self::assertTrue($resolver->canUseInRequest(new TestUser('1', 'a'), 'chat', null));
     }
 
     public function testTheProviderDecidesPerFamilyAndContext(): void
@@ -45,11 +50,43 @@ final class ClientCapabilitiesResolverTest extends TestCase
 
         self::assertTrue($resolver->isEnforced());
         self::assertSame([
+            'context'         => 'personal',
             'modules'         => ['time' => false, 'chat' => true, 'tasks' => false, 'voice' => true],
             'grantableScopes' => ['chat' => ['chat:read'], 'voice' => ['voice:call']],
-        ], $resolver->capabilitiesOf(new TestUser('1', 'a'), 'personal'));
+        ], $resolver->capabilitiesOf(new TestUser('1', 'a'), 'chat', 'personal'));
         self::assertFalse($resolver->canUse(new TestUser('1', 'a'), 'chat', 'org:x'));
         self::assertSame(['a', 'chat', 'org:x'], $provider->asked[3]);
+    }
+
+    /** Audit ZDB-L1: grant time asks ANY_CONTEXT; a request without a header asks the policy's default context. */
+    public function testGrantAndRequestContextsAreDistinct(): void
+    {
+        $provider = new StubClientCapabilitiesProvider();
+        $policy   = new StubClientContextPolicy();
+        $resolver = new ClientCapabilitiesResolver($provider, new DeviceScopeFamilyRegistry(), null, new ClientContextResolver($policy));
+        $user     = new TestUser('1', 'person@example.com');
+
+        self::assertTrue($resolver->canGrant($user, 'time'));
+        self::assertSame(['person@example.com', 'time', ClientCapabilitiesProviderInterface::ANY_CONTEXT], $provider->asked[0]);
+        self::assertSame('personal', $resolver->effectiveContext($user, 'time', null));
+        self::assertSame('org:acme', $resolver->effectiveContext($user, 'time', 'org:acme'));
+
+        $provider->deniedInContext = 'personal';
+        self::assertFalse($resolver->canUseInRequest($user, 'time', null));
+        self::assertTrue($resolver->canUseInRequest($user, 'time', 'org:acme'));
+        self::assertTrue($resolver->canGrant($user, 'time'));
+
+        // The policy lists nothing: no default context, refused without asking the provider.
+        $policy->fail    = true;
+        $provider->asked = [];
+        self::assertNull($resolver->effectiveContext($user, 'time', null));
+        self::assertFalse($resolver->canUseInRequest($user, 'time', null));
+        self::assertSame([], $provider->asked);
+
+        // Without a context policy a request asks with null.
+        $plain = new ClientCapabilitiesResolver($provider);
+        self::assertTrue($plain->canUseInRequest($user, 'time', null));
+        self::assertSame([['person@example.com', 'time', null]], $provider->asked);
     }
 
     public function testAFailingProviderRefusesAndLogs(): void

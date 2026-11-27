@@ -1665,9 +1665,11 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$provider' => is_string($capabilitiesProvider) && $capabilitiesProvider !== '' ? new Reference($capabilitiesProvider) : null,
                 '$families' => new Reference(DeviceScopeFamilyRegistry::class),
                 '$logger'   => $loggerRef,
+                '$contexts' => new Reference(ClientContextResolver::class),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
         $container->getDefinition(ClientApiGuard::class)->setArgument('$capabilities', new Reference(ClientCapabilitiesResolver::class));
+        $container->getDefinition(ClientAuthService::class)->setArgument('$capabilities', new Reference(ClientCapabilitiesResolver::class));
         $container->setDefinition(CurrentClientContext::class, (new Definition(CurrentClientContext::class))
             ->setAutowired(false)
             ->setPublic(true)

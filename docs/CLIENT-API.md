@@ -192,8 +192,9 @@ X-Beacon-Context: org:<uuid>            (optional; the host's context header)
 
 - **Any family's token** (time, chat, tasks, …) of the person; also the unversioned `/api/time-track/me/capabilities`.
   The token's own module may be `false`: this route never answers `module_forbidden`.
-- `scopeFamily` / `scopes`: the calling token's family and granted scopes. `context`: the context the request named
-  (null without a header or without a context policy).
+- `scopeFamily` / `scopes`: the calling token's family and granted scopes. `context`: the context the modules were
+  evaluated in — the one the request named, or without a header the host's default context (the first of the context
+  policy's list, Beacon: the remembered organisation); null without a context policy.
 - `modules`: `time`, `chat` and `tasks` are **always present** (false while the host has not registered the family),
   plus any other registered family. `true` = the person may use it now in this context.
 - `grantableScopes`: for each usable family, the scope values a device may ask for in the device flow (an object, `{}`
@@ -227,8 +228,18 @@ authenticates through `ClientFamilyTokenAuthenticator` (`ClientFamilyAuthenticat
   `true` (when the device already holds a token).
 - **`POST login`** (app passwords, `time` family): `403 module_forbidden` (`module: time`) when the person may not use
   time tracking; a wrong password still answers `401 invalid_credentials`.
-- **Every request** of a family token is checked again (`403 module_forbidden`). Scope rules inside a module stay the
-  host's and the owning bundle's.
+- **Every request** of a family token is checked again (`403 module_forbidden`), in the context the request runs in:
+  the one it names, or without a header the host's default context (never "any context"). A request without a header
+  can therefore be refused while the same request naming another context is allowed. Scope rules inside a module stay
+  the host's and the owning bundle's.
+
+### What the host provider is asked (audit ZDB-L1)
+
+| Call | `$context` passed to `ClientCapabilitiesProviderInterface::canUse()` | Meaning |
+|---|---|---|
+| Device approval (page and `approve()`), device exchange, `POST login`, `ClientAuthService::login()` | `ClientCapabilitiesProviderInterface::ANY_CONTEXT` (`''`) | May the person use the module in at least one context? |
+| A client API request (time routes, `ClientFamilyTokenAuthenticator`), `GET me/capabilities` — with a context policy | The context the request named, or the policy's default (first of `contextsOf()`); no default (empty list or policy failure): refused without asking | May the person use it **in that context**? |
+| The same, without a context policy | `null` | May the person use it? |
 
 ## Changes in 2.2 (scope families, contract v0.5)
 

@@ -283,13 +283,13 @@ final readonly class DeviceAuthorizationService
 
     /**
      * Since 2.4.0 (Beacon spec 262 block B): whether the host lets the user use the request's scope family
-     * ({@see ClientCapabilitiesProviderInterface}, asked without a context; always true without a provider). A request
+     * ({@see ClientCapabilitiesProviderInterface}, asked with {@see ClientCapabilitiesProviderInterface::ANY_CONTEXT}; always true without a provider). A request
      * that fails it is never approved or exchanged, and the default page does not show it: host approval pages should
      * check it before showing a request (the approval refuses it anyway).
      */
     public function isGrantableTo(DeviceAuthorization $authorization, object $user): bool
     {
-        return !$this->capabilities instanceof ClientCapabilitiesResolver || $this->capabilities->canUse($user, $authorization->getScopeFamily(), null);
+        return !$this->capabilities instanceof ClientCapabilitiesResolver || $this->capabilities->canGrant($user, $authorization->getScopeFamily());
     }
 
     /**

@@ -9,10 +9,12 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthResult;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesResolver;
 use Nowo\TimeTrackBundle\Entity\ClientToken;
 use Nowo\TimeTrackBundle\Enum\ClientType;
 use Nowo\TimeTrackBundle\Service\ClientAuthService;
 use Nowo\TimeTrackBundle\Tests\Stub\MutableRoleUser;
+use Nowo\TimeTrackBundle\Tests\Stub\StubClientCapabilitiesProvider;
 use Nowo\TimeTrackBundle\Tests\Stub\TestUser;
 use Nowo\TimeTrackBundle\Tests\Support\InMemoryClientTokenRepository;
 use PHPUnit\Framework\TestCase;
@@ -38,6 +40,24 @@ final class ClientAuthServiceTest extends TestCase
         self::assertIsArray($result);
         self::assertNotEmpty($result['token']);
         self::assertNotEmpty($result['expiresAt']);
+    }
+
+    /** Audit ZDB-I2: login() asks the capabilities provider (ANY_CONTEXT) before issuing a time token. */
+    public function testLoginIssuesNoTokenToAPersonWhoMayNotUseTimeTracking(): void
+    {
+        $user          = new TestUser('1', 'u@example.com');
+        $authenticator = $this->createStub(ClientAuthenticatorInterface::class);
+        $authenticator->method('authenticate')->willReturn(ClientAuthResult::success($user));
+        $provider          = new StubClientCapabilitiesProvider();
+        $provider->allowed = ['chat'];
+
+        $service = new ClientAuthService($authenticator, $this->repository, 3600, capabilities: new ClientCapabilitiesResolver($provider));
+
+        self::assertNull($service->login('u@example.com', 'secret', ClientType::Desktop));
+        self::assertSame([['u@example.com', 'time', '']], $provider->asked);
+        self::assertFalse($service->mayGrantTime($user));
+        $provider->allowed = ['time'];
+        self::assertIsArray($service->login('u@example.com', 'secret', ClientType::Desktop));
     }
 
     public function testLoginReturnsNullOnFailure(): void
