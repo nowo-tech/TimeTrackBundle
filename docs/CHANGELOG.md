@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[2.4.0] - 2026-11-27](#240---2026-11-27)
   - [Added (2.4.0)](#added-240)
   - [Security (2.4.0)](#security-240)
   - [Tests (2.4.0)](#tests-240)
@@ -277,6 +278,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+## [2.4.0] - 2026-11-27
 
 Planned as **2.4.0** (minor, no BC break, no schema change): client modules from the host's permissions (Beacon spec
 262 block B, owner decision D-20261127-04: "Beacon Desktop shows only the modules the person can use on the web"). See
@@ -2932,7 +2935,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.1.0...v2.2.0
