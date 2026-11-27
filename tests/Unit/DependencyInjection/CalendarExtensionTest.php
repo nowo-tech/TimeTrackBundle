@@ -155,6 +155,36 @@ final class CalendarExtensionTest extends TestCase
         $this->load(['calendar' => ['oauth' => ['app_provider' => ' ']]]);
     }
 
+    public function testMicrosoftExtraScopesReachTheOAuthClient(): void
+    {
+        self::assertSame([], $this->load([])->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$extraScopes'), 'none by default: the 2.2 requests');
+        self::assertSame(['OnlineMeetings.ReadWrite'], $this->load(['calendar' => ['microsoft_extra_scopes' => ['OnlineMeetings.ReadWrite']]])->getDefinition(MicrosoftCalendarOAuthClient::class)->getArgument('$extraScopes'));
+    }
+
+    /**
+     * @return iterable<string, array{list<mixed>}>
+     */
+    public static function invalidExtraScopes(): iterable
+    {
+        yield 'prefixed' => [['https://graph.microsoft.com/OnlineMeetings.ReadWrite']];
+        yield 'openid' => [['openid']];
+        yield 'default' => [['.default']];
+        yield 'not a string' => [[42]];
+        yield 'duplicated' => [['OnlineMeetings.ReadWrite', 'ONLINEMEETINGS.READWRITE']];
+        yield 'too many' => [['A.B', 'A.C', 'A.D', 'A.E', 'A.F', 'A.G', 'A.H', 'A.I', 'A.J', 'A.K', 'A.L']];
+    }
+
+    /**
+     * @param list<mixed> $scopes
+     */
+    #[DataProvider('invalidExtraScopes')]
+    public function testMalformedMicrosoftExtraScopesAreRefused(array $scopes): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->load(['calendar' => ['microsoft_extra_scopes' => $scopes]]);
+    }
+
     public function testAnUnknownMicrosoftScopeIsRefused(): void
     {
         $this->expectException(InvalidConfigurationException::class);

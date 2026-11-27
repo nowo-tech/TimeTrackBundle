@@ -464,6 +464,7 @@ nowo_time_track:
     max_rules_per_user: 20          # per scope (0-100)
     max_pages: 10                   # provider pages per sync (1-50)
     microsoft_scope: Calendars.ReadBasic   # since 1.19: or Calendars.Read (the meeting reader also reads the body)
+    microsoft_extra_scopes: []      # since 2.3: allow-list of extra Graph scopes, e.g. [OnlineMeetings.ReadWrite]
     http_client: http_client        # since 1.20: HTTP client service of the readers and token calls
     oauth:                          # since 1.19: optional OAuth helpers; empty = not configured
       app_provider: ~               # since 1.20: CalendarOAuthAppProviderInterface service id (apps read at runtime)
@@ -489,6 +490,14 @@ nowo_time_track:
   readers and the OAuth token calls. In debug the profiler's HTTP Client panel records token request bodies in plain
   text (`client_secret`, `code`, `code_verifier`, `refresh_token`; audit ML-L1): where the profiler is on and real
   secrets are used, point this at a client the profiler does not trace. A custom id must exist.
+- Since 2.3 `microsoft_extra_scopes` (default `[]`: the 2.2 requests, nothing changes) is the allow-list of extra
+  delegated Graph scopes the Microsoft OAuth helper may request with **incremental consent**, for example
+  `[OnlineMeetings.ReadWrite]` to create Teams meetings host-side (Beacon spec 260). Each entry is a Graph scope name
+  (`OnlineMeetings.ReadWrite`, `User.Read`: dotted PascalCase, no `https://graph.microsoft.com/` prefix, no OpenID
+  scope, no `.default`), at most 10, distinct (case-insensitive) and not the calendar scope; anything else is refused
+  at compile time. Listing a scope asks nobody for it: the host asks when it needs it
+  (`authorizationUrl(..., [$scope])`), and refreshes ask only for the scopes the person granted
+  ([MEETINGS.md](MEETINGS.md#extra-microsoft-scopes-23)).
 - Since 1.20 `Calendar\CalendarOAuthClients` (`isConfigured(CalendarProvider)`, `configuredProviders()`,
   `client(CalendarProvider)`) answers provider discovery for your Integrations page, connect buttons and refresh job.
 

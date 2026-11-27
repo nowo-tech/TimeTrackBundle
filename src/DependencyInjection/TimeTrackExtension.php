@@ -1139,7 +1139,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerCalendarReaders(ContainerBuilder $container, array $calendar, Reference $clockRef, Reference $loggerRef): void
     {
-        /** @var array{max_pages: int, microsoft_scope: string, http_client: string, oauth: array{app_provider: string|null, google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
+        /** @var array{max_pages: int, microsoft_scope: string, microsoft_extra_scopes: list<string>, http_client: string, oauth: array{app_provider: string|null, google: array{client_id: string, client_secret: string}, microsoft: array{client_id: string, client_secret: string, tenant: string}}} $calendar */
         // Since 1.20 (audit ML-L1): `calendar.http_client`; the framework client is optional (null without
         // symfony/http-client), a host's own client id must exist.
         $httpRef = $calendar['http_client'] === 'http_client'
@@ -1176,6 +1176,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$tenant'       => $microsoft['tenant'],
                 '$scope'        => $calendar['microsoft_scope'],
                 '$appProvider'  => $appRef,
+                '$extraScopes'  => $calendar['microsoft_extra_scopes'],
                 '$logger'       => $loggerRef,
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));

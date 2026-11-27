@@ -7,6 +7,7 @@ namespace Nowo\TimeTrackBundle\DependencyInjection;
 use DateTimeZone;
 use Nowo\TimeTrackBundle\Bridge\NullTeamContextProvider;
 use Nowo\TimeTrackBundle\Bridge\StubTaskProvider;
+use Nowo\TimeTrackBundle\Calendar\MicrosoftCalendarOAuthClient;
 use Nowo\TimeTrackBundle\Client\ConfigDeviceScopeFamilyProvider;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamily;
 use Nowo\TimeTrackBundle\Client\DeviceScopeFamilyRegistry;
@@ -17,7 +18,10 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 
 use function array_key_exists;
+use function array_map;
+use function array_unique;
 use function class_exists;
+use function count;
 use function in_array;
 use function is_array;
 use function is_bool;
@@ -1193,6 +1197,20 @@ final class Configuration implements ConfigurationInterface
                     ->info('Since 1.19: granted Graph scope — Calendars.ReadBasic (no body: task keys from titles) or Calendars.Read (body too).')
                     ->values(['Calendars.ReadBasic', 'Calendars.Read'])
                     ->defaultValue('Calendars.ReadBasic')
+                ->end()
+                ->arrayNode('microsoft_extra_scopes')
+                    ->info('Since 2.3: allow-list of extra delegated Graph scopes the host may request with incremental consent through the Microsoft OAuth helper (e.g. OnlineMeetings.ReadWrite; default none: the 2.2 requests).')
+                    ->scalarPrototype()
+                        ->validate()
+                            ->ifTrue(static fn (mixed $scope): bool => !is_string($scope) || preg_match(MicrosoftCalendarOAuthClient::EXTRA_SCOPE_PATTERN, $scope) !== 1)
+                            ->thenInvalid('A Microsoft extra scope must be a Graph scope name such as "OnlineMeetings.ReadWrite" (no prefix, no OpenID scope); got %s.')
+                        ->end()
+                    ->end()
+                    ->validate()
+                        ->ifTrue(static fn (array $scopes): bool => count($scopes) > MicrosoftCalendarOAuthClient::MAX_EXTRA_SCOPES || count(array_unique(array_map(strtolower(...), $scopes))) !== count($scopes))
+                        ->thenInvalid('calendar.microsoft_extra_scopes takes at most 10 distinct scopes; got %s.')
+                    ->end()
+                    ->defaultValue([])
                 ->end()
                 ->scalarNode('http_client')
                     ->info('Since 1.20 (audit ML-L1): service id of the HTTP client of the calendar readers and OAuth token calls (default: the framework http_client). Point it at an untraced client where the profiler is on.')

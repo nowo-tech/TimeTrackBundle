@@ -15,6 +15,9 @@ use function is_string;
  * its encrypted store (contract §6.1, Q-B9). The bundle never stores, serializes, logs or dispatches it:
  * {@see self::reveal()} is the only way to read the secret (for the adapter's `Authorization` header), debug output is
  * redacted and serialization throws (so it cannot reach a Messenger message, a cache or a session).
+ *
+ * Since 2.3 the host may also hand the granted scopes it stored ({@see CalendarTokens::grantedScopes()}) through the
+ * credential port ({@see CalendarCredentialSourceInterface::credentialOf()}); optional, null when unknown.
  */
 final readonly class CalendarCredential implements JsonSerializable
 {
@@ -22,10 +25,12 @@ final readonly class CalendarCredential implements JsonSerializable
 
     /**
      * @param string $accessToken Bearer token with a read-only calendar scope
+     * @param list<string>|null $grantedScopes Since 2.3: the scopes granted with the token (not a secret), null when unknown
      */
     public function __construct(
         #[SensitiveParameter]
         string $accessToken,
+        public ?array $grantedScopes = null,
     ) {
         $this->accessToken = new SensitiveValue($accessToken);
     }

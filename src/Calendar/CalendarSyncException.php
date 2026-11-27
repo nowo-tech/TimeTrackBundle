@@ -26,6 +26,15 @@ final class CalendarSyncException extends RuntimeException
     public const NOT_CONFIGURED = 'not_configured';
 
     /**
+     * Since 2.3: Entra ID refused a token for a scope the person has not (or no longer) consented to (AADSTS65001);
+     * the calendar grant itself may still work. Only from the extra-scope calls of {@see MicrosoftCalendarOAuthClient}.
+     */
+    public const CONSENT_REQUIRED = 'consent_required';
+
+    /** Since 2.3: the stored grant lacks the requested extra scope; nothing was sent (ask for consent first). */
+    public const SCOPE_NOT_GRANTED = 'scope_not_granted';
+
+    /**
      * @param string $errorCode One of the class constants
      */
     public function __construct(public readonly string $errorCode)

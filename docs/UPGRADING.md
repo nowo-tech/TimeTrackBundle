@@ -2,6 +2,7 @@
 
 ## Table of contents
 
+- [To 2.3.0](#to-230)
 - [To 2.2.1](#to-221)
 - [To 2.2.0](#to-220)
   - [Schema](#schema)
@@ -127,6 +128,27 @@
 - [To 1.3.0](#to-130)
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
+
+## To 2.3.0
+
+From **2.2.x** (a minor: no schema change, nothing required).
+
+- **Nothing changes by default.** With `calendar.microsoft_extra_scopes: []` (the default) every Microsoft OAuth
+  request is the 2.2 one, and every existing call keeps its signature (the new arguments are optional, trailing).
+- **Extra Microsoft scopes (optional, e.g. Teams meetings).** List them under `calendar.microsoft_extra_scopes`, add
+  the same delegated permissions to your Entra ID app registration, then:
+  1. ask at first use: `authorizationUrl($redirectUri, $state, $challenge, ['OnlineMeetings.ReadWrite'])`, and pass the
+     same list to `exchangeCode()`;
+  2. store `CalendarTokens::grantedScopes()` beside the tokens (a nullable list column; rows from before 2.3 have
+     none: they hold the calendar scopes only);
+  3. pass the stored list to `refresh($refreshToken, $grantedScopes)` and store the new tokens **and** scopes;
+  4. get a token for your Graph call with `accessTokenForScope($refreshToken, $scope, $grantedScopes)` and store the
+     rotated refresh token.
+  See [MEETINGS.md](MEETINGS.md#extra-microsoft-scopes-23).
+- **Do not append scopes to a refresh by hand**: an unconsented scope makes Entra ID refuse the refresh (AADSTS65001)
+  and the calendar sync stops.
+- If you implement `CalendarCredentialSourceInterface`, you may pass the stored scopes as the second argument of
+  `new CalendarCredential($token, $grantedScopes)`; optional.
 
 ## To 2.2.1
 

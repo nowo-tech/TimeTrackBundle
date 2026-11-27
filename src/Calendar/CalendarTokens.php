@@ -16,6 +16,10 @@ use function is_string;
  * in memory on the way to the host's encrypted store. The tokens are read through {@see self::accessToken()} /
  * {@see self::refreshToken()} only: debug output, `json_encode()`, casts, `var_export()`, Serializer and log
  * normalisers see `[redacted]` (audit LZ-L1), and serialization throws.
+ *
+ * Since 2.3 (Beacon spec 260 T001) the tokens carry the scopes the provider granted ({@see self::grantedScopes()}, not a
+ * secret): store them beside the tokens, pass them back to {@see MicrosoftCalendarOAuthClient::refresh()} and check an
+ * extra scope with {@see MicrosoftCalendarOAuthClient::isGranted()}.
  */
 final readonly class CalendarTokens implements JsonSerializable
 {
@@ -27,6 +31,8 @@ final readonly class CalendarTokens implements JsonSerializable
      * @param string $accessToken Bearer token
      * @param string|null $refreshToken Refresh token (null when the provider sent none, e.g. on a Google refresh)
      * @param DateTimeImmutable|null $expiresAt When the access token expires, one minute early (null when unknown)
+     * @param list<string>|null $grantedScopes Since 2.3: the granted scopes as the provider spelled them (the answer's
+     *                                         `scope`, else the requested one); null when unknown
      */
     public function __construct(
         #[SensitiveParameter]
@@ -34,6 +40,7 @@ final readonly class CalendarTokens implements JsonSerializable
         #[SensitiveParameter]
         ?string $refreshToken,
         public ?DateTimeImmutable $expiresAt,
+        private ?array $grantedScopes = null,
     ) {
         $this->access  = new SensitiveValue($accessToken);
         $this->refresh = new SensitiveValue($refreshToken);
@@ -64,7 +71,17 @@ final readonly class CalendarTokens implements JsonSerializable
      */
     public function credential(): CalendarCredential
     {
-        return new CalendarCredential($this->accessToken());
+        return new CalendarCredential($this->accessToken(), $this->grantedScopes);
+    }
+
+    /**
+     * Since 2.3: the granted scopes (null when unknown), for the host's store.
+     *
+     * @return list<string>|null
+     */
+    public function grantedScopes(): ?array
+    {
+        return $this->grantedScopes;
     }
 
     /**
@@ -82,7 +99,7 @@ final readonly class CalendarTokens implements JsonSerializable
      */
     public function __debugInfo(): array
     {
-        return ['accessToken' => SensitiveValue::REDACTED, 'refreshToken' => SensitiveValue::REDACTED, 'expiresAt' => $this->expiresAt];
+        return ['accessToken' => SensitiveValue::REDACTED, 'refreshToken' => SensitiveValue::REDACTED, 'expiresAt' => $this->expiresAt, 'grantedScopes' => $this->grantedScopes];
     }
 
     /**
