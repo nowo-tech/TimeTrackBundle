@@ -13,6 +13,7 @@ All options under `nowo_time_track` in `config/packages/nowo_time_track.yaml`.
 - [Clients (extension + desktop)](#clients-extension--desktop)
 - [Client API 1.9](#client-api-19)
 - [Device-flow scope families and tenant context (2.2)](#device-flow-scope-families-and-tenant-context-22)
+- [Client capabilities (2.4)](#client-capabilities-24)
 - [Client API 1.10](#client-api-110)
 - [Client API 1.29](#client-api-129)
 - [Client distribution](#client-distribution)
@@ -295,6 +296,21 @@ nowo_time_track:
 ```
 
 Container parameter: `%nowo_time_track.client_api.context.header%` (the header name, for hosts that read it elsewhere).
+
+## Client capabilities (2.4)
+
+Since 2.4.0 (Beacon spec 262 block B). Off by default: every registered scope family is granted and usable, as in 2.3.
+
+| Key | Default | Description |
+|---|---|---|
+| `client_api.capabilities.provider` | `null` | Service id implementing `ClientCapabilitiesProviderInterface`: asked before a family is granted (device flow approval and exchange, `POST login` for `time`), on every client API request of a family token (`403 module_forbidden`) and by `GET me/capabilities` |
+
+```yaml
+nowo_time_track:
+    client_api:
+        capabilities:
+            provider: App\TimeTrack\Client\WebPermissionCapabilities
+```
 
 ## Client API 1.10
 

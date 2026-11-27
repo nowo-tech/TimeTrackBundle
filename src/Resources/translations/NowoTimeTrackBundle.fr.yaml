@@ -78,6 +78,8 @@ device:
   expired_status: "Expiré"
   link_mismatch: "Cette demande venait d’un appareil connecté à un autre compte : elle a été refusée. Rien n’a été connecté. Si vous ne l’attendiez pas, quelqu’un essaie peut-être d’obtenir un accès par votre intermédiaire."
   link_mismatch_status: "Refusée"
+  not_granted: "Votre compte ne peut pas utiliser cette partie de l’application : la demande n’a pas été approuvée. Rien n’a été connecté. Contactez un administrateur si vous pensez devoir y accéder."
+  not_granted_status: "Indisponible"
 downloads:
   title: "Applications de suivi du temps"
   get: "Télécharger"

@@ -78,6 +78,8 @@ device:
   expired_status: "Expired"
   link_mismatch: "This request came from a device signed in to another account, so it was refused. Nothing was connected. If you did not expect it, someone may be trying to get access through you."
   link_mismatch_status: "Refused"
+  not_granted: "Your account cannot use this part of the app, so the request was not approved. Nothing was connected. Ask an administrator if you think you should have access."
+  not_granted_status: "Not available"
 downloads:
   title: "Time tracking apps"
   get: "Download"

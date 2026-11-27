@@ -10,6 +10,10 @@ defaults (`clients.routes.*`, `route_prefix`). Host wiring: [USAGE](USAGE.md#hos
 
 - [Paths and versions (1.29)](#paths-and-versions-129)
 - [Account check on every token use (1.29)](#account-check-on-every-token-use-129)
+- [Changes in 2.4 (capabilities, Beacon spec 262)](#changes-in-24-capabilities-beacon-spec-262)
+  - [GET me/capabilities](#get-mecapabilities)
+  - [403 semantics: module revoked vs signed out](#403-semantics-module-revoked-vs-signed-out)
+  - [Grants](#grants)
 - [Changes in 2.2 (scope families, contract v0.5)](#changes-in-22-scope-families-contract-v05)
 - [Changes in 2.1 (subjects and activity types, spec 256)](#changes-in-21-subjects-and-activity-types-spec-256)
 - [Changes in 2.0](#changes-in-20)
@@ -122,6 +126,7 @@ the container build with a `LogicException` naming the missing key:
 | `monitoring_screenshot_discarded` | POST, OPTIONS | `/api/time-track/monitoring/screenshots/discarded` `nowo_time_track_api_monitoring_screenshot_discarded` | `/api/time-track/v1/monitoring/screenshots/discarded` `nowo_time_track_api_v1_monitoring_screenshot_discarded` |
 | `monitoring_screenshot_delete` | DELETE, OPTIONS | `/api/time-track/monitoring/screenshots/{screenshotId}` `nowo_time_track_api_monitoring_screenshot_delete` | `/api/time-track/v1/monitoring/screenshots/{screenshotId}` `nowo_time_track_api_v1_monitoring_screenshot_delete` |
 | `monitoring_activity` | POST, OPTIONS | `/api/time-track/monitoring/activity` `nowo_time_track_api_monitoring_activity` | `/api/time-track/v1/monitoring/activity` `nowo_time_track_api_v1_monitoring_activity` |
+| `me_capabilities` | GET, OPTIONS | `/api/time-track/me/capabilities` `nowo_time_track_api_me_capabilities` | `/api/time-track/v1/me/capabilities` `nowo_time_track_api_v1_me_capabilities` |
 | `device_code` | POST, OPTIONS | `/api/time-track/device/code` `nowo_time_track_api_device_code` | `/api/time-track/v1/device/code` `nowo_time_track_api_v1_device_code` |
 | `device_token` | POST, OPTIONS | `/api/time-track/device/token` `nowo_time_track_api_device_token` | `/api/time-track/v1/device/token` `nowo_time_track_api_v1_device_token` |
 
@@ -164,6 +169,66 @@ signs in again. With `revoke_tokens: false` the token works again as soon as the
 after the token lookup and before the last-used update, `ClientCredentialStateInterface`, the rate limit and the scope
 check. Options:
 [CONFIGURATION](CONFIGURATION.md#client-api-129).
+
+## Changes in 2.4 (capabilities, Beacon spec 262)
+
+Additive (Beacon spec 262 block B: the desktop shows only the modules the person can use on the web). One **module** is
+one scope family: `time`, and the host's families (Beacon: `chat`, `tasks`). Nothing changes for a v0.5 client until
+the host sets `client_api.capabilities.provider`.
+
+### GET me/capabilities
+
+```http
+GET /api/time-track/v1/me/capabilities
+Authorization: Bearer <token of any registered family>
+X-Beacon-Context: org:<uuid>            (optional; the host's context header)
+```
+
+```json
+{"userId": "42", "scopeFamily": "chat", "scopes": ["chat:read", "chat:write"], "context": "org:7f9c…",
+ "modules": {"time": false, "chat": true, "tasks": true},
+ "grantableScopes": {"chat": ["chat:read", "chat:write"], "tasks": ["tasks:read", "tasks:write"]}}
+```
+
+- **Any family's token** (time, chat, tasks, …) of the person; also the unversioned `/api/time-track/me/capabilities`.
+  The token's own module may be `false`: this route never answers `module_forbidden`.
+- `scopeFamily` / `scopes`: the calling token's family and granted scopes. `context`: the context the request named
+  (null without a header or without a context policy).
+- `modules`: `time`, `chat` and `tasks` are **always present** (false while the host has not registered the family),
+  plus any other registered family. `true` = the person may use it now in this context.
+- `grantableScopes`: for each usable family, the scope values a device may ask for in the device flow (an object, `{}`
+  when none). The `time` list includes the explicit-grant scopes (`monitoring:write` only through the device flow).
+- `Cache-Control: no-store, private`; with a context policy, `Vary: <context header>`.
+- Errors: `401 invalid_token`, `403 context_forbidden`, `400 context_required`, `403 insufficient_scope` (a token of a
+  family that is no longer registered), `429 rate_limited`.
+- Without a provider: every registered family is `true` (2.3 behaviour).
+
+JSON Schema: [`schemas/capabilities.v1.json`](schemas/capabilities.v1.json).
+
+### 403 semantics: module revoked vs signed out
+
+| Answer | Meaning | Client |
+|---|---|---|
+| `401 invalid_token` (+ `WWW-Authenticate: Bearer error="invalid_token"`) | The token is dead (expired, revoked, account or credential inactive) | Sign that family out; pair again |
+| `403 module_forbidden` `{"error", "message", "module": "<family>"}` | The person may no longer use the module (now, in this context). The token stays valid | Refresh `GET me/capabilities`, hide the module and its cached data; do **not** sign out. The token works again if the permission comes back |
+| `403 insufficient_scope` (+ `WWW-Authenticate: … scope="…"`) | The token lacks the route's scope, or is of another family | Refresh the capabilities; pair the family again with the scopes it needs |
+| `403 context_forbidden` | The context header names a context the person may not use | Refresh `me.contexts` (or the family's) and pick another |
+| `403 task_forbidden`, `subject_forbidden`, … | One resource, not the module | Show the error; the module stays |
+
+`module_forbidden` is answered by every route of the time API (also `GET me`) and by every family API that
+authenticates through `ClientFamilyTokenAuthenticator` (`ClientFamilyAuthentication::status()` 403, `body()` gives
+`module`). A family API with its own guard should answer the same shape (Beacon: ChatKit, TaskBoard).
+
+### Grants
+
+- **Device flow**: the host is asked before a family is granted. A refused family is not shown on the approval page
+  (the default page says the account cannot use it and denies the request: `device/token` answers `access_denied`);
+  the approval and the exchange check again. Start a device flow only for a module that `me/capabilities` reports
+  `true` (when the device already holds a token).
+- **`POST login`** (app passwords, `time` family): `403 module_forbidden` (`module: time`) when the person may not use
+  time tracking; a wrong password still answers `401 invalid_credentials`.
+- **Every request** of a family token is checked again (`403 module_forbidden`). Scope rules inside a module stay the
+  host's and the owning bundle's.
 
 ## Changes in 2.2 (scope families, contract v0.5)
 
@@ -820,6 +885,7 @@ grant.
 | 401 | `invalid_credentials` | `login` with wrong credentials, or (since 1.29) an account refused by the user checker |
 | 401 | `invalid_token` | Missing, unknown, expired, revoked token, inactive credential or (since 1.29) an account refused by the user checker (`WWW-Authenticate: Bearer error="invalid_token"`) |
 | 403 | `insufficient_scope` | Token lacks the endpoint scope |
+| 403 | `module_forbidden` (+ `module`) | Since 2.4: the person may no longer use the token's module (host capabilities provider); keep the token, refresh `GET me/capabilities` |
 | 403 | `task_forbidden` | Task missing **or** not trackable by the user (same answer, no existence oracle), on `timer/start`, `timer/switch` and `timer/discard-idle` `reassign` |
 | 404 | `no_active_timer` | `timer/stop`, `timer/discard-idle` without a running timer |
 | 409 | `period_locked` (+ `lockedThrough`), `period_submitted` | Since 1.13: a timer write into a locked or submitted timesheet period |

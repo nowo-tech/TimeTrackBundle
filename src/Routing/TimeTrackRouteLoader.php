@@ -102,6 +102,8 @@ final class TimeTrackRouteLoader extends Loader
         'timer_allocate'  => TimeTrackClientAllocationApiController::class . '::allocate',
         'subjects_search' => TimeTrackClientAllocationApiController::class . '::search',
         'activity_types'  => TimeTrackClientAllocationApiController::class . '::activityTypes',
+        // Since 2.4.0 (Beacon spec 262 block B): the modules the person may use (a token of any scope family).
+        'me_capabilities' => TimeTrackClientApiController::class . '::capabilities',
     ];
 
     /** Device flow routes of the client API (client_api.device_flow.enabled), after the other client routes. */

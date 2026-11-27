@@ -78,6 +78,8 @@ device:
   expired_status: "Abgelaufen"
   link_mismatch: "Diese Anfrage kam von einem Gerät, das mit einem anderen Konto angemeldet ist, und wurde abgelehnt. Es wurde nichts verbunden. Wenn du sie nicht erwartet hast, versucht vielleicht jemand, über dich Zugriff zu bekommen."
   link_mismatch_status: "Abgelehnt"
+  not_granted: "Dein Konto kann diesen Teil der App nicht nutzen, daher wurde die Anfrage nicht genehmigt. Es wurde nichts verbunden. Frag eine Administratorin oder einen Administrator, wenn du Zugriff haben solltest."
+  not_granted_status: "Nicht verfügbar"
 downloads:
   title: "Zeiterfassungs-Apps"
   get: "Herunterladen"

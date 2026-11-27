@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nowo-tech/TimeTrackBundle/docs/schemas/capabilities.v1.json",
+  "title": "TimeTrack client API: GET /api/time-track/v1/me/capabilities (200), v1 (TimeTrack 2.4)",
+  "description": "The client modules (device-flow scope families) the token's person may use now, in the context the request names. Called with a token of any registered family. Errors use the client API error shape {error, message}; a request of a revoked module elsewhere answers 403 {error: module_forbidden, message, module}.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["userId", "scopeFamily", "scopes", "context", "modules", "grantableScopes"],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scopeFamily": {
+      "description": "Scope family of the calling token.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "scopes": {
+      "description": "Scopes granted to the calling token.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/scope"},
+      "uniqueItems": true
+    },
+    "context": {
+      "description": "Context key the request named (null without a context header or a context policy).",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "modules": {
+      "description": "Family key => whether the person may use the module now. time, chat and tasks are always present (false while not registered).",
+      "type": "object",
+      "required": ["time", "chat", "tasks"],
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,31}$"},
+      "additionalProperties": {"type": "boolean"}
+    },
+    "grantableScopes": {
+      "description": "For each usable family, the scope values a device may ask for in the device flow.",
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,31}$"},
+      "additionalProperties": {
+        "type": "array",
+        "items": {"$ref": "#/$defs/scope"},
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,31}:[a-z][a-z0-9_.-]{0,63}$"
+    }
+  }
+}

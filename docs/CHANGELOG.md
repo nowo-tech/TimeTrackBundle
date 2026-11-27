@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+  - [Added (2.4.0)](#added-240)
+  - [Security (2.4.0)](#security-240)
+  - [Tests (2.4.0)](#tests-240)
 - [[2.3.0] - 2026-11-27](#230---2026-11-27)
   - [Added (2.3.0)](#added-230)
   - [Security (2.3.0)](#security-230)
@@ -274,6 +277,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - [Documentation](#documentation-12)
 
 ## [Unreleased]
+
+Planned as **2.4.0** (minor, no BC break, no schema change): client modules from the host's permissions (Beacon spec
+262 block B, owner decision D-20261127-04: "Beacon Desktop shows only the modules the person can use on the web"). See
+[UPGRADING.md](UPGRADING.md#to-240) and [CLIENT-API.md](CLIENT-API.md#changes-in-24-capabilities-beacon-spec-262).
+
+### Added (2.4.0)
+
+- **Host port `Client\ClientCapabilitiesProviderInterface`** (`client_api.capabilities.provider`, a service id):
+  `canUse(TimeTrackUserRef $user, string $scopeFamily, ?string $context): bool` — whether the person may use a module
+  (one module = one device-flow scope family: `time`, and host families such as `chat`, `tasks`) now, from the same
+  checks as the web. Read-only, cheap, deny by default for unknown families; an exception counts as false (logged).
+- **`GET /api/time-track/v1/me/capabilities`** (and the unversioned alias `/api/time-track/me/capabilities`, route key
+  `me_capabilities`, `clients.routes.me_capabilities`): a token of **any** registered family; answers `userId`,
+  `scopeFamily` and `scopes` of the calling token, `context`, `modules` (`time`, `chat`, `tasks` always present, plus any
+  other registered family) and `grantableScopes` (family => scope values, usable families only).
+  `Cache-Control: no-store, private`. No module check on this route, so a device whose module was revoked still learns
+  what it may use. JSON Schema: [`docs/schemas/capabilities.v1.json`](schemas/capabilities.v1.json).
+- **Grants follow the provider.** The device flow asks it before granting a family: the default approval page shows
+  "not available" instead of the request and denies it at once (the device gets `access_denied`, audit reason
+  `scope_family_not_granted`); `DeviceAuthorizationService::approve()` refuses it under the lock
+  (`DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED`) and the exchange refuses a family lost after the approval.
+  `DeviceAuthorizationService::isGrantableTo()` lets host approval pages hide such a request, and `denyNotGranted()`
+  denies it with that audit reason (a request decided meanwhile is left alone). `POST login` (app passwords)
+  answers `403 module_forbidden` (`module: time`) to a person who may not use time tracking.
+- **`403 module_forbidden`** `{"error": "module_forbidden", "message": …, "module": "<family>"}` on every client API
+  request (time routes and `ClientFamilyTokenAuthenticator`) of a family the person may no longer use, after the token,
+  scope and context checks; audited as `request_denied` with reason `module_forbidden`. The token is **not** revoked: the
+  module works again when the permission comes back. `ClientFamilyAuthentication::body()` gives the extra `module` key.
+- `DeviceAuthorizationService::deny()` takes an optional audit `$reason`. Translations `device.not_granted` (7 locales).
+
+Without a provider nothing changes: every registered family is granted and usable, as in 2.3, and `me/capabilities`
+answers `time: true` and every registered family `true`.
+
+### Security (2.4.0)
+
+- With a provider, a revoked module stops at the next request of every token of that family (fail closed), not only on
+  the next device flow; the per-scope rules inside a module (e.g. who may post in a conversation) stay the host's and
+  the owning bundle's checks on each call.
+
+### Tests (2.4.0)
+
+- `ClientCapabilitiesClientApiTest` (capabilities with any family token and context, refused family not shown or
+  granted at the page, the approval and the exchange, `module_forbidden` on time and family APIs with the token kept,
+  password login, fail closed), `ClientCapabilitiesDefaultTest` (no provider), `ClientCapabilitiesResolverTest`; route
+  fixtures gain `me_capabilities`.
 
 ## [2.3.0] - 2026-11-27
 

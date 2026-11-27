@@ -34,6 +34,7 @@ use Nowo\TimeTrackBundle\Client\ClientApiGuard;
 use Nowo\TimeTrackBundle\Client\ClientApiRateLimiter;
 use Nowo\TimeTrackBundle\Client\ClientApiSettingsProviderInterface;
 use Nowo\TimeTrackBundle\Client\ClientAuthenticatorInterface;
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesResolver;
 use Nowo\TimeTrackBundle\Client\ClientContextResolver;
 use Nowo\TimeTrackBundle\Client\ClientCredentialStateInterface;
 use Nowo\TimeTrackBundle\Client\ClientDistributionProviderInterface;
@@ -1478,7 +1479,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      */
     private function registerClientApi(ContainerBuilder $container, array $config): void
     {
-        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool|null, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int, scope_families: array<string, array{label: string, scopes: array<string, string>}>}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}, context: array{policy: string|null, header: string, required: bool}} $api */
+        /** @var array{routes: array{include: list<string>}, allowed_origins: list<string>, allow_tauri_webview_origins: bool|null, allow_metadata: bool, settings_provider: string|null, credential_state: string|null, credential_issuer: string|null, task_access_checker: string|null, profile_provider: string|null, backdate: array{max_seconds: int, clock_skew_seconds: int}, idle: array{allow_reassign: bool}, idle_check: array{enabled: bool, threshold_minutes: int, answer_timeout_minutes: int, user_can_disable: bool, provider: string|null}, task_url: array{origin: string|null}, rate_limit: array{cache_pool: string, per_token: int, per_ip: int, device_per_ip: int, window_seconds: int}, audit: array{denial_interval_seconds: int}, device_flow: array{enabled: bool, default_page: bool, verification_uri: string|null, code_ttl: int, interval: int, lookup_limit: int, lookup_window_seconds: int, max_pending_per_prefix: int, max_pending: int, scope_families: array<string, array{label: string, scopes: array<string, string>}>}, prefix: string, user_checker: array{enabled: bool, service: string|null, firewall: string|null, revoke_tokens: bool, required: bool}, context: array{policy: string|null, header: string, required: bool}, capabilities: array{provider: string|null}} $api */
         $api = $config['client_api'];
         /** @var array{provider: string|null, extension: array<string, string|null>, desktop: array<string, string|null>, min_supported_version: array{provider: string|null, extension: string|null, desktop: string|null, web: string|null}} $distribution */
         $distribution = $config['client_distribution'];
@@ -1566,7 +1567,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->addTag('monolog.logger', ['channel' => 'time_track']));
 
         $container->setParameter(ScopeFamilyMinterPass::ISSUER_PARAMETER, $api['credential_issuer']);
-        $this->registerScopeFamilies($container, $api['device_flow']['scope_families'], $api['context'], $loggerRef);
+        $this->registerScopeFamilies($container, $api['device_flow']['scope_families'], $api['context'], $loggerRef, $api['capabilities']['provider']);
 
         $container->setDefinition(DeviceAuthorizationService::class, (new Definition(DeviceAuthorizationService::class))
             ->setAutowired(true)
@@ -1582,6 +1583,7 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
                 '$accountChecker'      => new Reference(ClientAccountChecker::class),
                 '$families'            => new Reference(DeviceScopeFamilyRegistry::class),
                 '$logger'              => $loggerRef,
+                '$capabilities'        => new Reference(ClientCapabilitiesResolver::class),
             ])
             ->addTag('monolog.logger', ['channel' => 'time_track']));
 
@@ -1609,7 +1611,8 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
             ->setArgument('$settingsProvider', new Reference(ClientApiSettingsProviderInterface::class))
             ->setArgument('$idleCheckResolver', new Reference(IdleCheckSettingsResolver::class))
             ->setArgument('$translator', new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE))
-            ->setArgument('$contexts', new Reference(ClientContextResolver::class));
+            ->setArgument('$contexts', new Reference(ClientContextResolver::class))
+            ->setArgument('$capabilities', new Reference(ClientCapabilitiesResolver::class));
         $container->getDefinition(TimeTrackClientDeviceController::class)
             ->setArgument('$verificationUri', $device['verification_uri'])
             ->setArgument('$verificationRoute', $device['default_page'] ? $routes['device_verify']['name'] : null)
@@ -1625,8 +1628,9 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
      *
      * @param array<string, array{label: string, scopes: array<string, string>}> $families
      * @param array{policy: string|null, header: string, required: bool} $context
+     * @param string|null $capabilitiesProvider Since 2.4.0: `client_api.capabilities.provider` (null = off)
      */
-    private function registerScopeFamilies(ContainerBuilder $container, array $families, array $context, Reference $loggerRef): void
+    private function registerScopeFamilies(ContainerBuilder $container, array $families, array $context, Reference $loggerRef, ?string $capabilitiesProvider = null): void
     {
         $container->registerForAutoconfiguration(DeviceScopeFamilyProviderInterface::class)->addTag(self::SCOPE_FAMILY_PROVIDER_TAG);
         $container->setDefinition(ConfigDeviceScopeFamilyProvider::class, (new Definition(ConfigDeviceScopeFamilyProvider::class))
@@ -1654,6 +1658,16 @@ final class TimeTrackExtension extends Extension implements PrependExtensionInte
         $container->setParameter('nowo_time_track.client_api.device_flow.scope_families', $families);
         $container->getDefinition(ClientResponseFactory::class)->setArgument('$contextHeader', is_string($policy) && $policy !== '' ? $context['header'] : null);
         $container->getDefinition(ClientApiGuard::class)->setArgument('$contexts', new Reference(ClientContextResolver::class));
+        // Since 2.4.0 (Beacon spec 262 block B): the client modules a person may use.
+        $container->setDefinition(ClientCapabilitiesResolver::class, (new Definition(ClientCapabilitiesResolver::class))
+            ->setAutowired(false)
+            ->setArguments([
+                '$provider' => is_string($capabilitiesProvider) && $capabilitiesProvider !== '' ? new Reference($capabilitiesProvider) : null,
+                '$families' => new Reference(DeviceScopeFamilyRegistry::class),
+                '$logger'   => $loggerRef,
+            ])
+            ->addTag('monolog.logger', ['channel' => 'time_track']));
+        $container->getDefinition(ClientApiGuard::class)->setArgument('$capabilities', new Reference(ClientCapabilitiesResolver::class));
         $container->setDefinition(CurrentClientContext::class, (new Definition(CurrentClientContext::class))
             ->setAutowired(false)
             ->setPublic(true)

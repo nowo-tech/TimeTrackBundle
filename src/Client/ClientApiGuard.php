@@ -29,15 +29,22 @@ use function trim;
  *
  * Since 2.2.0 the same checks serve the other families' APIs through {@see self::check()} (used by
  * {@see ClientFamilyTokenAuthenticator}).
+ *
+ * Since 2.4.0 (Beacon spec 262 block B), with a host {@see ClientCapabilitiesProviderInterface}, a last check asks
+ * whether the person may still use the token's module (scope family) in the request's context: refused, the request
+ * answers `403 module_forbidden` (`module` = the family) and the token stays valid.
  */
 final readonly class ClientApiGuard
 {
     private ClientContextResolver $contexts;
 
+    private ClientCapabilitiesResolver $capabilities;
+
     /**
      * Receives the collaborators of the checks.
      *
      * @param ClientContextResolver|null $contexts Since 2.2.0: the tenant context check (null = off)
+     * @param ClientCapabilitiesResolver|null $capabilities Since 2.4.0: the module check (null = off, every family usable)
      */
     public function __construct(
         private ClientAuthService $authService,
@@ -48,8 +55,10 @@ final readonly class ClientApiGuard
         private ClientApiAuditor $auditor,
         private ?ClientAccountChecker $accountChecker = null,
         ?ClientContextResolver $contexts = null,
+        ?ClientCapabilitiesResolver $capabilities = null,
     ) {
-        $this->contexts = $contexts ?? new ClientContextResolver();
+        $this->contexts     = $contexts ?? new ClientContextResolver();
+        $this->capabilities = $capabilities ?? new ClientCapabilitiesResolver();
     }
 
     /**
@@ -89,6 +98,23 @@ final readonly class ClientApiGuard
     }
 
     /**
+     * Since 2.4.0: authenticates a token of **any** registered scope family, without the module check (`GET
+     * me/capabilities`: a device whose module was revoked must still learn what it may use). The other checks are those of
+     * {@see self::authenticate()}; a token of a family that is no longer registered answers `403 insufficient_scope`.
+     */
+    public function authenticateAnyFamily(Request $request): ClientApiPrincipal|Response
+    {
+        $check = $this->run(self::bearerToken($request), $request->getClientIp(), null, null, $this->contextHeader($request), false);
+        if ($check->token instanceof ClientToken && $check->user instanceof UserInterface) {
+            $request->attributes->set(CurrentClientContext::ATTRIBUTE, $check->contextKey);
+
+            return new ClientApiPrincipal($check->user, $check->token, $check->contextKey);
+        }
+
+        return $this->errorResponse($request, $check);
+    }
+
+    /**
      * Since 2.2.0: the checks of {@see self::authenticate()} for any scope family, without HTTP types. A refusal is
      * audited with the family; nothing is written but the token's last-used time.
      *
@@ -100,6 +126,15 @@ final readonly class ClientApiGuard
      * @internal
      */
     public function check(?string $plainToken, ?string $clientIp, string $scopeFamily, ?string $scope = null, ?string $requestedContext = null): ClientTokenCheck
+    {
+        return $this->run($plainToken, $clientIp, $scopeFamily, $scope, $requestedContext, true);
+    }
+
+    /**
+     * Since 2.4.0: the token checks; `$scopeFamily` null accepts a token of any registered family, `$moduleCheck` asks the
+     * capabilities provider last.
+     */
+    private function run(?string $plainToken, ?string $clientIp, ?string $scopeFamily, ?string $scope, ?string $requestedContext, bool $moduleCheck): ClientTokenCheck
     {
         $retry = $this->hitIp($clientIp, false);
         if ($retry > 0) {
@@ -143,6 +178,16 @@ final readonly class ClientApiGuard
             return ClientTokenCheck::refused('rate_limited', $retry, null, $token);
         }
 
+        // Since 2.4.0: `me/capabilities` takes a token of any family that is still registered.
+        if ($scopeFamily === null) {
+            $scopeFamily = $token->getScopeFamily();
+            if (!$this->capabilities->isRegistered($scopeFamily)) {
+                $this->auditor->denied('scope_family', $token, $clientIp);
+
+                return ClientTokenCheck::refused('insufficient_scope', 0, $scopeFamily, $token);
+            }
+        }
+
         // Since 2.2.0 (Beacon Desktop R3): a token opens the API of its own scope family only.
         if ($token->getScopeFamily() !== $scopeFamily) {
             $this->auditor->denied('scope_family', $token, $clientIp);
@@ -161,6 +206,13 @@ final readonly class ClientApiGuard
             $this->auditor->denied($contextError, $token, $clientIp);
 
             return ClientTokenCheck::refused($contextError, 0, null, $token);
+        }
+
+        // Since 2.4.0 (Beacon spec 262): the person may still use the module, in this context (the token stays valid).
+        if ($moduleCheck && $this->capabilities->isEnforced() && !$this->capabilities->canUse($user, $scopeFamily, $contextKey)) {
+            $this->auditor->denied(ClientCapabilitiesResolver::MODULE_FORBIDDEN, $token, $clientIp);
+
+            return ClientTokenCheck::refused(ClientCapabilitiesResolver::MODULE_FORBIDDEN, 0, $scopeFamily, $token);
         }
 
         return ClientTokenCheck::passed($token, $user, $contextKey);
@@ -249,12 +301,22 @@ final readonly class ClientApiGuard
             'insufficient_scope' => $this->responseFactory->error('insufficient_scope', sprintf('The token lacks the "%s" scope.', (string) $check->requiredScope), Response::HTTP_FORBIDDEN, $request, [
                 'WWW-Authenticate' => sprintf('Bearer error="insufficient_scope", scope="%s"', (string) $check->requiredScope),
             ]),
-            ClientContextResolver::FORBIDDEN => $this->responseFactory->error(ClientContextResolver::FORBIDDEN, 'The context is unknown or not available to you.', Response::HTTP_FORBIDDEN, $request),
-            ClientContextResolver::REQUIRED  => $this->responseFactory->error(ClientContextResolver::REQUIRED, sprintf('Name the context in the %s header.', $this->contexts->headerName()), Response::HTTP_BAD_REQUEST, $request),
-            default                          => $this->responseFactory->error('invalid_token', 'Missing, invalid, expired or revoked token.', Response::HTTP_UNAUTHORIZED, $request, [
+            ClientContextResolver::FORBIDDEN             => $this->responseFactory->error(ClientContextResolver::FORBIDDEN, 'The context is unknown or not available to you.', Response::HTTP_FORBIDDEN, $request),
+            ClientCapabilitiesResolver::MODULE_FORBIDDEN => $this->moduleForbidden($request, (string) $check->requiredScope),
+            ClientContextResolver::REQUIRED              => $this->responseFactory->error(ClientContextResolver::REQUIRED, sprintf('Name the context in the %s header.', $this->contexts->headerName()), Response::HTTP_BAD_REQUEST, $request),
+            default                                      => $this->responseFactory->error('invalid_token', 'Missing, invalid, expired or revoked token.', Response::HTTP_UNAUTHORIZED, $request, [
                 'WWW-Authenticate' => 'Bearer error="invalid_token"',
             ]),
         };
+    }
+
+    /**
+     * Since 2.4.0: the answer to a request of a module (scope family) the person may no longer use: `403
+     * module_forbidden` with the family as `module` (refresh `GET me/capabilities`, keep the token).
+     */
+    public function moduleForbidden(Request $request, string $scopeFamily): JsonResponse
+    {
+        return $this->responseFactory->error(ClientCapabilitiesResolver::MODULE_FORBIDDEN, 'You may not use this module now. Refresh the capabilities; the token is still valid.', Response::HTTP_FORBIDDEN, $request, [], ['module' => $scopeFamily]);
     }
 
     private function tooManyRequests(Request $request, int $retryAfter, ?ClientToken $token): JsonResponse

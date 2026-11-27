@@ -44,6 +44,20 @@ final class DeviceAuthorizationServiceTest extends TestCase
         self::assertSame(DevicePollResult::EXPIRED, $service->poll($grant->deviceCode)->error);
     }
 
+    /** Since 2.4.0: a request decided meanwhile is left alone (a double submit of a not-granted request). */
+    public function testDenyNotGrantedLeavesADecidedRequestAlone(): void
+    {
+        $stack   = new ClientApiStack($this->createStub(ClientAuthenticatorInterface::class), $this->createStub(TaskProviderInterface::class));
+        $user    = new TestUser('u-1', 'u@example.com');
+        $grant   = $stack->deviceService->start(ClientType::Desktop, 'Laptop');
+        $pending = $stack->deviceService->findPending($grant->userCode, $user);
+        self::assertNotNull($pending);
+
+        self::assertTrue($stack->deviceService->isGrantableTo($pending, $user));
+        self::assertTrue($stack->deviceService->denyNotGranted($pending, $user));
+        self::assertFalse($stack->deviceService->denyNotGranted($pending, $user));
+    }
+
     public function testUserCodeHelpersAndLookupBudget(): void
     {
         self::assertSame('BCDFGHJK', DeviceAuthorizationService::normalizeUserCode(' bcdf-ghjk '));

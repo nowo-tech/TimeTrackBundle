@@ -2,6 +2,7 @@
 
 ## Table of contents
 
+- [To 2.4.0](#to-240)
 - [To 2.3.0](#to-230)
 - [To 2.2.1](#to-221)
 - [To 2.2.0](#to-220)
@@ -128,6 +129,29 @@
 - [To 1.3.0](#to-130)
   - [Twig Extra Bundle (REQ-TWIG-004)](#twig-extra-bundle-req-twig-004)
   - [Twig-CS-Fixer (maintainers)](#twig-cs-fixer-maintainers)
+
+## To 2.4.0
+
+From **2.3.x** (a minor: no schema change, nothing required).
+
+- **Nothing changes by default.** Without `client_api.capabilities.provider` every registered scope family is granted
+  and usable, as in 2.3. The new route `me_capabilities` (`GET /api/time-track/v1/me/capabilities` and the unversioned
+  alias) is published with the others; a host with `client_api.routes.include` adds `me_capabilities` to its list.
+- **Hosts that want permission parity (Beacon spec 262).** Implement `ClientCapabilitiesProviderInterface::canUse()`
+  from the same checks as the web (time tracking, Messages, Tasks), answer `false` for a family you do not know, keep it
+  read-only and cheap (it runs on every client API request), and set `client_api.capabilities.provider`. Then:
+  - your own approval page should call `DeviceAuthorizationService::isGrantableTo($request, $user)` before showing a
+    request and show "not available" otherwise (the approval refuses it anyway with
+    `DeviceAuthorizationRefusedException::FAMILY_NOT_GRANTED`; deny it with
+    `denyNotGranted($request, $user, $ip)` so the device stops polling);
+  - a family API that does **not** authenticate through `ClientFamilyTokenAuthenticator` (its own guard) must answer a
+    lost permission as `403 {"error": "module_forbidden", "module": "<family>"}`, never `401`: a `401` signs the
+    device out;
+  - the scope checks inside each module on every call stay yours (and the owning bundle's).
+- **Clients** (Beacon Desktop 0.12): read `GET me/capabilities` after pairing, on start, on resume and after any `403`;
+  hide a module whose `modules.<family>` is false; treat `403 module_forbidden` as "module revoked" (refresh the
+  capabilities, keep the token) and only `401 invalid_token` as "signed out". See
+  [CLIENT-API.md](CLIENT-API.md#changes-in-24-capabilities-beacon-spec-262).
 
 ## To 2.3.0
 

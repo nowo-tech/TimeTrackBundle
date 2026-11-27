@@ -16,6 +16,7 @@
   - [Two approvals chained by the app (Q-BD-6)](#two-approvals-chained-by-the-app-q-bd-6)
   - [Authenticate another bundle's API with a family token](#authenticate-another-bundles-api-with-a-family-token)
   - [Tenant context header (Q-BD-7)](#tenant-context-header-q-bd-7)
+  - [Modules the person may use (2.4, Beacon spec 262)](#modules-the-person-may-use-24-beacon-spec-262)
   - [Connected apps (Q-BD-19)](#connected-apps-q-bd-19)
 - [Time subjects and activity types (2.1, Beacon spec 256)](#time-subjects-and-activity-types-21-beacon-spec-256)
   - [Standard Symfony host](#standard-symfony-host)
@@ -748,6 +749,36 @@ With `client_api.context.policy` set, a client names its tenant on every request
 read-only: it never changes the user's stored web context. On the time API the allowed key is a request attribute
 that host services read through `CurrentClientContext::key()`; `GET me` lists `contexts` (`contextsOf()`) and the
 `context` of the request. For another family the key is `ClientFamilyPrincipal::$contextKey`.
+
+### Modules the person may use (2.4, Beacon spec 262)
+
+Implement `ClientCapabilitiesProviderInterface` from your web permission checks and set
+`client_api.capabilities.provider`:
+
+```php
+use Nowo\TimeTrackBundle\Client\ClientCapabilitiesProviderInterface;
+use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
+
+final readonly class WebPermissionCapabilities implements ClientCapabilitiesProviderInterface
+{
+    public function __construct(private Permissions $permissions) {}
+
+    public function canUse(TimeTrackUserRef $user, string $scopeFamily, ?string $context): bool
+    {
+        return match ($scopeFamily) {
+            'time'  => $this->permissions->canTrackTime($user->id, $context),
+            'chat'  => $this->permissions->canUseMessages($user->id, $context),
+            'tasks' => $this->permissions->canUseTasks($user->id, $context),
+            default => false, // deny by default
+        };
+    }
+}
+```
+
+`$context` is the context the request named (null in the device flow and at `POST login`: answer "in at least one
+context"). Clients read `GET me/capabilities`; a lost module answers `403 module_forbidden` on every request of its
+tokens. Host approval pages call `DeviceAuthorizationService::isGrantableTo()` before showing a request. See
+[CLIENT-API.md](CLIENT-API.md#changes-in-24-capabilities-beacon-spec-262).
 
 ### Connected apps (Q-BD-19)
 
