@@ -89,6 +89,18 @@ final class ClientCapabilitiesResolverTest extends TestCase
         self::assertSame([['person@example.com', 'time', null]], $provider->asked);
     }
 
+    /** Audit ZDB-v-2: the named context is checked for each family, as that family's own requests check it. */
+    public function testTheNamedContextIsCheckedPerFamily(): void
+    {
+        $policy                     = new StubClientContextPolicy();
+        $policy->personalOnlyFamily = 'chat';
+        $resolver                   = new ClientCapabilitiesResolver(new StubClientCapabilitiesProvider(), $this->families(), null, new ClientContextResolver($policy));
+        $user                       = new TestUser('1', 'person@example.com');
+
+        self::assertSame(['time' => true, 'chat' => false, 'tasks' => false, 'voice' => false], $resolver->capabilitiesOf($user, 'time', 'org:acme')['modules']);
+        self::assertSame(['time' => true, 'chat' => true, 'tasks' => false, 'voice' => false], $resolver->capabilitiesOf($user, 'time', 'personal')['modules']);
+    }
+
     public function testAFailingProviderRefusesAndLogs(): void
     {
         $provider       = new StubClientCapabilitiesProvider();

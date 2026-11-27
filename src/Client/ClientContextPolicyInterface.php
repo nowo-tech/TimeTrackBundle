@@ -32,6 +32,11 @@ interface ClientContextPolicyInterface
     /**
      * The contexts the user may use now (`GET me.contexts`), the default first.
      *
+     * Since 2.4.0 (audit ZDB-v-1) the first entry **must** be the context your host serves a request **without** the
+     * context header in (for example the organisation the user last chose on the web), because the bundle asks the
+     * capabilities provider ({@see ClientCapabilitiesProviderInterface}) for that context on such a request. A host that
+     * cannot list it first sets `client_api.context.required: true` (every request names its context).
+     *
      * @return list<ClientContextOption>
      */
     public function contextsOf(TimeTrackUserRef $user, string $scopeFamily): array;

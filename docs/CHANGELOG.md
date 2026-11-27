@@ -291,7 +291,10 @@ Planned as **2.4.0** (minor, no BC break, no schema change): client modules from
   `$context` is `ClientCapabilitiesProviderInterface::ANY_CONTEXT` (`''`) at grant time (device approval and exchange,
   logins: "at least one context"), and on a request the context it runs in — the header's, or the context policy's
   default (first of `contextsOf()`) when there is none, refused without asking when the policy lists none — or `null`
-  without a context policy (audit ZDB-L1).
+  without a context policy (audit ZDB-L1). Hosts with a context policy must list first in
+  `ClientContextPolicyInterface::contextsOf()` the context they serve a header-less request in (now part of that port's
+  contract), or set `client_api.context.required: true` (audit ZDB-v-1). On `me/capabilities` the context header is
+  checked for each family (ZDB-v-2).
 - **`GET /api/time-track/v1/me/capabilities`** (and the unversioned alias `/api/time-track/me/capabilities`, route key
   `me_capabilities`, `clients.routes.me_capabilities`): a token of **any** registered family; answers `userId`,
   `scopeFamily` and `scopes` of the calling token, `context`, `modules` (`time`, `chat`, `tasks` always present, plus any

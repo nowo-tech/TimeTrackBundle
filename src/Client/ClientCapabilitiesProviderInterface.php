@@ -24,7 +24,8 @@ use Nowo\TimeTrackBundle\ValueObject\TimeTrackUserRef;
  *   {@see ClientFamilyTokenAuthenticator}), after the token, scope and context checks, and for `GET me/capabilities`
  *   (once per registered family). It is the context the request **runs in**: the one it named in the context header, or,
  *   without a header, the context the host serves such a request in — the first context of
- *   {@see ClientContextPolicyInterface::contextsOf()} (Beacon: the remembered organisation). Answer for that context
+ *   {@see ClientContextPolicyInterface::contextsOf()}, which the policy must list first: the context the host serves a
+ *   header-less request in (or the host sets `client_api.context.required: true`). Answer for that context
  *   only. With a context policy that lists no context for the person (or fails), the bundle refuses without asking you.
  *   A refused family answers `403 module_forbidden`; the token stays valid, so the module works again as soon as the
  *   permission comes back.

@@ -148,6 +148,12 @@ From **2.3.x** (a minor: no schema change, nothing required).
     exchange, logins): answer "in at least one context". On a request it gets the context the request runs in (the
     header's, or your policy's default when there is no header) or `null` without a context policy: answer for that
     context only;
+  - **hosts with a context policy and `client_api.context.required: false`** (audit ZDB-v-1): the **first** entry of
+    `ClientContextPolicyInterface::contextsOf()` must now be the context you serve a request without the header in
+    (for Beacon: the remembered organisation, `OrganizationContext::current()`, not `personal` unless that is where a
+    header-less request runs). The capabilities provider is asked for that context on such requests; if your first
+    entry is another context, a person refused in the real context passes the module check. If you cannot list it
+    first, set `client_api.context.required: true` once your clients send the header;
   - **host adapters of family APIs** (Beacon's ChatKit and TaskBoard principal adapters, audit ZDB-I3): when you map a
     `ClientFamilyAuthentication` refusal yourself, use its `status()` (403 for `module_forbidden`), `headers()` and
     `body()` (adds `module`) — answer `{"error": $auth->error, "message": …} + $auth->body()`. Never map an unknown

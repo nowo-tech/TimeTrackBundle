@@ -194,7 +194,9 @@ X-Beacon-Context: org:<uuid>            (optional; the host's context header)
   The token's own module may be `false`: this route never answers `module_forbidden`.
 - `scopeFamily` / `scopes`: the calling token's family and granted scopes. `context`: the context the modules were
   evaluated in — the one the request named, or without a header the host's default context (the first of the context
-  policy's list, Beacon: the remembered organisation); null without a context policy.
+  policy's list, which the host must make the context it serves a header-less request in); null without a context
+  policy. With several families the header is checked against the context policy for each family; a context a family
+  refuses makes that module `false`.
 - `modules`: `time`, `chat` and `tasks` are **always present** (false while the host has not registered the family),
   plus any other registered family. `true` = the person may use it now in this context.
 - `grantableScopes`: for each usable family, the scope values a device may ask for in the device flow (an object, `{}`

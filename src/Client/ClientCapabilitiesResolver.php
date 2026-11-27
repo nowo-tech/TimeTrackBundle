@@ -114,6 +114,22 @@ final readonly class ClientCapabilitiesResolver
     }
 
     /**
+     * Audit ZDB-v-2: a context named by the request was checked by the policy for the token's family only; another
+     * family's requests check it for their own family, so it is checked here the same way (refused = module false).
+     */
+    private function canUseInFamilyContext(object $user, string $scopeFamily, string $tokenFamily, ?string $contextKey): bool
+    {
+        if ($contextKey !== null && $scopeFamily !== $tokenFamily && $this->contexts?->isEnabled() === true) {
+            [$contextKey, $error] = $this->contexts->resolve($user, $contextKey, $scopeFamily);
+            if ($error !== null) {
+                return false;
+            }
+        }
+
+        return $this->canUseInRequest($user, $scopeFamily, $contextKey);
+    }
+
+    /**
      * The provider's answer as is (false on an exception, logged); always true without a provider. Prefer
      * {@see self::canGrant()} and {@see self::canUseInRequest()}, which pass the right context.
      *
@@ -155,7 +171,7 @@ final readonly class ClientCapabilitiesResolver
         }
         $grantable = [];
         foreach ($this->families->all() as $key => $family) {
-            $modules[$key] = $this->canUseInRequest($user, $key, $contextKey);
+            $modules[$key] = $this->canUseInFamilyContext($user, $key, $tokenFamily, $contextKey);
             if ($modules[$key]) {
                 $grantable[$key] = $family->scopeValues();
             }
