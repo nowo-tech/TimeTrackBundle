@@ -49,7 +49,7 @@ final class ScopeFamilyClientApiTest extends FunctionalTestCase
             'client_api' => [
                 'device_flow' => [
                     'enabled'        => true,
-                    'scope_families' => ['chat' => ['label' => 'Chat', 'scopes' => ['chat:read' => 'Read your conversations', 'chat:write' => 'Send messages']]],
+                    'scope_families' => ['chat' => ['label' => 'Chat', 'scopes' => ['chat:read' => 'Read your conversations', 'chat:write' => 'Send messages']], 'board' => ['label' => 'Boards', 'scopes' => ['task-board:read' => 'Read your boards']]],
                 ],
                 'context'           => ['policy' => StubClientContextPolicy::class, 'header' => 'X-Beacon-Context'],
                 'credential_issuer' => RecordingFamilyCredentialMinter::class,
@@ -107,6 +107,15 @@ final class ScopeFamilyClientApiTest extends FunctionalTestCase
         self::assertContains([ClientApiAuditAction::DeviceApproved, 'chat', null], $families);
         self::assertContains([ClientApiAuditAction::TokenIssued, 'chat', null], $families);
         self::assertContains([ClientApiAuditAction::RequestDenied, 'chat', 'scope_family'], $families);
+    }
+
+    /** 2.4.1: a hyphenated scope of a configured family is accepted (the config keys are not normalised). */
+    public function testAHyphenatedScopeOfAConfiguredFamilyIsAccepted(): void
+    {
+        $grant = $this->api('POST', '/api/time-track/v1/device/code', ['clientType' => 'desktop', 'clientName' => 'x', 'scopes' => ['task-board:read']]);
+
+        self::assertResponseIsSuccessful();
+        self::assertSame('board', $grant['scopeFamily'] ?? null);
     }
 
     public function testATimeTokenNeverOpensAnotherFamilysApi(): void
@@ -294,7 +303,7 @@ final class ScopeFamilyClientApiTest extends FunctionalTestCase
     {
         $registry = self::getContainer()->get(DeviceScopeFamilyRegistry::class);
         self::assertInstanceOf(DeviceScopeFamilyRegistry::class, $registry);
-        self::assertSame(['time', 'chat'], array_keys($registry->all()));
+        self::assertSame(['time', 'chat', 'board'], array_keys($registry->all()));
         self::assertSame('Chat', $registry->labelOf('chat'));
 
         $context = self::getContainer()->get(CurrentClientContext::class);

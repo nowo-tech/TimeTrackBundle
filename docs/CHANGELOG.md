@@ -279,6 +279,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (2.4.1)
+
+- `client_api.device_flow.scope_families.*.scopes` kept no hyphens: Symfony turned a key such as `task-board:read` into
+  `task_board:read`, so a device-code request for `task-board:read` got `400 invalid_scope`. The node now keeps its keys
+  as written (`normalizeKeys(false)`). Family keys (`[a-z][a-z0-9_]*`) cannot hold a hyphen, so no sibling node needed the fix.
+
 ## [2.4.0] - 2026-11-27
 
 Planned as **2.4.0** (minor, no BC break, no schema change): client modules from the host's permissions (Beacon spec

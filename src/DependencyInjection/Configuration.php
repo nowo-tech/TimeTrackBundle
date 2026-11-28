@@ -1028,6 +1028,7 @@ final class Configuration implements ConfigurationInterface
                                     ->arrayNode('scopes')
                                         ->isRequired()
                                         ->requiresAtLeastOneElement()
+                                        ->normalizeKeys(false) // scope names may hold hyphens ("task-board:read"): never turned into underscores
                                         ->useAttributeAsKey('scope')
                                         ->scalarPrototype()->cannotBeEmpty()->end()
                                     ->end()
