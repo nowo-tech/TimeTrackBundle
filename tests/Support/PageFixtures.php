@@ -17,7 +17,12 @@ use Nowo\TimeTrackBundle\Ui\TimeTrackPages;
 use Symfony\Component\Form\Extension\Csrf\CsrfExtension;
 use Symfony\Component\Form\Forms;
 use Symfony\Component\Form\FormView;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\Security\Csrf\CsrfTokenManager;
+use Symfony\Component\Security\Csrf\TokenStorage\SessionTokenStorage;
 
 use function sprintf;
 
@@ -91,8 +96,14 @@ final class PageFixtures
      */
     private static function form(array $data, string $idSuffix): FormView
     {
+        // An in-memory session: the default storage starts a native PHP session in the whole test process (the data
+        // providers run first), and the kernel browser's mock session then no longer reads its cookie (Symfony 8.2).
+        $request = new Request();
+        $request->setSession(new Session(new MockArraySessionStorage()));
+        $stack = new RequestStack();
+        $stack->push($request);
         $factory = Forms::createFormFactoryBuilder()
-            ->addExtension(new CsrfExtension(new CsrfTokenManager()))
+            ->addExtension(new CsrfExtension(new CsrfTokenManager(null, new SessionTokenStorage($stack))))
             ->getFormFactory();
 
         return $factory->createNamed('', TimerActionType::class, $data, ['id_suffix' => $idSuffix])->createView();
