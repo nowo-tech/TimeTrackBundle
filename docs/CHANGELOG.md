@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Table of contents
 
 - [[Unreleased]](#unreleased)
+- [[2.4.1] - 2026-11-28](#241---2026-11-28)
+  - [Fixed (2.4.1)](#fixed-241)
 - [[2.4.0] - 2026-11-27](#240---2026-11-27)
   - [Added (2.4.0)](#added-240)
   - [Security (2.4.0)](#security-240)
@@ -283,6 +285,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - PHP 8.6: `composer.json` allows PHP below 8.7 (was below 8.6). CI adds a forward-compatibility workflow with a
   PHP 8.6 cell and a Symfony 8.2 cell (both stable, no allowed failures).
+
+## [2.4.1] - 2026-11-28
+
+### Fixed (2.4.1)
+
+- `client_api.device_flow.scope_families.*.scopes` kept no hyphens: Symfony turned a key such as `task-board:read` into
+  `task_board:read`, so a device-code request for `task-board:read` got `400 invalid_scope`. The node now keeps its keys
+  as written (`normalizeKeys(false)`). Family keys (`[a-z][a-z0-9_]*`) cannot hold a hyphen, so no sibling node needed the fix.
 
 ## [2.4.0] - 2026-11-27
 
@@ -2940,7 +2950,8 @@ Allows nowo-tech/ui-kit-bundle 2.x (^1.4 || ^2.2) so hosts can move to UiKit 2.2
 
 - Installation, configuration, usage, TaskBoard integration, browser extension, desktop agent, security, and spec-driven development guides.
 
-[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/nowo-tech/TimeTrackBundle/compare/v2.2.0...v2.2.1
