@@ -36,6 +36,15 @@ final class ScopeFamiliesConfigurationTest extends TestCase
         self::assertSame(['policy' => 'app.context_policy', 'header' => 'X-Beacon-Context', 'required' => true], $config['client_api']['context']);
     }
 
+    /** 2.4.1: a hyphenated scope key ("task-board:read") is kept as written, not normalised to underscores. */
+    public function testAHyphenatedScopeKeyIsPreserved(): void
+    {
+        $scopes = ['task-board:read' => 'Read boards', 'task-board:write' => 'Edit boards'];
+        $config = $this->process(['client_api' => ['device_flow' => ['scope_families' => ['task' => ['label' => 'Boards', 'scopes' => $scopes]]]]]);
+
+        self::assertSame($scopes, $config['client_api']['device_flow']['scope_families']['task']['scopes']);
+    }
+
     /**
      * @return iterable<string, array{array<string, mixed>}>
      */
