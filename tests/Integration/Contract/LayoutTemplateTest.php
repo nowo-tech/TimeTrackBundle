@@ -93,7 +93,7 @@ final class LayoutTemplateTest extends TestCase
 
     private function twig(): Environment
     {
-        $case = new class('layout') extends PageContractTestCase {
+        $case = new class('environment') extends PageContractTestCase {
             use TimeTrackContractEnvironment;
 
             public static function pageFixtures(): iterable
